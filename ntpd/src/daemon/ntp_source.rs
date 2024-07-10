@@ -449,8 +449,8 @@ mod tests {
     };
 
     use ntp_proto::{
-        NoCipher, NtpDuration, NtpLeapIndicator, NtpPacket, ProtocolVersion, SourceDefaultsConfig,
-        SynchronizationConfig, SystemSnapshot, TimeSnapshot,
+        AlgorithmConfig, KalmanClockController, NoCipher, NtpDuration, NtpLeapIndicator, NtpPacket,
+        ProtocolVersion, SourceDefaultsConfig, SynchronizationConfig, SystemSnapshot, TimeSnapshot,
     };
     use timestamped_socket::socket::{open_ip, GeneralTimestampMode, Open};
     use tokio::sync::{broadcast, mpsc};
@@ -596,13 +596,15 @@ mod tests {
         let (msg_for_system_sender, msg_for_system_receiver) = mpsc::channel(1);
 
         let index = SourceId::new();
-        let mut system = ntp_proto::System::new(
-            TestClock {},
-            SynchronizationConfig::default(),
-            SourceDefaultsConfig::default(),
-            Arc::new([]),
-        )
-        .unwrap();
+        let mut system: ntp_proto::System<_, _, KalmanClockController<_, _>> =
+            ntp_proto::System::new(
+                TestClock {},
+                SynchronizationConfig::default(),
+                SourceDefaultsConfig::default(),
+                AlgorithmConfig::default(),
+                Arc::new([]),
+            )
+            .unwrap();
 
         let Ok((source, _)) = system.create_ntp_source(
             index,

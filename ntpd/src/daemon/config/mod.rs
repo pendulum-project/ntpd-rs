@@ -3,7 +3,7 @@ mod server;
 pub mod subnet;
 
 use clock_steering::unix::UnixClock;
-use ntp_proto::{SourceDefaultsConfig, SynchronizationConfig};
+use ntp_proto::{AlgorithmConfig, SourceDefaultsConfig, SynchronizationConfig};
 pub use ntp_source::*;
 use serde::{Deserialize, Deserializer};
 pub use server::*;
@@ -333,6 +333,16 @@ fn default_metrics_exporter_listen() -> SocketAddr {
 
 #[derive(Deserialize, Debug, Default)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct DaemonSynchronizationConfig {
+    #[serde(flatten)]
+    pub synchronization_base: SynchronizationConfig,
+
+    #[serde(default)]
+    pub algorithm: AlgorithmConfig,
+}
+
+#[derive(Deserialize, Debug, Default)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Config {
     #[serde(rename = "source", default)]
     pub sources: Vec<NtpSourceConfig>,
@@ -341,7 +351,7 @@ pub struct Config {
     #[serde(rename = "nts-ke-server", default)]
     pub nts_ke: Vec<NtsKeConfig>,
     #[serde(default)]
-    pub synchronization: SynchronizationConfig,
+    pub synchronization: DaemonSynchronizationConfig,
     #[serde(default)]
     pub source_defaults: SourceDefaultsConfig,
     #[serde(default)]
@@ -444,7 +454,11 @@ impl Config {
         }
 
         if !self.sources.is_empty()
-            && self.count_sources() < self.synchronization.minimum_agreeing_sources
+            && self.count_sources()
+                < self
+                    .synchronization
+                    .synchronization_base
+                    .minimum_agreeing_sources
         {
             warn!("Fewer sources configured than are required to agree on the current time. Daemon will not change system time.");
             ok = false;
@@ -524,11 +538,19 @@ mod tests {
             })]
         );
         assert_eq!(
-            config.synchronization.single_step_panic_threshold.forward,
+            config
+                .synchronization
+                .synchronization_base
+                .single_step_panic_threshold
+                .forward,
             Some(NtpDuration::from_seconds(0.))
         );
         assert_eq!(
-            config.synchronization.single_step_panic_threshold.backward,
+            config
+                .synchronization
+                .synchronization_base
+                .single_step_panic_threshold
+                .backward,
             Some(NtpDuration::from_seconds(0.))
         );
 
@@ -544,11 +566,13 @@ mod tests {
         );
         assert!(config
             .synchronization
+            .synchronization_base
             .single_step_panic_threshold
             .forward
             .is_none());
         assert!(config
             .synchronization
+            .synchronization_base
             .single_step_panic_threshold
             .backward
             .is_none());
@@ -764,5 +788,29 @@ mod tests {
         assert_eq!(config.interface, Some(expected));
 
         assert_eq!(config.timestamp_mode, TimestampMode::Software);
+    }
+
+    #[test]
+    fn daemon_synchronization_config() {
+        let config: Result<DaemonSynchronizationConfig, _> = toml::from_str(
+            r#"
+            does_not_exist = 5
+            "#,
+        );
+
+        assert!(config.is_err());
+
+        let config: Result<DaemonSynchronizationConfig, _> = toml::from_str(
+            r#"
+            minimum-agreeing-sources = 2
+
+            [algorithm]
+            initial-wander = 1e-7
+            "#,
+        );
+
+        let config = config.unwrap();
+        assert_eq!(config.synchronization_base.minimum_agreeing_sources, 2);
+        assert_eq!(config.algorithm.initial_wander, 1e-7);
     }
 }

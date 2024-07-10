@@ -3,7 +3,9 @@ use crate::daemon::spawn::spawner_task;
 #[cfg(feature = "unstable_nts-pool")]
 use super::spawn::nts_pool::NtsPoolSpawner;
 use super::{
-    config::{ClockConfig, NtpSourceConfig, ServerConfig, TimestampMode},
+    config::{
+        ClockConfig, DaemonSynchronizationConfig, NtpSourceConfig, ServerConfig, TimestampMode,
+    },
     ntp_source::{MsgForSystem, SourceChannels, SourceTask, Wait},
     server::{ServerStats, ServerTask},
     spawn::{
@@ -22,8 +24,8 @@ use std::{
 };
 
 use ntp_proto::{
-    KalmanSourceController, KeySet, NtpClock, ObservableSourceState, SourceDefaultsConfig,
-    SynchronizationConfig, System, SystemActionIterator, SystemSnapshot, SystemSourceUpdate,
+    KalmanClockController, KalmanSourceController, KeySet, NtpClock, ObservableSourceState,
+    SourceDefaultsConfig, System, SystemActionIterator, SystemSnapshot, SystemSourceUpdate,
 };
 use timestamped_socket::interface::InterfaceName;
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -85,7 +87,7 @@ pub struct DaemonChannels {
 
 /// Spawn the NTP daemon
 pub async fn spawn(
-    synchronization_config: SynchronizationConfig,
+    synchronization_config: DaemonSynchronizationConfig,
     source_defaults_config: SourceDefaultsConfig,
     clock_config: ClockConfig,
     source_configs: &[NtpSourceConfig],
@@ -164,7 +166,7 @@ struct SystemSpawnerData {
 
 struct SystemTask<C: NtpClock, T: Wait> {
     _wait: PhantomData<SingleshotSleep<T>>,
-    system: System<C, SourceId>,
+    system: System<C, SourceId, KalmanClockController<C, SourceId>>,
 
     system_snapshot_sender: tokio::sync::watch::Sender<SystemSnapshot>,
     system_update_sender:
@@ -199,7 +201,7 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
         clock: C,
         interface: Option<InterfaceName>,
         timestamp_mode: TimestampMode,
-        synchronization_config: SynchronizationConfig,
+        synchronization_config: DaemonSynchronizationConfig,
         source_defaults_config: SourceDefaultsConfig,
         keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
         ip_list: tokio::sync::watch::Receiver<Arc<[IpAddr]>>,
@@ -207,8 +209,9 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
     ) -> (Self, DaemonChannels) {
         let Ok(mut system) = System::new(
             clock.clone(),
-            synchronization_config,
+            synchronization_config.synchronization_base,
             source_defaults_config,
+            synchronization_config.algorithm,
             ip_list.borrow().clone(),
         ) else {
             tracing::error!("Could not start system");

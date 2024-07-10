@@ -1,17 +1,17 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 use std::{fmt::Debug, hash::Hash};
 
-use crate::algorithm::{KalmanSourceController, SourceController};
+use crate::algorithm::SourceController;
 #[cfg(feature = "ntpv5")]
 use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
 use crate::source::NtpSourceUpdate;
-use crate::KalmanControllerMessage;
 use crate::{
-    algorithm::{KalmanClockController, StateUpdate, TimeSyncController},
+    algorithm::{StateUpdate, TimeSyncController},
     clock::NtpClock,
     config::{SourceDefaultsConfig, SynchronizationConfig},
     identifiers::ReferenceId,
@@ -179,7 +179,7 @@ macro_rules! actions {
     }
 }
 
-pub struct System<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> {
+pub struct System<C, SourceId, Controller> {
     synchronization_config: SynchronizationConfig,
     source_defaults_config: SourceDefaultsConfig,
     system: SystemSnapshot,
@@ -187,15 +187,22 @@ pub struct System<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> {
 
     sources: HashMap<SourceId, Option<NtpSourceSnapshot>>,
 
-    controller: KalmanClockController<C, SourceId>,
+    _clock: PhantomData<C>,
+    controller: Controller,
     controller_took_control: bool,
 }
 
-impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
+impl<
+        C: NtpClock,
+        SourceId: Hash + Eq + Copy + Debug,
+        Controller: TimeSyncController<C, SourceId>,
+    > System<C, SourceId, Controller>
+{
     pub fn new(
         clock: C,
         synchronization_config: SynchronizationConfig,
         source_defaults_config: SourceDefaultsConfig,
+        algorithm_config: Controller::AlgorithmConfig,
         ip_list: Arc<[IpAddr]>,
     ) -> Result<Self, C::Error> {
         // Setup system snapshot
@@ -215,11 +222,12 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
             system,
             ip_list,
             sources: Default::default(),
-            controller: KalmanClockController::new(
+            _clock: PhantomData,
+            controller: Controller::new(
                 clock,
                 synchronization_config,
                 source_defaults_config,
-                synchronization_config.algorithm,
+                algorithm_config,
             )?,
             controller_took_control: false,
         })
@@ -249,8 +257,8 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
         protocol_version: ProtocolVersion,
     ) -> Result<
         (
-            NtpSource<KalmanSourceController<SourceId>>,
-            NtpSourceActionIterator<KalmanSourceController<SourceId>>,
+            NtpSource<Controller::SourceController>,
+            NtpSourceActionIterator<Controller::SourceController>,
         ),
         C::Error,
     > {
@@ -274,8 +282,8 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
         nts: Box<SourceNtsData>,
     ) -> Result<
         (
-            NtpSource<KalmanSourceController<SourceId>>,
-            NtpSourceActionIterator<KalmanSourceController<SourceId>>,
+            NtpSource<Controller::SourceController>,
+            NtpSourceActionIterator<Controller::SourceController>,
         ),
         C::Error,
     > {
@@ -301,8 +309,8 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
     pub fn handle_source_update(
         &mut self,
         id: SourceId,
-        update: NtpSourceUpdate<KalmanSourceController<SourceId>>,
-    ) -> Result<SystemActionIterator<KalmanSourceController<SourceId>>, C::Error> {
+        update: NtpSourceUpdate<Controller::SourceController>,
+    ) -> Result<SystemActionIterator<Controller::SourceController>, C::Error> {
         let usable = update
             .snapshot
             .accept_synchronization(
@@ -323,8 +331,8 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
 
     fn handle_algorithm_state_update(
         &mut self,
-        update: StateUpdate<SourceId, KalmanControllerMessage>,
-    ) -> SystemActionIterator<KalmanSourceController<SourceId>> {
+        update: StateUpdate<SourceId, Controller::ControllerMessage>,
+    ) -> SystemActionIterator<Controller::SourceController> {
         let mut actions = vec![];
         if let Some(ref used_sources) = update.used_sources {
             self.system
@@ -347,7 +355,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
         actions.into()
     }
 
-    pub fn handle_timer(&mut self) -> SystemActionIterator<KalmanSourceController<SourceId>> {
+    pub fn handle_timer(&mut self) -> SystemActionIterator<Controller::SourceController> {
         tracing::debug!("Timer expired");
         let update = self.controller.time_update();
         self.handle_algorithm_state_update(update)
