@@ -1,4 +1,4 @@
-use std::{fmt::Debug, hash::Hash, time::Duration};
+use std::{fmt::Debug, time::Duration};
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
@@ -24,7 +24,7 @@ pub struct ObservableSourceTimedata {
 }
 
 #[derive(Debug, Clone)]
-pub struct StateUpdate<SourceId: Eq + Copy + Debug, ControllerMessage: Clone> {
+pub struct StateUpdate<SourceId, ControllerMessage> {
     // Message for all sources, if any
     pub source_message: Option<ControllerMessage>,
     // Update to the time snapshot, if any
@@ -38,9 +38,7 @@ pub struct StateUpdate<SourceId: Eq + Copy + Debug, ControllerMessage: Clone> {
 // Note: this default implementation is neccessary since the
 // derive only works if SourceId is Default (which it isn't
 // neccessarily)
-impl<SourceId: Eq + Copy + Debug, ControllerMessage: Clone> Default
-    for StateUpdate<SourceId, ControllerMessage>
-{
+impl<SourceId, ControllerMessage> Default for StateUpdate<SourceId, ControllerMessage> {
     fn default() -> Self {
         Self {
             source_message: None,
@@ -51,7 +49,9 @@ impl<SourceId: Eq + Copy + Debug, ControllerMessage: Clone> Default
     }
 }
 
-pub trait TimeSyncController<C: NtpClock, SourceId: Hash + Eq + Copy + Debug>: Sized {
+pub trait TimeSyncController: Sized {
+    type Clock: NtpClock;
+    type SourceId;
     type AlgorithmConfig: Debug + Copy + DeserializeOwned;
     type ControllerMessage: Debug + Clone;
     type SourceMessage: Debug + Clone;
@@ -62,32 +62,32 @@ pub trait TimeSyncController<C: NtpClock, SourceId: Hash + Eq + Copy + Debug>: S
 
     /// Create a new clock controller controling the given clock
     fn new(
-        clock: C,
+        clock: Self::Clock,
         synchronization_config: SynchronizationConfig,
         source_defaults_config: SourceDefaultsConfig,
         algorithm_config: Self::AlgorithmConfig,
-    ) -> Result<Self, C::Error>;
+    ) -> Result<Self, <Self::Clock as NtpClock>::Error>;
 
     /// Take control of the clock (should not be done in new!)
-    fn take_control(&mut self) -> Result<(), C::Error>;
+    fn take_control(&mut self) -> Result<(), <Self::Clock as NtpClock>::Error>;
 
     /// Create a new source with given identity
-    fn add_source(&mut self, id: SourceId) -> Self::SourceController;
+    fn add_source(&mut self, id: Self::SourceId) -> Self::SourceController;
     /// Notify the controller that a previous source has gone
-    fn remove_source(&mut self, id: SourceId);
+    fn remove_source(&mut self, id: Self::SourceId);
     /// Notify the controller that the status of a source (whether
     /// or not it is usable for synchronization) has changed.
-    fn source_update(&mut self, id: SourceId, usable: bool);
+    fn source_update(&mut self, id: Self::SourceId, usable: bool);
     /// Notify the controller of a new measurement from a source.
     /// The list of SourceIds is used for loop detection, with the
     /// first SourceId given considered the primary source used.
     fn source_message(
         &mut self,
-        id: SourceId,
+        id: Self::SourceId,
         message: Self::SourceMessage,
-    ) -> StateUpdate<SourceId, Self::ControllerMessage>;
+    ) -> StateUpdate<Self::SourceId, Self::ControllerMessage>;
     /// Non-message driven update (queued via next_update)
-    fn time_update(&mut self) -> StateUpdate<SourceId, Self::ControllerMessage>;
+    fn time_update(&mut self) -> StateUpdate<Self::SourceId, Self::ControllerMessage>;
 }
 
 pub trait SourceController: Sized {
