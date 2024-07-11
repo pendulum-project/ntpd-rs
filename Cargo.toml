@@ -28,6 +28,7 @@ rust-version = "1.70" # MSRV
 panic = "abort"
 
 [profile.release]
+lto = true
 panic = "abort"
 debug = 2
 
