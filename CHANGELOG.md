@@ -1,11 +1,12 @@
 # Changelog
 
-## [1.2.0-alpha.20240628] - 2024-06-28
+## [1.2.0] - 2024-07-11
 
 ### Added
 - Pool mode sources can be set up to ignore some addresses returned by the pool
 - NTP sources use a random client port for every request sent
 - The metrics exporter will keep trying to startup while its network interface is not yet available
+- Added option for server to only respond to NTS messages.
 
 ### Changed
 - Updated dependencies
@@ -214,7 +215,7 @@ process.
 - Fixed a bug in peer dispersion calculation which resulted in overly
   pessimistic dispersion estimates.
 
-[1.2.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.1.3...v1.2.0-alpha.20240628
+[1.2.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.1.3...v1.2.0
 [1.1.3]: https://github.com/pendulum-project/ntpd-rs/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/pendulum-project/ntpd-rs/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/pendulum-project/ntpd-rs/compare/v1.1.0...v1.1.1
