@@ -395,10 +395,10 @@ such may change in future ntpd-rs versions.
 `slew-maximum-frequency-offset` = *offset* (**200e-6**)
 :   What is the maximum frequency offset during a slew. Unit: s/s
 
-`slew-minimum-duration` = *duration* (**495e-6**)
+`slew-minimum-duration` = *duration* (**8.0**)
 :   What is the minimum duration of a slew. Unit: seconds
 
-`maximum-frequency-steer` = *frequency* (**8.0**)
+`maximum-frequency-steer` = *frequency* (**495e-6**)
 :   Absolute maximum frequency correction. Unit: s/s
 
 `ignore-server-dispersion` = *bool* (**false**)
