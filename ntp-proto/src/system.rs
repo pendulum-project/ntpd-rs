@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::marker::PhantomData;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
@@ -179,7 +178,7 @@ macro_rules! actions {
     }
 }
 
-pub struct System<C, SourceId, Controller> {
+pub struct System<SourceId, Controller> {
     synchronization_config: SynchronizationConfig,
     source_defaults_config: SourceDefaultsConfig,
     system: SystemSnapshot,
@@ -187,24 +186,20 @@ pub struct System<C, SourceId, Controller> {
 
     sources: HashMap<SourceId, Option<NtpSourceSnapshot>>,
 
-    _clock: PhantomData<C>,
     controller: Controller,
     controller_took_control: bool,
 }
 
-impl<
-        C: NtpClock,
-        SourceId: Hash + Eq + Copy + Debug,
-        Controller: TimeSyncController<C, SourceId>,
-    > System<C, SourceId, Controller>
+impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId = SourceId>>
+    System<SourceId, Controller>
 {
     pub fn new(
-        clock: C,
+        clock: Controller::Clock,
         synchronization_config: SynchronizationConfig,
         source_defaults_config: SourceDefaultsConfig,
         algorithm_config: Controller::AlgorithmConfig,
         ip_list: Arc<[IpAddr]>,
-    ) -> Result<Self, C::Error> {
+    ) -> Result<Self, <Controller::Clock as NtpClock>::Error> {
         // Setup system snapshot
         let mut system = SystemSnapshot {
             stratum: synchronization_config.local_stratum,
@@ -222,7 +217,6 @@ impl<
             system,
             ip_list,
             sources: Default::default(),
-            _clock: PhantomData,
             controller: Controller::new(
                 clock,
                 synchronization_config,
@@ -237,11 +231,11 @@ impl<
         self.system
     }
 
-    pub fn check_clock_access(&mut self) -> Result<(), C::Error> {
+    pub fn check_clock_access(&mut self) -> Result<(), <Controller::Clock as NtpClock>::Error> {
         self.ensure_controller_control()
     }
 
-    fn ensure_controller_control(&mut self) -> Result<(), C::Error> {
+    fn ensure_controller_control(&mut self) -> Result<(), <Controller::Clock as NtpClock>::Error> {
         if !self.controller_took_control {
             self.controller.take_control()?;
             self.controller_took_control = true;
@@ -260,7 +254,7 @@ impl<
             NtpSource<Controller::SourceController>,
             NtpSourceActionIterator<Controller::SourceController>,
         ),
-        C::Error,
+        <Controller::Clock as NtpClock>::Error,
     > {
         self.ensure_controller_control()?;
         let controller = self.controller.add_source(id);
@@ -285,7 +279,7 @@ impl<
             NtpSource<Controller::SourceController>,
             NtpSourceActionIterator<Controller::SourceController>,
         ),
-        C::Error,
+        <Controller::Clock as NtpClock>::Error,
     > {
         self.ensure_controller_control()?;
         let controller = self.controller.add_source(id);
@@ -300,7 +294,10 @@ impl<
         ))
     }
 
-    pub fn handle_source_remove(&mut self, id: SourceId) -> Result<(), C::Error> {
+    pub fn handle_source_remove(
+        &mut self,
+        id: SourceId,
+    ) -> Result<(), <Controller::Clock as NtpClock>::Error> {
         self.controller.remove_source(id);
         self.sources.remove(&id);
         Ok(())
@@ -310,7 +307,10 @@ impl<
         &mut self,
         id: SourceId,
         update: NtpSourceUpdate<Controller::SourceController>,
-    ) -> Result<SystemActionIterator<Controller::SourceController>, C::Error> {
+    ) -> Result<
+        SystemActionIterator<Controller::SourceController>,
+        <Controller::Clock as NtpClock>::Error,
+    > {
         let usable = update
             .snapshot
             .accept_synchronization(

@@ -336,9 +336,11 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
     }
 }
 
-impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> TimeSyncController<C, SourceId>
+impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> TimeSyncController
     for KalmanClockController<C, SourceId>
 {
+    type Clock = C;
+    type SourceId = SourceId;
     type AlgorithmConfig = AlgorithmConfig;
     type ControllerMessage = KalmanControllerMessage;
     type SourceMessage = KalmanSourceMessage<SourceId>;

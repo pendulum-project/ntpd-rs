@@ -166,7 +166,7 @@ struct SystemSpawnerData {
 
 struct SystemTask<C: NtpClock, T: Wait> {
     _wait: PhantomData<SingleshotSleep<T>>,
-    system: System<C, SourceId, KalmanClockController<C, SourceId>>,
+    system: System<SourceId, KalmanClockController<C, SourceId>>,
 
     system_snapshot_sender: tokio::sync::watch::Sender<SystemSnapshot>,
     system_update_sender:
