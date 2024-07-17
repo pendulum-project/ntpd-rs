@@ -5,7 +5,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{fmt::Debug, hash::Hash};
 
-use crate::algorithm::SourceController;
 #[cfg(feature = "ntpv5")]
 use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
 use crate::source::NtpSourceUpdate;
@@ -112,11 +111,11 @@ impl Default for SystemSnapshot {
     }
 }
 
-pub struct SystemSourceUpdate<Controller: SourceController> {
-    pub(crate) message: Controller::ControllerMessage,
+pub struct SystemSourceUpdate<ControllerMessage> {
+    pub(crate) message: ControllerMessage,
 }
 
-impl<Controller: SourceController> std::fmt::Debug for SystemSourceUpdate<Controller> {
+impl<ControllerMessage: Debug> std::fmt::Debug for SystemSourceUpdate<ControllerMessage> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SystemSourceUpdate")
             .field("message", &self.message)
@@ -124,7 +123,7 @@ impl<Controller: SourceController> std::fmt::Debug for SystemSourceUpdate<Contro
     }
 }
 
-impl<Controller: SourceController> Clone for SystemSourceUpdate<Controller> {
+impl<ControllerMessage: Clone> Clone for SystemSourceUpdate<ControllerMessage> {
     fn clone(&self) -> Self {
         Self {
             message: self.message.clone(),
@@ -134,17 +133,17 @@ impl<Controller: SourceController> Clone for SystemSourceUpdate<Controller> {
 
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
-pub enum SystemAction<Controller: SourceController> {
-    UpdateSources(SystemSourceUpdate<Controller>),
+pub enum SystemAction<ControllerMessage> {
+    UpdateSources(SystemSourceUpdate<ControllerMessage>),
     SetTimer(Duration),
 }
 
 #[derive(Debug)]
-pub struct SystemActionIterator<Controller: SourceController> {
-    iter: <Vec<SystemAction<Controller>> as IntoIterator>::IntoIter,
+pub struct SystemActionIterator<ControllerMessage> {
+    iter: <Vec<SystemAction<ControllerMessage>> as IntoIterator>::IntoIter,
 }
 
-impl<Controller: SourceController> Default for SystemActionIterator<Controller> {
+impl<ControllerMessage> Default for SystemActionIterator<ControllerMessage> {
     fn default() -> Self {
         Self {
             iter: vec![].into_iter(),
@@ -152,18 +151,18 @@ impl<Controller: SourceController> Default for SystemActionIterator<Controller> 
     }
 }
 
-impl<Controller: SourceController> From<Vec<SystemAction<Controller>>>
-    for SystemActionIterator<Controller>
+impl<ControllerMessage> From<Vec<SystemAction<ControllerMessage>>>
+    for SystemActionIterator<ControllerMessage>
 {
-    fn from(value: Vec<SystemAction<Controller>>) -> Self {
+    fn from(value: Vec<SystemAction<ControllerMessage>>) -> Self {
         Self {
             iter: value.into_iter(),
         }
     }
 }
 
-impl<Controller: SourceController> Iterator for SystemActionIterator<Controller> {
-    type Item = SystemAction<Controller>;
+impl<ControllerMessage> Iterator for SystemActionIterator<ControllerMessage> {
+    type Item = SystemAction<ControllerMessage>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next()
@@ -252,7 +251,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
     ) -> Result<
         (
             NtpSource<Controller::SourceController>,
-            NtpSourceActionIterator<Controller::SourceController>,
+            NtpSourceActionIterator<Controller::SourceMessage>,
         ),
         <Controller::Clock as NtpClock>::Error,
     > {
@@ -277,7 +276,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
     ) -> Result<
         (
             NtpSource<Controller::SourceController>,
-            NtpSourceActionIterator<Controller::SourceController>,
+            NtpSourceActionIterator<Controller::SourceMessage>,
         ),
         <Controller::Clock as NtpClock>::Error,
     > {
@@ -306,9 +305,9 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
     pub fn handle_source_update(
         &mut self,
         id: SourceId,
-        update: NtpSourceUpdate<Controller::SourceController>,
+        update: NtpSourceUpdate<Controller::SourceMessage>,
     ) -> Result<
-        SystemActionIterator<Controller::SourceController>,
+        SystemActionIterator<Controller::ControllerMessage>,
         <Controller::Clock as NtpClock>::Error,
     > {
         let usable = update
@@ -332,7 +331,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
     fn handle_algorithm_state_update(
         &mut self,
         update: StateUpdate<SourceId, Controller::ControllerMessage>,
-    ) -> SystemActionIterator<Controller::SourceController> {
+    ) -> SystemActionIterator<Controller::ControllerMessage> {
         let mut actions = vec![];
         if let Some(ref used_sources) = update.used_sources {
             self.system
@@ -355,7 +354,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         actions.into()
     }
 
-    pub fn handle_timer(&mut self) -> SystemActionIterator<Controller::SourceController> {
+    pub fn handle_timer(&mut self) -> SystemActionIterator<Controller::ControllerMessage> {
         tracing::debug!("Timer expired");
         let update = self.controller.time_update();
         self.handle_algorithm_state_update(update)

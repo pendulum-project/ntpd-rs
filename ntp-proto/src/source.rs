@@ -15,6 +15,7 @@ use crate::{
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 use std::{
+    fmt::Debug,
     io::Cursor,
     net::{IpAddr, SocketAddr},
     time::Duration,
@@ -327,12 +328,12 @@ impl Default for ProtocolVersion {
     }
 }
 
-pub struct NtpSourceUpdate<Controller: SourceController> {
+pub struct NtpSourceUpdate<SourceMessage> {
     pub(crate) snapshot: NtpSourceSnapshot,
-    pub(crate) message: Option<Controller::SourceMessage>,
+    pub(crate) message: Option<SourceMessage>,
 }
 
-impl<Controller: SourceController> std::fmt::Debug for NtpSourceUpdate<Controller> {
+impl<SourceMessage: Debug> std::fmt::Debug for NtpSourceUpdate<SourceMessage> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NtpSourceUpdate")
             .field("snapshot", &self.snapshot)
@@ -341,7 +342,7 @@ impl<Controller: SourceController> std::fmt::Debug for NtpSourceUpdate<Controlle
     }
 }
 
-impl<Controller: SourceController> Clone for NtpSourceUpdate<Controller> {
+impl<SourceMessage: Clone> Clone for NtpSourceUpdate<SourceMessage> {
     fn clone(&self) -> Self {
         Self {
             snapshot: self.snapshot,
@@ -351,30 +352,22 @@ impl<Controller: SourceController> Clone for NtpSourceUpdate<Controller> {
 }
 
 #[cfg(feature = "__internal-test")]
-impl<Controller: SourceController> NtpSourceUpdate<Controller> {
+impl<SourceMessage> NtpSourceUpdate<SourceMessage> {
     pub fn snapshot(snapshot: NtpSourceSnapshot) -> Self {
         NtpSourceUpdate {
             snapshot,
             message: None,
         }
     }
-
-    // TODO: Cleanup
-    /*pub fn measurement(snapshot: NtpSourceSnapshot, measurement: Measurement) -> Self {
-        NtpSourceUpdate {
-            snapshot,
-            measurement: Some(measurement),
-        }
-    }*/
 }
 
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
-pub enum NtpSourceAction<Controller: SourceController> {
+pub enum NtpSourceAction<SourceMessage> {
     /// Send a message over the network. When this is issued, the network port maybe changed.
     Send(Vec<u8>),
     /// Send an update to [`System`](crate::system::System)
-    UpdateSystem(NtpSourceUpdate<Controller>),
+    UpdateSystem(NtpSourceUpdate<SourceMessage>),
     /// Call [`NtpSource::handle_timer`] after given duration
     SetTimer(Duration),
     /// A complete reset of the connection is necessary, including a potential new NTSKE client session and/or DNS lookup.
@@ -384,11 +377,11 @@ pub enum NtpSourceAction<Controller: SourceController> {
 }
 
 #[derive(Debug)]
-pub struct NtpSourceActionIterator<Controller: SourceController> {
-    iter: <Vec<NtpSourceAction<Controller>> as IntoIterator>::IntoIter,
+pub struct NtpSourceActionIterator<SourceMessage> {
+    iter: <Vec<NtpSourceAction<SourceMessage>> as IntoIterator>::IntoIter,
 }
 
-impl<Controller: SourceController> Default for NtpSourceActionIterator<Controller> {
+impl<SourceMessage> Default for NtpSourceActionIterator<SourceMessage> {
     fn default() -> Self {
         Self {
             iter: vec![].into_iter(),
@@ -396,16 +389,16 @@ impl<Controller: SourceController> Default for NtpSourceActionIterator<Controlle
     }
 }
 
-impl<Controller: SourceController> Iterator for NtpSourceActionIterator<Controller> {
-    type Item = NtpSourceAction<Controller>;
+impl<SourceMessage> Iterator for NtpSourceActionIterator<SourceMessage> {
+    type Item = NtpSourceAction<SourceMessage>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next()
     }
 }
 
-impl<Controller: SourceController> NtpSourceActionIterator<Controller> {
-    fn from(data: Vec<NtpSourceAction<Controller>>) -> Self {
+impl<SourceMessage> NtpSourceActionIterator<SourceMessage> {
+    fn from(data: Vec<NtpSourceAction<SourceMessage>>) -> Self {
         Self {
             iter: data.into_iter(),
         }
@@ -438,7 +431,7 @@ impl<Controller: SourceController> NtpSource<Controller> {
         source_defaults_config: SourceDefaultsConfig,
         protocol_version: ProtocolVersion,
         controller: Controller,
-    ) -> (Self, NtpSourceActionIterator<Controller>) {
+    ) -> (Self, NtpSourceActionIterator<Controller::SourceMessage>) {
         (
             Self {
                 nts: None,
@@ -477,7 +470,7 @@ impl<Controller: SourceController> NtpSource<Controller> {
         protocol_version: ProtocolVersion,
         controller: Controller,
         nts: Box<SourceNtsData>,
-    ) -> (Self, NtpSourceActionIterator<Controller>) {
+    ) -> (Self, NtpSourceActionIterator<Controller::SourceMessage>) {
         let (base, actions) = Self::new(
             source_addr,
             source_defaults_config,
@@ -511,7 +504,7 @@ impl<Controller: SourceController> NtpSource<Controller> {
     }
 
     #[cfg_attr(not(feature = "ntpv5"), allow(unused_mut))]
-    pub fn handle_timer(&mut self) -> NtpSourceActionIterator<Controller> {
+    pub fn handle_timer(&mut self) -> NtpSourceActionIterator<Controller::SourceMessage> {
         if !self.reach.is_reachable() && self.tries >= STARTUP_TRIES_THRESHOLD {
             return actions!(NtpSourceAction::Reset);
         }
@@ -596,8 +589,8 @@ impl<Controller: SourceController> NtpSource<Controller> {
     #[instrument(skip(self, update), fields(source = debug(self.source_id)))]
     pub fn handle_system_update(
         &mut self,
-        update: SystemSourceUpdate<Controller>,
-    ) -> NtpSourceActionIterator<Controller> {
+        update: SystemSourceUpdate<Controller::ControllerMessage>,
+    ) -> NtpSourceActionIterator<Controller::SourceMessage> {
         self.controller.handle_message(update.message);
         actions!()
     }
@@ -609,7 +602,7 @@ impl<Controller: SourceController> NtpSource<Controller> {
         local_clock_time: NtpInstant,
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
-    ) -> NtpSourceActionIterator<Controller> {
+    ) -> NtpSourceActionIterator<Controller::SourceMessage> {
         let message =
             match NtpPacket::deserialize(message, &self.nts.as_ref().map(|nts| nts.s2c.as_ref())) {
                 Ok((packet, _)) => packet,
@@ -711,7 +704,7 @@ impl<Controller: SourceController> NtpSource<Controller> {
         local_clock_time: NtpInstant,
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
-    ) -> NtpSourceActionIterator<Controller> {
+    ) -> NtpSourceActionIterator<Controller::SourceMessage> {
         trace!("Packet accepted for processing");
         // For reachability, mark that we have had a response
         self.reach.received_packet();
