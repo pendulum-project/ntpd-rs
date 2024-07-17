@@ -24,7 +24,7 @@ use std::{
 };
 
 use ntp_proto::{
-    KalmanClockController, KalmanSourceController, KeySet, NtpClock, ObservableSourceState,
+    KalmanClockController, KalmanControllerMessage, KeySet, NtpClock, ObservableSourceState,
     SourceDefaultsConfig, System, SystemActionIterator, SystemSnapshot, SystemSourceUpdate,
 };
 use timestamped_socket::interface::InterfaceName;
@@ -170,7 +170,7 @@ struct SystemTask<C: NtpClock, T: Wait> {
 
     system_snapshot_sender: tokio::sync::watch::Sender<SystemSnapshot>,
     system_update_sender:
-        tokio::sync::broadcast::Sender<SystemSourceUpdate<KalmanSourceController<SourceId>>>,
+        tokio::sync::broadcast::Sender<SystemSourceUpdate<KalmanControllerMessage>>,
     source_snapshots: Arc<std::sync::RwLock<HashMap<SourceId, ObservableSourceState<SourceId>>>>,
     server_data_sender: tokio::sync::watch::Sender<Vec<ServerData>>,
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
@@ -327,7 +327,7 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
 
     fn handle_state_update(
         &mut self,
-        actions: SystemActionIterator<KalmanSourceController<SourceId>>,
+        actions: SystemActionIterator<KalmanControllerMessage>,
         wait: &mut Pin<&mut SingleshotSleep<T>>,
     ) {
         // Don't care if there is no receiver.

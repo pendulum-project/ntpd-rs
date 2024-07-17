@@ -3,8 +3,9 @@ use std::{
 };
 
 use ntp_proto::{
-    KalmanSourceController, NtpClock, NtpInstant, NtpSource, NtpSourceActionIterator,
-    NtpSourceUpdate, NtpTimestamp, ObservableSourceState, SystemSourceUpdate,
+    KalmanControllerMessage, KalmanSourceController, KalmanSourceMessage, NtpClock, NtpInstant,
+    NtpSource, NtpSourceActionIterator, NtpSourceUpdate, NtpTimestamp, ObservableSourceState,
+    SystemSourceUpdate,
 };
 #[cfg(target_os = "linux")]
 use timestamped_socket::socket::open_interface_udp;
@@ -39,14 +40,14 @@ pub enum MsgForSystem {
     /// Source is unreachable, and should be restarted with new resolved addr.
     Unreachable(SourceId),
     /// Update from source
-    SourceUpdate(SourceId, NtpSourceUpdate<KalmanSourceController<SourceId>>),
+    SourceUpdate(SourceId, NtpSourceUpdate<KalmanSourceMessage<SourceId>>),
 }
 
 #[derive(Debug)]
 pub struct SourceChannels {
     pub msg_for_system_sender: tokio::sync::mpsc::Sender<MsgForSystem>,
     pub system_update_receiver:
-        tokio::sync::broadcast::Receiver<SystemSourceUpdate<KalmanSourceController<SourceId>>>,
+        tokio::sync::broadcast::Receiver<SystemSourceUpdate<KalmanControllerMessage>>,
     pub source_snapshots:
         Arc<std::sync::RwLock<HashMap<SourceId, ObservableSourceState<SourceId>>>>,
 }
@@ -119,7 +120,7 @@ where
                 Recv(Result<RecvResult<SocketAddr>, std::io::Error>),
                 SystemUpdate(
                     Result<
-                        SystemSourceUpdate<KalmanSourceController<SourceId>>,
+                        SystemSourceUpdate<KalmanControllerMessage>,
                         tokio::sync::broadcast::error::RecvError,
                     >,
                 ),
@@ -332,16 +333,10 @@ where
         timestamp_mode: TimestampMode,
         channels: SourceChannels,
         source: NtpSource<KalmanSourceController<SourceId>>,
-        initial_actions: NtpSourceActionIterator<KalmanSourceController<SourceId>>,
+        initial_actions: NtpSourceActionIterator<KalmanSourceMessage<SourceId>>,
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(
             (async move {
-                /*let (source, initial_actions) = if let Some(nts) = nts {
-                    NtpSource::new_nts(source_addr, config_snapshot, protocol_version, nts)
-                } else {
-                    NtpSource::new(source_addr, config_snapshot, protocol_version)
-                };*/
-
                 let poll_wait = tokio::time::sleep(std::time::Duration::default());
                 tokio::pin!(poll_wait);
 
@@ -582,7 +577,7 @@ mod tests {
         SourceTask<TestClock, T>,
         Socket<SocketAddr, Open>,
         mpsc::Receiver<MsgForSystem>,
-        broadcast::Sender<SystemSourceUpdate<KalmanSourceController<SourceId>>>,
+        broadcast::Sender<SystemSourceUpdate<KalmanControllerMessage>>,
     ) {
         // Note: Ports must be unique among tests to deal with parallelism, hence
         // port_base
