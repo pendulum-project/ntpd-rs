@@ -44,8 +44,8 @@ libc = "0.2.145"
 tokio = "1.32"
 toml = { version = ">=0.6.0,<0.9.0", default-features = false, features = ["parse"] }
 async-trait = "0.1.67"
-timestamped-socket = "0.2.1"
-clock-steering = "0.2.0"
+timestamped-socket = "0.2.2"
+clock-steering = "0.2.1"
 
 # TLS
 rustls = { version = "0.23.0", default-features = false, features = ["ring", "logging", "std", "tls12"] }
