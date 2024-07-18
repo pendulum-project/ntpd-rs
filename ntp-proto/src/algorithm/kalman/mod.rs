@@ -336,7 +336,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
     }
 }
 
-impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> TimeSyncController
+impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug + Send + 'static> TimeSyncController
     for KalmanClockController<C, SourceId>
 {
     type Clock = C;
