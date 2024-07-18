@@ -3,9 +3,8 @@ use crate::daemon::spawn::spawner_task;
 #[cfg(feature = "unstable_nts-pool")]
 use super::spawn::nts_pool::NtsPoolSpawner;
 use super::{
-    config::{
-        ClockConfig, DaemonSynchronizationConfig, NtpSourceConfig, ServerConfig, TimestampMode,
-    },
+    clock::NtpClockWrapper,
+    config::{ClockConfig, NtpSourceConfig, ServerConfig, TimestampMode},
     ntp_source::{MsgForSystem, SourceChannels, SourceTask, Wait},
     server::{ServerStats, ServerTask},
     spawn::{
@@ -24,8 +23,8 @@ use std::{
 };
 
 use ntp_proto::{
-    KalmanClockController, KalmanControllerMessage, KeySet, NtpClock, ObservableSourceState,
-    SourceDefaultsConfig, System, SystemActionIterator, SystemSnapshot, SystemSourceUpdate,
+    KeySet, NtpClock, ObservableSourceState, SourceDefaultsConfig, SynchronizationConfig, System,
+    SystemActionIterator, SystemSnapshot, SystemSourceUpdate, TimeSyncController,
 };
 use timestamped_socket::interface::InterfaceName;
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -86,8 +85,9 @@ pub struct DaemonChannels {
 }
 
 /// Spawn the NTP daemon
-pub async fn spawn(
-    synchronization_config: DaemonSynchronizationConfig,
+pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper, SourceId = SourceId>>(
+    synchronization_config: SynchronizationConfig,
+    algorithm_config: Controller::AlgorithmConfig,
     source_defaults_config: SourceDefaultsConfig,
     clock_config: ClockConfig,
     source_configs: &[NtpSourceConfig],
@@ -96,11 +96,12 @@ pub async fn spawn(
 ) -> std::io::Result<(JoinHandle<std::io::Result<()>>, DaemonChannels)> {
     let ip_list = super::local_ip_provider::spawn()?;
 
-    let (mut system, channels) = SystemTask::new(
+    let (mut system, channels) = SystemTask::<_, Controller, _>::new(
         clock_config.clock,
         clock_config.interface,
         clock_config.timestamp_mode,
         synchronization_config,
+        algorithm_config,
         source_defaults_config,
         keyset,
         ip_list,
@@ -164,20 +165,24 @@ struct SystemSpawnerData {
     notify_tx: mpsc::Sender<SystemEvent>,
 }
 
-struct SystemTask<C: NtpClock, T: Wait> {
+struct SystemTask<
+    C: NtpClock,
+    Controller: TimeSyncController<SourceId = SourceId, Clock = C>,
+    T: Wait,
+> {
     _wait: PhantomData<SingleshotSleep<T>>,
-    system: System<SourceId, KalmanClockController<C, SourceId>>,
+    system: System<SourceId, Controller>,
 
     system_snapshot_sender: tokio::sync::watch::Sender<SystemSnapshot>,
     system_update_sender:
-        tokio::sync::broadcast::Sender<SystemSourceUpdate<KalmanControllerMessage>>,
+        tokio::sync::broadcast::Sender<SystemSourceUpdate<Controller::ControllerMessage>>,
     source_snapshots: Arc<std::sync::RwLock<HashMap<SourceId, ObservableSourceState<SourceId>>>>,
     server_data_sender: tokio::sync::watch::Sender<Vec<ServerData>>,
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
     ip_list: tokio::sync::watch::Receiver<Arc<[IpAddr]>>,
 
-    msg_for_system_rx: mpsc::Receiver<MsgForSystem>,
-    msg_for_system_tx: mpsc::Sender<MsgForSystem>,
+    msg_for_system_rx: mpsc::Receiver<MsgForSystem<Controller::SourceMessage>>,
+    msg_for_system_tx: mpsc::Sender<MsgForSystem<Controller::SourceMessage>>,
     spawn_tx: mpsc::Sender<SpawnEvent>,
     spawn_rx: mpsc::Receiver<SpawnEvent>,
 
@@ -195,13 +200,19 @@ struct SystemTask<C: NtpClock, T: Wait> {
     interface: Option<InterfaceName>,
 }
 
-impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
+impl<
+        C: NtpClock + Sync,
+        Controller: TimeSyncController<Clock = C, SourceId = SourceId>,
+        T: Wait,
+    > SystemTask<C, Controller, T>
+{
     #[allow(clippy::too_many_arguments)]
     fn new(
         clock: C,
         interface: Option<InterfaceName>,
         timestamp_mode: TimestampMode,
-        synchronization_config: DaemonSynchronizationConfig,
+        synchronization_config: SynchronizationConfig,
+        algorithm_config: Controller::AlgorithmConfig,
         source_defaults_config: SourceDefaultsConfig,
         keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
         ip_list: tokio::sync::watch::Receiver<Arc<[IpAddr]>>,
@@ -209,9 +220,9 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
     ) -> (Self, DaemonChannels) {
         let Ok(mut system) = System::new(
             clock.clone(),
-            synchronization_config.synchronization_base,
+            synchronization_config,
             source_defaults_config,
-            synchronization_config.algorithm,
+            algorithm_config,
             ip_list.borrow().clone(),
         ) else {
             tracing::error!("Could not start system");
@@ -327,7 +338,7 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
 
     fn handle_state_update(
         &mut self,
-        actions: SystemActionIterator<KalmanControllerMessage>,
+        actions: SystemActionIterator<Controller::ControllerMessage>,
         wait: &mut Pin<&mut SingleshotSleep<T>>,
     ) {
         // Don't care if there is no receiver.
@@ -349,7 +360,7 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
 
     async fn handle_source_update(
         &mut self,
-        msg: MsgForSystem,
+        msg: MsgForSystem<Controller::SourceMessage>,
         wait: &mut Pin<&mut SingleshotSleep<T>>,
     ) -> std::io::Result<()> {
         tracing::debug!(?msg, "updating source");
