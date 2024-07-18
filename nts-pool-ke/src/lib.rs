@@ -12,7 +12,10 @@ use ntp_proto::{
     AeadAlgorithm, ClientToPoolData, KeyExchangeError, NtsRecord, PoolToServerData,
     PoolToServerDecoder, SupportedAlgorithmsDecoder,
 };
-use rustls::pki_types::{CertificateDer, ServerName};
+use rustls::{
+    pki_types::{CertificateDer, ServerName},
+    version::TLS13,
+};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, ToSocketAddrs},
@@ -179,7 +182,7 @@ async fn pool_key_exchange_server(
 ) -> std::io::Result<()> {
     let listener = TcpListener::bind(address).await?;
 
-    let mut config = rustls::ServerConfig::builder()
+    let mut config = rustls::ServerConfig::builder_with_protocol_versions(&[&TLS13])
         .with_no_client_auth()
         .with_single_cert(certificate_chain.clone(), private_key.clone_key())
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
@@ -459,7 +462,7 @@ fn pool_to_server_connector(
             .map_err(KeyExchangeError::Certificate)?;
     }
 
-    let config = rustls::ClientConfig::builder()
+    let config = rustls::ClientConfig::builder_with_protocol_versions(&[&TLS13])
         .with_root_certificates(roots)
         .with_client_auth_cert(certificate_chain, private_key)
         .unwrap();

@@ -12,7 +12,10 @@ use libc::{ECONNABORTED, EMFILE, ENFILE, ENOBUFS, ENOMEM};
 use ntp_proto::{
     KeyExchangeClient, KeyExchangeError, KeyExchangeResult, KeyExchangeServer, KeySet,
 };
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::{
+    pki_types::{CertificateDer, PrivateKeyDer},
+    version::TLS13,
+};
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
     net::TcpListener,
@@ -42,9 +45,11 @@ async fn build_client_config(
             .map_err(KeyExchangeError::Certificate)?;
     }
 
-    Ok(rustls::ClientConfig::builder()
-        .with_root_certificates(roots)
-        .with_no_client_auth())
+    Ok(
+        rustls::ClientConfig::builder_with_protocol_versions(&[&TLS13])
+            .with_root_certificates(roots)
+            .with_no_client_auth(),
+    )
 }
 
 pub(crate) async fn key_exchange_client(
@@ -149,7 +154,7 @@ fn build_server_config(
     certificate_chain: Vec<CertificateDer<'static>>,
     private_key: PrivateKeyDer<'static>,
 ) -> std::io::Result<Arc<rustls::ServerConfig>> {
-    let mut config = rustls::ServerConfig::builder()
+    let mut config = rustls::ServerConfig::builder_with_protocol_versions(&[&TLS13])
         .with_client_cert_verifier(Arc::new(
             #[cfg(not(feature = "unstable_nts-pool"))]
             rustls::server::NoClientAuth,
