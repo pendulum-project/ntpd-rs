@@ -1529,6 +1529,7 @@ pub struct KeyExchangeServer {
 #[derive(Debug)]
 enum State {
     Active { decoder: KeyExchangeServerDecoder },
+    PendingError { error: KeyExchangeError },
     Done,
 }
 
@@ -1564,7 +1565,7 @@ impl KeyExchangeServer {
         Ok(())
     }
 
-    fn send_error_record(mut tls_connection: rustls::ServerConnection, error: &KeyExchangeError) {
+    fn send_error_record(tls_connection: &mut rustls::ServerConnection, error: &KeyExchangeError) {
         let error_records = [
             NtsRecord::Error {
                 errorcode: error.to_error_code(),
@@ -1575,7 +1576,7 @@ impl KeyExchangeServer {
             NtsRecord::EndOfMessage,
         ];
 
-        if let Err(io) = Self::send_records(&mut tls_connection, &error_records) {
+        if let Err(io) = Self::send_records(tls_connection, &error_records) {
             tracing::debug!(key_exchange_error = ?error, io_error = ?io, "sending error record failed");
         }
     }
@@ -1589,64 +1590,65 @@ impl KeyExchangeServer {
         }
 
         let mut buf = [0; 512];
-        match self.tls_connection.reader().read(&mut buf) {
-            Ok(0) => {
-                // the connection was closed cleanly by the client
-                // see https://docs.rs/rustls/latest/rustls/struct.Reader.html#method.read
-                ControlFlow::Break(self.end_of_file())
-            }
-            Ok(n) => {
-                match self.state {
-                    State::Active { decoder } => match decoder.step_with_slice(&buf[..n]) {
-                        ControlFlow::Continue(decoder) => {
-                            // more bytes are needed
-                            self.state = State::Active { decoder };
-
-                            // recursively invoke the progress function. This is very unlikely!
-                            //
-                            // Normally, all records are written with a single write call, and
-                            // received as one unit. Using many write calls does not really make
-                            // sense for a client.
-                            //
-                            // So then, the other reason we could end up here is if the buffer is
-                            // full. But 512 bytes is a lot of space for this interaction, and
-                            // should be sufficient in most cases.
-                            ControlFlow::Continue(self)
-                        }
-                        ControlFlow::Break(Ok(data)) => {
-                            // all records have been decoded; send a response
-                            // continues for a clean shutdown of the connection by the client
-                            self.state = State::Done;
-                            self.decoder_done(data)
-                        }
-                        ControlFlow::Break(Err(error)) => {
-                            Self::send_error_record(self.tls_connection, &error);
-                            ControlFlow::Break(Err(error))
-                        }
-                    },
-                    State::Done => {
-                        // client is sending more bytes, but we don't expect any more
-                        // these extra bytes are ignored
-                        ControlFlow::Continue(self)
+        loop {
+            match self.tls_connection.reader().read(&mut buf) {
+                Ok(0) => {
+                    // the connection was closed cleanly by the client
+                    // see https://docs.rs/rustls/latest/rustls/struct.Reader.html#method.read
+                    if self.wants_write() {
+                        return ControlFlow::Continue(self);
+                    } else {
+                        return ControlFlow::Break(self.end_of_file());
                     }
                 }
+                Ok(n) => {
+                    match self.state {
+                        State::Active { decoder } => match decoder.step_with_slice(&buf[..n]) {
+                            ControlFlow::Continue(decoder) => {
+                                // more bytes are needed
+                                self.state = State::Active { decoder };
+                            }
+                            ControlFlow::Break(Ok(data)) => {
+                                // all records have been decoded; send a response
+                                // continues for a clean shutdown of the connection by the client
+                                self.state = State::Done;
+                                return self.decoder_done(data);
+                            }
+                            ControlFlow::Break(Err(error)) => {
+                                Self::send_error_record(&mut self.tls_connection, &error);
+                                self.state = State::PendingError { error };
+                                return ControlFlow::Continue(self);
+                            }
+                        },
+                        State::PendingError { .. } | State::Done => {
+                            // client is sending more bytes, but we don't expect any more
+                            // these extra bytes are ignored
+                            return ControlFlow::Continue(self);
+                        }
+                    }
+                }
+                Err(e) => match e.kind() {
+                    std::io::ErrorKind::WouldBlock => {
+                        // basically an await; give other tasks a chance
+                        return ControlFlow::Continue(self);
+                    }
+                    std::io::ErrorKind::UnexpectedEof => {
+                        // the connection was closed uncleanly by the client
+                        // see https://docs.rs/rustls/latest/rustls/struct.Reader.html#method.read
+                        if self.wants_write() {
+                            return ControlFlow::Continue(self);
+                        } else {
+                            return ControlFlow::Break(self.end_of_file());
+                        }
+                    }
+                    _ => {
+                        let error = KeyExchangeError::Io(e);
+                        Self::send_error_record(&mut self.tls_connection, &error);
+                        self.state = State::PendingError { error };
+                        return ControlFlow::Continue(self);
+                    }
+                },
             }
-            Err(e) => match e.kind() {
-                std::io::ErrorKind::WouldBlock => {
-                    // basically an await; give other tasks a chance
-                    ControlFlow::Continue(self)
-                }
-                std::io::ErrorKind::UnexpectedEof => {
-                    // the connection was closed uncleanly by the client
-                    // see https://docs.rs/rustls/latest/rustls/struct.Reader.html#method.read
-                    ControlFlow::Break(self.end_of_file())
-                }
-                _ => {
-                    let error = KeyExchangeError::Io(e);
-                    Self::send_error_record(self.tls_connection, &error);
-                    ControlFlow::Break(Err(error))
-                }
-            },
         }
     }
 
@@ -1655,6 +1657,10 @@ impl KeyExchangeServer {
             State::Active { .. } => {
                 // there are no more client bytes, but decoding was not finished yet
                 Err(KeyExchangeError::IncompleteResponse)
+            }
+            State::PendingError { error } => {
+                // We can now return the error
+                Err(error)
             }
             State::Done => {
                 // we're all done
@@ -1736,8 +1742,11 @@ impl KeyExchangeServer {
                 }
             }
             Err(key_extract_error) => {
-                Self::send_error_record(self.tls_connection, &key_extract_error);
-                ControlFlow::Break(Err(key_extract_error))
+                Self::send_error_record(&mut self.tls_connection, &key_extract_error);
+                self.state = State::PendingError {
+                    error: key_extract_error,
+                };
+                ControlFlow::Continue(self)
             }
         }
     }
