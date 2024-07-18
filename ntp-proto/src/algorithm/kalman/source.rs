@@ -704,7 +704,9 @@ impl<SourceId: Copy> KalmanSourceController<SourceId> {
     }
 }
 
-impl<SourceId: std::fmt::Debug + Copy> SourceController for KalmanSourceController<SourceId> {
+impl<SourceId: std::fmt::Debug + Copy + Send + 'static> SourceController
+    for KalmanSourceController<SourceId>
+{
     type ControllerMessage = KalmanControllerMessage;
     type SourceMessage = KalmanSourceMessage<SourceId>;
 
