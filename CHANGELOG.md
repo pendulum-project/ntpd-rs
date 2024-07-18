@@ -1,13 +1,15 @@
 # Changelog
 
-## [1.2.1] - 2024-07-18
+## [1.2.2] - 2024-07-18
 
 ### Changed
 - Updated dependencies
 
 ### Fixed
-- Fixed a bug in network change detection that prevented startup on FreeBSD
+- Fixed a bug in network change detection that prevented startup on FreeBSD.
 - Fixed a bug in leap second flag handling where previous flags weren't explicitly unset.
+- Fixed bugs that resulted in incorrect handling of large NTS-KE requests.
+- Fixed bugs that resulted in non-delivery of NTS-KE error records.
 
 ## [1.2.0] - 2024-07-11
 
@@ -224,7 +226,7 @@ process.
 - Fixed a bug in peer dispersion calculation which resulted in overly
   pessimistic dispersion estimates.
 
-[1.2.1]: https://github.com/pendulum-project/ntpd-rs/compare/v1.2.0...v1.2.1
+[1.2.2]: https://github.com/pendulum-project/ntpd-rs/compare/v1.2.0...v1.2.2
 [1.2.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.1.3...v1.2.0
 [1.1.3]: https://github.com/pendulum-project/ntpd-rs/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/pendulum-project/ntpd-rs/compare/v1.1.1...v1.1.2
