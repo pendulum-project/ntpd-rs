@@ -2,6 +2,7 @@
 
 mod ctl;
 mod daemon;
+mod force_sync;
 mod metrics;
 
 pub use ctl::main as ctl_main;
