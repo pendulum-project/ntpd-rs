@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.3] - 2024-07-22
+
+### Fixed
+- Metrics exporter should wait for an actual request before sending a response
+
 ## [1.2.2] - 2024-07-18
 
 ### Changed
@@ -226,6 +231,7 @@ process.
 - Fixed a bug in peer dispersion calculation which resulted in overly
   pessimistic dispersion estimates.
 
+[1.2.3]: https://github.com/pendulum-project/ntpd-rs/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/pendulum-project/ntpd-rs/compare/v1.2.0...v1.2.2
 [1.2.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.1.3...v1.2.0
 [1.1.3]: https://github.com/pendulum-project/ntpd-rs/compare/v1.1.2...v1.1.3
