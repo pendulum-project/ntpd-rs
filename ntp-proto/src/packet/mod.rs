@@ -431,7 +431,7 @@ impl<'a> NtpPacket<'a> {
     #[cfg(test)]
     pub fn serialize_without_encryption_vec(
         &self,
-        #[cfg_attr(not(feature = "nptv5"), allow(unused_variables))] desired_size: Option<usize>,
+        #[cfg_attr(not(feature = "ntpv5"), allow(unused_variables))] desired_size: Option<usize>,
     ) -> std::io::Result<Vec<u8>> {
         let mut buffer = vec![0u8; 1024];
         let mut cursor = Cursor::new(buffer.as_mut_slice());
