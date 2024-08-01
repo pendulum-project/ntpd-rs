@@ -2,6 +2,7 @@
 /// invariants:
 ///   - Each cookie is yielded at most once
 ///   - The oldest cookie is always yielded first
+///
 /// Note that as a consequence, this type is not Clone!
 #[derive(Default, PartialEq, Eq)]
 pub(crate) struct CookieStash {

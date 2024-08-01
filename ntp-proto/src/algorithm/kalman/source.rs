@@ -34,6 +34,7 @@
 ///  - the time of the measurement t_m
 ///  - the measured offset d
 ///  - the measured transmission delay r
+///
 /// On these, we assume that
 ///  - there is no impact from frequency differences on r
 ///  - individual measurements are independent
