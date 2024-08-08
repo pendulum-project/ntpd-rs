@@ -62,11 +62,11 @@ mod exports {
         ServerResponse, ServerStatHandler, SubnetParseError,
     };
     #[cfg(feature = "__internal-test")]
-    pub use super::source::{source_snapshot, Measurement};
+    pub use super::source::source_snapshot;
     pub use super::source::{
-        AcceptSynchronizationError, NtpSource, NtpSourceAction, NtpSourceActionIterator,
-        NtpSourceSnapshot, NtpSourceUpdate, ObservableSourceState, ProtocolVersion, Reach,
-        SourceNtsData,
+        AcceptSynchronizationError, Measurement, NtpSource, NtpSourceAction,
+        NtpSourceActionIterator, NtpSourceSnapshot, NtpSourceUpdate, ObservableSourceState,
+        ProtocolVersion, Reach, SourceNtsData,
     };
     pub use super::system::{
         System, SystemAction, SystemActionIterator, SystemSnapshot, SystemSourceUpdate,

@@ -1,11 +1,15 @@
 use std::{path::PathBuf, process::ExitCode};
 
-use crate::daemon::{config::CliArg, tracing::LogLevel, Config, ObservableState};
+use crate::{
+    daemon::{config::CliArg, tracing::LogLevel, Config, ObservableState},
+    force_sync,
+};
 use tracing_subscriber::util::SubscriberInitExt;
 
 const USAGE_MSG: &str = "\
 usage: ntp-ctl validate [-c PATH]
        ntp-ctl status [-f FORMAT] [-c PATH]
+       ntp-ctl force-sync [-c PATH]
        ntp-ctl -h | ntp-ctl -v";
 
 const DESCRIPTOR: &str = "ntp-ctl - ntp-daemon monitoring";
@@ -34,6 +38,7 @@ pub enum NtpCtlAction {
     Version,
     Validate,
     Status,
+    ForceSync,
 }
 
 #[derive(Debug, Default)]
@@ -44,6 +49,7 @@ pub(crate) struct NtpCtlOptions {
     version: bool,
     validate: bool,
     status: bool,
+    force_sync: bool,
     action: NtpCtlAction,
 }
 
@@ -104,6 +110,9 @@ impl NtpCtlOptions {
                             "status" => {
                                 options.status = true;
                             }
+                            "force-sync" => {
+                                options.force_sync = true;
+                            }
                             unknown => {
                                 eprintln!("Warning: Unknown command {unknown}");
                             }
@@ -129,6 +138,8 @@ impl NtpCtlOptions {
             self.action = NtpCtlAction::Validate;
         } else if self.status {
             self.action = NtpCtlAction::Status;
+        } else if self.force_sync {
+            self.action = NtpCtlAction::ForceSync;
         } else {
             self.action = NtpCtlAction::Help;
         }
@@ -172,6 +183,7 @@ pub async fn main() -> std::io::Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         NtpCtlAction::Validate => validate(options.config).await,
+        NtpCtlAction::ForceSync => force_sync::force_sync(options.config).await,
         NtpCtlAction::Status => {
             let config = Config::from_args(options.config, vec![], vec![]).await;
 
