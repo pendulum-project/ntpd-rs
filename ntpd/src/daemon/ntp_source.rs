@@ -3,9 +3,8 @@ use std::{
 };
 
 use ntp_proto::{
-    KalmanControllerMessage, KalmanSourceController, KalmanSourceMessage, NtpClock, NtpInstant,
-    NtpSource, NtpSourceActionIterator, NtpSourceUpdate, NtpTimestamp, ObservableSourceState,
-    SystemSourceUpdate,
+    NtpClock, NtpInstant, NtpSource, NtpSourceActionIterator, NtpSourceUpdate, NtpTimestamp,
+    ObservableSourceState, SourceController, SystemSourceUpdate,
 };
 #[cfg(target_os = "linux")]
 use timestamped_socket::socket::open_interface_udp;
@@ -32,7 +31,7 @@ impl Wait for Sleep {
 
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
-pub enum MsgForSystem {
+pub enum MsgForSystem<SourceMessage> {
     /// Received a Kiss-o'-Death and must demobilize
     MustDemobilize(SourceId),
     /// Experienced a network issue and must be restarted
@@ -40,19 +39,19 @@ pub enum MsgForSystem {
     /// Source is unreachable, and should be restarted with new resolved addr.
     Unreachable(SourceId),
     /// Update from source
-    SourceUpdate(SourceId, NtpSourceUpdate<KalmanSourceMessage<SourceId>>),
+    SourceUpdate(SourceId, NtpSourceUpdate<SourceMessage>),
 }
 
 #[derive(Debug)]
-pub struct SourceChannels {
-    pub msg_for_system_sender: tokio::sync::mpsc::Sender<MsgForSystem>,
+pub struct SourceChannels<ControllerMessage, SourceMessage> {
+    pub msg_for_system_sender: tokio::sync::mpsc::Sender<MsgForSystem<SourceMessage>>,
     pub system_update_receiver:
-        tokio::sync::broadcast::Receiver<SystemSourceUpdate<KalmanControllerMessage>>,
+        tokio::sync::broadcast::Receiver<SystemSourceUpdate<ControllerMessage>>,
     pub source_snapshots:
         Arc<std::sync::RwLock<HashMap<SourceId, ObservableSourceState<SourceId>>>>,
 }
 
-pub(crate) struct SourceTask<C: 'static + NtpClock + Send, T: Wait> {
+pub(crate) struct SourceTask<C: 'static + NtpClock + Send, Controller: SourceController, T: Wait> {
     _wait: PhantomData<T>,
     index: SourceId,
     clock: C,
@@ -61,9 +60,9 @@ pub(crate) struct SourceTask<C: 'static + NtpClock + Send, T: Wait> {
     name: String,
     source_addr: SocketAddr,
     socket: Option<Socket<SocketAddr, Connected>>,
-    channels: SourceChannels,
+    channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
 
-    source: NtpSource<KalmanSourceController<SourceId>>,
+    source: NtpSource<Controller>,
 
     // we don't store the real origin timestamp in the packet, because that would leak our
     // system time to the network (and could make attacks easier). So instead there is some
@@ -79,7 +78,7 @@ enum SocketResult {
     Abort,
 }
 
-impl<C, T> SourceTask<C, T>
+impl<C, Controller: SourceController, T> SourceTask<C, Controller, T>
 where
     C: 'static + NtpClock + Send + Sync,
     T: Wait,
@@ -115,18 +114,18 @@ where
             let mut buf = [0_u8; 1024];
 
             #[allow(clippy::large_enum_variant)]
-            enum SelectResult {
+            enum SelectResult<Controller: SourceController> {
                 Timer,
                 Recv(Result<RecvResult<SocketAddr>, std::io::Error>),
                 SystemUpdate(
                     Result<
-                        SystemSourceUpdate<KalmanControllerMessage>,
+                        SystemSourceUpdate<Controller::ControllerMessage>,
                         tokio::sync::broadcast::error::RecvError,
                     >,
                 ),
             }
 
-            let selected = tokio::select! {
+            let selected: SelectResult<Controller> = tokio::select! {
                 () = &mut poll_wait => {
                     SelectResult::Timer
                 },
@@ -318,12 +317,12 @@ where
     }
 }
 
-impl<C> SourceTask<C, Sleep>
+impl<C, Controller: SourceController> SourceTask<C, Controller, Sleep>
 where
     C: 'static + NtpClock + Send + Sync,
 {
     #[allow(clippy::too_many_arguments)]
-    #[instrument(skip(clock, channels))]
+    #[instrument(skip(clock, channels, source))]
     pub fn spawn(
         index: SourceId,
         name: String,
@@ -331,9 +330,9 @@ where
         interface: Option<InterfaceName>,
         clock: C,
         timestamp_mode: TimestampMode,
-        channels: SourceChannels,
-        source: NtpSource<KalmanSourceController<SourceId>>,
-        initial_actions: NtpSourceActionIterator<KalmanSourceMessage<SourceId>>,
+        channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
+        source: NtpSource<Controller>,
+        initial_actions: NtpSourceActionIterator<Controller::SourceMessage>,
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(
             (async move {
@@ -444,8 +443,9 @@ mod tests {
     };
 
     use ntp_proto::{
-        AlgorithmConfig, KalmanClockController, NoCipher, NtpDuration, NtpLeapIndicator, NtpPacket,
-        ProtocolVersion, SourceDefaultsConfig, SynchronizationConfig, SystemSnapshot, TimeSnapshot,
+        AlgorithmConfig, KalmanClockController, KalmanControllerMessage, KalmanSourceController,
+        KalmanSourceMessage, NoCipher, NtpDuration, NtpLeapIndicator, NtpPacket, ProtocolVersion,
+        SourceDefaultsConfig, SynchronizationConfig, SystemSnapshot, TimeSnapshot,
     };
     use timestamped_socket::socket::{open_ip, GeneralTimestampMode, Open};
     use tokio::sync::{broadcast, mpsc};
@@ -574,9 +574,9 @@ mod tests {
     async fn test_startup<T: Wait>(
         port_base: u16,
     ) -> (
-        SourceTask<TestClock, T>,
+        SourceTask<TestClock, KalmanSourceController<SourceId>, T>,
         Socket<SocketAddr, Open>,
-        mpsc::Receiver<MsgForSystem>,
+        mpsc::Receiver<MsgForSystem<KalmanSourceMessage<SourceId>>>,
         broadcast::Sender<SystemSourceUpdate<KalmanControllerMessage>>,
     ) {
         // Note: Ports must be unique among tests to deal with parallelism, hence

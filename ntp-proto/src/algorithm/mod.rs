@@ -49,12 +49,12 @@ impl<SourceId, ControllerMessage> Default for StateUpdate<SourceId, ControllerMe
     }
 }
 
-pub trait TimeSyncController: Sized {
+pub trait TimeSyncController: Sized + Send + 'static {
     type Clock: NtpClock;
     type SourceId;
-    type AlgorithmConfig: Debug + Copy + DeserializeOwned;
-    type ControllerMessage: Debug + Clone;
-    type SourceMessage: Debug + Clone;
+    type AlgorithmConfig: Debug + Copy + DeserializeOwned + Send;
+    type ControllerMessage: Debug + Clone + Send + 'static;
+    type SourceMessage: Debug + Clone + Send + 'static;
     type SourceController: SourceController<
         ControllerMessage = Self::ControllerMessage,
         SourceMessage = Self::SourceMessage,
@@ -90,9 +90,9 @@ pub trait TimeSyncController: Sized {
     fn time_update(&mut self) -> StateUpdate<Self::SourceId, Self::ControllerMessage>;
 }
 
-pub trait SourceController: Sized {
-    type ControllerMessage: Debug + Clone;
-    type SourceMessage: Debug + Clone;
+pub trait SourceController: Sized + Send + 'static {
+    type ControllerMessage: Debug + Clone + Send + 'static;
+    type SourceMessage: Debug + Clone + Send + 'static;
 
     fn handle_message(&mut self, message: Self::ControllerMessage);
 
