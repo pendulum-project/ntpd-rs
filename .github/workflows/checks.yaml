@@ -6,7 +6,6 @@ permissions:
 on:
   push:
     branches:
-      - main
       - 'release/**'
   pull_request:
     branches-ignore:
@@ -14,8 +13,7 @@ on:
   schedule:
     - cron: '0 4 * * *'
   merge_group:
-    branches:
-      - main
+    types: [checks_requested]
   workflow_call: {}
 
 jobs:
