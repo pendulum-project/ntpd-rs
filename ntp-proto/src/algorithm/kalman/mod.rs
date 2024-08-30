@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt::Debug, hash::Hash, time::Duration};
 
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::{
     clock::NtpClock,
@@ -204,7 +204,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 ..next_update
             }
         } else {
-            info!("No consensus cluster found");
+            info!("No consensus on current time");
             StateUpdate {
                 time_snapshot: Some(self.timedata),
                 ..StateUpdate::default()
@@ -277,7 +277,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 .slew_maximum_frequency_offset
                 .min(change.abs() / self.algo_config.slew_minimum_duration);
             let duration = Duration::from_secs_f64(change.abs() / freq);
-            info!(
+            debug!(
                 "Slewing by {}ms over {}s",
                 change * 1e3,
                 duration.as_secs_f64(),
@@ -319,7 +319,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                         .process_frequency_steering(freq_update, actual_change, state.wander)
             }
         }
-        info!(
+        debug!(
             "Changed frequency, current steer {}ppm, desired freq {}ppm",
             self.freq_offset * 1e6,
             self.desired_freq * 1e6,

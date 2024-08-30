@@ -20,7 +20,7 @@ use std::{
     net::{IpAddr, SocketAddr},
     time::Duration,
 };
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, trace, warn};
 
 const MAX_STRATUM: u8 = 16;
 const POLL_WINDOW: std::time::Duration = std::time::Duration::from_secs(5);
@@ -208,7 +208,7 @@ impl NtpSourceSnapshot {
         use AcceptSynchronizationError::*;
 
         if self.stratum >= local_stratum {
-            info!(
+            debug!(
                 source_stratum = self.stratum,
                 own_stratum = local_stratum,
                 "Source rejected due to invalid stratum. The stratum of a source must be lower than the own stratum",
@@ -226,14 +226,14 @@ impl NtpSourceSnapshot {
                 .iter()
                 .any(|ip| ReferenceId::from_ip(*ip) == self.source_id)
         {
-            info!("Source rejected because of detected synchronization loop (ref id)");
+            debug!("Source rejected because of detected synchronization loop (ref id)");
             return Err(Loop);
         }
 
         #[cfg(feature = "ntpv5")]
         match self.bloom_filter {
             Some(filter) if filter.contains_id(&system.server_id) => {
-                info!("Source rejected because of detected synchronization loop (bloom filter)");
+                debug!("Source rejected because of detected synchronization loop (bloom filter)");
                 return Err(Loop);
             }
             _ => {}
@@ -241,7 +241,7 @@ impl NtpSourceSnapshot {
 
         // An unreachable error occurs if the server is unreachable.
         if !self.reach.is_reachable() {
-            info!("Source is unreachable");
+            debug!("Source is unreachable");
             return Err(ServerUnreachable);
         }
 
@@ -636,10 +636,10 @@ impl<Controller: SourceController> NtpSource<Controller> {
             if let ProtocolVersion::V4UpgradingToV5 { tries_left } = self.protocol_version {
                 let tries_left = tries_left.saturating_sub(1);
                 if message.is_upgrade() {
-                    info!("Received a valid upgrade response, switching to NTPv5!");
+                    debug!("Received a valid upgrade response, switching to NTPv5!");
                     self.protocol_version = ProtocolVersion::V5;
                 } else if tries_left == 0 {
-                    info!("Server does not support NTPv5, stopping the upgrade process");
+                    debug!("Server does not support NTPv5, stopping the upgrade process");
                     self.protocol_version = ProtocolVersion::V4;
                 } else {
                     debug!(tries_left, "Server did not yet respond with upgrade code");
@@ -750,7 +750,7 @@ impl<Controller: SourceController> NtpSource<Controller> {
                     .bloom_filter
                     .handle_response(header.client_cookie, ref_id);
                 if let Err(err) = result {
-                    info!(?err, "Invalid ReferenceIdResponse from source, ignoring...")
+                    warn!(?err, "Invalid ReferenceIdResponse from source, ignoring...")
                 }
             }
         }

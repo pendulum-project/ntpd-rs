@@ -73,7 +73,7 @@
 /// If they are often too small, v is quartered, and if they are often too
 /// large, v is quadrupled (note, this corresponds with doubling/halving
 /// the more intuitive standard deviation).
-use tracing::{debug, info, trace};
+use tracing::{debug, trace};
 
 use crate::{
     algorithm::{KalmanControllerMessage, KalmanSourceMessage, SourceController},
@@ -383,13 +383,13 @@ impl SourceFilter {
                 .desired_poll_interval
                 .inc(source_defaults_config.poll_interval_limits);
             self.poll_score = 0;
-            info!(interval = ?self.desired_poll_interval, "Increased poll interval");
+            debug!(interval = ?self.desired_poll_interval, "Increased poll interval");
         } else if self.poll_score >= algo_config.poll_interval_hysteresis {
             self.desired_poll_interval = self
                 .desired_poll_interval
                 .dec(source_defaults_config.poll_interval_limits);
             self.poll_score = 0;
-            info!(interval = ?self.desired_poll_interval, "Decreased poll interval");
+            debug!(interval = ?self.desired_poll_interval, "Decreased poll interval");
         }
     }
 

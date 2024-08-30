@@ -1002,7 +1002,7 @@ impl KeyExchangeResultDecoder {
             }
             #[cfg(feature = "ntpv5")]
             DraftId { .. } => {
-                tracing::warn!("Unexpected draft id");
+                tracing::debug!("Unexpected draft id");
                 Continue(state)
             }
             NewCookie { cookie_data } => {

@@ -236,9 +236,9 @@ where
     let opt_interface_name: Option<InterfaceName> = Deserialize::deserialize(deserializer)?;
 
     if let Some(interface_name) = opt_interface_name {
-        tracing::info!("using custom interface {}", interface_name);
+        tracing::debug!("using custom interface {}", interface_name);
     } else {
-        tracing::info!("using default interface");
+        tracing::trace!("using default interface");
     }
 
     Ok(opt_interface_name)
@@ -390,7 +390,7 @@ impl Config {
             info!("using config file at default location `{:?}`", global_path);
             match Config::from_file(global_path).await {
                 Err(ConfigError::Io(e)) if e.kind() == ErrorKind::PermissionDenied => {
-                    info!("permission denied on global config file! using default config ...");
+                    warn!("permission denied on global config file! using default config ...");
                 }
                 other => {
                     return other;
