@@ -6,10 +6,11 @@ use std::{
 
 use ntp_proto::{KeySet, KeySetProvider};
 use tokio::sync::watch;
-use tracing::warn;
+use tracing::{instrument, warn, Span};
 
 use super::config::KeysetConfig;
 
+#[instrument(level = tracing::Level::ERROR, name = "KeySet Provider", skip_all, fields(path = debug(config.key_storage_path.clone())))]
 pub async fn spawn(config: KeysetConfig) -> watch::Receiver<Arc<KeySet>> {
     let (mut provider, mut next_interval) = match &config.key_storage_path {
         Some(path) => {
@@ -55,33 +56,37 @@ pub async fn spawn(config: KeysetConfig) -> watch::Receiver<Arc<KeySet>> {
         ),
     };
     let (tx, rx) = watch::channel(provider.get());
-    tokio::task::spawn_blocking(move || loop {
-        // First save, then sleep. Ensures new sets created at boot are also saved.
-        if let Some(path) = &config.key_storage_path {
-            if let Err(e) = (|| -> std::io::Result<()> {
-                let mut output = OpenOptions::new()
-                    .create(true)
-                    .truncate(true)
-                    .write(true)
-                    .mode(0o600)
-                    .open(path)?;
-                provider.store(&mut output)
-            })() {
-                if e.kind() == std::io::ErrorKind::NotFound
-                    || e.kind() == std::io::ErrorKind::PermissionDenied
-                {
-                    warn!(error = ?e, "Could not store nts server keys, parent directory does not exist or has insufficient permissions");
-                } else {
-                    warn!(error = ?e, "Could not store nts server keys");
+    let span = Span::current();
+    tokio::task::spawn_blocking(move || {
+        let _enter = span.enter();
+        loop {
+            // First save, then sleep. Ensures new sets created at boot are also saved.
+            if let Some(path) = &config.key_storage_path {
+                if let Err(e) = (|| -> std::io::Result<()> {
+                    let mut output = OpenOptions::new()
+                        .create(true)
+                        .truncate(true)
+                        .write(true)
+                        .mode(0o600)
+                        .open(path)?;
+                    provider.store(&mut output)
+                })() {
+                    if e.kind() == std::io::ErrorKind::NotFound
+                        || e.kind() == std::io::ErrorKind::PermissionDenied
+                    {
+                        warn!(error = ?e, "Could not store nts server keys, parent directory does not exist or has insufficient permissions");
+                    } else {
+                        warn!(error = ?e, "Could not store nts server keys");
+                    }
                 }
             }
+            if tx.send(provider.get()).is_err() {
+                break;
+            }
+            std::thread::sleep(next_interval);
+            next_interval = std::time::Duration::from_secs(config.key_rotation_interval as _);
+            provider.rotate();
         }
-        if tx.send(provider.get()).is_err() {
-            break;
-        }
-        std::thread::sleep(next_interval);
-        next_interval = std::time::Duration::from_secs(config.key_rotation_interval as _);
-        provider.rotate();
     });
     rx
 }

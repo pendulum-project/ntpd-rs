@@ -121,8 +121,7 @@ async fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
         channels.source_snapshots,
         channels.server_data_receiver,
         channels.system_snapshot_receiver,
-    )
-    .await;
+    );
 
     Ok(main_loop_handle.await??)
 }

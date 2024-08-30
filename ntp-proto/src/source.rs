@@ -20,7 +20,7 @@ use std::{
     net::{IpAddr, SocketAddr},
     time::Duration,
 };
-use tracing::{debug, info, instrument, trace, warn};
+use tracing::{debug, info, trace, warn};
 
 const MAX_STRATUM: u8 = 16;
 const POLL_WINDOW: std::time::Duration = std::time::Duration::from_secs(5);
@@ -425,7 +425,6 @@ pub struct ObservableSourceState<SourceId> {
 }
 
 impl<Controller: SourceController> NtpSource<Controller> {
-    #[instrument(skip(controller))]
     pub(crate) fn new(
         source_addr: SocketAddr,
         source_defaults_config: SourceDefaultsConfig,
@@ -462,11 +461,9 @@ impl<Controller: SourceController> NtpSource<Controller> {
         )
     }
 
-    #[instrument(skip(controller))]
     pub(crate) fn new_nts(
         source_addr: SocketAddr,
         source_defaults_config: SourceDefaultsConfig,
-        system_snapshot: SystemSnapshot,
         protocol_version: ProtocolVersion,
         controller: Controller,
         nts: Box<SourceNtsData>,
@@ -586,7 +583,6 @@ impl<Controller: SourceController> NtpSource<Controller> {
         )
     }
 
-    #[instrument(skip(self, update), fields(source = debug(self.source_id)))]
     pub fn handle_system_update(
         &mut self,
         update: SystemSourceUpdate<Controller::ControllerMessage>,
@@ -595,7 +591,6 @@ impl<Controller: SourceController> NtpSource<Controller> {
         actions!()
     }
 
-    #[instrument(skip(self), fields(source = debug(self.source_id)))]
     pub fn handle_incoming(
         &mut self,
         message: &[u8],

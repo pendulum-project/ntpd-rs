@@ -286,7 +286,6 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         Ok(NtpSource::new_nts(
             source_addr,
             self.source_defaults_config,
-            self.system,
             protocol_version,
             controller,
             nts,
