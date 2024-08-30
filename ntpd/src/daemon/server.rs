@@ -12,7 +12,7 @@ use ntp_proto::{
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use timestamped_socket::socket::{open_ip, RecvResult};
 use tokio::task::JoinHandle;
-use tracing::{debug, instrument, warn};
+use tracing::{debug, instrument, warn, Instrument, Span};
 
 use super::{config::ServerConfig, util::convert_net_timestamp};
 
@@ -110,6 +110,7 @@ pub struct ServerTask<C: 'static + NtpClock + Send> {
 }
 
 impl<C: 'static + NtpClock + Send> ServerTask<C> {
+    #[instrument(level = tracing::Level::ERROR, name = "Ntp Server", skip_all, fields(address = debug(config.listen)))]
     pub fn spawn(
         config: ServerConfig,
         stats: ServerStats,
@@ -118,30 +119,30 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         clock: C,
         network_wait_period: Duration,
     ) -> JoinHandle<()> {
-        tokio::spawn(async move {
-            let server = Server::new(
-                config.clone().into(),
-                clock,
-                *system_receiver.borrow_and_update(),
-                keyset.borrow_and_update().clone(),
-            );
+        tokio::spawn(
+            (async move {
+                let server = Server::new(
+                    config.clone().into(),
+                    clock,
+                    *system_receiver.borrow_and_update(),
+                    keyset.borrow_and_update().clone(),
+                );
 
-            let mut process = ServerTask {
-                config,
-                network_wait_period,
-                system_receiver,
-                keyset,
-                server,
-                stats,
-            };
+                let mut process = ServerTask {
+                    config,
+                    network_wait_period,
+                    system_receiver,
+                    keyset,
+                    server,
+                    stats,
+                };
 
-            process.serve().await;
-        })
+                process.serve().await;
+            })
+            .instrument(Span::current()),
+        )
     }
 
-    #[instrument(level = "debug", skip(self), fields(
-        addr = debug(self.config.listen),
-    ))]
     async fn serve(&mut self) {
         let mut cur_socket = None;
         loop {

@@ -9,7 +9,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 use std::{net::SocketAddr, time::Instant};
 use tokio::task::JoinHandle;
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, error, instrument, trace, warn, Instrument, Span};
 
 use serde::{Deserialize, Serialize};
 
@@ -64,21 +64,25 @@ impl From<&ServerData> for ObservableServerState {
     }
 }
 
-pub async fn spawn(
+#[instrument(level = tracing::Level::ERROR, skip_all, name = "Observer", fields(path = debug(config.observation_path.clone())))]
+pub fn spawn(
     config: &super::config::ObservabilityConfig,
     sources_reader: Arc<std::sync::RwLock<HashMap<SourceId, ObservableSourceState<SourceId>>>>,
     server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
     system_reader: tokio::sync::watch::Receiver<SystemSnapshot>,
 ) -> JoinHandle<std::io::Result<()>> {
     let config = config.clone();
-    tokio::spawn(async move {
-        let result = observer(config, sources_reader, server_reader, system_reader).await;
-        if let Err(ref e) = result {
-            warn!("Abnormal termination of the state observer: {e}");
-            warn!("The state observer will not be available");
-        }
-        result
-    })
+    tokio::spawn(
+        (async move {
+            let result = observer(config, sources_reader, server_reader, system_reader).await;
+            if let Err(ref e) = result {
+                warn!("Abnormal termination of the state observer: {e}");
+                warn!("The state observer will not be available");
+            }
+            result
+        })
+        .instrument(Span::current()),
+    )
 }
 
 async fn observer(

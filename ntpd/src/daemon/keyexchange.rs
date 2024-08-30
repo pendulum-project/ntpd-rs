@@ -21,7 +21,7 @@ use tokio::{
     net::TcpListener,
     task::JoinHandle,
 };
-use tracing::{debug, error};
+use tracing::{debug, error, instrument, Instrument, Span};
 
 use super::config::NtsKeConfig;
 use super::exitcode;
@@ -76,21 +76,25 @@ pub(crate) async fn key_exchange_client_with_denied_servers(
     BoundKeyExchangeClient::new(socket, server_name, config, denied_servers)?.await
 }
 
+#[instrument(level = tracing::Level::ERROR, name = "Nts Server", skip_all, fields(address = debug(nts_ke_config.listen)))]
 pub fn spawn(
     nts_ke_config: NtsKeConfig,
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
 ) -> JoinHandle<std::io::Result<()>> {
-    tokio::spawn(async move {
-        let result = run_nts_ke(nts_ke_config, keyset).await;
+    tokio::spawn(
+        (async move {
+            let result = run_nts_ke(nts_ke_config, keyset).await;
 
-        match result {
-            Ok(v) => Ok(v),
-            Err(e) => {
-                tracing::error!("Abnormal termination of NTS KE server: {e}");
-                std::process::exit(exitcode::SOFTWARE)
+            match result {
+                Ok(v) => Ok(v),
+                Err(e) => {
+                    tracing::error!("Abnormal termination of NTS KE server: {e}");
+                    std::process::exit(exitcode::SOFTWARE)
+                }
             }
-        }
-    })
+        })
+        .instrument(Span::current()),
+    )
 }
 
 fn io_error(msg: &str) -> std::io::Error {

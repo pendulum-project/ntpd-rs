@@ -322,7 +322,7 @@ where
     C: 'static + NtpClock + Send + Sync,
 {
     #[allow(clippy::too_many_arguments)]
-    #[instrument(skip(clock, channels, source))]
+    #[instrument(level = tracing::Level::ERROR, name = "Ntp Source", skip(timestamp_mode, clock, channels, source, initial_actions))]
     pub fn spawn(
         index: SourceId,
         name: String,
