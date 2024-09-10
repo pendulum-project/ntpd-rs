@@ -244,13 +244,18 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
             for source in &output.sources {
                 println!(
                     concat!(
-                        "{}/{} ({}): {:+.6}±{:.6}(±{:.6})s\n",
+                        "{}/{} ({}, {}): {:+.6}±{:.6}(±{:.6})s\n",
                         "    poll interval: {:.0}s, missing polls: {}\n",
                         "    root dispersion: {:.6}s, root delay:{:.6}s"
                     ),
                     source.name,
                     source.address,
                     source.id,
+                    if source.nts_enabled {
+                        "NTS-enabled"
+                    } else {
+                        "no NTS"
+                    },
                     source.timedata.offset.to_seconds(),
                     source.timedata.uncertainty.to_seconds(),
                     source.timedata.delay.to_seconds(),
