@@ -116,7 +116,7 @@ filter = [
 action = "deny"
 ```
 
-The allow and deny list configuration is optional in ntpd-rs. By default, a server accepts traffic from anywhere. When configuring both allow and deny lists, ntpd-rs will first check if a remote is on the deny list. Only if this is not the case will the allow list be considered. This ordering needs to be taken into account when translating interleaved combinations of chrony's `allow` and `deny` commands.
+The allow and deny list configurations are both optional in ntpd-rs. By default, a server accepts traffic from anywhere. When configuring both allow and deny lists, ntpd-rs will first check if a remote is on the deny list. Only if this is not the case will the allow list be considered. This ordering needs to be taken into account when translating interleaved combinations of chrony's `allow` and `deny` commands.
 
 NTS can be enabled for a server by configuring an NTS key exchange server:
 ```toml

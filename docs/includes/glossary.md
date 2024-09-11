@@ -7,3 +7,4 @@
 *[CA]: Certificate Authority
 *[OS]: Operating System
 *[DNS]: Domain Name System
+*[CIDR]: Classless Inter-Domain Routing
