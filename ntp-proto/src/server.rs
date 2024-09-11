@@ -39,7 +39,7 @@ pub enum ServerResponse {
     NTSNak,
     /// Sent a deny response to client
     Deny,
-    /// Only for a concious choice to not respond, error conditions are separate
+    /// Only for a conscious choice to not respond, error conditions are separate
     Ignore,
     /// Accepted packet and provided time to requestor
     ProvideTime,
@@ -289,13 +289,13 @@ impl<C: NtpClock> Server<C> {
 ///
 /// For this use case we want fast
 ///
-/// - lookups: for each incomming IP we must check when it last checked in
-/// - inserts: for each incomming IP we store that its most recent checkin is now
+/// - lookups: for each incoming IP we must check when it last checked in
+/// - inserts: for each incoming IP we store that its most recent check-in is now
 ///
-/// Hence, this data structure is a vector, and we use a simple hash function to turn the incomming
+/// Hence, this data structure is a vector, and we use a simple hash function to turn the incoming
 /// address into an index. Lookups and inserts are therefore O(1).
 ///
-/// The likelyhood of hash collisions can be controlled by changing the size of the cache. Hash collisions
+/// The likelihood of hash collisions can be controlled by changing the size of the cache. Hash collisions
 /// will happen, so this cache should not be relied on if perfect alerting is deemed critical.
 #[derive(Debug)]
 struct TimestampedCache<T> {
@@ -479,7 +479,7 @@ mod tests {
         }
     }
 
-    fn serialize_packet_unencryped(send_packet: &NtpPacket) -> Vec<u8> {
+    fn serialize_packet_unencrypted(send_packet: &NtpPacket) -> Vec<u8> {
         let mut buf = vec![0; 1024];
         let mut cursor = Cursor::new(buf.as_mut_slice());
         send_packet.serialize(&mut cursor, &NoCipher, None).unwrap();
@@ -527,7 +527,7 @@ mod tests {
         );
 
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let serialized = serialize_packet_unencryped(&packet);
+        let serialized = serialize_packet_unencrypted(&packet);
 
         let mut buf = [0; 48];
         let response = server.handle(
@@ -635,7 +635,7 @@ mod tests {
         );
 
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let serialized = serialize_packet_unencryped(&packet);
+        let serialized = serialize_packet_unencrypted(&packet);
 
         let mut buf = [0; 48];
         let response = server.handle(
@@ -743,7 +743,7 @@ mod tests {
         );
 
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let serialized = serialize_packet_unencryped(&packet);
+        let serialized = serialize_packet_unencrypted(&packet);
 
         let mut buf = [0; 48];
         let response = server.handle(
@@ -918,7 +918,7 @@ mod tests {
         );
 
         let (packet, _) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let mut serialized = serialize_packet_unencryped(&packet);
+        let mut serialized = serialize_packet_unencrypted(&packet);
 
         let mut buf = [0; 1];
         let response = server.handle(
@@ -1190,7 +1190,7 @@ mod tests {
         );
 
         let (packet, _) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let serialized = serialize_packet_unencryped(&packet);
+        let serialized = serialize_packet_unencrypted(&packet);
 
         let mut buf = [0; 1024];
         let response = server.handle(
@@ -1239,7 +1239,7 @@ mod tests {
         server.update_config(config.clone());
 
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let serialized = serialize_packet_unencryped(&packet);
+        let serialized = serialize_packet_unencrypted(&packet);
         let response = server.handle(
             "127.0.0.1".parse().unwrap(),
             NtpTimestamp::from_fixed_int(100),
@@ -1289,7 +1289,7 @@ mod tests {
         );
 
         let (packet, id) = NtpPacket::poll_message_v5(PollIntervalLimits::default().min);
-        let serialized = serialize_packet_unencryped(&packet);
+        let serialized = serialize_packet_unencrypted(&packet);
 
         let mut buf = [0; 1024];
         let response = server.handle(

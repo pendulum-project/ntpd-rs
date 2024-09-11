@@ -194,7 +194,7 @@ We model the following assets:
         <td>Create - N/A</td>
         <td bgcolor="red">Read - Never</td>
         <td>Create - N/A</td>
-        <td bgcolor="orange">Read - Someitmes</td>
+        <td bgcolor="orange">Read - Sometimes</td>
         <td bgcolor="orange">Create - Sometimes</td>
         <td bgcolor="orange">Read - Sometimes</td>
         <td bgcolor="red">Create - Never</td>

@@ -35,9 +35,9 @@ pub struct StateUpdate<SourceId, ControllerMessage> {
     pub next_update: Option<Duration>,
 }
 
-// Note: this default implementation is neccessary since the
+// Note: this default implementation is necessary since the
 // derive only works if SourceId is Default (which it isn't
-// neccessarily)
+// necessarily)
 impl<SourceId, ControllerMessage> Default for StateUpdate<SourceId, ControllerMessage> {
     fn default() -> Self {
         Self {
@@ -60,7 +60,7 @@ pub trait TimeSyncController: Sized + Send + 'static {
         SourceMessage = Self::SourceMessage,
     >;
 
-    /// Create a new clock controller controling the given clock
+    /// Create a new clock controller controlling the given clock
     fn new(
         clock: Self::Clock,
         synchronization_config: SynchronizationConfig,

@@ -603,7 +603,7 @@ impl<'a> ExtensionFieldData<'a> {
             };
 
             // the authenticated extension fields are always followed by the encrypted extension
-            // field. We don't (currently) encode a MAC, so the minimum size per RFC 7822 is 16 octecs
+            // field. We don't (currently) encode a MAC, so the minimum size per RFC 7822 is 16 octets
             let minimum_size = 16;
 
             for field in &self.authenticated {
@@ -1059,7 +1059,7 @@ mod tests {
         let ef = ExtensionField::decode(raw, ExtensionHeaderVersion::V4).unwrap();
 
         let ExtensionField::DraftIdentification(ref parsed) = ef else {
-            panic!("Unexpected extensionfield {ef:?}... expected DraftIdentification");
+            panic!("Unexpected extension field {ef:?}... expected DraftIdentification");
         };
 
         assert_eq!(parsed, test_id);
@@ -1134,7 +1134,7 @@ mod tests {
             .unwrap();
         assert_eq!(w.len(), expected_size);
 
-        // NOTE: encryped fields do not have a minimum_size
+        // NOTE: encrypted fields do not have a minimum_size
     }
 
     #[test]
@@ -1286,7 +1286,7 @@ mod tests {
     }
 
     #[test]
-    fn serialize_untrused_fields() {
+    fn serialize_untrusted_fields() {
         let cookie = ExtensionField::NtsCookie(Cow::Borrowed(&[0; 16]));
 
         let data = ExtensionFieldData {
@@ -1312,7 +1312,7 @@ mod tests {
     }
 
     #[test]
-    fn serialize_untrused_fields_smaller_than_minimum() {
+    fn serialize_untrusted_fields_smaller_than_minimum() {
         let cookie = ExtensionField::NtsCookie(Cow::Borrowed(&[0; 4]));
 
         let data = ExtensionFieldData {
@@ -1400,7 +1400,7 @@ mod tests {
         let n = cursor.position() as usize;
         let slice = &w.as_slice()[..n];
 
-        // now use a differnt (valid) cipher for deserialization
+        // now use a different (valid) cipher for deserialization
         let c2s = [0; 32];
         let cipher = AesSivCmac256::new(c2s.into());
 

@@ -13,7 +13,7 @@ Many of the measures against missteering increase the risk of unavailability and
 
 For instance, the risk of missteering is large if your system deals with public key cryptography. The security of the current web certificate system hinges on having a rough (<1day) consensus on what time it is. Similarly, the security and functioning of your applications may also be affected. A tradeoff that limits the risk of missteering is probably the correct choice.
 
-On the other hand, a lack of synchronization can cause issues in a distributed system. Such systems require a small upper bound on the time difference between the machines they run on. When time synchronization fails the clocks can quickly drift outside of these bounds and the system may fail. Furthermore it may be most important that the machines are synchronized with each other, not necesarilly that they use the true time. Configuring ntpd-rs for maximum availability seems the best approach for this scenario.
+On the other hand, a lack of synchronization can cause issues in a distributed system. Such systems require a small upper bound on the time difference between the machines they run on. When time synchronization fails the clocks can quickly drift outside of these bounds and the system may fail. Furthermore it may be most important that the machines are synchronized with each other, not necessarily that they use the true time. Configuring ntpd-rs for maximum availability seems the best approach for this scenario.
 
 Since there is no universally best solution to this tradeoff, you as the end user will have to consider which of these factors weighs more heavily, and adjust your configuration accordingly.
 

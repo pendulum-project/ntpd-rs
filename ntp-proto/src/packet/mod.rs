@@ -767,7 +767,7 @@ impl<'a> NtpPacket<'a> {
                         .into_iter()
                         .filter(|ef| matches!(ef, ExtensionField::UniqueIdentifier(_)))
                         .collect(),
-                    // Ignore encrypted so as not to accidentaly leak anything
+                    // Ignore encrypted so as not to accidentally leak anything
                     untrusted: vec![],
                 },
                 mac: None,
@@ -841,7 +841,7 @@ impl<'a> NtpPacket<'a> {
                 efdata: ExtensionFieldData {
                     authenticated: vec![],
                     encrypted: vec![],
-                    // Ignore encrypted so as not to accidentaly leak anything
+                    // Ignore encrypted so as not to accidentally leak anything
                     untrusted: packet_from_client
                         .efdata
                         .untrusted
@@ -858,7 +858,7 @@ impl<'a> NtpPacket<'a> {
                 efdata: ExtensionFieldData {
                     authenticated: vec![],
                     encrypted: vec![],
-                    // Ignore encrypted so as not to accidentaly leak anything
+                    // Ignore encrypted so as not to accidentally leak anything
                     untrusted: packet_from_client
                         .efdata
                         .untrusted
@@ -925,7 +925,7 @@ impl<'a> NtpPacket<'a> {
                 efdata: ExtensionFieldData {
                     authenticated: vec![],
                     encrypted: vec![],
-                    // Ignore encrypted so as not to accidentaly leak anything
+                    // Ignore encrypted so as not to accidentally leak anything
                     untrusted: packet_from_client
                         .efdata
                         .untrusted
@@ -942,7 +942,7 @@ impl<'a> NtpPacket<'a> {
                 efdata: ExtensionFieldData {
                     authenticated: vec![],
                     encrypted: vec![],
-                    // Ignore encrypted so as not to accidentaly leak anything
+                    // Ignore encrypted so as not to accidentally leak anything
                     untrusted: packet_from_client
                         .efdata
                         .untrusted

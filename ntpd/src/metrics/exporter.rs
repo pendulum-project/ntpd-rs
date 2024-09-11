@@ -256,13 +256,13 @@ async fn handle_connection(
         Err(e) => {
             tracing::warn!("hit an error: {e}");
 
-            const ERROR_REPONSE: &str = concat!(
+            const ERROR_RESPONSE: &str = concat!(
                 "HTTP/1.1 500 Internal Server Error\r\n",
                 "content-type: text/plain\r\n",
                 "content-length: 0\r\n\r\n",
             );
 
-            stream.write_all(ERROR_REPONSE.as_bytes()).await?;
+            stream.write_all(ERROR_RESPONSE.as_bytes()).await?;
         }
     }
     Ok(())

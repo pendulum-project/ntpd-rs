@@ -80,7 +80,7 @@ impl CliArg {
                     // split combined shorthand options
                     for (n, char) in short_arg.trim_start_matches('-').chars().enumerate() {
                         let flag = format!("-{char}");
-                        // convert option argument to seperate segment
+                        // convert option argument to separate segment
                         if takes_argument_short.contains(&char) {
                             let rest = short_arg[(n + 2)..].trim().to_string();
                             // assignment syntax is not accepted for shorthand arguments

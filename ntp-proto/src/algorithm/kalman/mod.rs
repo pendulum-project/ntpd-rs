@@ -195,7 +195,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 self.timedata.leap_indicator = leap;
             }
 
-            // After a succesfull measurement we are out of startup.
+            // After a successful measurement we are out of startup.
             self.in_startup = false;
 
             StateUpdate {

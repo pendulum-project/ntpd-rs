@@ -75,7 +75,7 @@ The current version of ntpd-rs does not yet support local reference clocks, but 
 The minimum number of sources needed for time synchronization in ntpd-rs is configured through `minimum-agreeing-sources`:
 ```toml
 [synchronization]
-mininum-agreeing-sources = <minsources>
+minimum-agreeing-sources = <minsources>
 ```
 Note that although the effect of this option is the same as chrony's `minsources`, the default in ntpd-rs is 3, rather than the default 1 source required by chrony. Although 3 is recommended for security, it may not be appropriate for all configurations, particularly configurations where few remote sources are configured.
 

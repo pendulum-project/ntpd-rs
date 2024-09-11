@@ -4,7 +4,7 @@
 
     Setting up your own CA is not recommended except for development purposes
     and setting up internal-only networks. For all other purposes, we would
-    recommend to use a widely trusted CA for issueing certificates. See the
+    recommend to use a widely trusted CA for issuing certificates. See the
     [NTS guide](../guide/nts.md) for more information.
 
 Setting up NTS-KE when your server has no public domain name is still possible
@@ -92,7 +92,7 @@ openssl x509 -req -in ntpd-rs.test.csr -CA ca.pem -CAkey ca.key -CAcreateserial 
 The above command gives the certificate a period validity of 5 years. If a
 different lifetime is desired, change the number following the `-days` argument
 to the number of days the certificate should be valid. The generated certificate
-should be concattenated together with the CA certificate, as ntpd-rs needs the
+should be concatenated together with the CA certificate, as ntpd-rs needs the
 full certificate chain in order to operate. We can use a simple command to do
 this:
 

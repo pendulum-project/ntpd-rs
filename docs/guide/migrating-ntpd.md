@@ -55,7 +55,7 @@ The current version of ntpd-rs does not yet support local reference clocks, but 
 The minimum number of time sources needed for time synchronization in ntpd-rs is configured through `minimum-agreeing-sources`:
 ```toml
 [synchronization]
-mininum-agreeing-sources = <minsources>
+minimum-agreeing-sources = <minsources>
 ```
 If fewer agreeing source are available, no synchronization is performed and the clock will drift. This option is a combination of ntpd's `minclock` and `minsane`. Its default value is 3, the recommended value from a security perspective. In ntpd, a default of 3 is used for `minclock` and 1 for `minsane`.
 

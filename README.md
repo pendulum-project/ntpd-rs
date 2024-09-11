@@ -54,7 +54,7 @@ ntpd-rs.pool.ntp.org:123/162.159.200.123:123 (4): +0.000111±0.000076(±0.004066
 
 Servers:
 ```
-The top part shows the overal quality of the time synchronization, and the time sources section shows which servers are used as well as offsets and uncertainties of those individual servers.
+The top part shows the overall quality of the time synchronization, and the time sources section shows which servers are used as well as offsets and uncertainties of those individual servers.
 
 For more details on how to install and use ntpd-rs, see our [documentation website].
 
