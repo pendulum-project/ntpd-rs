@@ -51,7 +51,7 @@
 /// 1   0
 /// 0 t_m-t_p
 ///
-/// To estimate the measurement noise, the variance s of the tranmission
+/// To estimate the measurement noise, the variance s of the transmission
 /// delays r is used. Writing r as r1 - r2, where r1 is the time
 /// difference on the client-to-server leg and r2 the time difference on
 /// the server to client leg, we have Var(D) = Var(1/2 (r1 + r2)) = 1/4
@@ -111,7 +111,7 @@ impl KalmanState {
             return *self;
         }
 
-        // Time step paremeters
+        // Time step parameters
         let delta_t = (time - self.time).to_seconds();
         let update = Matrix::new([[1.0, delta_t], [0.0, 1.0]]);
         let process_noise = Matrix::new([
@@ -438,7 +438,7 @@ impl SourceFilter {
             return false;
         }
 
-        // This was a valid measurement, so no matter what this represents our current itertation time
+        // This was a valid measurement, so no matter what this represents our current iteration time
         // for the purposes of synchronizing
         self.last_iter = measurement.localtime;
 
@@ -519,7 +519,7 @@ impl SourceState {
         }))
     }
 
-    // Returs whether the clock may need adjusting.
+    // Returns whether the clock may need adjusting.
     pub fn update_self_using_measurement(
         &mut self,
         source_defaults_config: &SourceDefaultsConfig,

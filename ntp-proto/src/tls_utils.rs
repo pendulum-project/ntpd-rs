@@ -1,5 +1,5 @@
 /// The intent of this ClientCertVerifier is that it accepts any connections that are either
-/// a.) not presenting a client certificicate
+/// a.) not presenting a client certificate
 /// b.) are presenting a well-formed, but otherwise not checked (against a trust root) client certificate
 ///
 /// This is because RusTLS apparently doesn't accept every kind of self-signed certificate.

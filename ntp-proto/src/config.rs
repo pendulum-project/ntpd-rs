@@ -236,7 +236,7 @@ pub struct SynchronizationConfig {
 
     /// The maximum amount the system clock is allowed to change in a single go
     /// before we conclude something is seriously wrong. This is used to limit
-    /// the changes to the clock to reasonable ammounts, and stop issues with
+    /// the changes to the clock to reasonable amounts, and stop issues with
     /// remote servers from causing us to drift too far.
     ///
     /// Note that this is not used during startup. To limit system clock changes

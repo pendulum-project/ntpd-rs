@@ -60,7 +60,7 @@ impl SupportedAlgorithmsDecoder {
     }
 }
 
-/// Pool KE decoding records fron the client
+/// Pool KE decoding records from the client
 #[derive(Debug, Default)]
 pub struct ClientToPoolDecoder {
     decoder: NtsRecordDecoder,

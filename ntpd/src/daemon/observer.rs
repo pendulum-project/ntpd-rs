@@ -328,7 +328,7 @@ mod tests {
         let mut reader = UnixStream::connect(path).await.unwrap();
 
         // We do a small partial read of the data to test that whatever
-        // happens, the observer doesnt keep a lock alive on either of
+        // happens, the observer doesn't keep a lock alive on either of
         // of the RwLocks.
         let mut buf = [0_u8; 12];
         let mut bufref: &mut [u8] = &mut buf;

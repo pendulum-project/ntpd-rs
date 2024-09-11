@@ -655,7 +655,7 @@ mod tests {
         handle.abort();
     }
 
-    fn serialize_packet_unencryped(send_packet: &NtpPacket) -> [u8; 48] {
+    fn serialize_packet_unencrypted(send_packet: &NtpPacket) -> [u8; 48] {
         let mut buf = [0; 48];
         let mut cursor = Cursor::new(buf.as_mut_slice());
         send_packet.serialize(&mut cursor, &NoCipher, None).unwrap();
@@ -706,7 +706,7 @@ mod tests {
             &clock,
         );
 
-        let serialized = serialize_packet_unencryped(&send_packet);
+        let serialized = serialize_packet_unencrypted(&send_packet);
         socket.send_to(&serialized, remote_addr).await.unwrap();
 
         let msg = msg_recv.recv().await.unwrap();
@@ -741,7 +741,7 @@ mod tests {
 
         let rec_packet = NtpPacket::deserialize(&buf, &NoCipher).unwrap().0;
         let send_packet = NtpPacket::deny_response(rec_packet);
-        let serialized = serialize_packet_unencryped(&send_packet);
+        let serialized = serialize_packet_unencrypted(&send_packet);
 
         // Flush earlier messages
         while msg_recv.try_recv().is_ok() {}

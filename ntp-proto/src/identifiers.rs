@@ -91,7 +91,7 @@ mod tests {
         let b = ReferenceId::from_bytes(rep);
         assert_eq!(a, b);
 
-        // TODO: Generate and add a testcase for ipv6 adresses once
+        // TODO: Generate and add a testcase for ipv6 addresses once
         // we have access to an ipv6 network.
     }
 }

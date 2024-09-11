@@ -102,7 +102,7 @@ impl NtpTimestamp {
         // Around an era change, self can be near the maximum value
         // for NtpTimestamp and other near the minimum, and that must
         // be interpreted as self being before other (which it is due
-        // to wrapping in substraction of NtpTimestamp)
+        // to wrapping in subtraction of NtpTimestamp)
         self - other < NtpDuration::ZERO
     }
 
@@ -152,7 +152,7 @@ impl Sub for NtpTimestamp {
 
     fn sub(self, rhs: Self) -> Self::Output {
         // In order to properly deal with ntp era changes, timestamps
-        // need to roll over. Doing a wrapping substract to a signed
+        // need to roll over. Doing a wrapping subtract to a signed
         // integer type always gives us the result as if the eras of
         // the timestamps were chosen to minimize the norm of the
         // difference, which is the desired behaviour
@@ -297,7 +297,7 @@ impl NtpDuration {
 
     /// Get the number of seconds (first return value) and nanoseconds
     /// (second return value) representing the length of this duration.
-    /// The number of nanoseconds is guaranteed to be positiv and less
+    /// The number of nanoseconds is guaranteed to be positive and less
     /// than 10^9
     pub const fn as_seconds_nanos(self) -> (i32, u32) {
         (
@@ -384,7 +384,7 @@ impl Add for NtpDuration {
 
     fn add(self, rhs: Self) -> Self::Output {
         // For duration, saturation is safer as that ensures
-        // addition or substraction of two big durations never
+        // addition or subtraction of two big durations never
         // unintentionally cancel, ensuring that filtering
         // can properly reject on the result.
         NtpDuration {
@@ -396,7 +396,7 @@ impl Add for NtpDuration {
 impl AddAssign for NtpDuration {
     fn add_assign(&mut self, rhs: Self) {
         // For duration, saturation is safer as that ensures
-        // addition or substraction of two big durations never
+        // addition or subtraction of two big durations never
         // unintentionally cancel, ensuring that filtering
         // can properly reject on the result.
         self.duration = self.duration.saturating_add(rhs.duration);
@@ -408,7 +408,7 @@ impl Sub for NtpDuration {
 
     fn sub(self, rhs: Self) -> Self::Output {
         // For duration, saturation is safer as that ensures
-        // addition or substraction of two big durations never
+        // addition or subtraction of two big durations never
         // unintentionally cancel, ensuring that filtering
         // can properly reject on the result.
         NtpDuration {
@@ -420,7 +420,7 @@ impl Sub for NtpDuration {
 impl SubAssign for NtpDuration {
     fn sub_assign(&mut self, rhs: Self) {
         // For duration, saturation is safer as that ensures
-        // addition or substraction of two big durations never
+        // addition or subtraction of two big durations never
         // unintentionally cancel, ensuring that filtering
         // can properly reject on the result.
         self.duration = self.duration.saturating_sub(rhs.duration);
@@ -444,7 +444,7 @@ macro_rules! ntp_duration_scalar_mul {
 
             fn mul(self, rhs: NtpDuration) -> NtpDuration {
                 // For duration, saturation is safer as that ensures
-                // addition or substraction of two big durations never
+                // addition or subtraction of two big durations never
                 // unintentionally cancel, ensuring that filtering
                 // can properly reject on the result.
                 NtpDuration {
@@ -458,7 +458,7 @@ macro_rules! ntp_duration_scalar_mul {
 
             fn mul(self, rhs: $scalar_type) -> NtpDuration {
                 // For duration, saturation is safer as that ensures
-                // addition or substraction of two big durations never
+                // addition or subtraction of two big durations never
                 // unintentionally cancel, ensuring that filtering
                 // can properly reject on the result.
                 NtpDuration {
@@ -470,7 +470,7 @@ macro_rules! ntp_duration_scalar_mul {
         impl MulAssign<$scalar_type> for NtpDuration {
             fn mul_assign(&mut self, rhs: $scalar_type) {
                 // For duration, saturation is safer as that ensures
-                // addition or substraction of two big durations never
+                // addition or subtraction of two big durations never
                 // unintentionally cancel, ensuring that filtering
                 // can properly reject on the result.
                 self.duration = self.duration.saturating_mul(rhs as i64);

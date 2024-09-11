@@ -2236,7 +2236,7 @@ mod test {
             cookie_data: EXAMPLE_COOKIE_DATA.to_vec(),
         };
 
-        // this fails. In theory it's allright if the protocol ID is not 0,
+        // this fails. In theory it's alright if the protocol ID is not 0,
         // but we do not support any. (we assume ntpv5 has the same behavior as ntpv4 here)
         let records = [
             cookie.clone(),

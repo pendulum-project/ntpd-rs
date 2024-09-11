@@ -226,7 +226,7 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
     format_metric(
         w,
         "ntp_source_unanswered_polls",
-        "Number of polls since the last succesful poll with a maximum of eight",
+        "Number of polls since the last successful poll with a maximum of eight",
         MetricType::Gauge,
         None,
         collect_sources!(state, |p| p.unanswered_polls),

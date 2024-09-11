@@ -56,7 +56,7 @@ pub struct AlgorithmConfig {
 
     /// Maximum source uncertainty before we start disregarding it
     /// Note that this is combined uncertainty due to noise and
-    /// possible assymetry error (see also weights below). (seconds)
+    /// possible asymmetry error (see also weights below). (seconds)
     #[serde(default = "default_maximum_source_uncertainty")]
     pub maximum_source_uncertainty: f64,
     /// Weight of statistical uncertainty when constructing

@@ -165,7 +165,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                         }
                     };
 
-                    // system and keysetmay now be wildly out of date, ensure they are always updated.
+                    // system and keyset may now be wildly out of date, ensure they are always updated.
                     self.server
                         .update_system(*self.system_receiver.borrow_and_update());
                     self.server
@@ -280,7 +280,7 @@ mod tests {
         }
     }
 
-    fn serialize_packet_unencryped(send_packet: &NtpPacket) -> Vec<u8> {
+    fn serialize_packet_unencrypted(send_packet: &NtpPacket) -> Vec<u8> {
         let mut buf = vec![0; MAX_PACKET_SIZE];
         let mut cursor = Cursor::new(buf.as_mut_slice());
         send_packet.serialize(&mut cursor, &NoCipher, None).unwrap();
@@ -317,7 +317,7 @@ mod tests {
         let mut socket = socket.connect("127.0.0.1:9000".parse().unwrap()).unwrap();
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
 
-        let serialized = serialize_packet_unencryped(&packet);
+        let serialized = serialize_packet_unencrypted(&packet);
         socket.send(&serialized).await.unwrap();
 
         let mut buf = [0; 48];

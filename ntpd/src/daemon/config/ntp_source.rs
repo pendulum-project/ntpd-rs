@@ -103,7 +103,7 @@ pub struct NormalizedAddress {
     pub(crate) server_name: String,
     pub(crate) port: u16,
 
-    /// Used to inject socket addrs into the DNS lookup result
+    /// Used to inject socket address into the DNS lookup result
     #[cfg(test)]
     hardcoded_dns_resolve: HardcodedDnsResolve,
 }

@@ -34,7 +34,7 @@ impl Default for SpawnerId {
 }
 
 /// Unique identifier for a source.
-/// This soiurce id makes sure that even if the network address is the same
+/// This source id makes sure that even if the network address is the same
 /// that we always know which specific spawned source we are talking about.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Serialize, Deserialize)]
 pub struct SourceId(u64);
@@ -164,10 +164,10 @@ pub trait Spawner {
     async fn handle_source_removed(&mut self, event: SourceRemovedEvent)
         -> Result<(), Self::Error>;
 
-    /// Event handler for when a source is succesfully registered in the system
+    /// Event handler for when a source is successfully registered in the system
     ///
     /// Every time the spawner sends a source to the system this handler will
-    /// eventually be called when the system has sucessfully registered the source
+    /// eventually be called when the system has successfully registered the source
     /// and will start polling it for ntp packets.
     ///
     /// This should just do bookkeeping, any adding of sources should be done

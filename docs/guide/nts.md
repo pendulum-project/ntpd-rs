@@ -64,7 +64,7 @@ once to ensure that a third party cannot track its connection, and it receives a
 new cookie with each server response.
 
 These cookies are an opaque bag of bytes for the client, and the server can put
-in them whatever it finds usefull for identifying the proper keys for that
+in them whatever it finds useful for identifying the proper keys for that
 particular client. Cookies do however have to be unique, a cookie cannot be
 reused once a message with it was sent. If the client ever runs out of cookies
 (a cookie is lost whenever an NTP message or the response to that message got
@@ -100,7 +100,7 @@ Once the NTS-KE server is setup the NTP server you have setup in your
 configuration will automatically start responding to valid NTS messages, there
 is no additional setup required.
 
-Getting a certificate for your server can be a quite involved proces. We would
+Getting a certificate for your server can be a quite involved process. We would
 recommend you use a [Let's Encrypt][1] ACME client for setting up a TLS
 certificate (similarly to how you would set this up for a webserver). Below you
 will find some examples using some popular clients.
@@ -160,7 +160,7 @@ guide. Please read the [certbot documentation][3] for more details.
 
 Certbot automatically sets up a task that renews these certificates, because
 Let's Encrypt certificates are valid for only 90 days. The `--deploy-hook`
-argument tells cerbot to restart the ntpd-rs daemon whenever a new certificate
+argument tells certbot to restart the ntpd-rs daemon whenever a new certificate
 is issued, because ntpd-rs does not automatically reload the certificate files.
 
 We can now update our configuration with the paths of the generated certificate

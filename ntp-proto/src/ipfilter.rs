@@ -59,7 +59,7 @@ impl BitTree {
             // To calculate the child index we need to know how many symbols smaller
             // than our symbol are not decided here. We do this by generating the bitmap
             // of symbols neither in in or out, then masking out all symbols >=cur
-            // and finaly counting how many are left.
+            // and finally counting how many are left.
             let next_idx =
                 node.child_offset + (!(node.inset | node.outset) & (cur - 1)).count_ones();
             node = &self.nodes[next_idx as usize];
@@ -108,7 +108,7 @@ impl BitTree {
             match segment.first().copied() {
                 // Probably empty, unless covered earlier, but we fix that later
                 None => node.outset |= 1 << i,
-                // Definetly covered, mark all that is needed
+                // Definitely covered, mark all that is needed
                 // Note that due to sorting order, len here
                 // is guaranteed to be largest amongst all
                 // parts of the segment
