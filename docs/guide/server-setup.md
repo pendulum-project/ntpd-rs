@@ -20,7 +20,7 @@ address = "<your server ip>:123"
 ```
 
 ## Limiting access
-If you only want specific ip addresses to be able to access the server, you can
+If you only want specific IP addresses to be able to access the server, you can
 configure a list of allowed clients through the allowlist mechanism. For this,
 edit the server configuration to look like:
 ```toml
@@ -30,9 +30,35 @@ listen = "0.0.0.0:123"
 filter = ["<allowed ipv4 1>/32", "<allowed ipv4 2>/32", "<allowed ipv6 1>/128"]
 action = "ignore"
 ```
-When configured this way, your server will only respond to the listed ip
-addresses. You can allow entire subnets at a time by specifying the size of the
-subnet instead of 32 or 128 after the slash.
+When configured this way, your server will only respond to the listed IP
+addresses. The IP addresses are written in CIDR notation, which means you can
+allow entire subnets at a time by specifying the size of the subnet instead of
+the 32 or 128 after the slash. For example, `192.168.1.1/24` will allow any IP
+address of the form `192.168.1.*`.
+
+If you want to block certain IP addresses from accessing the server, you can
+configure a list of blocked clients as follows:
+```toml
+[[server]]
+listen = "0.0.0.0:123"
+[server.denylist]
+filter = ["<blocked ipv4 1>/32", "<blocked ipv4 2>/32", "<blocked ipv6 1>/128"]
+action = "deny"
+```
+The deny list uses the same CIDR notion as the allow list, and can also be used
+to block subnets. Connections from IP addresses contained in the deny list will
+always be blocked, even if they also happen to be in the allow list.
+
+The allow and deny list configurations are both optional in ntpd-rs. By
+default, if a server is configured it will accept traffic from anywhere. When
+configuring both allow and deny lists, ntpd-rs will first check if a remote is
+on the deny list. Only if this is not the case will the allow list be
+considered.
+
+The `allowlist.action` and `denylist.action` properties can have two values:
+
+- `ignore` silently ignores the request
+- `deny` sends a deny kiss-o'-death packet
 
 ## Adding your server to the NTP pool
 

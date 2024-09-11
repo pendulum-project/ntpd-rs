@@ -96,7 +96,7 @@ filter = [
 action = "deny"
 ```
 
-The allow and deny list configuration is optional in ntpd-rs. By default, if a server is configured it will accept traffic from anywhere. When configuring both allow and deny lists, ntpd-rs will first check if a remote is on the deny list. Only if this is not the case will the allow list be considered.
+The allow and deny list configurations are both optional in ntpd-rs. By default, if a server is configured it will accept traffic from anywhere. When configuring both allow and deny lists, ntpd-rs will first check if a remote is on the deny list. Only if this is not the case will the allow list be considered.
 
 The `allowlist.action` and `denylist.action` properties can have two values:
 
