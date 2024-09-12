@@ -244,21 +244,22 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
             for source in &output.sources {
                 println!(
                     concat!(
-                        "{}/{} ({}, {}): {:+.6}±{:.6}(±{:.6})s\n",
+                        "{}/{}{} ({}): {:+.6}±{:.6}(±{:.6})s\n{}",
                         "    poll interval: {:.0}s, missing polls: {}\n",
                         "    root dispersion: {:.6}s, root delay:{:.6}s"
                     ),
                     source.name,
                     source.address,
+                    source.nts_cookies.map_or("", |_| " [NTS]"),
                     source.id,
-                    if source.nts_enabled {
-                        "NTS-enabled"
-                    } else {
-                        "no NTS"
-                    },
                     source.timedata.offset.to_seconds(),
                     source.timedata.uncertainty.to_seconds(),
                     source.timedata.delay.to_seconds(),
+                    source.nts_cookies.map_or(String::new(), |c| format!(
+                        "    NTS cookies: {}/{} available\n",
+                        c,
+                        ntp_proto::MAX_COOKIES,
+                    )),
                     source.poll_interval.as_duration().to_seconds(),
                     source.unanswered_polls,
                     source.timedata.remote_uncertainty.to_seconds(),
