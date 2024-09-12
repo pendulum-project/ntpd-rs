@@ -4,9 +4,12 @@
 ///   - The oldest cookie is always yielded first
 ///
 /// Note that as a consequence, this type is not Clone!
+
+pub const MAX_COOKIES: usize = 8;
+
 #[derive(Default, PartialEq, Eq)]
 pub(crate) struct CookieStash {
-    cookies: [Vec<u8>; 8],
+    cookies: [Vec<u8>; MAX_COOKIES],
     read: usize,
     valid: usize,
 }
@@ -56,7 +59,6 @@ impl CookieStash {
         (self.cookies.len() - self.valid) as u8
     }
 
-    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.valid
     }

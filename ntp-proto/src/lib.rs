@@ -87,6 +87,8 @@ mod exports {
         NtsRecordDecoder, WriteError,
     };
 
+    pub use super::cookiestash::MAX_COOKIES;
+
     #[cfg(feature = "ntpv5")]
     pub mod v5 {
         pub use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
