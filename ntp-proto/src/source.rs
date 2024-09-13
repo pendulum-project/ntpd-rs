@@ -96,8 +96,6 @@ pub struct NtpSource<Controller: SourceController> {
 pub struct Measurement {
     pub delay: NtpDuration,
     pub offset: NtpDuration,
-    pub transmit_timestamp: NtpTimestamp,
-    pub receive_timestamp: NtpTimestamp,
     pub localtime: NtpTimestamp,
     pub monotime: NtpInstant,
 
@@ -121,8 +119,6 @@ impl Measurement {
             offset: ((packet.receive_timestamp() - send_timestamp)
                 + (packet.transmit_timestamp() - recv_timestamp))
                 / 2,
-            transmit_timestamp: packet.transmit_timestamp(),
-            receive_timestamp: packet.receive_timestamp(),
             localtime: send_timestamp + (recv_timestamp - send_timestamp) / 2,
             monotime: local_clock_time,
 

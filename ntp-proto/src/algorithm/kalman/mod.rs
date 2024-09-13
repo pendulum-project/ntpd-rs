@@ -504,8 +504,6 @@ mod tests {
             let message = source.handle_measurement(Measurement {
                 delay: NtpDuration::from_seconds(0.001 + noise),
                 offset: NtpDuration::from_seconds(1700.0 + noise),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
                 localtime: algo.clock.current_time,
                 monotime: cur_instant,
 
@@ -716,8 +714,6 @@ mod tests {
             let message = source.handle_measurement(Measurement {
                 delay: NtpDuration::from_seconds(0.001 + noise),
                 offset: NtpDuration::from_seconds(1700.0 + noise),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
                 localtime: algo.clock.current_time,
                 monotime: cur_instant,
 
@@ -777,8 +773,6 @@ mod tests {
             let message = source.handle_measurement(Measurement {
                 delay: NtpDuration::from_seconds(0.001 + noise),
                 offset: NtpDuration::from_seconds(-3600.0 + noise),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
                 localtime: algo.clock.current_time,
                 monotime: cur_instant,
 
