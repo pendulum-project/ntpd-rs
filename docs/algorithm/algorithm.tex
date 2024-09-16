@@ -291,7 +291,7 @@ We now need to make a choice which of these sources to actually use to synchroni
 
 For this, we first construct for each source a range in which we estimate its actual offset to be.
 This by default consists of twice the output uncertainty of the Kalman filter, plus a quarter of the mean delay to that time source.
-If this 
+If this range is larger than the maximum allowed source uncertainty (0.25 by default), we will disregard this source for now.
 
 Next we search for the largest set of agreeing sources. We consider two sources to be in agreement when their likely ranges of offsets overlap,
 and consider a set of sources to be in agreement if all possible pairs in the set are in agreement.
