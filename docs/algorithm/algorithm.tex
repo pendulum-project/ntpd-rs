@@ -299,7 +299,7 @@ and consider a set of sources to be in agreement if all possible pairs in the se
 This set is located by first creating a list of all the endpoints of the likely offset ranges of all the sources.
 Next, this list of endpoints is sorted in order of offset.
 By going over the list in this order with a sweepline algorithm we can find an offset within the intersection of the ranges of a maximum set of sources.
-Once we have one such offset, we then go over the list of sources a second time, selecting all sources whose range contain that offset for synchronization.
+Once we have one such offset, we then go over the list of sources a second time, selecting all sources whose range contains that offset for synchronization.
 
 If a majority of all sources passing the range size criteria, and be of sufficient size (by default 3), then this set is flagged as actually usable for
 steering the clock.
