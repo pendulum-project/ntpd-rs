@@ -130,8 +130,8 @@ Here we will keep the process noise matrix $Q(\delta)$ general, stating only tha
 to give the same result as a single update step of size $\delta_1 + \delta_2$ when no measurement is done in between.
 A detailed treatment of our noise model is given in Section~\ref{sec:processnoise}.
 
-Measurements from the NTP protocol give us an immediate estimate of $\Delta$. Letting $z$ be the (1-element) vector with this measurement,
-and $R$ its covariance matrix (which in this case is simply an estimate of the variance of the measurement).
+Measurements from the NTP protocol give us an immediate estimate of $\Delta$. Letting $z$ be the (1-element) vector with this measurement $\Delta_{measured}$,
+and $R$ its covariance matrix (which in this case is simply an estimate of the variance $\Var(\Delta_{measured})$).
 This corresponds to a measurement matrix of the form
 \begin{align}
 H &= \begin{pmatrix}
@@ -140,9 +140,12 @@ H &= \begin{pmatrix}
 \end{align}
 Such a measurement can be incorporated into the filter by first calculating
 \begin{align}
-y &= z - Hx,\\
-S &= H P H^\mathrm{T} + R,\\
-K &= P H^\mathrm{T} S^{-1},
+y &= z - Hx &=& \begin{pmatrix} \Delta_{measured}-\Delta \end{pmatrix},\\
+S &= H P H^\mathrm{T} + R &=& \begin{pmatrix} \Var(\Delta) + \Var(\Delta_{measured}) \end{pmatrix},\\
+K &= P H^\mathrm{T} S^{-1} &=& \begin{pmatrix}
+\frac{\Var(\Delta)}{\Var(\Delta) + \Var(\Delta_{measured})}\\
+\frac{\Cov(\Delta,\omega)}{\Var(\Delta) + \Var(\Delta_{measured})}
+\end{pmatrix},
 \end{align}
 which allows us to update the state through
 \begin{align}
@@ -150,8 +153,14 @@ x' &= x + Ky,\\
 P' &= (I - K H)P,
 \end{align}
 where $x'$ and $P'$ denote the post-measurement state and covariance matrix, and $I$ is the identity matrix.
+This means that $\Delta$, $\omega$, and $P$ are set to
+\begin{align}
+\Delta' &= \Delta + \dfrac{\Var(\Delta)}{\Var(\Delta) + \Var(\Delta_{measured})} (\Delta_{measured} - \Delta),\\
+\omega' &= \omega + \dfrac{\Cov(\Delta, \omega)}{\Var(\Delta) + \Var(\Delta_{measured})} (\Delta_{measured} - \Delta),\\
+P' &= \begin{pmatrix}\dfrac{\Var(\Delta_{measured})}{\Var(\Delta) + \Var(\Delta_{measured})}\end{pmatrix} \cdot P.
+\end{align}
 
-The intermediate matrices $S$ and $K$ do have intuitive interpretations. $S$ gives an estimate for how $y$ is expected to be distributed, giving the covariance matrix of the vector $y$, which is expected to have a mean of $0$. The matrix $K$, also known as the Kalman gain, gives a measure for how much each part of the state should be affected by each part of the difference between measurement and prediction.
+The intermediate matrices $y$, $S$ and $K$ do have intuitive interpretations. Matrix $y$ is simply the difference between the current offset and the measured offset. $S$ gives an estimate for how $y$ is expected to be distributed, giving the covariance matrix of the vector $y$, which is expected to have a mean of $0$. The matrix $K$, also known as the Kalman gain, gives a measure for how much each part of the state should be affected by each part of the difference between measurement and prediction.
 
 We will use the symbols given here for the various matrices involved in the Kalman filter throughout the rest of this paper.
 
