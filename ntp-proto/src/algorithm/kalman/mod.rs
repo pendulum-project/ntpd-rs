@@ -260,7 +260,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 .expect("Cannot adjust clock");
             for (state, _) in self.sources.values_mut() {
                 if let Some(ref mut state) = state {
-                    state.state.process_offset_steering(change);
+                    state.state = state.state.process_offset_steering(change);
                 }
             }
             info!("Jumped offset by {}ms", change * 1e3);

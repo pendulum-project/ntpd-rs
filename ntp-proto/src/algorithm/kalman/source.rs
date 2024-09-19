@@ -105,6 +105,7 @@ pub(super) struct MeasurementStats {
 }
 
 impl KalmanState {
+    #[must_use]
     pub fn progress_time(&self, time: NtpTimestamp, wander: f64) -> KalmanState {
         debug_assert!(!time.is_before(self.time));
         if time.is_before(self.time) {
@@ -130,6 +131,7 @@ impl KalmanState {
         }
     }
 
+    #[must_use]
     pub fn absorb_measurement(
         &self,
         measurement: Matrix<1, 2>,
@@ -164,6 +166,7 @@ impl KalmanState {
         )
     }
 
+    #[must_use]
     pub fn merge(&self, other: &KalmanState) -> KalmanState {
         debug_assert_eq!(self.time, other.time);
 
@@ -176,6 +179,7 @@ impl KalmanState {
         }
     }
 
+    #[must_use]
     pub fn add_server_dispersion(&self, dispersion: f64) -> KalmanState {
         KalmanState {
             state: self.state,
@@ -184,22 +188,27 @@ impl KalmanState {
         }
     }
 
+    #[must_use]
     pub fn offset(&self) -> f64 {
         self.state.ventry(0)
     }
 
+    #[must_use]
     pub fn offset_variance(&self) -> f64 {
         self.uncertainty.entry(0, 0)
     }
 
+    #[must_use]
     pub fn frequency(&self) -> f64 {
         self.state.ventry(1)
     }
 
+    #[must_use]
     pub fn frequency_variance(&self) -> f64 {
         self.uncertainty.entry(1, 1)
     }
 
+    #[must_use]
     pub fn process_offset_steering(&self, steer: f64) -> KalmanState {
         KalmanState {
             state: self.state - Vector::new_vector([steer, 0.0]),
@@ -208,6 +217,7 @@ impl KalmanState {
         }
     }
 
+    #[must_use]
     pub fn process_frequency_steering(
         &self,
         time: NtpTimestamp,
