@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.3.0] - 2024-09-19
+
+### Added
+- Added force-sync command to ntp-ctl to help with getting a decent initial time if the clock is far away from reality.
+- Added information on NTS to the ntp-ctl status overview.
+
+### Changed
+- Made the logs a little less chatty
+- Updated dependencies
+
+### Fixed
+- On startup, if the clock needed a jump to get in line, this could cause oscillations.
+
 ## [1.2.3] - 2024-07-22
 
 ### Fixed
@@ -231,6 +244,7 @@ process.
 - Fixed a bug in peer dispersion calculation which resulted in overly
   pessimistic dispersion estimates.
 
+[1.3.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.2.3...v1.3.0
 [1.2.3]: https://github.com/pendulum-project/ntpd-rs/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/pendulum-project/ntpd-rs/compare/v1.2.0...v1.2.2
 [1.2.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.1.3...v1.2.0
