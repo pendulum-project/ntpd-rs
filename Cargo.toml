@@ -12,7 +12,7 @@ resolver = "2"
 
 # Global settings for our crates
 [workspace.package]
-version = "1.2.3"
+version = "1.3.0"
 edition = "2021"
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/pendulum-project/ntpd-rs"
@@ -62,4 +62,4 @@ zeroize = "1.7"
 
 # our own crates used as dependencies, same version as the workspace version
 # NOTE: keep this part at the bottom of the file, do not change this line
-ntp-proto = { version = "1.2.3", path = "./ntp-proto", features = ["__internal-api"] }
+ntp-proto = { version = "1.3.0", path = "./ntp-proto", features = ["__internal-api"] }
