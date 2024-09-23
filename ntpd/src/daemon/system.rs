@@ -8,8 +8,9 @@ use super::{
     ntp_source::{MsgForSystem, SourceChannels, SourceTask, Wait},
     server::{ServerStats, ServerTask},
     spawn::{
-        nts::NtsSpawner, pool::PoolSpawner, standard::StandardSpawner, SourceCreateParameters,
-        SourceId, SourceRemovalReason, SpawnAction, SpawnEvent, Spawner, SpawnerId, SystemEvent,
+        nts::NtsSpawner, pool::PoolSpawner, sock::SockSpawner, standard::StandardSpawner,
+        NtpSourceCreateParameters, SourceId, SourceRemovalReason, SpawnAction, SpawnEvent, Spawner,
+        SpawnerId, SystemEvent,
     },
 };
 
@@ -138,6 +139,14 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper, Sourc
             NtpSourceConfig::NtsPool(cfg) => {
                 system
                     .add_spawner(NtsPoolSpawner::new(cfg.clone()))
+                    .map_err(|e| {
+                        tracing::error!("Could not spawn source: {}", e);
+                        std::io::Error::new(std::io::ErrorKind::Other, e)
+                    })?;
+            }
+            NtpSourceConfig::Sock(cfg) => {
+                system
+                    .add_spawner(SockSpawner::new(cfg.clone()))
                     .map_err(|e| {
                         tracing::error!("Could not spawn source: {}", e);
                         std::io::Error::new(std::io::ErrorKind::Other, e)
@@ -457,10 +466,10 @@ impl<
         Ok(())
     }
 
-    async fn create_source(
+    async fn create_ntp_source(
         &mut self,
         spawner_id: SpawnerId,
-        mut params: SourceCreateParameters,
+        mut params: NtpSourceCreateParameters,
     ) -> Result<SourceId, C::Error> {
         let source_id = params.id;
         info!(source_id=?source_id, addr=?params.addr, spawner=?spawner_id, "new source");
@@ -510,8 +519,11 @@ impl<
 
     async fn handle_spawn_event(&mut self, event: SpawnEvent) -> Result<(), C::Error> {
         match event.action {
-            SpawnAction::Create(params) => {
-                self.create_source(event.id, params).await?;
+            SpawnAction::CreateNtp(params) => {
+                self.create_ntp_source(event.id, params).await?;
+            }
+            SpawnAction::CreateSock(params) => {
+                todo!("Create sock {} ({})", params.path, params.id);
             }
         }
         Ok(())

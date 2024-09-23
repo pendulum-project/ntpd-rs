@@ -6,6 +6,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use ntp_proto::NtpDuration;
 #[cfg(feature = "unstable_ntpv5")]
 use ntp_proto::NtpVersion;
 use rustls::pki_types::CertificateDer;
@@ -109,6 +110,13 @@ pub struct NtsPoolSourceConfig {
     pub ntp_version: Option<NtpVersion>,
 }
 
+#[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct SockSourceConfig {
+    pub path: String,
+    pub measurement_noise_estimate: NtpDuration,
+}
+
 #[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 #[serde(tag = "mode")]
 pub enum NtpSourceConfig {
@@ -121,6 +129,8 @@ pub enum NtpSourceConfig {
     #[cfg(feature = "unstable_nts-pool")]
     #[serde(rename = "nts-pool")]
     NtsPool(NtsPoolSourceConfig),
+    #[serde(rename = "sock")]
+    Sock(SockSourceConfig),
 }
 
 /// A normalized address has a host and a port part. However, the host may be
@@ -364,6 +374,7 @@ mod tests {
             NtpSourceConfig::Pool(c) => c.addr.to_string(),
             #[cfg(feature = "unstable_nts-pool")]
             NtpSourceConfig::NtsPool(c) => c.addr.to_string(),
+            NtpSourceConfig::Sock(_c) => "".into(),
         }
     }
 
