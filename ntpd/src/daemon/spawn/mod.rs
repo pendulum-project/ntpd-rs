@@ -13,6 +13,7 @@ pub mod nts;
 #[cfg(feature = "unstable_nts-pool")]
 pub mod nts_pool;
 pub mod pool;
+pub mod sock;
 pub mod standard;
 
 /// Unique identifier for a spawner.
@@ -79,7 +80,7 @@ impl SpawnEvent {
 #[derive(Debug)]
 pub enum SystemEvent {
     SourceRemoved(SourceRemovedEvent),
-    SourceRegistered(SourceCreateParameters),
+    SourceRegistered(NtpSourceCreateParameters),
     Idle,
 }
 
@@ -107,7 +108,8 @@ pub enum SourceRemovalReason {
 /// Currently a spawner can only create sources
 #[derive(Debug)]
 pub enum SpawnAction {
-    Create(SourceCreateParameters),
+    CreateNtp(NtpSourceCreateParameters),
+    CreateSock(SockSourceCreateParameters),
     // Remove(()),
 }
 
@@ -119,7 +121,7 @@ impl SpawnAction {
         protocol_version: ProtocolVersion,
         nts: Option<Box<SourceNtsData>>,
     ) -> SpawnAction {
-        SpawnAction::Create(SourceCreateParameters {
+        SpawnAction::CreateNtp(NtpSourceCreateParameters {
             id,
             addr,
             normalized_addr,
@@ -130,12 +132,18 @@ impl SpawnAction {
 }
 
 #[derive(Debug)]
-pub struct SourceCreateParameters {
+pub struct NtpSourceCreateParameters {
     pub id: SourceId,
     pub addr: SocketAddr,
     pub normalized_addr: NormalizedAddress,
     pub protocol_version: ProtocolVersion,
     pub nts: Option<Box<SourceNtsData>>,
+}
+
+#[derive(Debug)]
+pub struct SockSourceCreateParameters {
+    pub id: SourceId,
+    pub path: String,
 }
 
 #[async_trait::async_trait]
@@ -174,7 +182,7 @@ pub trait Spawner {
     /// in try_add.
     async fn handle_registered(
         &mut self,
-        _event: SourceCreateParameters,
+        _event: NtpSourceCreateParameters,
     ) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -239,10 +247,12 @@ pub async fn spawner_task<S: Spawner + Send + 'static>(
 
 #[cfg(test)]
 mod tests {
-    use super::{SourceCreateParameters, SpawnAction, SpawnEvent};
+    use super::{NtpSourceCreateParameters, SpawnAction, SpawnEvent};
 
-    pub fn get_create_params(res: SpawnEvent) -> SourceCreateParameters {
-        let SpawnAction::Create(params) = res.action;
-        params
+    pub fn get_npt_create_params(res: SpawnEvent) -> Option<NtpSourceCreateParameters> {
+        let SpawnAction::CreateNtp(params) = res.action else {
+            return None;
+        };
+        Some(params)
     }
 }

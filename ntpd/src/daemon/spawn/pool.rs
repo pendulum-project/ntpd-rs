@@ -144,8 +144,8 @@ mod tests {
     use crate::daemon::{
         config::{NormalizedAddress, PoolSourceConfig},
         spawn::{
-            pool::PoolSpawner, tests::get_create_params, SourceRemovalReason, SourceRemovedEvent,
-            Spawner,
+            pool::PoolSpawner, tests::get_npt_create_params, SourceRemovalReason,
+            SourceRemovedEvent, Spawner,
         },
         system::MESSAGE_BUFFER_SIZE,
     };
@@ -170,7 +170,7 @@ mod tests {
         pool.try_spawn(&action_tx).await.unwrap();
         let res = action_rx.try_recv().unwrap();
         assert_eq!(spawner_id, res.id);
-        let params = get_create_params(res);
+        let params = get_npt_create_params(res).unwrap();
         let addr1 = params.addr;
         #[cfg(feature = "unstable_ntpv5")]
         assert_eq!(
@@ -180,7 +180,7 @@ mod tests {
 
         let res = action_rx.try_recv().unwrap();
         assert_eq!(spawner_id, res.id);
-        let params = get_create_params(res);
+        let params = get_npt_create_params(res).unwrap();
         let addr2 = params.addr;
         #[cfg(feature = "unstable_ntpv5")]
         assert_eq!(
@@ -302,12 +302,12 @@ mod tests {
         pool.try_spawn(&action_tx).await.unwrap();
         let res = action_rx.try_recv().unwrap();
         assert_eq!(spawner_id, res.id);
-        let params = get_create_params(res);
+        let params = get_npt_create_params(res).unwrap();
         let addr1 = params.addr;
 
         let res = action_rx.try_recv().unwrap();
         assert_eq!(spawner_id, res.id);
-        let params = get_create_params(res);
+        let params = get_npt_create_params(res).unwrap();
         let addr2 = params.addr;
 
         assert_ne!(addr1, addr2);
@@ -339,10 +339,10 @@ mod tests {
         assert!(!pool.is_complete());
         pool.try_spawn(&action_tx).await.unwrap();
         let res = action_rx.try_recv().unwrap();
-        let params = get_create_params(res);
+        let params = get_npt_create_params(res).unwrap();
         let addr1 = params.addr;
         let res = action_rx.try_recv().unwrap();
-        let params = get_create_params(res);
+        let params = get_npt_create_params(res).unwrap();
         let addr2 = params.addr;
         assert!(pool.is_complete());
 
@@ -356,7 +356,7 @@ mod tests {
         assert!(!pool.is_complete());
         pool.try_spawn(&action_tx).await.unwrap();
         let res = action_rx.try_recv().unwrap();
-        let params = get_create_params(res);
+        let params = get_npt_create_params(res).unwrap();
         let addr3 = params.addr;
 
         // no duplicates!
