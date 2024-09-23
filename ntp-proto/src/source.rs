@@ -92,7 +92,7 @@ pub struct NtpSource<Controller: SourceController> {
 
 #[derive(Debug, Copy, Clone)]
 pub struct Measurement {
-    pub delay: NtpDuration,
+    pub delay: Option<NtpDuration>,
     pub offset: NtpDuration,
     pub localtime: NtpTimestamp,
     pub monotime: NtpInstant,
@@ -112,8 +112,10 @@ impl Measurement {
         local_clock_time: NtpInstant,
     ) -> Self {
         Self {
-            delay: ((recv_timestamp - send_timestamp)
-                - (packet.transmit_timestamp() - packet.receive_timestamp())),
+            delay: Some(
+                (recv_timestamp - send_timestamp)
+                    - (packet.transmit_timestamp() - packet.receive_timestamp()),
+            ),
             offset: ((packet.receive_timestamp() - send_timestamp)
                 + (packet.transmit_timestamp() - recv_timestamp))
                 / 2,
@@ -895,7 +897,7 @@ mod test {
             instant,
         );
         assert_eq!(result.offset, NtpDuration::from_fixed_int(0));
-        assert_eq!(result.delay, NtpDuration::from_fixed_int(2));
+        assert_eq!(result.delay, Some(NtpDuration::from_fixed_int(2)));
 
         packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(2));
         packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(3));
@@ -906,7 +908,7 @@ mod test {
             instant,
         );
         assert_eq!(result.offset, NtpDuration::from_fixed_int(1));
-        assert_eq!(result.delay, NtpDuration::from_fixed_int(2));
+        assert_eq!(result.delay, Some(NtpDuration::from_fixed_int(2)));
 
         packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(0));
         packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(5));
@@ -917,7 +919,7 @@ mod test {
             instant,
         );
         assert_eq!(result.offset, NtpDuration::from_fixed_int(1));
-        assert_eq!(result.delay, NtpDuration::from_fixed_int(-2));
+        assert_eq!(result.delay, Some(NtpDuration::from_fixed_int(-2)));
     }
 
     #[test]
