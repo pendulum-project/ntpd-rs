@@ -502,7 +502,7 @@ mod tests {
             noise += 1e-9;
 
             let message = source.handle_measurement(Measurement {
-                delay: NtpDuration::from_seconds(0.001 + noise),
+                delay: Some(NtpDuration::from_seconds(0.001 + noise)),
                 offset: NtpDuration::from_seconds(1700.0 + noise),
                 localtime: algo.clock.current_time,
                 monotime: cur_instant,
@@ -712,7 +712,7 @@ mod tests {
             noise += 1e-9;
 
             let message = source.handle_measurement(Measurement {
-                delay: NtpDuration::from_seconds(0.001 + noise),
+                delay: Some(NtpDuration::from_seconds(0.001 + noise)),
                 offset: NtpDuration::from_seconds(1700.0 + noise),
                 localtime: algo.clock.current_time,
                 monotime: cur_instant,
@@ -771,7 +771,7 @@ mod tests {
             noise *= -1.0;
 
             let message = source.handle_measurement(Measurement {
-                delay: NtpDuration::from_seconds(0.001 + noise),
+                delay: Some(NtpDuration::from_seconds(0.001 + noise)),
                 offset: NtpDuration::from_seconds(-3600.0 + noise),
                 localtime: algo.clock.current_time,
                 monotime: cur_instant,
