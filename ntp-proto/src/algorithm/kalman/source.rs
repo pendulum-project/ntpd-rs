@@ -230,7 +230,7 @@ impl KalmanState {
     }
 }
 
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct AveragingBuffer {
     data: [f64; 8],
     next_idx: usize,
@@ -271,16 +271,16 @@ impl AveragingBuffer {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub enum MeasurementNoiseEstimator {
     RoundtripDelay(AveragingBuffer),
     Constant(f64),
 }
 
 impl MeasurementNoiseEstimator {
-    fn update(&self, delay: Option<NtpDuration>) {
+    fn update(&mut self, delay: Option<NtpDuration>) {
         match self {
-            Self::RoundtripDelay(mut stats) => {
+            Self::RoundtripDelay(ref mut stats) => {
                 if let Some(delay) = delay {
                     stats.update(delay.to_seconds())
                 } else {
@@ -479,7 +479,8 @@ impl SourceFilter {
         self.last_iter = measurement.localtime;
 
         // Filter out one-time outliers (based on delay!)
-        if let MeasurementNoiseEstimator::RoundtripDelay(roundtriptime_stats) = self.noise_estimator
+        if let MeasurementNoiseEstimator::RoundtripDelay(roundtriptime_stats) =
+            &self.noise_estimator
         {
             if let Some(delay) = measurement.delay {
                 if !self.prev_was_outlier
@@ -570,7 +571,7 @@ impl SourceState {
         // preprocessing
         measurement.delay = match measurement.delay {
             Some(delay) => Some(delay.max(MIN_DELAY)),
-            None => Some(MIN_DELAY),
+            None => None,
         };
 
         self.update_self_using_raw_measurement(source_defaults_config, algo_config, measurement)
@@ -596,7 +597,7 @@ impl SourceState {
                             time: measurement.localtime,
                         },
                         clock_wander: sqr(algo_config.initial_wander),
-                        noise_estimator: filter.noise_estimator,
+                        noise_estimator: filter.noise_estimator.clone(),
                         precision_score: 0,
                         poll_score: 0,
                         desired_poll_interval: source_defaults_config.initial_poll_interval,
@@ -705,7 +706,7 @@ impl SourceState {
                 index,
                 state: filter.state,
                 wander: filter.clock_wander,
-                delay: match filter.noise_estimator {
+                delay: match &filter.noise_estimator {
                     MeasurementNoiseEstimator::RoundtripDelay(roundtriptime_stats) => {
                         roundtriptime_stats.mean()
                     }
