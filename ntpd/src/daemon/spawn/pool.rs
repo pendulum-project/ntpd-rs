@@ -81,7 +81,7 @@ impl Spawner for PoolSpawner {
             if let Some(addr) = self.known_ips.pop() {
                 let id = SourceId::new();
                 self.current_sources.push(PoolSource { id, addr });
-                let action = SpawnAction::create(
+                let action = SpawnAction::create_ntp(
                     id,
                     addr,
                     self.config.addr.deref().clone(),

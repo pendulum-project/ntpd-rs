@@ -6,7 +6,6 @@ use tokio::{
     sync::mpsc,
     time::{timeout, Instant},
 };
-use tracing::info;
 
 use super::{config::NormalizedAddress, system::NETWORK_WAIT_PERIOD};
 
@@ -81,8 +80,7 @@ impl SpawnEvent {
 #[derive(Debug)]
 pub enum SystemEvent {
     SourceRemoved(SourceRemovedEvent),
-    SourceRegistered(NtpSourceCreateParameters),
-    SockSourceRegistered(SockSourceCreateParameters),
+    SourceRegistered(SourceCreateParameters),
     Idle,
 }
 
@@ -110,27 +108,32 @@ pub enum SourceRemovalReason {
 /// Currently a spawner can only create sources
 #[derive(Debug)]
 pub enum SpawnAction {
-    CreateNtp(NtpSourceCreateParameters),
-    CreateSock(SockSourceCreateParameters),
+    Create(SourceCreateParameters),
     // Remove(()),
 }
 
 impl SpawnAction {
-    pub fn create(
+    pub fn create_ntp(
         id: SourceId,
         addr: SocketAddr,
         normalized_addr: NormalizedAddress,
         protocol_version: ProtocolVersion,
         nts: Option<Box<SourceNtsData>>,
     ) -> SpawnAction {
-        SpawnAction::CreateNtp(NtpSourceCreateParameters {
+        SpawnAction::Create(SourceCreateParameters::Ntp(NtpSourceCreateParameters {
             id,
             addr,
             normalized_addr,
             protocol_version,
             nts,
-        })
+        }))
     }
+}
+
+#[derive(Debug)]
+pub enum SourceCreateParameters {
+    Ntp(NtpSourceCreateParameters),
+    Sock(SockSourceCreateParameters),
 }
 
 #[derive(Debug)]
@@ -184,7 +187,7 @@ pub trait Spawner {
     /// in try_add.
     async fn handle_registered(
         &mut self,
-        _event: NtpSourceCreateParameters,
+        _event: SourceCreateParameters,
     ) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -237,10 +240,6 @@ pub async fn spawner_task<S: Spawner + Send + 'static>(
             SystemEvent::SourceRegistered(source_params) => {
                 spawner.handle_registered(source_params).await?;
             }
-            SystemEvent::SockSourceRegistered(_source_params) => {
-                // spawner.handle_registered(source_params).await?;
-                info!("TODO: handle sock source registered");
-            }
             SystemEvent::SourceRemoved(removed_source) => {
                 spawner.handle_source_removed(removed_source).await?;
             }
@@ -253,10 +252,10 @@ pub async fn spawner_task<S: Spawner + Send + 'static>(
 
 #[cfg(test)]
 mod tests {
-    use super::{NtpSourceCreateParameters, SpawnAction, SpawnEvent};
+    use super::{NtpSourceCreateParameters, SourceCreateParameters, SpawnAction, SpawnEvent};
 
     pub fn get_npt_create_params(res: SpawnEvent) -> Option<NtpSourceCreateParameters> {
-        let SpawnAction::CreateNtp(params) = res.action else {
+        let SpawnAction::Create(SourceCreateParameters::Ntp(params)) = res.action else {
             return None;
         };
         Some(params)

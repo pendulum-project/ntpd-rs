@@ -3,8 +3,8 @@ use tokio::sync::mpsc;
 use crate::daemon::config::SockSourceConfig;
 
 use super::{
-    standard::StandardSpawnError, SockSourceCreateParameters, SourceId, SourceRemovalReason,
-    SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId,
+    standard::StandardSpawnError, SockSourceCreateParameters, SourceCreateParameters, SourceId,
+    SourceRemovalReason, SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId,
 };
 
 pub struct SockSpawner {
@@ -34,10 +34,10 @@ impl Spawner for SockSpawner {
         action_tx
             .send(SpawnEvent::new(
                 self.id,
-                SpawnAction::CreateSock(SockSourceCreateParameters {
+                SpawnAction::Create(SourceCreateParameters::Sock(SockSourceCreateParameters {
                     id: SourceId::new(),
                     path: self.config.path.clone(),
-                }),
+                })),
             ))
             .await?;
         self.has_spawned = true;

@@ -89,7 +89,7 @@ impl Spawner for StandardSpawner {
         action_tx
             .send(SpawnEvent::new(
                 self.id,
-                SpawnAction::create(
+                SpawnAction::create_ntp(
                     SourceId::new(),
                     addr,
                     self.config.address.deref().clone(),
