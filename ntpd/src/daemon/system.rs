@@ -1,4 +1,7 @@
-use crate::daemon::{sock_source::SockSourceTask, spawn::spawner_task};
+use crate::daemon::{
+    sock_source::SockSourceTask,
+    spawn::{spawner_task, SourceCreateParameters},
+};
 
 #[cfg(feature = "unstable_nts-pool")]
 use super::spawn::nts_pool::NtsPoolSpawner;
@@ -510,7 +513,9 @@ impl<
         if let Some(s) = self.spawners.iter().find(|s| s.id == spawner_id) {
             let _ = s
                 .notify_tx
-                .send(SystemEvent::SourceRegistered(params))
+                .send(SystemEvent::SourceRegistered(SourceCreateParameters::Ntp(
+                    params,
+                )))
                 .await;
         }
 
@@ -545,7 +550,9 @@ impl<
         if let Some(s) = self.spawners.iter().find(|s| s.id == spawner_id) {
             let _ = s
                 .notify_tx
-                .send(SystemEvent::SockSourceRegistered(params))
+                .send(SystemEvent::SourceRegistered(SourceCreateParameters::Sock(
+                    params,
+                )))
                 .await;
         }
 
@@ -554,10 +561,10 @@ impl<
 
     async fn handle_spawn_event(&mut self, event: SpawnEvent) -> Result<(), C::Error> {
         match event.action {
-            SpawnAction::CreateNtp(params) => {
+            SpawnAction::Create(SourceCreateParameters::Ntp(params)) => {
                 self.create_ntp_source(event.id, params).await?;
             }
-            SpawnAction::CreateSock(params) => {
+            SpawnAction::Create(SourceCreateParameters::Sock(params)) => {
                 self.create_sock_source(event.id, params).await?;
             }
         }
