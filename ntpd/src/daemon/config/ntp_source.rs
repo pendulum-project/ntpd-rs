@@ -374,7 +374,7 @@ mod tests {
             NtpSourceConfig::Pool(c) => c.addr.to_string(),
             #[cfg(feature = "unstable_nts-pool")]
             NtpSourceConfig::NtsPool(c) => c.addr.to_string(),
-            NtpSourceConfig::Sock(_c) => "".into(),
+            NtpSourceConfig::Sock(_c) => "".to_string(),
         }
     }
 

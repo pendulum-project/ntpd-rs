@@ -86,7 +86,7 @@ impl Spawner for NtsSpawner {
                     action_tx
                         .send(SpawnEvent::new(
                             self.id,
-                            SpawnAction::create(
+                            SpawnAction::create_ntp(
                                 SourceId::new(),
                                 address,
                                 self.config.address.deref().clone(),
