@@ -254,7 +254,7 @@ pub async fn spawner_task<S: Spawner + Send + 'static>(
 mod tests {
     use super::{NtpSourceCreateParameters, SourceCreateParameters, SpawnAction, SpawnEvent};
 
-    pub fn get_npt_create_params(res: SpawnEvent) -> Option<NtpSourceCreateParameters> {
+    pub fn get_ntp_create_params(res: SpawnEvent) -> Option<NtpSourceCreateParameters> {
         let SpawnAction::Create(SourceCreateParameters::Ntp(params)) = res.action else {
             return None;
         };
