@@ -136,6 +136,22 @@ pub enum SourceCreateParameters {
     Sock(SockSourceCreateParameters),
 }
 
+impl SourceCreateParameters {
+    pub fn get_id(&self) -> SourceId {
+        match self {
+            Self::Ntp(params) => params.id,
+            Self::Sock(params) => params.id,
+        }
+    }
+
+    pub fn get_addr(&self) -> String {
+        match self {
+            Self::Ntp(params) => params.addr.to_string(),
+            Self::Sock(params) => params.path.clone(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct NtpSourceCreateParameters {
     pub id: SourceId,

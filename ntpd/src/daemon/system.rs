@@ -11,9 +11,8 @@ use super::{
     ntp_source::{MsgForSystem, SourceChannels, SourceTask, Wait},
     server::{ServerStats, ServerTask},
     spawn::{
-        nts::NtsSpawner, pool::PoolSpawner, sock::SockSpawner, standard::StandardSpawner,
-        NtpSourceCreateParameters, SockSourceCreateParameters, SourceId, SourceRemovalReason,
-        SpawnAction, SpawnEvent, Spawner, SpawnerId, SystemEvent,
+        nts::NtsSpawner, pool::PoolSpawner, sock::SockSpawner, standard::StandardSpawner, SourceId,
+        SourceRemovalReason, SpawnAction, SpawnEvent, Spawner, SpawnerId, SystemEvent,
     },
 };
 
@@ -469,13 +468,13 @@ impl<
         Ok(())
     }
 
-    async fn create_ntp_source(
+    async fn create_source(
         &mut self,
         spawner_id: SpawnerId,
-        mut params: NtpSourceCreateParameters,
+        mut params: SourceCreateParameters,
     ) -> Result<SourceId, C::Error> {
-        let source_id = params.id;
-        info!(source_id=?source_id, addr=?params.addr, spawner=?spawner_id, "new source");
+        let source_id = params.get_id();
+        info!(source_id=?source_id, addr=?params.get_addr(), spawner=?spawner_id, "new source");
         self.sources.insert(
             source_id,
             SourceState {
@@ -484,65 +483,40 @@ impl<
             },
         );
 
-        let (source, initial_actions) = self.system.create_ntp_source(
-            source_id,
-            params.addr,
-            params.protocol_version,
-            params.nts.take(),
-        )?;
+        match params {
+            SourceCreateParameters::Ntp(ref mut params) => {
+                let (source, initial_actions) = self.system.create_ntp_source(
+                    source_id,
+                    params.addr,
+                    params.protocol_version,
+                    params.nts.take(),
+                )?;
 
-        SourceTask::spawn(
-            source_id,
-            params.normalized_addr.to_string(),
-            params.addr,
-            self.interface,
-            self.clock.clone(),
-            self.timestamp_mode,
-            SourceChannels {
-                msg_for_system_sender: self.msg_for_system_tx.clone(),
-                system_update_receiver: self.system_update_sender.subscribe(),
-                source_snapshots: self.source_snapshots.clone(),
-            },
-            source,
-            initial_actions,
-        );
-
-        // Try and find a related spawner and notify that spawner.
-        // This makes sure that the spawner that initially sent the create event
-        // is now aware that the source was added to the system.
-        if let Some(s) = self.spawners.iter().find(|s| s.id == spawner_id) {
-            let _ = s
-                .notify_tx
-                .send(SystemEvent::SourceRegistered(SourceCreateParameters::Ntp(
-                    params,
-                )))
-                .await;
-        }
-
-        Ok(source_id)
-    }
-
-    async fn create_sock_source(
-        &mut self,
-        spawner_id: SpawnerId,
-        params: SockSourceCreateParameters,
-    ) -> Result<SourceId, C::Error> {
-        let source_id = params.id;
-        info!(source_id=?source_id, path=?params.path, spawner=?spawner_id, "new sock source");
-        self.sources.insert(
-            source_id,
-            SourceState {
-                source_id,
-                spawner_id,
-            },
-        );
-
-        SockSourceTask::spawn(
-            source_id,
-            params.path.clone(),
-            self.interface,
-            self.clock.clone(),
-        );
+                SourceTask::spawn(
+                    source_id,
+                    params.normalized_addr.to_string(),
+                    params.addr,
+                    self.interface,
+                    self.clock.clone(),
+                    self.timestamp_mode,
+                    SourceChannels {
+                        msg_for_system_sender: self.msg_for_system_tx.clone(),
+                        system_update_receiver: self.system_update_sender.subscribe(),
+                        source_snapshots: self.source_snapshots.clone(),
+                    },
+                    source,
+                    initial_actions,
+                );
+            }
+            SourceCreateParameters::Sock(ref params) => {
+                SockSourceTask::spawn(
+                    source_id,
+                    params.path.clone(),
+                    self.interface,
+                    self.clock.clone(),
+                );
+            }
+        };
 
         // Try and find a related spawner and notify that spawner.
         // This makes sure that the spawner that initially sent the create event
@@ -550,9 +524,7 @@ impl<
         if let Some(s) = self.spawners.iter().find(|s| s.id == spawner_id) {
             let _ = s
                 .notify_tx
-                .send(SystemEvent::SourceRegistered(SourceCreateParameters::Sock(
-                    params,
-                )))
+                .send(SystemEvent::SourceRegistered(params))
                 .await;
         }
 
@@ -561,11 +533,8 @@ impl<
 
     async fn handle_spawn_event(&mut self, event: SpawnEvent) -> Result<(), C::Error> {
         match event.action {
-            SpawnAction::Create(SourceCreateParameters::Ntp(params)) => {
-                self.create_ntp_source(event.id, params).await?;
-            }
-            SpawnAction::Create(SourceCreateParameters::Sock(params)) => {
-                self.create_sock_source(event.id, params).await?;
+            SpawnAction::Create(params) => {
+                self.create_source(event.id, params).await?;
             }
         }
         Ok(())
