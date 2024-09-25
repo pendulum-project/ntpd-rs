@@ -20,7 +20,7 @@
 /// For process noise, we assume this is fully resultant from frequency
 /// drift between the local and remote timescale, and that this frequency
 /// drift is assumed to be the result from a (limit of) a random walk
-/// process (wiener process). Under this assumption, a timechange from t1
+/// process (wiener process). Under this assumption, a time change from t1
 /// to t2 has a state propagation matrix
 /// 1 (t2-t1)
 /// 0    0
@@ -73,7 +73,7 @@
 /// If they are often too small, v is quartered, and if they are often too
 /// large, v is quadrupled (note, this corresponds with doubling/halving
 /// the more intuitive standard deviation).
-use tracing::{debug, trace};
+use tracing::{debug, error, trace};
 
 use crate::{
     algorithm::{KalmanControllerMessage, KalmanSourceMessage, SourceController},
@@ -231,7 +231,7 @@ impl KalmanState {
 }
 
 #[derive(Debug, Default, Copy, Clone)]
-struct AveragingBuffer {
+pub struct AveragingBuffer {
     data: [f64; 8],
     next_idx: usize,
 }
@@ -271,6 +271,34 @@ impl AveragingBuffer {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
+pub enum MeasurementNoiseEstimator {
+    RoundtripDelay(AveragingBuffer),
+    Constant(f64),
+}
+
+impl MeasurementNoiseEstimator {
+    fn update(&self, delay: Option<NtpDuration>) {
+        match self {
+            Self::RoundtripDelay(mut stats) => {
+                if let Some(delay) = delay {
+                    stats.update(delay.to_seconds())
+                } else {
+                    error!("Could not update round-trip delay stats: delay is None")
+                }
+            }
+            Self::Constant(_v) => (),
+        }
+    }
+
+    fn get_noise_estimate(&self) -> f64 {
+        match self {
+            Self::RoundtripDelay(stats) => stats.variance() / 4.,
+            Self::Constant(v) => *v,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct InitialSourceFilter {
     noise_estimator: MeasurementNoiseEstimator,
@@ -282,13 +310,7 @@ struct InitialSourceFilter {
 
 impl InitialSourceFilter {
     fn update(&mut self, measurement: Measurement) {
-        if let MeasurementNoiseEstimator::RoundtripDelay(mut roundtriptime_stats) =
-            self.noise_estimator
-        {
-            if let Some(delay) = measurement.delay {
-                roundtriptime_stats.update(delay.to_seconds());
-            }
-        }
+        self.noise_estimator.update(measurement.delay);
         self.init_offset.update(measurement.offset.to_seconds());
         self.samples += 1;
         self.last_measurement = Some(measurement);
@@ -300,12 +322,6 @@ impl InitialSourceFilter {
             *sample -= steer;
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub enum MeasurementNoiseEstimator {
-    RoundtripDelay(AveragingBuffer),
-    Constant(f64),
 }
 
 #[derive(Debug, Clone)]
@@ -342,12 +358,7 @@ impl SourceFilter {
         // Kalman filter update
         let measurement_vec = Vector::new_vector([measurement.offset.to_seconds()]);
         let measurement_transform = Matrix::new([[1., 0.]]);
-        let measurement_noise = match self.noise_estimator {
-            MeasurementNoiseEstimator::Constant(v) => Matrix::new([[v]]),
-            MeasurementNoiseEstimator::RoundtripDelay(stats) => {
-                Matrix::new([[stats.variance() / 4.]])
-            }
-        };
+        let measurement_noise = Matrix::new([[self.noise_estimator.get_noise_estimate()]]);
         let (new_state, stats) = self.state.absorb_measurement(
             measurement_transform,
             measurement_vec,
@@ -484,13 +495,7 @@ impl SourceFilter {
 
         // Environment update
         self.progress_filtertime(measurement.localtime);
-        if let MeasurementNoiseEstimator::RoundtripDelay(mut roundtriptime_stats) =
-            self.noise_estimator
-        {
-            if let Some(delay) = measurement.delay {
-                roundtriptime_stats.update(delay.to_seconds());
-            }
-        }
+        self.noise_estimator.update(measurement.delay);
 
         let (p, weight, measurement_period) = self.absorb_measurement(measurement);
 
@@ -591,7 +596,7 @@ impl SourceState {
                             time: measurement.localtime,
                         },
                         clock_wander: sqr(algo_config.initial_wander),
-                        noise_estimator: filter.noise_estimator.clone(), // TODO: can this be done without clone?
+                        noise_estimator: filter.noise_estimator,
                         precision_score: 0,
                         poll_score: 0,
                         desired_poll_interval: source_defaults_config.initial_poll_interval,
