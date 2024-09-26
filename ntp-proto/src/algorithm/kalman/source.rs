@@ -73,7 +73,7 @@
 /// If they are often too small, v is quartered, and if they are often too
 /// large, v is quadrupled (note, this corresponds with doubling/halving
 /// the more intuitive standard deviation).
-use tracing::{debug, error, trace};
+use tracing::{debug, trace};
 
 use crate::{
     algorithm::{KalmanControllerMessage, KalmanSourceMessage, SourceController},
@@ -288,7 +288,7 @@ impl MeasurementNoiseEstimator {
                 if let Some(delay) = delay {
                     stats.update(delay.to_seconds())
                 } else {
-                    error!("Could not update round-trip delay stats: delay is None")
+                    unreachable!("Could not update round-trip delay stats: delay is None")
                 }
             }
             Self::Constant(_v) => (),
