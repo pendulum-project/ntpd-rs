@@ -7,16 +7,15 @@ use std::{fmt::Debug, hash::Hash};
 
 #[cfg(feature = "ntpv5")]
 use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
-use crate::source::NtpSourceUpdate;
+use crate::source::{NtpSourceUpdate, SourceSnapshot};
+use crate::SockSourceUpdate;
 use crate::{
     algorithm::{StateUpdate, TimeSyncController},
     clock::NtpClock,
     config::{SourceDefaultsConfig, SynchronizationConfig},
     identifiers::ReferenceId,
     packet::NtpLeapIndicator,
-    source::{
-        NtpSource, NtpSourceActionIterator, NtpSourceSnapshot, ProtocolVersion, SourceNtsData,
-    },
+    source::{NtpSource, NtpSourceActionIterator, ProtocolVersion, SourceNtsData},
     time_types::NtpDuration,
 };
 
@@ -74,11 +73,16 @@ impl SystemSnapshot {
         self.accumulated_steps_threshold = config.accumulated_step_panic_threshold;
     }
 
-    pub fn update_used_sources(&mut self, used_sources: impl Iterator<Item = NtpSourceSnapshot>) {
+    pub fn update_used_sources(&mut self, used_sources: impl Iterator<Item = SourceSnapshot>) {
         let mut used_sources = used_sources.peekable();
         if let Some(system_source_snapshot) = used_sources.peek() {
-            self.stratum = system_source_snapshot.stratum.saturating_add(1);
-            self.reference_id = system_source_snapshot.source_id;
+            let (stratum, source_id) = match system_source_snapshot {
+                SourceSnapshot::Ntp(snapshot) => (snapshot.stratum, snapshot.source_id),
+                SourceSnapshot::Sock(snapshot) => (snapshot.stratum, snapshot.source_id),
+            };
+
+            self.stratum = stratum.saturating_add(1);
+            self.reference_id = source_id;
         }
 
         #[cfg(feature = "ntpv5")]
@@ -183,7 +187,7 @@ pub struct System<SourceId, Controller> {
     system: SystemSnapshot,
     ip_list: Arc<[IpAddr]>,
 
-    sources: HashMap<SourceId, Option<NtpSourceSnapshot>>,
+    sources: HashMap<SourceId, Option<SourceSnapshot>>,
 
     controller: Controller,
     controller_took_control: bool,
@@ -314,7 +318,25 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
             )
             .is_ok();
         self.controller.source_update(id, usable);
-        *self.sources.get_mut(&id).unwrap() = Some(update.snapshot);
+        *self.sources.get_mut(&id).unwrap() = Some(SourceSnapshot::Ntp(update.snapshot));
+        if let Some(message) = update.message {
+            let update = self.controller.source_message(id, message);
+            Ok(self.handle_algorithm_state_update(update))
+        } else {
+            Ok(actions!())
+        }
+    }
+
+    pub fn handle_sock_source_update(
+        &mut self,
+        id: SourceId,
+        update: SockSourceUpdate<Controller::SourceMessage>,
+    ) -> Result<
+        SystemActionIterator<Controller::ControllerMessage>,
+        <Controller::Clock as NtpClock>::Error,
+    > {
+        self.controller.source_update(id, true);
+        *self.sources.get_mut(&id).unwrap() = Some(SourceSnapshot::Sock(update.snapshot));
         if let Some(message) = update.message {
             let update = self.controller.source_message(id, message);
             Ok(self.handle_algorithm_state_update(update))
@@ -364,7 +386,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
 mod tests {
     use std::net::{Ipv4Addr, SocketAddr};
 
-    use crate::time_types::PollIntervalLimits;
+    use crate::{time_types::PollIntervalLimits, NtpSourceSnapshot};
 
     use super::*;
 
@@ -385,7 +407,7 @@ mod tests {
 
         system.update_used_sources(
             vec![
-                NtpSourceSnapshot {
+                SourceSnapshot::Ntp(NtpSourceSnapshot {
                     source_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
                     source_id: ReferenceId::KISS_DENY,
                     poll_interval: PollIntervalLimits::default().max,
@@ -395,8 +417,8 @@ mod tests {
                     protocol_version: Default::default(),
                     #[cfg(feature = "ntpv5")]
                     bloom_filter: None,
-                },
-                NtpSourceSnapshot {
+                }),
+                SourceSnapshot::Ntp(NtpSourceSnapshot {
                     source_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
                     source_id: ReferenceId::KISS_RATE,
                     poll_interval: PollIntervalLimits::default().max,
@@ -406,7 +428,7 @@ mod tests {
                     protocol_version: Default::default(),
                     #[cfg(feature = "ntpv5")]
                     bloom_filter: None,
-                },
+                }),
             ]
             .into_iter(),
         );

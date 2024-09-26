@@ -12,6 +12,7 @@ impl ReferenceId {
     pub const KISS_RATE: ReferenceId = ReferenceId(u32::from_be_bytes(*b"RATE"));
     pub const KISS_RSTR: ReferenceId = ReferenceId(u32::from_be_bytes(*b"RSTR"));
     pub const NONE: ReferenceId = ReferenceId(u32::from_be_bytes(*b"XNON"));
+    pub const SOCK: ReferenceId = ReferenceId(u32::from_be_bytes(*b"SOCK"));
 
     // Network Time Security (NTS) negative-acknowledgment (NAK), from rfc8915
     pub const KISS_NTSN: ReferenceId = ReferenceId(u32::from_be_bytes(*b"NTSN"));
