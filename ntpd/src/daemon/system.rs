@@ -389,6 +389,12 @@ impl<
                     Ok(timer) => self.handle_state_update(timer, wait),
                 }
             }
+            MsgForSystem::SockSourceUpdate(index, update) => {
+                match self.system.handle_sock_source_update(index, update) {
+                    Err(e) => unreachable!("Could not process source measurement: {}", e),
+                    Ok(timer) => self.handle_state_update(timer, wait),
+                }
+            }
             MsgForSystem::NetworkIssue(index) => {
                 self.handle_source_network_issue(index).await?;
             }
@@ -511,8 +517,14 @@ impl<
             }
             SourceCreateParameters::Sock(ref params) => {
                 SockSourceTask::spawn(
+                    source_id,
                     params.path.clone(),
                     self.clock.clone(),
+                    SourceChannels {
+                        msg_for_system_sender: self.msg_for_system_tx.clone(),
+                        system_update_receiver: self.system_update_sender.subscribe(),
+                        source_snapshots: self.source_snapshots.clone(),
+                    },
                     self.system.create_source_controller(
                         source_id,
                         MeasurementNoiseEstimator::Constant(params.noise_estimate),

@@ -178,6 +178,24 @@ impl Reach {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct SockSourceUpdate<SourceMessage> {
+    pub snapshot: SockSourceSnapshot,
+    pub message: Option<SourceMessage>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum SourceSnapshot {
+    Ntp(NtpSourceSnapshot),
+    Sock(SockSourceSnapshot),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct SockSourceSnapshot {
+    pub source_id: ReferenceId,
+    pub stratum: u8,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct NtpSourceSnapshot {
     pub source_addr: SocketAddr,
