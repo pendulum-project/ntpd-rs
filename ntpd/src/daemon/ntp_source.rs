@@ -4,7 +4,7 @@ use std::{
 
 use ntp_proto::{
     NtpClock, NtpDuration, NtpInstant, NtpSource, NtpSourceActionIterator, NtpSourceUpdate,
-    NtpTimestamp, ObservableSourceState, SourceController, SystemSourceUpdate,
+    NtpTimestamp, ObservableSourceState, SockSourceUpdate, SourceController, SystemSourceUpdate,
 };
 #[cfg(target_os = "linux")]
 use timestamped_socket::socket::open_interface_udp;
@@ -40,6 +40,8 @@ pub enum MsgForSystem<SourceMessage> {
     Unreachable(SourceId),
     /// Update from source
     SourceUpdate(SourceId, NtpSourceUpdate<SourceMessage>),
+    /// Update from sock source
+    SockSourceUpdate(SourceId, SockSourceUpdate<SourceMessage>),
 }
 
 #[derive(Debug)]
