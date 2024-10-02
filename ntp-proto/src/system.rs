@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{fmt::Debug, hash::Hash};
 
+use crate::algorithm::MeasurementNoiseEstimator;
 #[cfg(feature = "ntpv5")]
 use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
 use crate::source::NtpSourceUpdate;
@@ -242,6 +243,17 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         Ok(())
     }
 
+    pub fn create_source_controller(
+        &mut self,
+        id: SourceId,
+        noise_estimator: MeasurementNoiseEstimator,
+    ) -> Result<Controller::SourceController, <Controller::Clock as NtpClock>::Error> {
+        self.ensure_controller_control()?;
+        let controller = self.controller.add_source(id, noise_estimator);
+        self.sources.insert(id, None);
+        Ok(controller)
+    }
+
     #[allow(clippy::type_complexity)]
     pub fn create_ntp_source(
         &mut self,
@@ -255,14 +267,11 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         ),
         <Controller::Clock as NtpClock>::Error,
     > {
-        self.ensure_controller_control()?;
-        let controller = self.controller.add_source(id);
-        self.sources.insert(id, None);
         Ok(NtpSource::new(
             source_addr,
             self.source_defaults_config,
             protocol_version,
-            controller,
+            self.create_source_controller(id, MeasurementNoiseEstimator::new_roundtrip_delay())?,
         ))
     }
 
@@ -280,14 +289,11 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         ),
         <Controller::Clock as NtpClock>::Error,
     > {
-        self.ensure_controller_control()?;
-        let controller = self.controller.add_source(id);
-        self.sources.insert(id, None);
         Ok(NtpSource::new_nts(
             source_addr,
             self.source_defaults_config,
             protocol_version,
-            controller,
+            self.create_source_controller(id, MeasurementNoiseEstimator::new_roundtrip_delay())?,
             nts,
         ))
     }

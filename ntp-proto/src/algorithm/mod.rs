@@ -1,5 +1,6 @@
 use std::{fmt::Debug, time::Duration};
 
+pub use kalman::MeasurementNoiseEstimator;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::{
@@ -72,7 +73,11 @@ pub trait TimeSyncController: Sized + Send + 'static {
     fn take_control(&mut self) -> Result<(), <Self::Clock as NtpClock>::Error>;
 
     /// Create a new source with given identity
-    fn add_source(&mut self, id: Self::SourceId) -> Self::SourceController;
+    fn add_source(
+        &mut self,
+        id: Self::SourceId,
+        noise_estimator: MeasurementNoiseEstimator,
+    ) -> Self::SourceController;
     /// Notify the controller that a previous source has gone
     fn remove_source(&mut self, id: Self::SourceId);
     /// Notify the controller that the status of a source (whether
