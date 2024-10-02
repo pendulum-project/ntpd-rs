@@ -1,5 +1,3 @@
-use std::default;
-
 /// This module implements a kalman filter to filter the measurements
 /// provided by the sources.
 ///
