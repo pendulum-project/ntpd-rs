@@ -9,7 +9,7 @@ use serde::Deserialize;
 use crate::daemon::spawn::SourceId;
 
 #[derive(Debug, Clone)]
-pub(crate) enum Measurements {
+pub enum Measurements {
     Ntp(Measurement<NtpDuration>),
     Sock(Measurement<()>),
 }
