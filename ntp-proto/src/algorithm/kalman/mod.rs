@@ -1,5 +1,6 @@
 use std::{collections::HashMap, fmt::Debug, hash::Hash, time::Duration};
 
+pub use source::MeasurementNoiseEstimator;
 use tracing::{debug, error, info};
 
 use crate::{
@@ -374,9 +375,18 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug + Send + 'static> TimeSyncC
         Ok(())
     }
 
-    fn add_source(&mut self, id: SourceId) -> Self::SourceController {
+    fn add_source(
+        &mut self,
+        id: SourceId,
+        noise_estimator: MeasurementNoiseEstimator,
+    ) -> Self::SourceController {
         self.sources.insert(id, (None, false));
-        KalmanSourceController::new(id, self.algo_config, self.source_defaults_config)
+        KalmanSourceController::new(
+            id,
+            self.algo_config,
+            self.source_defaults_config,
+            noise_estimator,
+        )
     }
 
     fn remove_source(&mut self, id: SourceId) {
@@ -415,10 +425,10 @@ mod tests {
 
     use matrix::{Matrix, Vector};
 
-    use crate::algorithm::SourceController;
     use crate::config::StepThreshold;
     use crate::source::Measurement;
     use crate::time_types::NtpInstant;
+    use crate::SourceController;
 
     use super::*;
 
@@ -489,7 +499,7 @@ mod tests {
         // ignore startup steer of frequency.
         *algo.clock.has_steered.borrow_mut() = false;
 
-        let mut source = algo.add_source(0);
+        let mut source = algo.add_source(0, MeasurementNoiseEstimator::new_roundtrip_delay());
         algo.source_update(0, true);
 
         assert!(algo.in_startup);
@@ -701,7 +711,7 @@ mod tests {
         // ignore startup steer of frequency.
         *algo.clock.has_steered.borrow_mut() = false;
 
-        let mut source = algo.add_source(0);
+        let mut source = algo.add_source(0, MeasurementNoiseEstimator::new_roundtrip_delay());
         algo.source_update(0, true);
 
         let mut noise = 1e-9;
@@ -760,7 +770,7 @@ mod tests {
         // ignore startup steer of frequency.
         *algo.clock.has_steered.borrow_mut() = false;
 
-        let mut source = algo.add_source(0);
+        let mut source = algo.add_source(0, MeasurementNoiseEstimator::new_roundtrip_delay());
         algo.source_update(0, true);
 
         let mut noise = 1e-9;

@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
 use ntp_proto::{
-    Measurement, NtpClock, NtpDuration, PollInterval, SourceController, TimeSyncController,
+    Measurement, MeasurementNoiseEstimator, NtpClock, NtpDuration, PollInterval, SourceController,
+    TimeSyncController,
 };
 use serde::Deserialize;
 
@@ -116,7 +117,11 @@ impl<C: NtpClock> TimeSyncController for SingleShotController<C> {
         Ok(())
     }
 
-    fn add_source(&mut self, _id: Self::SourceId) -> Self::SourceController {
+    fn add_source(
+        &mut self,
+        _id: Self::SourceId,
+        _noise_estimator: MeasurementNoiseEstimator,
+    ) -> Self::SourceController {
         SingleShotSourceController {
             min_poll_interval: self.min_poll_interval,
             done: false,
