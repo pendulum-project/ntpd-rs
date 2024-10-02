@@ -47,7 +47,18 @@ pub(crate) struct SockSourceTask<C: 'static + NtpClock + Send, Controller: Sourc
     controller: Controller,
 }
 
-impl<C, Controller: SourceController> SockSourceTask<C, Controller>
+async fn create_socket(socket_path: String) -> std::io::Result<UnixDatagram> {
+    let path = Path::new(&socket_path).to_path_buf();
+    if path.exists() {
+        debug!("Removing previous socket file");
+        std::fs::remove_file(&path)?;
+    }
+    debug!("Creating socket at {:?}", path);
+    let socket = UnixDatagram::bind(path)?;
+    Ok(socket)
+}
+
+impl<C, Controller: SourceController<MeasurementDelay = ()>> SockSourceTask<C, Controller>
 where
     C: 'static + NtpClock + Send + Sync,
 {
@@ -96,7 +107,7 @@ where
             };
 
             let measurement = Measurement {
-                delay: None,
+                delay: (),
                 offset: NtpDuration::from_seconds(sample.offset),
                 localtime: time,
                 monotime: NtpInstant::now(),
@@ -124,23 +135,7 @@ where
                 .ok();
         }
     }
-}
 
-async fn create_socket(socket_path: String) -> std::io::Result<UnixDatagram> {
-    let path = Path::new(&socket_path).to_path_buf();
-    if path.exists() {
-        debug!("Removing previous socket file");
-        std::fs::remove_file(&path)?;
-    }
-    debug!("Creating socket at {:?}", path);
-    let socket = UnixDatagram::bind(path)?;
-    Ok(socket)
-}
-
-impl<C, Controller: SourceController> SockSourceTask<C, Controller>
-where
-    C: 'static + NtpClock + Send + Sync,
-{
     #[allow(clippy::too_many_arguments)]
     #[instrument(level = tracing::Level::ERROR, name = "Sock Source", skip(clock, channels, controller))]
     pub fn spawn(
