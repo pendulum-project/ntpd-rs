@@ -1,4 +1,4 @@
-use crate::daemon::spawn::spawner_task;
+use crate::daemon::{sock_source::SockSourceTask, spawn::spawner_task};
 
 #[cfg(feature = "unstable_nts-pool")]
 use super::spawn::nts_pool::NtsPoolSpawner;
@@ -9,8 +9,8 @@ use super::{
     server::{ServerStats, ServerTask},
     spawn::{
         nts::NtsSpawner, pool::PoolSpawner, sock::SockSpawner, standard::StandardSpawner,
-        NtpSourceCreateParameters, SourceId, SourceRemovalReason, SpawnAction, SpawnEvent, Spawner,
-        SpawnerId, SystemEvent,
+        NtpSourceCreateParameters, SockSourceCreateParameters, SourceId, SourceRemovalReason,
+        SpawnAction, SpawnEvent, Spawner, SpawnerId, SystemEvent,
     },
 };
 
@@ -517,13 +517,48 @@ impl<
         Ok(source_id)
     }
 
+    async fn create_sock_source(
+        &mut self,
+        spawner_id: SpawnerId,
+        params: SockSourceCreateParameters,
+    ) -> Result<SourceId, C::Error> {
+        let source_id = params.id;
+        info!(source_id=?source_id, path=?params.path, spawner=?spawner_id, "new sock source");
+        self.sources.insert(
+            source_id,
+            SourceState {
+                source_id,
+                spawner_id,
+            },
+        );
+
+        SockSourceTask::spawn(
+            source_id,
+            params.path.clone(),
+            self.interface,
+            self.clock.clone(),
+        );
+
+        // Try and find a related spawner and notify that spawner.
+        // This makes sure that the spawner that initially sent the create event
+        // is now aware that the source was added to the system.
+        if let Some(s) = self.spawners.iter().find(|s| s.id == spawner_id) {
+            let _ = s
+                .notify_tx
+                .send(SystemEvent::SockSourceRegistered(params))
+                .await;
+        }
+
+        Ok(source_id)
+    }
+
     async fn handle_spawn_event(&mut self, event: SpawnEvent) -> Result<(), C::Error> {
         match event.action {
             SpawnAction::CreateNtp(params) => {
                 self.create_ntp_source(event.id, params).await?;
             }
             SpawnAction::CreateSock(params) => {
-                todo!("Create sock {} ({})", params.path, params.id);
+                self.create_sock_source(event.id, params).await?;
             }
         }
         Ok(())
