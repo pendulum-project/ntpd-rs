@@ -6,6 +6,7 @@ use tokio::{
     sync::mpsc,
     time::{timeout, Instant},
 };
+use tracing::info;
 
 use super::{config::NormalizedAddress, system::NETWORK_WAIT_PERIOD};
 
@@ -81,6 +82,7 @@ impl SpawnEvent {
 pub enum SystemEvent {
     SourceRemoved(SourceRemovedEvent),
     SourceRegistered(NtpSourceCreateParameters),
+    SockSourceRegistered(SockSourceCreateParameters),
     Idle,
 }
 
@@ -234,6 +236,10 @@ pub async fn spawner_task<S: Spawner + Send + 'static>(
         match event {
             SystemEvent::SourceRegistered(source_params) => {
                 spawner.handle_registered(source_params).await?;
+            }
+            SystemEvent::SockSourceRegistered(_source_params) => {
+                // spawner.handle_registered(source_params).await?;
+                info!("TODO: handle sock source registered");
             }
             SystemEvent::SourceRemoved(removed_source) => {
                 spawner.handle_source_removed(removed_source).await?;
