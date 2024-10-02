@@ -569,10 +569,7 @@ impl SourceState {
         mut measurement: Measurement,
     ) -> bool {
         // preprocessing
-        measurement.delay = match measurement.delay {
-            Some(delay) => Some(delay.max(MIN_DELAY)),
-            None => None,
-        };
+        measurement.delay = measurement.delay.map(|delay| delay.max(MIN_DELAY));
 
         self.update_self_using_raw_measurement(source_defaults_config, algo_config, measurement)
     }
