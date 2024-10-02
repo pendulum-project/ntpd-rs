@@ -278,6 +278,10 @@ pub enum MeasurementNoiseEstimator {
 }
 
 impl MeasurementNoiseEstimator {
+    pub fn new_roundtrip_delay() -> MeasurementNoiseEstimator {
+        MeasurementNoiseEstimator::RoundtripDelay(AveragingBuffer::default())
+    }
+
     fn update(&mut self, delay: Option<NtpDuration>) {
         match self {
             Self::RoundtripDelay(ref mut stats) => {
@@ -626,7 +630,7 @@ impl SourceState {
                     *self = SourceState(SourceStateInner::Initial(InitialSourceFilter {
                         noise_estimator: match filter.noise_estimator {
                             MeasurementNoiseEstimator::RoundtripDelay(_) => {
-                                MeasurementNoiseEstimator::RoundtripDelay(AveragingBuffer::default())
+                                MeasurementNoiseEstimator::new_roundtrip_delay()
                             }
                             MeasurementNoiseEstimator::Constant(v) => {
                                 MeasurementNoiseEstimator::Constant(v)
@@ -753,12 +757,11 @@ impl<SourceId: Copy> KalmanSourceController<SourceId> {
         index: SourceId,
         algo_config: AlgorithmConfig,
         source_defaults_config: SourceDefaultsConfig,
+        noise_estimator: MeasurementNoiseEstimator,
     ) -> Self {
         KalmanSourceController {
             index,
-            state: SourceState::new(MeasurementNoiseEstimator::RoundtripDelay(
-                AveragingBuffer::default(),
-            )),
+            state: SourceState::new(noise_estimator),
             algo_config,
             source_defaults_config,
         }
