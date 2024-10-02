@@ -83,6 +83,8 @@ use crate::{
     ObservableSourceTimedata,
 };
 
+use core::fmt::Debug;
+
 use super::{
     config::AlgorithmConfig,
     matrix::{Matrix, Vector},
@@ -271,49 +273,107 @@ impl AveragingBuffer {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum MeasurementNoiseEstimator {
-    RoundtripDelay(AveragingBuffer),
-    Constant(f64),
+pub trait MeasurementNoiseEstimator {
+    type MeasurementDelay;
+
+    fn update(&mut self, delay: Self::MeasurementDelay);
+    fn get_noise_estimate(&self) -> f64;
+    fn is_outlier(&self, delay: Self::MeasurementDelay, threshold: f64) -> bool;
+    fn preprocess(&self, delay: Self::MeasurementDelay) -> Self::MeasurementDelay;
+    fn reset(&mut self) -> Self;
+
+    // for SourceSnapshot
+    fn get_max_roundtrip(&self, samples: &i32) -> Option<f64>;
+    fn get_delay_mean(&self) -> f64;
 }
 
-impl MeasurementNoiseEstimator {
-    pub fn new_roundtrip_delay() -> MeasurementNoiseEstimator {
-        MeasurementNoiseEstimator::RoundtripDelay(AveragingBuffer::default())
-    }
+impl MeasurementNoiseEstimator for AveragingBuffer {
+    type MeasurementDelay = NtpDuration;
 
-    fn update(&mut self, delay: Option<NtpDuration>) {
-        match self {
-            Self::RoundtripDelay(ref mut stats) => {
-                if let Some(delay) = delay {
-                    stats.update(delay.to_seconds())
-                } else {
-                    unreachable!("Could not update round-trip delay stats: delay is None")
-                }
-            }
-            Self::Constant(_v) => (),
-        }
+    fn update(&mut self, delay: Self::MeasurementDelay) {
+        self.update(delay.to_seconds())
     }
 
     fn get_noise_estimate(&self) -> f64 {
-        match self {
-            Self::RoundtripDelay(stats) => stats.variance() / 4.,
-            Self::Constant(v) => *v,
-        }
+        self.variance() / 4.
+    }
+
+    fn is_outlier(&self, delay: Self::MeasurementDelay, threshold: f64) -> bool {
+        (delay.to_seconds() - self.mean()) > threshold * self.variance().sqrt()
+    }
+
+    fn preprocess(&self, delay: Self::MeasurementDelay) -> Self::MeasurementDelay {
+        delay.max(MIN_DELAY)
+    }
+
+    fn reset(&mut self) -> Self {
+        AveragingBuffer::default()
+    }
+
+    fn get_max_roundtrip(&self, samples: &i32) -> Option<f64> {
+        self.data[..*samples as usize]
+            .iter()
+            .copied()
+            .fold(None, |v1, v2| {
+                if v2.is_nan() {
+                    v1
+                } else if let Some(v1) = v1 {
+                    Some(v2.max(v1))
+                } else {
+                    Some(v2)
+                }
+            })
+    }
+
+    fn get_delay_mean(&self) -> f64 {
+        self.mean()
+    }
+}
+
+impl MeasurementNoiseEstimator for f64 {
+    type MeasurementDelay = ();
+
+    fn update(&mut self, _delay: Self::MeasurementDelay) {}
+
+    fn get_noise_estimate(&self) -> f64 {
+        *self
+    }
+
+    fn is_outlier(&self, _delay: Self::MeasurementDelay, _threshold: f64) -> bool {
+        false
+    }
+
+    fn preprocess(&self, _delay: Self::MeasurementDelay) -> Self::MeasurementDelay {}
+
+    fn reset(&mut self) -> Self {
+        *self
+    }
+
+    fn get_max_roundtrip(&self, _samples: &i32) -> Option<f64> {
+        Some(1.)
+    }
+
+    fn get_delay_mean(&self) -> f64 {
+        0.
     }
 }
 
 #[derive(Debug, Clone)]
-struct InitialSourceFilter {
-    noise_estimator: MeasurementNoiseEstimator,
+struct InitialSourceFilter<
+    D: Debug + Copy + Clone,
+    N: MeasurementNoiseEstimator<MeasurementDelay = D> + Clone,
+> {
+    noise_estimator: N,
     init_offset: AveragingBuffer,
-    last_measurement: Option<Measurement>,
+    last_measurement: Option<Measurement<D>>,
 
     samples: i32,
 }
 
-impl InitialSourceFilter {
-    fn update(&mut self, measurement: Measurement) {
+impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D> + Clone>
+    InitialSourceFilter<D, N>
+{
+    fn update(&mut self, measurement: Measurement<D>) {
         self.noise_estimator.update(measurement.delay);
         self.init_offset.update(measurement.offset.to_seconds());
         self.samples += 1;
@@ -329,24 +389,26 @@ impl InitialSourceFilter {
 }
 
 #[derive(Debug, Clone)]
-struct SourceFilter {
+struct SourceFilter<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>> {
     state: KalmanState,
     clock_wander: f64,
 
-    noise_estimator: MeasurementNoiseEstimator,
+    noise_estimator: N,
 
     precision_score: i32,
     poll_score: i32,
     desired_poll_interval: PollInterval,
 
-    last_measurement: Measurement,
+    last_measurement: Measurement<D>,
     prev_was_outlier: bool,
 
     // Last time a packet was processed
     last_iter: NtpTimestamp,
 }
 
-impl SourceFilter {
+impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>>
+    SourceFilter<D, N>
+{
     /// Move the filter forward to reflect the situation at a new, later timestamp
     fn progress_filtertime(&mut self, time: NtpTimestamp) {
         self.state = self.state.progress_time(time, self.clock_wander);
@@ -355,7 +417,7 @@ impl SourceFilter {
     }
 
     /// Absorb knowledge from a measurement
-    fn absorb_measurement(&mut self, measurement: Measurement) -> (f64, f64, f64) {
+    fn absorb_measurement(&mut self, measurement: Measurement<D>) -> (f64, f64, f64) {
         // Measurement parameters
         let m_delta_t = (measurement.localtime - self.last_measurement.localtime).to_seconds();
 
@@ -391,7 +453,7 @@ impl SourceFilter {
         weight: f64,
         measurement_period: f64,
     ) {
-        // We dont want to speed up when we already want more than we get, and vice versa.
+        // We don't want to speed up when we already want more than we get, and vice versa.
         let reference_measurement_period = self.desired_poll_interval.as_duration().to_seconds();
         if weight < algo_config.poll_interval_low_weight
             && measurement_period / reference_measurement_period > 0.75
@@ -465,7 +527,7 @@ impl SourceFilter {
         &mut self,
         source_defaults_config: &SourceDefaultsConfig,
         algo_config: &AlgorithmConfig,
-        measurement: Measurement,
+        measurement: Measurement<D>,
     ) -> bool {
         // Always update the root_delay, root_dispersion, leap second status and stratum, as they always represent the most accurate state.
         self.last_measurement.root_delay = measurement.root_delay;
@@ -483,19 +545,13 @@ impl SourceFilter {
         self.last_iter = measurement.localtime;
 
         // Filter out one-time outliers (based on delay!)
-        if let MeasurementNoiseEstimator::RoundtripDelay(roundtriptime_stats) =
-            &self.noise_estimator
+        if !self.prev_was_outlier
+            && self
+                .noise_estimator
+                .is_outlier(measurement.delay, algo_config.delay_outlier_threshold)
         {
-            if let Some(delay) = measurement.delay {
-                if !self.prev_was_outlier
-                    && (delay.to_seconds() - roundtriptime_stats.mean())
-                        > algo_config.delay_outlier_threshold
-                            * roundtriptime_stats.variance().sqrt()
-                {
-                    self.prev_was_outlier = true;
-                    return false;
-                }
-            }
+            self.prev_was_outlier = true;
+            return false;
         }
 
         // Environment update
@@ -545,18 +601,26 @@ impl SourceFilter {
 
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
-enum SourceStateInner {
-    Initial(InitialSourceFilter),
-    Stable(SourceFilter),
+enum SourceStateInner<
+    D: Debug + Copy + Clone,
+    N: MeasurementNoiseEstimator<MeasurementDelay = D> + Clone,
+> {
+    Initial(InitialSourceFilter<D, N>),
+    Stable(SourceFilter<D, N>),
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct SourceState(SourceStateInner);
+pub(super) struct SourceState<
+    D: Debug + Copy + Clone,
+    N: MeasurementNoiseEstimator<MeasurementDelay = D> + Clone,
+>(SourceStateInner<D, N>);
 
 const MIN_DELAY: NtpDuration = NtpDuration::from_exponent(-18);
 
-impl SourceState {
-    pub(super) fn new(noise_estimator: MeasurementNoiseEstimator) -> Self {
+impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D> + Clone>
+    SourceState<D, N>
+{
+    pub(super) fn new(noise_estimator: N) -> Self {
         SourceState(SourceStateInner::Initial(InitialSourceFilter {
             noise_estimator,
             init_offset: AveragingBuffer::default(),
@@ -570,10 +634,14 @@ impl SourceState {
         &mut self,
         source_defaults_config: &SourceDefaultsConfig,
         algo_config: &AlgorithmConfig,
-        mut measurement: Measurement,
+        mut measurement: Measurement<D>,
     ) -> bool {
         // preprocessing
-        measurement.delay = measurement.delay.map(|delay| delay.max(MIN_DELAY));
+        let noise_estimator = match self {
+            SourceState(SourceStateInner::Initial(filter)) => &filter.noise_estimator,
+            SourceState(SourceStateInner::Stable(filter)) => &filter.noise_estimator,
+        };
+        measurement.delay = noise_estimator.preprocess(measurement.delay);
 
         self.update_self_using_raw_measurement(source_defaults_config, algo_config, measurement)
     }
@@ -582,7 +650,7 @@ impl SourceState {
         &mut self,
         source_defaults_config: &SourceDefaultsConfig,
         algo_config: &AlgorithmConfig,
-        measurement: Measurement,
+        measurement: Measurement<D>,
     ) -> bool {
         match &mut self.0 {
             SourceStateInner::Initial(filter) => {
@@ -628,14 +696,7 @@ impl SourceState {
                     tracing::warn!(msg);
 
                     *self = SourceState(SourceStateInner::Initial(InitialSourceFilter {
-                        noise_estimator: match filter.noise_estimator {
-                            MeasurementNoiseEstimator::RoundtripDelay(_) => {
-                                MeasurementNoiseEstimator::new_roundtrip_delay()
-                            }
-                            MeasurementNoiseEstimator::Constant(v) => {
-                                MeasurementNoiseEstimator::Constant(v)
-                            }
-                        },
+                        noise_estimator: filter.noise_estimator.reset(),
                         init_offset: AveragingBuffer::default(),
                         last_measurement: None,
                         samples: 0,
@@ -661,23 +722,7 @@ impl SourceState {
                 last_measurement: Some(last_measurement),
                 samples,
             }) if *samples > 0 => {
-                let max_roundtrip = match noise_estimator {
-                    MeasurementNoiseEstimator::RoundtripDelay(roundtriptime_stats) => {
-                        roundtriptime_stats.data[..*samples as usize]
-                            .iter()
-                            .copied()
-                            .fold(None, |v1, v2| {
-                                if v2.is_nan() {
-                                    v1
-                                } else if let Some(v1) = v1 {
-                                    Some(v2.max(v1))
-                                } else {
-                                    Some(v2)
-                                }
-                            })?
-                    }
-                    _ => 0.,
-                };
+                let max_roundtrip = noise_estimator.get_max_roundtrip(samples)?;
                 Some(SourceSnapshot {
                     index,
                     source_uncertainty: last_measurement.root_dispersion,
@@ -707,12 +752,7 @@ impl SourceState {
                 index,
                 state: filter.state,
                 wander: filter.clock_wander,
-                delay: match &filter.noise_estimator {
-                    MeasurementNoiseEstimator::RoundtripDelay(roundtriptime_stats) => {
-                        roundtriptime_stats.mean()
-                    }
-                    _ => 0.,
-                },
+                delay: filter.noise_estimator.get_delay_mean(),
                 source_uncertainty: filter.last_measurement.root_dispersion,
                 source_delay: filter.last_measurement.root_delay,
                 leap_indicator: filter.last_measurement.leap,
@@ -745,19 +785,28 @@ impl SourceState {
 }
 
 #[derive(Debug)]
-pub struct KalmanSourceController<SourceId> {
+pub struct KalmanSourceController<
+    SourceId,
+    D: Debug + Copy + Clone,
+    N: MeasurementNoiseEstimator<MeasurementDelay = D> + Clone,
+> {
     index: SourceId,
-    state: SourceState,
+    state: SourceState<D, N>,
     algo_config: AlgorithmConfig,
     source_defaults_config: SourceDefaultsConfig,
 }
 
-impl<SourceId: Copy> KalmanSourceController<SourceId> {
+impl<
+        SourceId: Copy,
+        D: Debug + Copy + Clone,
+        N: MeasurementNoiseEstimator<MeasurementDelay = D> + Clone,
+    > KalmanSourceController<SourceId, D, N>
+{
     pub(super) fn new(
         index: SourceId,
         algo_config: AlgorithmConfig,
         source_defaults_config: SourceDefaultsConfig,
-        noise_estimator: MeasurementNoiseEstimator,
+        noise_estimator: N,
     ) -> Self {
         KalmanSourceController {
             index,
@@ -768,11 +817,15 @@ impl<SourceId: Copy> KalmanSourceController<SourceId> {
     }
 }
 
-impl<SourceId: std::fmt::Debug + Copy + Send + 'static> SourceController
-    for KalmanSourceController<SourceId>
+impl<
+        SourceId: std::fmt::Debug + Copy + Send + 'static,
+        D: Debug + Copy + Clone + Send + 'static,
+        N: MeasurementNoiseEstimator<MeasurementDelay = D> + Clone + Send + 'static,
+    > SourceController for KalmanSourceController<SourceId, D, N>
 {
     type ControllerMessage = KalmanControllerMessage;
     type SourceMessage = KalmanSourceMessage<SourceId>;
+    type MeasurementDelay = D;
 
     fn handle_message(&mut self, message: Self::ControllerMessage) {
         match message.inner {
@@ -785,7 +838,10 @@ impl<SourceId: std::fmt::Debug + Copy + Send + 'static> SourceController
         }
     }
 
-    fn handle_measurement(&mut self, measurement: Measurement) -> Option<Self::SourceMessage> {
+    fn handle_measurement(
+        &mut self,
+        measurement: Measurement<Self::MeasurementDelay>,
+    ) -> Option<Self::SourceMessage> {
         if self.state.update_self_using_measurement(
             &self.source_defaults_config,
             &self.algo_config,
@@ -837,15 +893,15 @@ mod tests {
                 time: base,
             },
             clock_wander: 1e-8,
-            noise_estimator: MeasurementNoiseEstimator::RoundtripDelay(AveragingBuffer {
+            noise_estimator: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
-            }),
+            },
             precision_score: 0,
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
             last_measurement: Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base,
                 monotime: basei,
@@ -863,7 +919,7 @@ mod tests {
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(2800),
@@ -884,15 +940,15 @@ mod tests {
                 time: base,
             },
             clock_wander: 1e-8,
-            noise_estimator: MeasurementNoiseEstimator::RoundtripDelay(AveragingBuffer {
+            noise_estimator: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
-            }),
+            },
             precision_score: 0,
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
             last_measurement: Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base,
                 monotime: basei,
@@ -911,7 +967,7 @@ mod tests {
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(2800),
@@ -932,15 +988,15 @@ mod tests {
                 time: base,
             },
             clock_wander: 1e-8,
-            noise_estimator: MeasurementNoiseEstimator::RoundtripDelay(AveragingBuffer {
+            noise_estimator: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
-            }),
+            },
             precision_score: 0,
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
             last_measurement: Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base,
                 monotime: basei,
@@ -959,7 +1015,7 @@ mod tests {
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base + NtpDuration::from_seconds(2800.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
@@ -985,15 +1041,15 @@ mod tests {
                 time: base,
             },
             clock_wander: 1e-8,
-            noise_estimator: MeasurementNoiseEstimator::RoundtripDelay(AveragingBuffer {
+            noise_estimator: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
-            }),
+            },
             precision_score: 0,
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
             last_measurement: Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base,
                 monotime: basei,
@@ -1026,15 +1082,15 @@ mod tests {
                 time: base,
             },
             clock_wander: 0.0,
-            noise_estimator: MeasurementNoiseEstimator::RoundtripDelay(AveragingBuffer {
+            noise_estimator: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
-            }),
+            },
             precision_score: 0,
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
             last_measurement: Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base,
                 monotime: basei,
@@ -1064,7 +1120,7 @@ mod tests {
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
@@ -1105,15 +1161,15 @@ mod tests {
                 time: base,
             },
             clock_wander: 0.0,
-            noise_estimator: MeasurementNoiseEstimator::RoundtripDelay(AveragingBuffer {
+            noise_estimator: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
-            }),
+            },
             precision_score: 0,
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
             last_measurement: Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(-20e-3),
                 localtime: base,
                 monotime: basei,
@@ -1143,7 +1199,7 @@ mod tests {
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(-20e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
@@ -1189,15 +1245,15 @@ mod tests {
                 time: base,
             },
             clock_wander: 1e-8,
-            noise_estimator: MeasurementNoiseEstimator::RoundtripDelay(AveragingBuffer {
+            noise_estimator: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
-            }),
+            },
             precision_score: 0,
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
             last_measurement: Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(0.0),
                 localtime: base,
                 monotime: basei,
@@ -1228,15 +1284,15 @@ mod tests {
                 time: base,
             },
             clock_wander: 1e-8,
-            noise_estimator: MeasurementNoiseEstimator::RoundtripDelay(AveragingBuffer {
+            noise_estimator: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
-            }),
+            },
             precision_score: 0,
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
             last_measurement: Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(0.0),
                 localtime: base,
                 monotime: basei,
@@ -1297,9 +1353,7 @@ mod tests {
     fn test_init() {
         let base = NtpTimestamp::from_fixed_int(0);
         let basei = NtpInstant::now();
-        let mut source = SourceState::new(MeasurementNoiseEstimator::RoundtripDelay(
-            AveragingBuffer::default(),
-        ));
+        let mut source = SourceState::new(AveragingBuffer::default());
         assert!(source
             .snapshot(0_usize, &AlgorithmConfig::default())
             .is_none());
@@ -1307,7 +1361,7 @@ mod tests {
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(0e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
@@ -1331,7 +1385,7 @@ mod tests {
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(1e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
@@ -1355,7 +1409,7 @@ mod tests {
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(2e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
@@ -1379,7 +1433,7 @@ mod tests {
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(3e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
@@ -1403,7 +1457,7 @@ mod tests {
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(4e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
@@ -1427,7 +1481,7 @@ mod tests {
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(5e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
@@ -1451,7 +1505,7 @@ mod tests {
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(6e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
@@ -1475,7 +1529,7 @@ mod tests {
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(7e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
@@ -1512,9 +1566,7 @@ mod tests {
     fn test_steer_during_init() {
         let base = NtpTimestamp::from_fixed_int(0);
         let basei = NtpInstant::now();
-        let mut source = SourceState::new(MeasurementNoiseEstimator::RoundtripDelay(
-            AveragingBuffer::default(),
-        ));
+        let mut source = SourceState::new(AveragingBuffer::default());
         assert!(source
             .snapshot(0_usize, &AlgorithmConfig::default())
             .is_none());
@@ -1522,7 +1574,7 @@ mod tests {
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(4e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
@@ -1546,7 +1598,7 @@ mod tests {
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(5e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
@@ -1570,7 +1622,7 @@ mod tests {
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(6e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
@@ -1594,7 +1646,7 @@ mod tests {
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(7e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
@@ -1619,7 +1671,7 @@ mod tests {
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(4e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
@@ -1643,7 +1695,7 @@ mod tests {
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(5e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
@@ -1667,7 +1719,7 @@ mod tests {
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(6e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
@@ -1691,7 +1743,7 @@ mod tests {
             &SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(7e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
@@ -1741,15 +1793,15 @@ mod tests {
                 time: base,
             },
             clock_wander: 1e-8,
-            noise_estimator: MeasurementNoiseEstimator::RoundtripDelay(AveragingBuffer {
+            noise_estimator: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
-            }),
+            },
             precision_score: 0,
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
             last_measurement: Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(0.0),
                 localtime: base,
                 monotime: basei,
@@ -1867,15 +1919,15 @@ mod tests {
                 time: base,
             },
             clock_wander: 1e-8,
-            noise_estimator: MeasurementNoiseEstimator::RoundtripDelay(AveragingBuffer {
+            noise_estimator: AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
-            }),
+            },
             precision_score: 0,
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
             last_measurement: Measurement {
-                delay: Some(NtpDuration::from_seconds(0.0)),
+                delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(0.0),
                 localtime: base,
                 monotime: basei,

@@ -1,16 +1,47 @@
-use std::collections::HashMap;
+use std::fmt::Debug;
+use std::{collections::HashMap, marker::PhantomData};
 
 use ntp_proto::{
-    Measurement, MeasurementNoiseEstimator, NtpClock, NtpDuration, PollInterval, SourceController,
-    TimeSyncController,
+    Measurement, NtpClock, NtpDuration, PollInterval, SourceController, TimeSyncController,
 };
 use serde::Deserialize;
 
 use crate::daemon::spawn::SourceId;
 
+#[derive(Debug, Clone)]
+pub(crate) enum Measurements {
+    Ntp(Measurement<NtpDuration>),
+    Sock(Measurement<()>),
+}
+
+impl Measurements {
+    fn get_offset(&self) -> NtpDuration {
+        match self {
+            Measurements::Ntp(measurement) => measurement.offset,
+            Measurements::Sock(measurement) => measurement.offset,
+        }
+    }
+}
+
+pub trait WrapMeasurements<D: Debug + Copy + Clone> {
+    fn wrap(&self) -> Measurements;
+}
+
+impl WrapMeasurements<NtpDuration> for Measurement<NtpDuration> {
+    fn wrap(&self) -> Measurements {
+        Measurements::Ntp(*self)
+    }
+}
+
+impl WrapMeasurements<()> for Measurement<()> {
+    fn wrap(&self) -> Measurements {
+        Measurements::Sock(*self)
+    }
+}
+
 pub(crate) struct SingleShotController<C> {
     pub(super) clock: C,
-    sources: HashMap<SourceId, Measurement>,
+    sources: HashMap<SourceId, Measurements>,
     min_poll_interval: PollInterval,
     min_agreeing: usize,
 }
@@ -20,7 +51,8 @@ pub(crate) struct SingleShotControllerConfig {
     pub expected_sources: usize,
 }
 
-pub(crate) struct SingleShotSourceController {
+pub(crate) struct SingleShotSourceController<D: Debug + Copy + Clone> {
+    delay_type: PhantomData<D>,
     min_poll_interval: PollInterval,
     done: bool,
 }
@@ -46,11 +78,11 @@ impl<C: NtpClock> SingleShotController<C> {
             .flat_map(|m| {
                 [
                     Event {
-                        offset: m.offset - Self::ASSUMED_UNCERTAINTY,
+                        offset: m.get_offset() - Self::ASSUMED_UNCERTAINTY,
                         count: 1,
                     },
                     Event {
-                        offset: m.offset + Self::ASSUMED_UNCERTAINTY,
+                        offset: m.get_offset() + Self::ASSUMED_UNCERTAINTY,
                         count: -1,
                     },
                 ]
@@ -74,9 +106,9 @@ impl<C: NtpClock> SingleShotController<C> {
             let mut sum = 0.0;
             let mut count = 0;
             for source in self.sources.values() {
-                if source.offset.abs_diff(peak_offset) < Self::ASSUMED_UNCERTAINTY {
+                if source.get_offset().abs_diff(peak_offset) < Self::ASSUMED_UNCERTAINTY {
                     count += 1;
-                    sum += source.offset.to_seconds()
+                    sum += source.get_offset().to_seconds()
                 }
             }
 
@@ -93,8 +125,9 @@ impl<C: NtpClock> TimeSyncController for SingleShotController<C> {
     type SourceId = SourceId;
     type AlgorithmConfig = SingleShotControllerConfig;
     type ControllerMessage = SingleShotControllerMessage;
-    type SourceMessage = Measurement;
-    type SourceController = SingleShotSourceController;
+    type SourceMessage = Measurements;
+    type NtpSourceController = SingleShotSourceController<NtpDuration>;
+    type SockSourceController = SingleShotSourceController<()>;
 
     fn new(
         clock: Self::Clock,
@@ -117,12 +150,21 @@ impl<C: NtpClock> TimeSyncController for SingleShotController<C> {
         Ok(())
     }
 
-    fn add_source(
+    fn add_source(&mut self, _id: Self::SourceId) -> Self::NtpSourceController {
+        SingleShotSourceController::<NtpDuration> {
+            delay_type: PhantomData,
+            min_poll_interval: self.min_poll_interval,
+            done: false,
+        }
+    }
+
+    fn add_sock_source(
         &mut self,
         _id: Self::SourceId,
-        _noise_estimator: MeasurementNoiseEstimator,
-    ) -> Self::SourceController {
-        SingleShotSourceController {
+        _measurement_noise_estimate: f64,
+    ) -> Self::SockSourceController {
+        SingleShotSourceController::<()> {
+            delay_type: PhantomData,
             min_poll_interval: self.min_poll_interval,
             done: false,
         }
@@ -155,9 +197,13 @@ impl<C: NtpClock> TimeSyncController for SingleShotController<C> {
     }
 }
 
-impl SourceController for SingleShotSourceController {
+impl<D: Debug + Copy + Clone + Send + 'static> SourceController for SingleShotSourceController<D>
+where
+    Measurement<D>: WrapMeasurements<D>,
+{
     type ControllerMessage = SingleShotControllerMessage;
-    type SourceMessage = Measurement;
+    type MeasurementDelay = D;
+    type SourceMessage = Measurements;
 
     fn handle_message(&mut self, _message: Self::ControllerMessage) {
         //ignore
@@ -165,10 +211,10 @@ impl SourceController for SingleShotSourceController {
 
     fn handle_measurement(
         &mut self,
-        measurement: ntp_proto::Measurement,
+        measurement: Measurement<Self::MeasurementDelay>,
     ) -> Option<Self::SourceMessage> {
         self.done = true;
-        Some(measurement)
+        Some(measurement.wrap())
     }
 
     fn desired_poll_interval(&self) -> ntp_proto::PollInterval {

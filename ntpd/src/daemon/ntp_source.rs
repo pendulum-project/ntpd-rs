@@ -3,8 +3,8 @@ use std::{
 };
 
 use ntp_proto::{
-    NtpClock, NtpInstant, NtpSource, NtpSourceActionIterator, NtpSourceUpdate, NtpTimestamp,
-    ObservableSourceState, SourceController, SystemSourceUpdate,
+    NtpClock, NtpDuration, NtpInstant, NtpSource, NtpSourceActionIterator, NtpSourceUpdate,
+    NtpTimestamp, ObservableSourceState, SourceController, SystemSourceUpdate,
 };
 #[cfg(target_os = "linux")]
 use timestamped_socket::socket::open_interface_udp;
@@ -51,7 +51,11 @@ pub struct SourceChannels<ControllerMessage, SourceMessage> {
         Arc<std::sync::RwLock<HashMap<SourceId, ObservableSourceState<SourceId>>>>,
 }
 
-pub(crate) struct SourceTask<C: 'static + NtpClock + Send, Controller: SourceController, T: Wait> {
+pub(crate) struct SourceTask<
+    C: 'static + NtpClock + Send,
+    Controller: SourceController<MeasurementDelay = NtpDuration>,
+    T: Wait,
+> {
     _wait: PhantomData<T>,
     index: SourceId,
     clock: C,
@@ -78,7 +82,8 @@ enum SocketResult {
     Abort,
 }
 
-impl<C, Controller: SourceController, T> SourceTask<C, Controller, T>
+impl<C, Controller: SourceController<MeasurementDelay = NtpDuration>, T>
+    SourceTask<C, Controller, T>
 where
     C: 'static + NtpClock + Send + Sync,
     T: Wait,
@@ -317,7 +322,8 @@ where
     }
 }
 
-impl<C, Controller: SourceController> SourceTask<C, Controller, Sleep>
+impl<C, Controller: SourceController<MeasurementDelay = NtpDuration>>
+    SourceTask<C, Controller, Sleep>
 where
     C: 'static + NtpClock + Send + Sync,
 {
@@ -443,9 +449,10 @@ mod tests {
     };
 
     use ntp_proto::{
-        AlgorithmConfig, KalmanClockController, KalmanControllerMessage, KalmanSourceController,
-        KalmanSourceMessage, NoCipher, NtpDuration, NtpLeapIndicator, NtpPacket, ProtocolVersion,
-        SourceDefaultsConfig, SynchronizationConfig, SystemSnapshot, TimeSnapshot,
+        AlgorithmConfig, AveragingBuffer, KalmanClockController, KalmanControllerMessage,
+        KalmanSourceController, KalmanSourceMessage, NoCipher, NtpDuration, NtpLeapIndicator,
+        NtpPacket, ProtocolVersion, SourceDefaultsConfig, SynchronizationConfig, SystemSnapshot,
+        TimeSnapshot,
     };
     use timestamped_socket::socket::{open_ip, GeneralTimestampMode, Open};
     use tokio::sync::{broadcast, mpsc};
@@ -574,7 +581,7 @@ mod tests {
     async fn test_startup<T: Wait>(
         port_base: u16,
     ) -> (
-        SourceTask<TestClock, KalmanSourceController<SourceId>, T>,
+        SourceTask<TestClock, KalmanSourceController<SourceId, NtpDuration, AveragingBuffer>, T>,
         Socket<SocketAddr, Open>,
         mpsc::Receiver<MsgForSystem<KalmanSourceMessage<SourceId>>>,
         broadcast::Sender<SystemSourceUpdate<KalmanControllerMessage>>,
