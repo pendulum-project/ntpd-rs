@@ -63,7 +63,7 @@ impl Spawner for SockSpawner {
     }
 
     fn get_addr_description(&self) -> String {
-        format!("{}", self.config.path)
+        self.config.path.to_string()
     }
 
     fn get_description(&self) -> &str {
