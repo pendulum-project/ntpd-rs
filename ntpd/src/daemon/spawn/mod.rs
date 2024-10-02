@@ -165,6 +165,7 @@ pub struct NtpSourceCreateParameters {
 pub struct SockSourceCreateParameters {
     pub id: SourceId,
     pub path: String,
+    pub noise_estimate: f64,
 }
 
 #[async_trait::async_trait]
