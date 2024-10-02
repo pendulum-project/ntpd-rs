@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt::Debug, hash::Hash, time::Duration};
 
-pub use source::MeasurementNoiseEstimator;
+pub use source::AveragingBuffer;
 use tracing::{debug, error, info};
 
 use crate::{
@@ -345,7 +345,8 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug + Send + 'static> TimeSyncC
     type AlgorithmConfig = AlgorithmConfig;
     type ControllerMessage = KalmanControllerMessage;
     type SourceMessage = KalmanSourceMessage<SourceId>;
-    type SourceController = KalmanSourceController<SourceId>;
+    type NtpSourceController = KalmanSourceController<SourceId, NtpDuration, AveragingBuffer>;
+    type SockSourceController = KalmanSourceController<SourceId, (), f64>;
 
     fn new(
         clock: C,
@@ -375,17 +376,27 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug + Send + 'static> TimeSyncC
         Ok(())
     }
 
-    fn add_source(
-        &mut self,
-        id: SourceId,
-        noise_estimator: MeasurementNoiseEstimator,
-    ) -> Self::SourceController {
+    fn add_source(&mut self, id: SourceId) -> Self::NtpSourceController {
         self.sources.insert(id, (None, false));
         KalmanSourceController::new(
             id,
             self.algo_config,
             self.source_defaults_config,
-            noise_estimator,
+            AveragingBuffer::default(),
+        )
+    }
+
+    fn add_sock_source(
+        &mut self,
+        id: SourceId,
+        measurement_noise_estimate: f64,
+    ) -> Self::SockSourceController {
+        self.sources.insert(id, (None, false));
+        KalmanSourceController::new(
+            id,
+            self.algo_config,
+            self.source_defaults_config,
+            measurement_noise_estimate,
         )
     }
 
@@ -499,7 +510,7 @@ mod tests {
         // ignore startup steer of frequency.
         *algo.clock.has_steered.borrow_mut() = false;
 
-        let mut source = algo.add_source(0, MeasurementNoiseEstimator::new_roundtrip_delay());
+        let mut source = algo.add_source(0);
         algo.source_update(0, true);
 
         assert!(algo.in_startup);
@@ -512,7 +523,7 @@ mod tests {
             noise += 1e-9;
 
             let message = source.handle_measurement(Measurement {
-                delay: Some(NtpDuration::from_seconds(0.001 + noise)),
+                delay: NtpDuration::from_seconds(0.001 + noise),
                 offset: NtpDuration::from_seconds(1700.0 + noise),
                 localtime: algo.clock.current_time,
                 monotime: cur_instant,
@@ -711,7 +722,7 @@ mod tests {
         // ignore startup steer of frequency.
         *algo.clock.has_steered.borrow_mut() = false;
 
-        let mut source = algo.add_source(0, MeasurementNoiseEstimator::new_roundtrip_delay());
+        let mut source = algo.add_source(0);
         algo.source_update(0, true);
 
         let mut noise = 1e-9;
@@ -722,7 +733,7 @@ mod tests {
             noise += 1e-9;
 
             let message = source.handle_measurement(Measurement {
-                delay: Some(NtpDuration::from_seconds(0.001 + noise)),
+                delay: NtpDuration::from_seconds(0.001 + noise),
                 offset: NtpDuration::from_seconds(1700.0 + noise),
                 localtime: algo.clock.current_time,
                 monotime: cur_instant,
@@ -770,7 +781,7 @@ mod tests {
         // ignore startup steer of frequency.
         *algo.clock.has_steered.borrow_mut() = false;
 
-        let mut source = algo.add_source(0, MeasurementNoiseEstimator::new_roundtrip_delay());
+        let mut source = algo.add_source(0);
         algo.source_update(0, true);
 
         let mut noise = 1e-9;
@@ -781,7 +792,7 @@ mod tests {
             noise *= -1.0;
 
             let message = source.handle_measurement(Measurement {
-                delay: Some(NtpDuration::from_seconds(0.001 + noise)),
+                delay: NtpDuration::from_seconds(0.001 + noise),
                 offset: NtpDuration::from_seconds(-3600.0 + noise),
                 localtime: algo.clock.current_time,
                 monotime: cur_instant,

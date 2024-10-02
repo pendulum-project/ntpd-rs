@@ -1,6 +1,6 @@
 use std::{fmt::Debug, time::Duration};
 
-pub use kalman::MeasurementNoiseEstimator;
+pub use kalman::AveragingBuffer;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::{
@@ -56,9 +56,15 @@ pub trait TimeSyncController: Sized + Send + 'static {
     type AlgorithmConfig: Debug + Copy + DeserializeOwned + Send;
     type ControllerMessage: Debug + Clone + Send + 'static;
     type SourceMessage: Debug + Clone + Send + 'static;
-    type SourceController: SourceController<
+    type NtpSourceController: SourceController<
         ControllerMessage = Self::ControllerMessage,
         SourceMessage = Self::SourceMessage,
+        MeasurementDelay = NtpDuration,
+    >;
+    type SockSourceController: SourceController<
+        ControllerMessage = Self::ControllerMessage,
+        SourceMessage = Self::SourceMessage,
+        MeasurementDelay = (),
     >;
 
     /// Create a new clock controller controlling the given clock
@@ -73,11 +79,13 @@ pub trait TimeSyncController: Sized + Send + 'static {
     fn take_control(&mut self) -> Result<(), <Self::Clock as NtpClock>::Error>;
 
     /// Create a new source with given identity
-    fn add_source(
+    fn add_source(&mut self, id: Self::SourceId) -> Self::NtpSourceController;
+    /// Create a new sock source with given identity
+    fn add_sock_source(
         &mut self,
         id: Self::SourceId,
-        noise_estimator: MeasurementNoiseEstimator,
-    ) -> Self::SourceController;
+        measurement_noise_estimate: f64,
+    ) -> Self::SockSourceController;
     /// Notify the controller that a previous source has gone
     fn remove_source(&mut self, id: Self::SourceId);
     /// Notify the controller that the status of a source (whether
@@ -98,10 +106,14 @@ pub trait TimeSyncController: Sized + Send + 'static {
 pub trait SourceController: Sized + Send + 'static {
     type ControllerMessage: Debug + Clone + Send + 'static;
     type SourceMessage: Debug + Clone + Send + 'static;
+    type MeasurementDelay: Debug + Copy + Clone;
 
     fn handle_message(&mut self, message: Self::ControllerMessage);
 
-    fn handle_measurement(&mut self, measurement: Measurement) -> Option<Self::SourceMessage>;
+    fn handle_measurement(
+        &mut self,
+        measurement: Measurement<Self::MeasurementDelay>,
+    ) -> Option<Self::SourceMessage>;
 
     fn desired_poll_interval(&self) -> PollInterval;
 

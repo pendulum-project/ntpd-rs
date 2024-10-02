@@ -5,7 +5,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{fmt::Debug, hash::Hash};
 
-use crate::algorithm::MeasurementNoiseEstimator;
 #[cfg(feature = "ntpv5")]
 use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
 use crate::source::NtpSourceUpdate;
@@ -246,10 +245,22 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
     pub fn create_source_controller(
         &mut self,
         id: SourceId,
-        noise_estimator: MeasurementNoiseEstimator,
-    ) -> Result<Controller::SourceController, <Controller::Clock as NtpClock>::Error> {
+    ) -> Result<Controller::NtpSourceController, <Controller::Clock as NtpClock>::Error> {
         self.ensure_controller_control()?;
-        let controller = self.controller.add_source(id, noise_estimator);
+        let controller = self.controller.add_source(id);
+        self.sources.insert(id, None);
+        Ok(controller)
+    }
+
+    pub fn create_sock_source_controller(
+        &mut self,
+        id: SourceId,
+        measurement_noise_estimate: f64,
+    ) -> Result<Controller::SockSourceController, <Controller::Clock as NtpClock>::Error> {
+        self.ensure_controller_control()?;
+        let controller = self
+            .controller
+            .add_sock_source(id, measurement_noise_estimate);
         self.sources.insert(id, None);
         Ok(controller)
     }
@@ -262,7 +273,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         protocol_version: ProtocolVersion,
     ) -> Result<
         (
-            NtpSource<Controller::SourceController>,
+            NtpSource<Controller::NtpSourceController>,
             NtpSourceActionIterator<Controller::SourceMessage>,
         ),
         <Controller::Clock as NtpClock>::Error,
@@ -271,7 +282,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
             source_addr,
             self.source_defaults_config,
             protocol_version,
-            self.create_source_controller(id, MeasurementNoiseEstimator::new_roundtrip_delay())?,
+            self.create_source_controller(id)?,
         ))
     }
 
@@ -284,7 +295,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         nts: Box<SourceNtsData>,
     ) -> Result<
         (
-            NtpSource<Controller::SourceController>,
+            NtpSource<Controller::NtpSourceController>,
             NtpSourceActionIterator<Controller::SourceMessage>,
         ),
         <Controller::Clock as NtpClock>::Error,
@@ -293,7 +304,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
             source_addr,
             self.source_defaults_config,
             protocol_version,
-            self.create_source_controller(id, MeasurementNoiseEstimator::new_roundtrip_delay())?,
+            self.create_source_controller(id)?,
             nts,
         ))
     }
