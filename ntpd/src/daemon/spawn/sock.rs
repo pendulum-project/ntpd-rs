@@ -37,6 +37,7 @@ impl Spawner for SockSpawner {
                 SpawnAction::Create(SourceCreateParameters::Sock(SockSourceCreateParameters {
                     id: SourceId::new(),
                     path: self.config.path.clone(),
+                    noise_estimate: self.config.measurement_noise_estimate.to_seconds(),
                 })),
             ))
             .await?;
