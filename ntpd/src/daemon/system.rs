@@ -26,9 +26,8 @@ use std::{
 };
 
 use ntp_proto::{
-    KeySet, MeasurementNoiseEstimator, NtpClock, ObservableSourceState, SourceDefaultsConfig,
-    SynchronizationConfig, System, SystemActionIterator, SystemSnapshot, SystemSourceUpdate,
-    TimeSyncController,
+    KeySet, NtpClock, ObservableSourceState, SourceDefaultsConfig, SynchronizationConfig, System,
+    SystemActionIterator, SystemSnapshot, SystemSourceUpdate, TimeSyncController,
 };
 use timestamped_socket::interface::InterfaceName;
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -525,10 +524,8 @@ impl<
                         system_update_receiver: self.system_update_sender.subscribe(),
                         source_snapshots: self.source_snapshots.clone(),
                     },
-                    self.system.create_source_controller(
-                        source_id,
-                        MeasurementNoiseEstimator::Constant(params.noise_estimate),
-                    )?,
+                    self.system
+                        .create_sock_source_controller(source_id, params.noise_estimate)?,
                 );
             }
         };
