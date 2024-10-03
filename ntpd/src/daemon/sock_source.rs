@@ -87,7 +87,7 @@ pub(crate) struct SockSourceTask<C: 'static + NtpClock + Send, Controller: Sourc
     controller: Controller,
 }
 
-async fn create_socket(socket_path: String) -> std::io::Result<UnixDatagram> {
+fn create_socket(socket_path: String) -> std::io::Result<UnixDatagram> {
     let path = Path::new(&socket_path).to_path_buf();
     if path.exists() {
         debug!("Removing previous socket file");
@@ -200,9 +200,7 @@ where
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(
             (async move {
-                let socket = create_socket(socket_path)
-                    .await
-                    .expect("Could not create socket");
+                let socket = create_socket(socket_path).expect("Could not create socket");
 
                 let mut process = SockSourceTask {
                     index,
@@ -216,5 +214,181 @@ where
             })
             .instrument(Span::current()),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        collections::HashMap,
+        os::unix::net::UnixDatagram,
+        sync::{Arc, RwLock},
+    };
+
+    use ntp_proto::{
+        AlgorithmConfig, KalmanClockController, NtpClock, NtpDuration, NtpLeapIndicator,
+        NtpTimestamp, ReferenceId, SourceDefaultsConfig, SynchronizationConfig,
+    };
+    use tokio::sync::mpsc;
+
+    use crate::daemon::{
+        ntp_source::{MsgForSystem, SourceChannels},
+        sock_source::{create_socket, SampleError, SockSourceTask, SOCK_MAGIC},
+        spawn::SourceId,
+        util::EPOCH_OFFSET,
+    };
+
+    use super::deserialize_sample;
+
+    #[derive(Debug, Clone, Default)]
+    struct TestClock {}
+
+    impl NtpClock for TestClock {
+        type Error = std::time::SystemTimeError;
+
+        fn now(&self) -> std::result::Result<NtpTimestamp, Self::Error> {
+            let cur =
+                std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH)?;
+
+            Ok(NtpTimestamp::from_seconds_nanos_since_ntp_era(
+                EPOCH_OFFSET.wrapping_add(cur.as_secs() as u32),
+                cur.subsec_nanos(),
+            ))
+        }
+
+        fn set_frequency(&self, _freq: f64) -> Result<NtpTimestamp, Self::Error> {
+            self.now()
+            //ignore
+        }
+
+        fn get_frequency(&self) -> Result<f64, Self::Error> {
+            Ok(0.0)
+        }
+
+        fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
+            panic!("Shouldn't be called by source");
+        }
+
+        fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
+            Ok(())
+            //ignore
+        }
+
+        fn error_estimate_update(
+            &self,
+            _est_error: NtpDuration,
+            _max_error: NtpDuration,
+        ) -> Result<(), Self::Error> {
+            panic!("Shouldn't be called by source");
+        }
+
+        fn status_update(&self, _leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
+            Ok(())
+            //ignore
+        }
+    }
+
+    #[tokio::test]
+    async fn test_read_sock() {
+        let (_system_update_sender, system_update_receiver) = tokio::sync::broadcast::channel(1);
+        let (msg_for_system_sender, mut msg_for_system_receiver) = mpsc::channel(1);
+
+        let index = SourceId::new();
+        let clock = TestClock {};
+        let mut system: ntp_proto::System<_, KalmanClockController<_, _>> = ntp_proto::System::new(
+            clock.clone(),
+            SynchronizationConfig::default(),
+            SourceDefaultsConfig::default(),
+            AlgorithmConfig::default(),
+            Arc::new([]),
+        )
+        .unwrap();
+
+        let socket_path = "/tmp/test.sock";
+        let socket = create_socket(socket_path.to_string()).unwrap();
+
+        let mut process = SockSourceTask {
+            index,
+            socket,
+            clock,
+            channels: SourceChannels {
+                msg_for_system_sender,
+                system_update_receiver,
+                source_snapshots: Arc::new(RwLock::new(HashMap::new())),
+            },
+            controller: system.create_sock_source_controller(index, 0.001).unwrap(),
+        };
+
+        let handle = tokio::spawn(async move {
+            process.run().await;
+        });
+
+        // Send example data to socket
+        let sock = UnixDatagram::unbound().unwrap();
+        sock.connect(socket_path).unwrap();
+        let buf = [
+            127, 136, 245, 102, 0, 0, 0, 0, 33, 129, 4, 0, 0, 0, 0, 0, 125, 189, 182, 209, 254,
+            119, 19, 65, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 75, 67, 79, 83,
+        ];
+        sock.send(&buf).unwrap();
+
+        // Receive system update
+        let msg = msg_for_system_receiver.recv().await.unwrap();
+        let update = match msg {
+            MsgForSystem::SockSourceUpdate(source_id, sock_source_update) => {
+                assert_eq!(source_id, index);
+                sock_source_update
+            }
+            _ => panic!("wrong message type"),
+        };
+
+        assert_eq!(update.snapshot.source_id, ReferenceId::SOCK);
+        assert_eq!(update.snapshot.stratum, 0);
+
+        handle.abort();
+    }
+
+    #[test]
+    fn test_deserialize_sample() {
+        // Example sock sample
+        let buf = [
+            127, 136, 245, 102, 0, 0, 0, 0, 33, 129, 4, 0, 0, 0, 0, 0, 125, 189, 182, 209, 254,
+            119, 19, 65, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 75, 67, 79, 83,
+        ];
+        let sample = deserialize_sample(Ok(buf.len()), buf).unwrap();
+        assert_eq!(sample.offset, 318975.704798661);
+        assert_eq!(sample.pulse, 0);
+        assert_eq!(sample.leap, 0);
+        assert_eq!(sample.magic, SOCK_MAGIC);
+
+        // Wrong magic value
+        let buf = [
+            127, 136, 245, 102, 0, 0, 0, 0, 33, 129, 4, 0, 0, 0, 0, 0, 125, 189, 182, 209, 254,
+            119, 19, 65, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,
+        ];
+        assert!(matches!(
+            dbg!(deserialize_sample(Ok(buf.len()), buf)),
+            Err(SampleError::WrongMagic(_))
+        ));
+
+        // Wrong pulse value
+        let buf = [
+            127, 136, 245, 102, 0, 0, 0, 0, 33, 129, 4, 0, 0, 0, 0, 0, 125, 189, 182, 209, 254,
+            119, 19, 65, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 75, 67, 79, 83,
+        ];
+        assert!(matches!(
+            dbg!(deserialize_sample(Ok(buf.len()), buf)),
+            Err(SampleError::WrongPulse(_))
+        ));
+
+        // Wrong data size
+        let buf = [
+            127, 136, 245, 102, 0, 0, 0, 0, 33, 129, 4, 0, 0, 0, 0, 0, 125, 189, 182, 209, 254,
+            119, 19, 65, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 75, 67, 79, 0,
+        ];
+        assert!(matches!(
+            dbg!(deserialize_sample(Ok(buf.len() - 1), buf)),
+            Err(SampleError::WrongSize(_))
+        ));
     }
 }
