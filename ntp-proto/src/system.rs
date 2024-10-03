@@ -271,6 +271,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         id: SourceId,
         source_addr: SocketAddr,
         protocol_version: ProtocolVersion,
+        nts: Option<Box<SourceNtsData>>,
     ) -> Result<
         (
             NtpSource<Controller::NtpSourceController>,
@@ -279,28 +280,6 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         <Controller::Clock as NtpClock>::Error,
     > {
         Ok(NtpSource::new(
-            source_addr,
-            self.source_defaults_config,
-            protocol_version,
-            self.create_source_controller(id)?,
-        ))
-    }
-
-    #[allow(clippy::type_complexity)]
-    pub fn create_nts_source(
-        &mut self,
-        id: SourceId,
-        source_addr: SocketAddr,
-        protocol_version: ProtocolVersion,
-        nts: Box<SourceNtsData>,
-    ) -> Result<
-        (
-            NtpSource<Controller::NtpSourceController>,
-            NtpSourceActionIterator<Controller::SourceMessage>,
-        ),
-        <Controller::Clock as NtpClock>::Error,
-    > {
-        Ok(NtpSource::new_nts(
             source_addr,
             self.source_defaults_config,
             protocol_version,
