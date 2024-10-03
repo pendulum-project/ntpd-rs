@@ -472,13 +472,12 @@ impl<
             },
         );
 
-        let (source, initial_actions) = if let Some(nts) = params.nts.take() {
-            self.system
-                .create_nts_source(source_id, params.addr, params.protocol_version, nts)?
-        } else {
-            self.system
-                .create_ntp_source(source_id, params.addr, params.protocol_version)?
-        };
+        let (source, initial_actions) = self.system.create_ntp_source(
+            source_id,
+            params.addr,
+            params.protocol_version,
+            params.nts.take(),
+        )?;
 
         SourceTask::spawn(
             source_id,

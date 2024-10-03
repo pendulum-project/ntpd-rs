@@ -55,7 +55,7 @@ impl std::fmt::Debug for SourceNtsData {
 }
 
 #[derive(Debug)]
-pub struct NtpSource<Controller: SourceController> {
+pub struct NtpSource<Controller: SourceController<MeasurementDelay = NtpDuration>> {
     nts: Option<Box<SourceNtsData>>,
 
     // Poll interval used when sending last poll message.
@@ -91,11 +91,9 @@ pub struct NtpSource<Controller: SourceController> {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct Measurement {
-    pub delay: NtpDuration,
+pub struct Measurement<D: Debug + Copy + Clone> {
+    pub delay: D,
     pub offset: NtpDuration,
-    pub transmit_timestamp: NtpTimestamp,
-    pub receive_timestamp: NtpTimestamp,
     pub localtime: NtpTimestamp,
     pub monotime: NtpInstant,
 
@@ -106,7 +104,7 @@ pub struct Measurement {
     pub precision: i8,
 }
 
-impl Measurement {
+impl Measurement<NtpDuration> {
     fn from_packet(
         packet: &NtpPacket,
         send_timestamp: NtpTimestamp,
@@ -114,13 +112,11 @@ impl Measurement {
         local_clock_time: NtpInstant,
     ) -> Self {
         Self {
-            delay: ((recv_timestamp - send_timestamp)
-                - (packet.transmit_timestamp() - packet.receive_timestamp())),
+            delay: (recv_timestamp - send_timestamp)
+                - (packet.transmit_timestamp() - packet.receive_timestamp()),
             offset: ((packet.receive_timestamp() - send_timestamp)
                 + (packet.transmit_timestamp() - recv_timestamp))
                 / 2,
-            transmit_timestamp: packet.transmit_timestamp(),
-            receive_timestamp: packet.receive_timestamp(),
             localtime: send_timestamp + (recv_timestamp - send_timestamp) / 2,
             monotime: local_clock_time,
 
@@ -248,7 +244,9 @@ impl NtpSourceSnapshot {
         Ok(())
     }
 
-    pub fn from_source<Controller: SourceController>(source: &NtpSource<Controller>) -> Self {
+    pub fn from_source<Controller: SourceController<MeasurementDelay = NtpDuration>>(
+        source: &NtpSource<Controller>,
+    ) -> Self {
         Self {
             source_addr: source.source_addr,
             source_id: source.source_id,
@@ -425,16 +423,17 @@ pub struct ObservableSourceState<SourceId> {
     pub id: SourceId,
 }
 
-impl<Controller: SourceController> NtpSource<Controller> {
+impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Controller> {
     pub(crate) fn new(
         source_addr: SocketAddr,
         source_defaults_config: SourceDefaultsConfig,
         protocol_version: ProtocolVersion,
         controller: Controller,
+        nts: Option<Box<SourceNtsData>>,
     ) -> (Self, NtpSourceActionIterator<Controller::SourceMessage>) {
         (
             Self {
-                nts: None,
+                nts,
 
                 last_poll_interval: source_defaults_config.poll_interval_limits.min,
                 remote_min_poll_interval: source_defaults_config.poll_interval_limits.min,
@@ -459,28 +458,6 @@ impl<Controller: SourceController> NtpSource<Controller> {
                 bloom_filter: RemoteBloomFilter::new(16).expect("16 is a valid chunk size"),
             },
             actions!(NtpSourceAction::SetTimer(Duration::from_secs(0))),
-        )
-    }
-
-    pub(crate) fn new_nts(
-        source_addr: SocketAddr,
-        source_defaults_config: SourceDefaultsConfig,
-        protocol_version: ProtocolVersion,
-        controller: Controller,
-        nts: Box<SourceNtsData>,
-    ) -> (Self, NtpSourceActionIterator<Controller::SourceMessage>) {
-        let (base, actions) = Self::new(
-            source_addr,
-            source_defaults_config,
-            protocol_version,
-            controller,
-        );
-        (
-            Self {
-                nts: Some(nts),
-                ..base
-            },
-            actions,
         )
     }
 
@@ -866,12 +843,16 @@ mod test {
     impl SourceController for NoopController {
         type ControllerMessage = ();
         type SourceMessage = ();
+        type MeasurementDelay = NtpDuration;
 
         fn handle_message(&mut self, _: Self::ControllerMessage) {
             // do nothing
         }
 
-        fn handle_measurement(&mut self, _: Measurement) -> Option<Self::SourceMessage> {
+        fn handle_measurement(
+            &mut self,
+            _: Measurement<NtpDuration>,
+        ) -> Option<Self::SourceMessage> {
             // do nothing
             Some(())
         }
@@ -995,10 +976,14 @@ mod test {
         impl SourceController for PollIntervalController {
             type ControllerMessage = ();
             type SourceMessage = ();
+            type MeasurementDelay = NtpDuration;
 
             fn handle_message(&mut self, _: Self::ControllerMessage) {}
 
-            fn handle_measurement(&mut self, _: Measurement) -> Option<Self::SourceMessage> {
+            fn handle_measurement(
+                &mut self,
+                _: Measurement<NtpDuration>,
+            ) -> Option<Self::SourceMessage> {
                 None
             }
 
