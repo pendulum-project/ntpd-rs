@@ -89,10 +89,12 @@ impl SystemSnapshot {
         {
             self.bloom_filter = BloomFilter::new();
             for source in used_sources {
-                if let Some(bf) = &source.bloom_filter {
-                    self.bloom_filter.add(bf);
-                } else if let ProtocolVersion::V5 = source.protocol_version {
-                    tracing::warn!("Using NTPv5 source without a bloom filter!");
+                if let SourceSnapshot::Ntp(source) = source {
+                    if let Some(bf) = &source.bloom_filter {
+                        self.bloom_filter.add(bf);
+                    } else if let ProtocolVersion::V5 = source.protocol_version {
+                        tracing::warn!("Using NTPv5 source without a bloom filter!");
+                    }
                 }
             }
             self.bloom_filter.add_id(&self.server_id);

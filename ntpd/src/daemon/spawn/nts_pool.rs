@@ -94,7 +94,7 @@ impl Spawner for NtsPoolSpawner {
                         action_tx
                             .send(SpawnEvent::new(
                                 self.id,
-                                SpawnAction::create(
+                                SpawnAction::create_ntp(
                                     id,
                                     address,
                                     self.config.addr.deref().clone(),

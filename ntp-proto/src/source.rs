@@ -185,6 +185,7 @@ pub struct SockSourceUpdate<SourceMessage> {
 }
 
 #[derive(Debug, Clone, Copy)]
+#[allow(clippy::large_enum_variant)]
 pub enum SourceSnapshot {
     Ntp(NtpSourceSnapshot),
     Sock(SockSourceSnapshot),
