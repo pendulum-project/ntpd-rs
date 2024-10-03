@@ -611,6 +611,7 @@ mod tests {
             index,
             SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
             ProtocolVersion::default(),
+            None,
         ) else {
             panic!("Could not create test source");
         };
