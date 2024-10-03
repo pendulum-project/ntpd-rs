@@ -116,7 +116,7 @@ impl Default for SystemSnapshot {
 }
 
 pub struct SystemSourceUpdate<ControllerMessage> {
-    pub(crate) message: ControllerMessage,
+    pub message: ControllerMessage,
 }
 
 impl<ControllerMessage: Debug> std::fmt::Debug for SystemSourceUpdate<ControllerMessage> {
