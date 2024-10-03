@@ -433,10 +433,11 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
         source_defaults_config: SourceDefaultsConfig,
         protocol_version: ProtocolVersion,
         controller: Controller,
+        nts: Option<Box<SourceNtsData>>,
     ) -> (Self, NtpSourceActionIterator<Controller::SourceMessage>) {
         (
             Self {
-                nts: None,
+                nts,
 
                 last_poll_interval: source_defaults_config.poll_interval_limits.min,
                 remote_min_poll_interval: source_defaults_config.poll_interval_limits.min,
@@ -461,28 +462,6 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
                 bloom_filter: RemoteBloomFilter::new(16).expect("16 is a valid chunk size"),
             },
             actions!(NtpSourceAction::SetTimer(Duration::from_secs(0))),
-        )
-    }
-
-    pub(crate) fn new_nts(
-        source_addr: SocketAddr,
-        source_defaults_config: SourceDefaultsConfig,
-        protocol_version: ProtocolVersion,
-        controller: Controller,
-        nts: Box<SourceNtsData>,
-    ) -> (Self, NtpSourceActionIterator<Controller::SourceMessage>) {
-        let (base, actions) = Self::new(
-            source_addr,
-            source_defaults_config,
-            protocol_version,
-            controller,
-        );
-        (
-            Self {
-                nts: Some(nts),
-                ..base
-            },
-            actions,
         )
     }
 
