@@ -5,7 +5,6 @@ use ntp_proto::{
     SockSourceSnapshot, SockSourceUpdate, SourceController, SystemSourceUpdate,
 };
 use tracing::debug;
-#[cfg(target_os = "linux")]
 use tracing::{error, instrument, Instrument, Span};
 
 use tokio::net::UnixDatagram;
