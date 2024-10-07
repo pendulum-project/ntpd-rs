@@ -99,8 +99,11 @@ mod tests {
         let res = action_rx.try_recv().unwrap();
         assert_eq!(res.id, spawner_id);
 
-        let SpawnAction::Create(SourceCreateParameters::Sock(params)) = res.action else {
-            panic!("did not receive a sock create event!");
+        let SpawnAction::Create(create_params) = res.action;
+        assert_eq!(create_params.get_addr(), socket_path);
+
+        let SourceCreateParameters::Sock(params) = create_params else {
+            panic!("did not receive sock source create parameters!");
         };
         assert_eq!(params.path, socket_path);
         assert!((params.noise_estimate - noise_estimate).abs() < 1e-9);
