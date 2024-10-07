@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
       - name: test on freebsd
-        uses: vmactions/freebsd-vm@d7b8fcc7711aa41ad45e8d9b737cf90f035a7e3d
+        uses: vmactions/freebsd-vm@c96341966a3954a757e6ea41692f7c7b32312a0c
         with:
           usesh: true
           mem: 4096
