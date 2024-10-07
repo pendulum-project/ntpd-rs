@@ -71,3 +71,41 @@ impl Spawner for SockSpawner {
         "sock"
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use ntp_proto::NtpDuration;
+    use tokio::sync::mpsc;
+
+    use crate::daemon::{
+        config::SockSourceConfig,
+        spawn::{sock::SockSpawner, SourceCreateParameters, SpawnAction, Spawner},
+        system::MESSAGE_BUFFER_SIZE,
+    };
+
+    #[tokio::test]
+    async fn creates_a_source() {
+        let socket_path = "/tmp/test.sock";
+        let noise_estimate = 1e-6;
+        let mut spawner = SockSpawner::new(SockSourceConfig {
+            path: socket_path.to_string(),
+            measurement_noise_estimate: NtpDuration::from_seconds(noise_estimate),
+        });
+        let spawner_id = spawner.get_id();
+        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
+
+        assert!(!spawner.is_complete());
+        spawner.try_spawn(&action_tx).await.unwrap();
+        let res = action_rx.try_recv().unwrap();
+        assert_eq!(res.id, spawner_id);
+
+        let SpawnAction::Create(SourceCreateParameters::Sock(params)) = res.action else {
+            panic!("did not receive a sock create event!");
+        };
+        assert_eq!(params.path, socket_path);
+        assert!((params.noise_estimate - noise_estimate).abs() < 1e-9);
+
+        // Should be complete after spawning
+        assert!(spawner.is_complete());
+    }
+}
