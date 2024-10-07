@@ -427,8 +427,8 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(test.source, NtpSourceConfig::Pool(_)));
+        assert_eq!(source_addr(&test.source), "example.com:123");
         if let NtpSourceConfig::Pool(config) = test.source {
-            assert_eq!(config.addr.to_string(), "example.com:123");
             assert_eq!(config.count, 4);
         }
 
@@ -442,8 +442,8 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(test.source, NtpSourceConfig::Pool(_)));
+        assert_eq!(source_addr(&test.source), "example.com:123");
         if let NtpSourceConfig::Pool(config) = test.source {
-            assert_eq!(config.addr.to_string(), "example.com:123");
             assert_eq!(config.count, 42);
         }
 
@@ -456,9 +456,7 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(test.source, NtpSourceConfig::Nts(_)));
-        if let NtpSourceConfig::Nts(config) = test.source {
-            assert_eq!(config.address.to_string(), "example.com:4460");
-        }
+        assert_eq!(source_addr(&test.source), "example.com:4460");
 
         #[cfg(feature = "unstable_nts-pool")]
         {
@@ -471,9 +469,7 @@ mod tests {
             )
             .unwrap();
             assert!(matches!(test.source, NtpSourceConfig::NtsPool(_)));
-            if let NtpSourceConfig::Nts(config) = test.source {
-                assert_eq!(config.address.to_string(), "example.com:4460");
-            }
+            assert_eq!(source_addr(&test.source), "example.com:4460");
         }
     }
 
@@ -499,9 +495,7 @@ mod tests {
         ))
         .unwrap();
         assert!(matches!(test.source, NtpSourceConfig::Nts(_)));
-        if let NtpSourceConfig::Nts(config) = test.source {
-            assert_eq!(config.address.to_string(), "example.com:4460");
-        }
+        assert_eq!(source_addr(&test.source), "example.com:4460");
     }
 
     #[test]
