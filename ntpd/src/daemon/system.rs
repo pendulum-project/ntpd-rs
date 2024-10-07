@@ -1,4 +1,7 @@
-use crate::daemon::spawn::spawner_task;
+use crate::daemon::{
+    sock_source::SockSourceTask,
+    spawn::{spawner_task, SourceCreateParameters},
+};
 
 #[cfg(feature = "unstable_nts-pool")]
 use super::spawn::nts_pool::NtsPoolSpawner;
@@ -8,8 +11,8 @@ use super::{
     ntp_source::{MsgForSystem, SourceChannels, SourceTask, Wait},
     server::{ServerStats, ServerTask},
     spawn::{
-        nts::NtsSpawner, pool::PoolSpawner, standard::StandardSpawner, SourceCreateParameters,
-        SourceId, SourceRemovalReason, SpawnAction, SpawnEvent, Spawner, SpawnerId, SystemEvent,
+        nts::NtsSpawner, pool::PoolSpawner, sock::SockSpawner, standard::StandardSpawner, SourceId,
+        SourceRemovalReason, SpawnAction, SpawnEvent, Spawner, SpawnerId, SystemEvent,
     },
 };
 
@@ -138,6 +141,14 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper, Sourc
             NtpSourceConfig::NtsPool(cfg) => {
                 system
                     .add_spawner(NtsPoolSpawner::new(cfg.clone()))
+                    .map_err(|e| {
+                        tracing::error!("Could not spawn source: {}", e);
+                        std::io::Error::new(std::io::ErrorKind::Other, e)
+                    })?;
+            }
+            NtpSourceConfig::Sock(cfg) => {
+                system
+                    .add_spawner(SockSpawner::new(cfg.clone()))
                     .map_err(|e| {
                         tracing::error!("Could not spawn source: {}", e);
                         std::io::Error::new(std::io::ErrorKind::Other, e)
@@ -377,6 +388,12 @@ impl<
                     Ok(timer) => self.handle_state_update(timer, wait),
                 }
             }
+            MsgForSystem::SockSourceUpdate(index, update) => {
+                match self.system.handle_sock_source_update(index, update) {
+                    Err(e) => unreachable!("Could not process source measurement: {}", e),
+                    Ok(timer) => self.handle_state_update(timer, wait),
+                }
+            }
             MsgForSystem::NetworkIssue(index) => {
                 self.handle_source_network_issue(index).await?;
             }
@@ -462,8 +479,8 @@ impl<
         spawner_id: SpawnerId,
         mut params: SourceCreateParameters,
     ) -> Result<SourceId, C::Error> {
-        let source_id = params.id;
-        info!(source_id=?source_id, addr=?params.addr, spawner=?spawner_id, "new source");
+        let source_id = params.get_id();
+        info!(source_id=?source_id, addr=?params.get_addr(), spawner=?spawner_id, "new source");
         self.sources.insert(
             source_id,
             SourceState {
@@ -472,29 +489,46 @@ impl<
             },
         );
 
-        let (source, initial_actions) = if let Some(nts) = params.nts.take() {
-            self.system
-                .create_nts_source(source_id, params.addr, params.protocol_version, nts)?
-        } else {
-            self.system
-                .create_ntp_source(source_id, params.addr, params.protocol_version)?
-        };
+        match params {
+            SourceCreateParameters::Ntp(ref mut params) => {
+                let (source, initial_actions) = self.system.create_ntp_source(
+                    source_id,
+                    params.addr,
+                    params.protocol_version,
+                    params.nts.take(),
+                )?;
 
-        SourceTask::spawn(
-            source_id,
-            params.normalized_addr.to_string(),
-            params.addr,
-            self.interface,
-            self.clock.clone(),
-            self.timestamp_mode,
-            SourceChannels {
-                msg_for_system_sender: self.msg_for_system_tx.clone(),
-                system_update_receiver: self.system_update_sender.subscribe(),
-                source_snapshots: self.source_snapshots.clone(),
-            },
-            source,
-            initial_actions,
-        );
+                SourceTask::spawn(
+                    source_id,
+                    params.normalized_addr.to_string(),
+                    params.addr,
+                    self.interface,
+                    self.clock.clone(),
+                    self.timestamp_mode,
+                    SourceChannels {
+                        msg_for_system_sender: self.msg_for_system_tx.clone(),
+                        system_update_receiver: self.system_update_sender.subscribe(),
+                        source_snapshots: self.source_snapshots.clone(),
+                    },
+                    source,
+                    initial_actions,
+                );
+            }
+            SourceCreateParameters::Sock(ref params) => {
+                SockSourceTask::spawn(
+                    source_id,
+                    params.path.clone(),
+                    self.clock.clone(),
+                    SourceChannels {
+                        msg_for_system_sender: self.msg_for_system_tx.clone(),
+                        system_update_receiver: self.system_update_sender.subscribe(),
+                        source_snapshots: self.source_snapshots.clone(),
+                    },
+                    self.system
+                        .create_sock_source_controller(source_id, params.noise_estimate)?,
+                );
+            }
+        };
 
         // Try and find a related spawner and notify that spawner.
         // This makes sure that the spawner that initially sent the create event

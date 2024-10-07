@@ -38,9 +38,9 @@ pub(crate) mod exitcode {
 
 mod exports {
     pub use super::algorithm::{
-        AlgorithmConfig, KalmanClockController, KalmanControllerMessage, KalmanSourceController,
-        KalmanSourceMessage, ObservableSourceTimedata, SourceController, StateUpdate,
-        TimeSyncController,
+        AlgorithmConfig, AveragingBuffer, KalmanClockController, KalmanControllerMessage,
+        KalmanSourceController, KalmanSourceMessage, ObservableSourceTimedata, SourceController,
+        StateUpdate, TimeSyncController,
     };
     pub use super::clock::NtpClock;
     pub use super::config::{SourceDefaultsConfig, StepThreshold, SynchronizationConfig};
@@ -66,12 +66,13 @@ mod exports {
     pub use super::source::{
         AcceptSynchronizationError, Measurement, NtpSource, NtpSourceAction,
         NtpSourceActionIterator, NtpSourceSnapshot, NtpSourceUpdate, ObservableSourceState,
-        ProtocolVersion, Reach, SourceNtsData,
+        ProtocolVersion, Reach, SockSourceSnapshot, SockSourceUpdate, SourceNtsData,
     };
     pub use super::system::{
         System, SystemAction, SystemActionIterator, SystemSnapshot, SystemSourceUpdate,
         TimeSnapshot,
     };
+
     #[cfg(feature = "__internal-fuzz")]
     pub use super::time_types::fuzz_duration_from_seconds;
     pub use super::time_types::{

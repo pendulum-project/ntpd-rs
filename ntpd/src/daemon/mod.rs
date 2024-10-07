@@ -6,6 +6,7 @@ mod ntp_source;
 pub mod nts_key_provider;
 pub mod observer;
 mod server;
+mod sock_source;
 pub mod sockets;
 pub mod spawn;
 mod system;
