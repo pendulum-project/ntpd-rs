@@ -197,10 +197,9 @@ where
         channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
         controller: Controller,
     ) -> tokio::task::JoinHandle<()> {
+        let socket = create_socket(socket_path).expect("Could not create socket");
         tokio::spawn(
             (async move {
-                let socket = create_socket(socket_path).expect("Could not create socket");
-
                 let mut process = SockSourceTask {
                     index,
                     socket,
@@ -304,23 +303,19 @@ mod tests {
         .unwrap();
 
         let socket_path = "/tmp/test.sock";
-        let socket = create_socket(socket_path.to_string()).unwrap();
+        let _socket = create_socket(socket_path.to_string()).unwrap(); // should be overwritten by SockSource's own socket
 
-        let mut process = SockSourceTask {
+        let handle = SockSourceTask::spawn(
             index,
-            socket,
+            socket_path.to_string(),
             clock,
-            channels: SourceChannels {
+            SourceChannels {
                 msg_for_system_sender,
                 system_update_receiver,
                 source_snapshots: Arc::new(RwLock::new(HashMap::new())),
             },
-            controller: system.create_sock_source_controller(index, 0.001).unwrap(),
-        };
-
-        let handle = tokio::spawn(async move {
-            process.run().await;
-        });
+            system.create_sock_source_controller(index, 0.001).unwrap(),
+        );
 
         // Send example data to socket
         let sock = UnixDatagram::unbound().unwrap();
