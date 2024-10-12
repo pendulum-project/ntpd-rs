@@ -24,6 +24,7 @@ enum Unit {
 }
 
 impl Unit {
+    #[allow(clippy::unused_self)]
     fn as_str(&self) -> &str {
         "seconds"
     }
