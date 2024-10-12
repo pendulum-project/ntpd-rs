@@ -102,6 +102,7 @@ impl<C: NtpClock> SingleShotController<C> {
             }
         }
 
+        #[allow(clippy::cast_sign_loss)]
         if peak as usize >= self.min_agreeing {
             let mut sum = 0.0;
             let mut count = 0;
