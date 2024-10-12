@@ -19,6 +19,7 @@ pub async fn spawn(config: KeysetConfig) -> watch::Receiver<Arc<KeySet>> {
             if let Ok(meta) = std::fs::metadata(&path) {
                 let perm = meta.permissions();
 
+                #[allow(clippy::cast_possible_truncation)]
                 if perm.mode() as libc::mode_t & (libc::S_IWOTH | libc::S_IROTH | libc::S_IXOTH)
                     != 0
                 {
