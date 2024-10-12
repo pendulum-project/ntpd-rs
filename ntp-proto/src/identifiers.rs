@@ -16,7 +16,7 @@ impl ReferenceId {
     // Network Time Security (NTS) negative-acknowledgment (NAK), from rfc8915
     pub const KISS_NTSN: ReferenceId = ReferenceId(u32::from_be_bytes(*b"NTSN"));
 
-    pub fn from_ip(addr: IpAddr) -> ReferenceId {
+    #[must_use] pub fn from_ip(addr: IpAddr) -> ReferenceId {
         match addr {
             IpAddr::V4(addr) => ReferenceId(u32::from_be_bytes(addr.octets())),
             IpAddr::V6(addr) => ReferenceId(u32::from_be_bytes(

@@ -246,6 +246,7 @@ impl NtsRecord {
     }
 
     #[cfg(feature = "nts-pool")]
+    #[must_use]
     pub fn client_key_exchange_records_fixed(
         c2s: Vec<u8>,
         s2c: Vec<u8>,
@@ -307,7 +308,7 @@ impl NtsRecord {
                     .iter()
                     .map(|&algo| (algo as u16, algo.key_size()))
                     .collect(),
-            })
+            });
         }
 
         if let Some(ntp_port) = ntp_port {
@@ -446,7 +447,7 @@ impl NtsRecord {
         }
 
         // all messages start with the record type
-        let record_type = self.record_type() | ((self.is_critical() as u16) << 15);
+        let record_type = self.record_type() | (u16::from(self.is_critical()) << 15);
         writer.write_all(&record_type.to_be_bytes())?;
 
         let size_of_u16 = std::mem::size_of::<u16>() as u16;
@@ -549,6 +550,7 @@ impl NtsRecord {
         Ok(())
     }
 
+    #[must_use]
     pub fn decoder() -> NtsRecordDecoder {
         NtsRecordDecoder { bytes: vec![] }
     }
@@ -562,7 +564,9 @@ impl<'a> arbitrary::Arbitrary<'a> for NtsRecord {
         let critical = record & 0x8000 != 0;
         let record_type = record & !0x8000;
 
-        use NtsRecord::*;
+        use NtsRecord::{
+            AeadAlgorithm, EndOfMessage, Error, NewCookie, NextProtocol, Port, Server, Warning,
+        };
         Ok(match record_type {
             0 => EndOfMessage,
             1 => NextProtocol {
@@ -638,6 +642,7 @@ impl NtsRecordDecoder {
         }
     }
 
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -722,8 +727,13 @@ impl KeyExchangeError {
         }
     }
 
+    #[must_use]
     pub fn to_error_code(&self) -> u16 {
-        use KeyExchangeError::*;
+        use KeyExchangeError::{
+            BadRequest, BadResponse, Certificate, DnsName, IncompleteResponse, InternalServerError,
+            InvalidFixedKeyLength, Io, NoCookies, NoValidAlgorithm, NoValidProtocol, Tls,
+            UnknownErrorCode, UnrecognizedCriticalRecord,
+        };
 
         match self {
             UnrecognizedCriticalRecord => NtsRecord::UNRECOGNIZED_CRITICAL_RECORD,
@@ -743,7 +753,7 @@ impl KeyExchangeError {
     }
 }
 
-/// From https://www.rfc-editor.org/rfc/rfc8915.html#name-network-time-security-next-
+/// From <https://www.rfc-editor.org/rfc/rfc8915.html#name-network-time-security-next>-
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
 #[repr(u16)]
 pub enum ProtocolId {
@@ -778,7 +788,7 @@ impl ProtocolId {
     }
 }
 
-/// From https://www.iana.org/assignments/aead-parameters/aead-parameters.xhtml
+/// From <https://www.iana.org/assignments/aead-parameters/aead-parameters.xhtml>
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
 #[repr(u16)]
 pub enum AeadAlgorithm {
@@ -789,6 +799,7 @@ pub enum AeadAlgorithm {
 
 impl AeadAlgorithm {
     // per https://www.rfc-editor.org/rfc/rfc8915.html#section-5.1
+    #[must_use]
     pub const fn c2s_context(self, protocol: ProtocolId) -> [u8; 5] {
         // The final octet SHALL be 0x00 for the C2S key
         [
@@ -801,6 +812,7 @@ impl AeadAlgorithm {
     }
 
     // per https://www.rfc-editor.org/rfc/rfc8915.html#section-5.1
+    #[must_use]
     pub const fn s2c_context(self, protocol: ProtocolId) -> [u8; 5] {
         // The final octet SHALL be 0x01 for the S2C key
         [
@@ -812,6 +824,7 @@ impl AeadAlgorithm {
         ]
     }
 
+    #[must_use]
     pub const fn try_deserialize(number: u16) -> Option<AeadAlgorithm> {
         match number {
             15 => Some(AeadAlgorithm::AeadAesSivCmac256),
@@ -965,8 +978,11 @@ impl KeyExchangeResultDecoder {
     ) -> ControlFlow<Result<PartialKeyExchangeData, KeyExchangeError>, Self> {
         use self::AeadAlgorithm as Algorithm;
         use ControlFlow::{Break, Continue};
-        use KeyExchangeError::*;
-        use NtsRecord::*;
+        use KeyExchangeError::{BadResponse, NoValidAlgorithm, NoValidProtocol};
+        use NtsRecord::{
+            AeadAlgorithm, DraftId, EndOfMessage, Error, FixedKeyRequest, KeepAlive, NewCookie,
+            NextProtocol, NtpServerDeny, Port, Server, SupportedAlgorithmList, Unknown, Warning,
+        };
 
         let mut state = self;
 
@@ -1143,6 +1159,7 @@ pub struct KeyExchangeClient {
 impl KeyExchangeClient {
     const NTP_DEFAULT_PORT: u16 = 123;
 
+    #[must_use]
     pub fn wants_read(&self) -> bool {
         self.tls_connection.wants_read()
     }
@@ -1151,6 +1168,7 @@ impl KeyExchangeClient {
         self.tls_connection.read_tls(rd)
     }
 
+    #[must_use]
     pub fn wants_write(&self) -> bool {
         self.tls_connection.wants_write()
     }
@@ -1248,7 +1266,7 @@ impl KeyExchangeClient {
         // We use an intermediary buffer to ensure that all records are sent at once.
         // This should not be needed, but works around issues in some NTS-ke server implementations
         let mut buffer = Vec::with_capacity(1024);
-        for record in NtsRecord::client_key_exchange_records(denied_servers).iter() {
+        for record in &NtsRecord::client_key_exchange_records(denied_servers) {
             record.write(&mut buffer)?;
         }
         client.tls_connection.writer().write_all(&buffer)?;
@@ -1368,8 +1386,11 @@ impl KeyExchangeServerDecoder {
     ) -> ControlFlow<Result<ServerKeyExchangeData, KeyExchangeError>, Self> {
         use self::AeadAlgorithm as Algorithm;
         use ControlFlow::{Break, Continue};
-        use KeyExchangeError::*;
-        use NtsRecord::*;
+        use KeyExchangeError::{NoValidAlgorithm, NoValidProtocol};
+        use NtsRecord::{
+            AeadAlgorithm, DraftId, EndOfMessage, Error, FixedKeyRequest, KeepAlive, NewCookie,
+            NextProtocol, NtpServerDeny, Port, Server, SupportedAlgorithmList, Unknown, Warning,
+        };
 
         let mut state = self;
 
@@ -1534,6 +1555,7 @@ enum State {
 }
 
 impl KeyExchangeServer {
+    #[must_use]
     pub fn wants_read(&self) -> bool {
         self.tls_connection.wants_read()
     }
@@ -1542,6 +1564,7 @@ impl KeyExchangeServer {
         self.tls_connection.read_tls(rd)
     }
 
+    #[must_use]
     pub fn wants_write(&self) -> bool {
         self.tls_connection.wants_write()
     }
@@ -1555,7 +1578,7 @@ impl KeyExchangeServer {
         records: &[NtsRecord],
     ) -> std::io::Result<()> {
         let mut buffer = Vec::with_capacity(1024);
-        for record in records.iter() {
+        for record in records {
             record.write(&mut buffer)?;
         }
 
@@ -1581,6 +1604,7 @@ impl KeyExchangeServer {
         }
     }
 
+    #[must_use]
     pub fn progress(
         mut self,
     ) -> ControlFlow<Result<rustls::ServerConnection, KeyExchangeError>, Self> {
@@ -1637,9 +1661,8 @@ impl KeyExchangeServer {
                         // see https://docs.rs/rustls/latest/rustls/struct.Reader.html#method.read
                         if self.wants_write() {
                             return ControlFlow::Continue(self);
-                        } else {
-                            return ControlFlow::Break(self.end_of_file());
                         }
+                        return ControlFlow::Break(self.end_of_file());
                     }
                     _ => {
                         let error = KeyExchangeError::Io(e);
@@ -1670,12 +1693,12 @@ impl KeyExchangeServer {
     }
 
     #[cfg(feature = "nts-pool")]
+    #[must_use]
     pub fn privileged_connection(&self) -> bool {
         self.tls_connection
             .peer_certificates()
             .and_then(|cert_chain| cert_chain.first())
-            .map(|cert| self.pool_certificates.contains(cert))
-            .unwrap_or(false)
+            .is_some_and(|cert| self.pool_certificates.contains(cert))
     }
 
     #[cfg(feature = "nts-pool")]
@@ -2124,7 +2147,7 @@ mod test {
 
         let error = client_decode_records(&records).unwrap_err();
 
-        assert!(matches!(error, KeyExchangeError::NoValidProtocol))
+        assert!(matches!(error, KeyExchangeError::NoValidProtocol));
     }
 
     #[test]
@@ -3018,7 +3041,7 @@ mod test {
         let (mut client, server) = client_server_pair(ClientType::Uncertified);
 
         let mut buffer = Vec::with_capacity(1024);
-        for record in NtsRecord::client_key_exchange_records([]).iter() {
+        for record in &NtsRecord::client_key_exchange_records([]) {
             record.write(&mut buffer).unwrap();
         }
         client.tls_connection.writer().write_all(&buffer).unwrap();
@@ -3116,7 +3139,7 @@ mod test {
     #[test]
     fn test_keyexchange_invalid_input() {
         let mut buffer = Vec::with_capacity(1024);
-        for record in NtsRecord::client_key_exchange_records([]).iter() {
+        for record in &NtsRecord::client_key_exchange_records([]) {
             record.write(&mut buffer).unwrap();
         }
 

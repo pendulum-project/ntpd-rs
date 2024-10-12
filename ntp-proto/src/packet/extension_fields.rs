@@ -127,8 +127,8 @@ impl<'a> std::fmt::Debug for ExtensionField<'a> {
 impl<'a> ExtensionField<'a> {
     const HEADER_LENGTH: usize = 4;
 
-    pub fn into_owned(self) -> ExtensionField<'static> {
-        use ExtensionField::*;
+    #[must_use] pub fn into_owned(self) -> ExtensionField<'static> {
+        use ExtensionField::{DraftIdentification, InvalidNtsEncryptedField, NtsCookie, NtsCookiePlaceholder, Padding, ReferenceIdRequest, ReferenceIdResponse, UniqueIdentifier, Unknown};
 
         match self {
             Unknown {
@@ -163,7 +163,7 @@ impl<'a> ExtensionField<'a> {
         minimum_size: u16,
         version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
-        use ExtensionField::*;
+        use ExtensionField::{DraftIdentification, InvalidNtsEncryptedField, NtsCookie, NtsCookiePlaceholder, Padding, ReferenceIdRequest, ReferenceIdResponse, UniqueIdentifier, Unknown};
 
         match self {
             Unknown { type_id, data } => {
@@ -219,7 +219,7 @@ impl<'a> ExtensionField<'a> {
             (data_length as u16 + ExtensionField::HEADER_LENGTH as u16).max(minimum_size);
 
         if version == ExtensionHeaderVersion::V4 {
-            actual_length = next_multiple_of_u16(actual_length, 4)
+            actual_length = next_multiple_of_u16(actual_length, 4);
         }
 
         w.write_all(&ef_id.to_type_id().to_be_bytes())?;
@@ -657,56 +657,50 @@ impl<'a> ExtensionFieldData<'a> {
             RawExtensionField::V4_UNENCRYPTED_MINIMUM_SIZE,
             version,
         ) {
-            let (offset, field) = field.map_err(|e| e.generalize())?;
+            let (offset, field) = field.map_err(super::error::ParsingError::generalize)?;
             size = offset + field.wire_length(version);
-            match field.type_id {
-                ExtensionFieldTypeId::NtsEncryptedField => {
-                    let encrypted = RawEncryptedField::from_message_bytes(field.message_bytes)
-                        .map_err(|e| e.generalize())?;
+            if field.type_id == ExtensionFieldTypeId::NtsEncryptedField {
+                let encrypted = RawEncryptedField::from_message_bytes(field.message_bytes)
+                    .map_err(super::error::ParsingError::generalize)?;
 
-                    let cipher = match cipher.get(&efdata.untrusted) {
-                        Some(cipher) => cipher,
-                        None => {
-                            efdata.untrusted.push(InvalidNtsEncryptedField);
-                            is_valid_nts = false;
-                            continue;
-                        }
-                    };
+                let cipher = if let Some(cipher) = cipher.get(&efdata.untrusted) { cipher } else {
+                    efdata.untrusted.push(InvalidNtsEncryptedField);
+                    is_valid_nts = false;
+                    continue;
+                };
 
-                    let encrypted_fields = match encrypted.decrypt(
-                        cipher.as_ref(),
-                        &data[..header_size + offset],
-                        version,
-                    ) {
-                        Ok(encrypted_fields) => encrypted_fields,
-                        Err(e) => {
-                            // early return if it's anything but a decrypt error
-                            e.get_decrypt_error()?;
+                let encrypted_fields = match encrypted.decrypt(
+                    cipher.as_ref(),
+                    &data[..header_size + offset],
+                    version,
+                ) {
+                    Ok(encrypted_fields) => encrypted_fields,
+                    Err(e) => {
+                        // early return if it's anything but a decrypt error
+                        e.get_decrypt_error()?;
 
-                            efdata.untrusted.push(InvalidNtsEncryptedField);
-                            is_valid_nts = false;
-                            continue;
-                        }
-                    };
+                        efdata.untrusted.push(InvalidNtsEncryptedField);
+                        is_valid_nts = false;
+                        continue;
+                    }
+                };
 
-                    // for the current ciphers we allow in non-test code,
-                    // the nonce should always be 16 bytes
-                    debug_assert_eq!(encrypted.nonce.len(), 16);
+                // for the current ciphers we allow in non-test code,
+                // the nonce should always be 16 bytes
+                debug_assert_eq!(encrypted.nonce.len(), 16);
 
-                    efdata.encrypted.extend(encrypted_fields);
-                    cookie = match cipher {
-                        super::crypto::CipherHolder::DecodedServerCookie(cookie) => Some(cookie),
-                        super::crypto::CipherHolder::Other(_) => None,
-                    };
+                efdata.encrypted.extend(encrypted_fields);
+                cookie = match cipher {
+                    super::crypto::CipherHolder::DecodedServerCookie(cookie) => Some(cookie),
+                    super::crypto::CipherHolder::Other(_) => None,
+                };
 
-                    // All previous untrusted fields are now validated
-                    efdata.authenticated.append(&mut efdata.untrusted);
-                }
-                _ => {
-                    let field =
-                        ExtensionField::decode(field, version).map_err(|e| e.generalize())?;
-                    efdata.untrusted.push(field);
-                }
+                // All previous untrusted fields are now validated
+                efdata.authenticated.append(&mut efdata.untrusted);
+            } else {
+                let field =
+                    ExtensionField::decode(field, version).map_err(super::error::ParsingError::generalize)?;
+                efdata.untrusted.push(field);
             }
         }
 
@@ -740,7 +734,7 @@ impl<'a> RawEncryptedField<'a> {
     fn from_message_bytes(
         message_bytes: &'a [u8],
     ) -> Result<Self, ParsingError<std::convert::Infallible>> {
-        use ParsingError::*;
+        use ParsingError::IncorrectLength;
 
         let [b0, b1, b2, b3, ref rest @ ..] = message_bytes[..] else {
             return Err(IncorrectLength);
@@ -783,13 +777,13 @@ impl<'a> RawEncryptedField<'a> {
             version,
         )
         .map(|encrypted_field| {
-            let encrypted_field = encrypted_field.map_err(|e| e.generalize())?.1;
+            let encrypted_field = encrypted_field.map_err(super::error::ParsingError::generalize)?.1;
             if encrypted_field.type_id == ExtensionFieldTypeId::NtsEncryptedField {
                 // TODO: Discuss whether we want this check
                 Err(ParsingError::MalformedNtsExtensionFields)
             } else {
                 Ok(ExtensionField::decode(encrypted_field, version)
-                    .map_err(|e| e.generalize())?
+                    .map_err(super::error::ParsingError::generalize)?
                     .into_owned())
             }
         })

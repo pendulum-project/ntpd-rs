@@ -79,14 +79,14 @@ pub trait TimeSyncController: Sized + Send + 'static {
     /// or not it is usable for synchronization) has changed.
     fn source_update(&mut self, id: Self::SourceId, usable: bool);
     /// Notify the controller of a new measurement from a source.
-    /// The list of SourceIds is used for loop detection, with the
-    /// first SourceId given considered the primary source used.
+    /// The list of `SourceIds` is used for loop detection, with the
+    /// first `SourceId` given considered the primary source used.
     fn source_message(
         &mut self,
         id: Self::SourceId,
         message: Self::SourceMessage,
     ) -> StateUpdate<Self::SourceId, Self::ControllerMessage>;
-    /// Non-message driven update (queued via next_update)
+    /// Non-message driven update (queued via `next_update`)
     fn time_update(&mut self) -> StateUpdate<Self::SourceId, Self::ControllerMessage>;
 }
 

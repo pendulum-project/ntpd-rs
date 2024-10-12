@@ -31,7 +31,7 @@
 /// unit of time.
 ///
 /// This modules input consists of measurements containing:
-///  - the time of the measurement t_m
+///  - the time of the measurement `t_m`
 ///  - the measured offset d
 ///  - the measured transmission delay r
 ///
@@ -43,7 +43,7 @@
 /// For this, a further piece of information is needed: a measurement
 /// related to the frequency difference. Although mathematically not
 /// entirely sound, we construct the frequency measurement also using
-/// the previous measurement (which we will denote with t_p and D_p).
+/// the previous measurement (which we will denote with `t_p` and `D_p`).
 /// It turns out this works well in practice
 ///
 /// The observation is then the vector (D, D-D_p), and the observation
@@ -240,14 +240,14 @@ struct AveragingBuffer {
 const INITIALIZATION_FREQ_UNCERTAINTY: f64 = 100.0;
 
 /// Approximation of 1 - the chi-squared cdf with 1 degree of freedom
-/// source: https://en.wikipedia.org/wiki/Error_function
+/// source: <https://en.wikipedia.org/wiki/Error_function>
 fn chi_1(chi: f64) -> f64 {
-    const P: f64 = 0.3275911;
-    const A1: f64 = 0.254829592;
-    const A2: f64 = -0.284496736;
-    const A3: f64 = 1.421413741;
-    const A4: f64 = -1.453152027;
-    const A5: f64 = 1.061405429;
+    const P: f64 = 0.327_591_1;
+    const A1: f64 = 0.254_829_592;
+    const A2: f64 = -0.284_496_736;
+    const A3: f64 = 1.421_413_741;
+    const A4: f64 = -1.453_152_027;
+    const A5: f64 = 1.061_405_429;
 
     let x = (chi / 2.).sqrt();
     let t = 1. / (1. + P * x);
@@ -291,7 +291,7 @@ impl InitialSourceFilter {
     }
 
     fn process_offset_steering(&mut self, steer: f64) {
-        for sample in self.init_offset.data.iter_mut() {
+        for sample in &mut self.init_offset.data {
             *sample -= steer;
         }
     }
@@ -643,7 +643,7 @@ impl SourceState {
                                 .iter()
                                 .copied()
                                 .sum::<f64>()
-                                / (*samples as f64),
+                                / f64::from(*samples),
                             0.0,
                         ]),
                         uncertainty: Matrix::new([
@@ -726,7 +726,7 @@ impl<SourceId: std::fmt::Debug + Copy + Send + 'static> SourceController
                 self.state.process_offset_steering(steer);
             }
             super::KalmanControllerMessageInner::FreqChange { steer, time } => {
-                self.state.process_frequency_steering(time, steer)
+                self.state.process_frequency_steering(time, steer);
             }
         }
     }
@@ -753,15 +753,14 @@ impl<SourceId: std::fmt::Debug + Copy + Send + 'static> SourceController
     fn observe(&self) -> super::super::ObservableSourceTimedata {
         self.state
             .snapshot(&self.index, &self.algo_config)
-            .map(|snapshot| snapshot.observe())
-            .unwrap_or(ObservableSourceTimedata {
+            .map_or(ObservableSourceTimedata {
                 offset: NtpDuration::ZERO,
                 uncertainty: NtpDuration::MAX,
                 delay: NtpDuration::MAX,
                 remote_delay: NtpDuration::MAX,
                 remote_uncertainty: NtpDuration::MAX,
                 last_update: NtpTimestamp::default(),
-            })
+            }, |snapshot| snapshot.observe())
     }
 }
 

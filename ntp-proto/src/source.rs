@@ -41,7 +41,7 @@ impl SourceNtsData {
         self.cookies.get()
     }
 
-    pub fn get_keys(self) -> (Box<dyn Cipher>, Box<dyn Cipher>) {
+    #[must_use] pub fn get_keys(self) -> (Box<dyn Cipher>, Box<dyn Cipher>) {
         (self.c2s, self.s2c)
     }
 }
@@ -159,7 +159,7 @@ impl std::fmt::Debug for Reach {
 }
 
 impl Reach {
-    pub fn is_reachable(&self) -> bool {
+    #[must_use] pub fn is_reachable(&self) -> bool {
         self.0 != 0
     }
 
@@ -175,7 +175,7 @@ impl Reach {
     }
 
     /// Number of polls since the last message we received
-    pub fn unanswered_polls(&self) -> u32 {
+    #[must_use] pub fn unanswered_polls(&self) -> u32 {
         self.0.trailing_zeros()
     }
 }
@@ -205,7 +205,7 @@ impl NtpSourceSnapshot {
         local_ips: &[IpAddr],
         #[cfg_attr(not(feature = "ntpv5"), allow(unused_variables))] system: &SystemSnapshot,
     ) -> Result<(), AcceptSynchronizationError> {
-        use AcceptSynchronizationError::*;
+        use AcceptSynchronizationError::{Loop, ServerUnreachable, Stratum};
 
         if self.stratum >= local_stratum {
             debug!(
@@ -264,7 +264,7 @@ impl NtpSourceSnapshot {
 }
 
 #[cfg(feature = "__internal-test")]
-pub fn source_snapshot() -> NtpSourceSnapshot {
+#[must_use] pub fn source_snapshot() -> NtpSourceSnapshot {
     use std::net::Ipv4Addr;
 
     let mut reach = crate::source::Reach::default();
@@ -305,7 +305,7 @@ pub enum ProtocolVersion {
 }
 
 impl ProtocolVersion {
-    pub fn is_expected_incoming_version(&self, incoming_version: u8) -> bool {
+    #[must_use] pub fn is_expected_incoming_version(&self, incoming_version: u8) -> bool {
         match self {
             ProtocolVersion::V4 => incoming_version == 4 || incoming_version == 3,
             #[cfg(feature = "ntpv5")]
@@ -353,7 +353,7 @@ impl<SourceMessage: Clone> Clone for NtpSourceUpdate<SourceMessage> {
 
 #[cfg(feature = "__internal-test")]
 impl<SourceMessage> NtpSourceUpdate<SourceMessage> {
-    pub fn snapshot(snapshot: NtpSourceSnapshot) -> Self {
+    #[must_use] pub fn snapshot(snapshot: NtpSourceSnapshot) -> Self {
         NtpSourceUpdate {
             snapshot,
             message: None,
@@ -750,7 +750,7 @@ impl<Controller: SourceController> NtpSource<Controller> {
                     .bloom_filter
                     .handle_response(header.client_cookie, ref_id);
                 if let Err(err) = result {
-                    warn!(?err, "Invalid ReferenceIdResponse from source, ignoring...")
+                    warn!(?err, "Invalid ReferenceIdResponse from source, ignoring...");
                 }
             }
         }
@@ -867,7 +867,7 @@ mod test {
         type ControllerMessage = ();
         type SourceMessage = ();
 
-        fn handle_message(&mut self, _: Self::ControllerMessage) {
+        fn handle_message(&mut self, (): Self::ControllerMessage) {
             // do nothing
         }
 
@@ -996,7 +996,7 @@ mod test {
             type ControllerMessage = ();
             type SourceMessage = ();
 
-            fn handle_message(&mut self, _: Self::ControllerMessage) {}
+            fn handle_message(&mut self, (): Self::ControllerMessage) {}
 
             fn handle_measurement(&mut self, _: Measurement) -> Option<Self::SourceMessage> {
                 None

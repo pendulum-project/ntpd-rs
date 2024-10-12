@@ -63,7 +63,7 @@ pub struct SystemSnapshot {
     #[serde(skip)]
     pub bloom_filter: BloomFilter,
     #[cfg(feature = "ntpv5")]
-    /// NTPv5 reference ID for this instance
+    /// `NTPv5` reference ID for this instance
     #[serde(skip)]
     pub server_id: ServerId,
 }
@@ -348,7 +348,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
             actions.push(SystemAction::SetTimer(timeout));
         }
         if let Some(message) = update.source_message {
-            actions.push(SystemAction::UpdateSources(SystemSourceUpdate { message }))
+            actions.push(SystemAction::UpdateSources(SystemSourceUpdate { message }));
         }
         actions.into()
     }

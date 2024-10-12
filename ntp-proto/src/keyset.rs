@@ -50,7 +50,7 @@ impl KeySetProvider {
     /// Create a new keysetprovider that keeps history old
     /// keys around (so in total, history+1 keys are valid
     /// at any time)
-    pub fn new(history: usize) -> Self {
+    #[must_use] pub fn new(history: usize) -> Self {
         KeySetProvider {
             current: Arc::new(KeySet {
                 keys: vec![AesSivCmac512::new(aes_siv::Aes256SivAead::generate_key(
@@ -64,7 +64,7 @@ impl KeySetProvider {
     }
 
     #[cfg(feature = "__internal-fuzz")]
-    pub fn dangerous_new_deterministic(history: usize) -> Self {
+    #[must_use] pub fn dangerous_new_deterministic(history: usize) -> Self {
         KeySetProvider {
             current: Arc::new(KeySet {
                 keys: vec![AesSivCmac512::new(
@@ -81,9 +81,8 @@ impl KeySetProvider {
     pub fn rotate(&mut self) {
         let next_key = AesSivCmac512::new(aes_siv::Aes256SivAead::generate_key(rand::thread_rng()));
         let mut keys = Vec::with_capacity((self.history + 1).min(self.current.keys.len() + 1));
-        for key in self.current.keys
+        for key in &self.current.keys
             [self.current.keys.len().saturating_sub(self.history)..self.current.keys.len()]
-            .iter()
         {
             // This is the rare case where we do really want to make a copy.
             keys.push(AesSivCmac512::new(GenericArray::clone_from_slice(
@@ -141,14 +140,14 @@ impl KeySetProvider {
         writer.write_all(&self.current.id_offset.to_be_bytes())?;
         writer.write_all(&self.current.primary.to_be_bytes())?;
         writer.write_all(&(self.current.keys.len() as u32).to_be_bytes())?;
-        for key in self.current.keys.iter() {
+        for key in &self.current.keys {
             writer.write_all(key.key_bytes())?;
         }
         Ok(())
     }
 
-    /// Get the current KeySet
-    pub fn get(&self) -> Arc<KeySet> {
+    /// Get the current `KeySet`
+    #[must_use] pub fn get(&self) -> Arc<KeySet> {
         self.current.clone()
     }
 }
@@ -161,7 +160,7 @@ pub struct KeySet {
 
 impl KeySet {
     #[cfg(feature = "__internal-fuzz")]
-    pub fn encode_cookie_pub(&self, cookie: &DecodedServerCookie) -> Vec<u8> {
+    #[must_use] pub fn encode_cookie_pub(&self, cookie: &DecodedServerCookie) -> Vec<u8> {
         self.encode_cookie(cookie)
     }
 
@@ -292,7 +291,7 @@ impl std::fmt::Debug for KeySet {
 }
 
 #[cfg(any(test, feature = "__internal-fuzz"))]
-pub fn test_cookie() -> DecodedServerCookie {
+#[must_use] pub fn test_cookie() -> DecodedServerCookie {
     DecodedServerCookie {
         algorithm: AeadAlgorithm::AeadAesSivCmac256,
         s2c: Box::new(AesSivCmac256::new((0..32_u8).collect())),
