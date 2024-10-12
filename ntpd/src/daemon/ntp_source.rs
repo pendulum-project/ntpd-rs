@@ -120,18 +120,6 @@ where
         loop {
             let mut buf = [0_u8; 1024];
 
-            #[allow(clippy::large_enum_variant)]
-            enum SelectResult<Controller: SourceController> {
-                Timer,
-                Recv(Result<RecvResult<SocketAddr>, std::io::Error>),
-                SystemUpdate(
-                    Result<
-                        SystemSourceUpdate<Controller::ControllerMessage>,
-                        tokio::sync::broadcast::error::RecvError,
-                    >,
-                ),
-            }
-
             let selected: SelectResult<Controller> = tokio::select! {
                 () = &mut poll_wait => {
                     SelectResult::Timer
