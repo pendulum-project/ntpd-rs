@@ -45,11 +45,6 @@ pub enum NtpCtlAction {
 pub(crate) struct NtpCtlOptions {
     config: Option<PathBuf>,
     format: Format,
-    help: bool,
-    version: bool,
-    validate: bool,
-    status: bool,
-    force_sync: bool,
     action: NtpCtlAction,
 }
 
@@ -76,10 +71,10 @@ impl NtpCtlOptions {
             match arg {
                 CliArg::Flag(flag) => match flag.as_str() {
                     "-h" | "--help" => {
-                        options.help = true;
+                        options.action = NtpCtlAction::Help;
                     }
                     "-v" | "--version" => {
-                        options.version = true;
+                        options.action = NtpCtlAction::Version;
                     }
                     option => {
                         Err(format!("invalid option provided: {option}"))?;
@@ -105,13 +100,13 @@ impl NtpCtlOptions {
                     for command in rest {
                         match command.as_str() {
                             "validate" => {
-                                options.validate = true;
+                                options.action = NtpCtlAction::Validate;
                             }
                             "status" => {
-                                options.status = true;
+                                options.action = NtpCtlAction::Status;
                             }
                             "force-sync" => {
-                                options.force_sync = true;
+                                options.action = NtpCtlAction::ForceSync;
                             }
                             unknown => {
                                 eprintln!("Warning: Unknown command {unknown}");
@@ -122,27 +117,9 @@ impl NtpCtlOptions {
             }
         }
 
-        options.resolve_action();
         // nothing to validate at the moment
 
         Ok(options)
-    }
-
-    /// from the arguments resolve which action should be performed
-    fn resolve_action(&mut self) {
-        if self.help {
-            self.action = NtpCtlAction::Help;
-        } else if self.version {
-            self.action = NtpCtlAction::Version;
-        } else if self.validate {
-            self.action = NtpCtlAction::Validate;
-        } else if self.status {
-            self.action = NtpCtlAction::Status;
-        } else if self.force_sync {
-            self.action = NtpCtlAction::ForceSync;
-        } else {
-            self.action = NtpCtlAction::Help;
-        }
     }
 }
 
