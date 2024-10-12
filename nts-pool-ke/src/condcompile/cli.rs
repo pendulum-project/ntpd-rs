@@ -62,13 +62,13 @@ impl CliArg {
 
                     if let Some((key, value)) = long_arg.split_once('=') {
                         if takes_argument.contains(&key) {
-                            processed.push(CliArg::Argument(key.to_string(), value.to_string()))
+                            processed.push(CliArg::Argument(key.to_string(), value.to_string()));
                         } else {
-                            invalid?
+                            invalid?;
                         }
                     } else if takes_argument.contains(&long_arg) {
                         if let Some(next) = arg_iter.next() {
-                            processed.push(CliArg::Argument(long_arg.to_string(), next))
+                            processed.push(CliArg::Argument(long_arg.to_string(), next));
                         } else {
                             Err(format!("'{}' expects an argument", &long_arg))?;
                         }
@@ -95,12 +95,12 @@ impl CliArg {
                                 // short version of --help has no arguments
                                 processed.push(CliArg::Flag(flag));
                             } else {
-                                Err(format!("'-{}' expects an argument", char))?;
+                                Err(format!("'-{char}' expects an argument"))?;
                             }
                             break;
-                        } else {
-                            processed.push(CliArg::Flag(flag));
                         }
+
+                        processed.push(CliArg::Flag(flag));
                     }
                 }
                 _argument => rest.push(arg),

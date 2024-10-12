@@ -46,15 +46,18 @@ impl Display for ConfigError {
 impl std::error::Error for ConfigError {}
 
 impl Config {
+    #[allow(clippy::unused_self)]
+    // TODO impl config check
     pub fn check(&self) -> bool {
         true
     }
 
     async fn from_file(file: impl AsRef<Path>) -> Result<Config, ConfigError> {
+        const S_IWOTH: u32 = 2;
+
         let meta = std::fs::metadata(&file)?;
         let perm = meta.permissions();
 
-        const S_IWOTH: u32 = 2;
         if perm.mode() & S_IWOTH != 0 {
             warn!("Unrestricted config file permissions: Others can write.");
         }
