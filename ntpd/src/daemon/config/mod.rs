@@ -263,7 +263,9 @@ pub enum TimestampMode {
 impl TimestampMode {
     #[cfg(target_os = "linux")]
     pub(crate) fn as_interface_mode(self) -> timestamped_socket::socket::InterfaceTimestampMode {
-        use timestamped_socket::socket::InterfaceTimestampMode::{HardwareAll, None, SoftwareAll, SoftwareRecv};
+        use timestamped_socket::socket::InterfaceTimestampMode::{
+            HardwareAll, None, SoftwareAll, SoftwareRecv,
+        };
         match self {
             TimestampMode::Software => None,
             TimestampMode::KernelRecv => SoftwareRecv,

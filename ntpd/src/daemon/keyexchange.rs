@@ -130,8 +130,7 @@ async fn run_nts_ke(
     for client_cert in &nts_ke_config.authorized_pool_server_certificates {
         let pool_certificate_file = std::fs::File::open(client_cert).map_err(|e| {
             io_error(&format!(
-                "error reading authorized-pool-server-certificate at `{:?}`: {:?}",
-                client_cert, e
+                "error reading authorized-pool-server-certificate at `{client_cert:?}`: {e:?}"
             ))
         })?;
         let mut certs: Vec<_> =
@@ -139,11 +138,10 @@ async fn run_nts_ke(
                 .collect::<std::io::Result<Vec<_>>>()?;
         // forbid certificate chains at this point
         if certs.len() == 1 {
-            pool_certs.push(certs.pop().unwrap())
+            pool_certs.push(certs.pop().unwrap());
         } else {
             return Err(io_error(&format!(
-                "pool certificate file at `{:?}` should contain exactly one certificate",
-                client_cert
+                "pool certificate file at `{client_cert:?}` should contain exactly one certificate"
             )));
         }
     }
@@ -221,12 +219,7 @@ async fn key_exchange_server(
                     debug!("Potential client-triggered accept error in NTS-KE: {}", e);
                     continue;
                 }
-                Err(e)
-                    if matches!(
-                        e.raw_os_error(),
-                        Some(ENFILE | EMFILE | ENOMEM | ENOBUFS)
-                    ) =>
-                {
+                Err(e) if matches!(e.raw_os_error(), Some(ENFILE | EMFILE | ENOMEM | ENOBUFS)) => {
                     error!("Out of resources in NTS-KE, consider raising limits or lowering max parallel connections: {}", e);
                     tokio::time::sleep(timeout).await;
                     continue;
@@ -922,7 +915,9 @@ mod tests {
 
         if let KeyExchangeError::Io(error) = error {
             assert_eq!(error.kind(), std::io::ErrorKind::ConnectionRefused);
-        } else { panic!() }
+        } else {
+            panic!()
+        }
     }
 
     fn client_key_exchange_message_length() -> usize {

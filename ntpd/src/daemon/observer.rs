@@ -120,12 +120,7 @@ async fn observer(
                 debug!("Unexpectedly closed unix socket: {e}");
                 continue;
             }
-            Err(e)
-                if matches!(
-                    e.raw_os_error(),
-                    Some(ENFILE | EMFILE | ENOMEM | ENOBUFS)
-                ) =>
-            {
+            Err(e) if matches!(e.raw_os_error(), Some(ENFILE | EMFILE | ENOMEM | ENOBUFS)) => {
                 error!(
                     "Not enough resources available to accept incoming observability socket: {e}"
                 );
@@ -179,7 +174,11 @@ async fn handle_connection(
             .cloned()
             .collect(),
         system: *system_reader.borrow(),
-        servers: server_reader.borrow().iter().map(std::convert::Into::into).collect(),
+        servers: server_reader
+            .borrow()
+            .iter()
+            .map(std::convert::Into::into)
+            .collect(),
     };
 
     super::sockets::write_json(stream, &observe).await?;

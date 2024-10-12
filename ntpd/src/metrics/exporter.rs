@@ -131,7 +131,9 @@ async fn run(options: NtpMetricsExporterOptions) -> Result<(), Box<dyn std::erro
     let config = initialize_logging_parse_config(None, options.config).await;
     let timeout = std::time::Duration::from_millis(1000);
 
-    let observation_socket_path = if let Some(path) = config.observability.observation_path { Arc::new(path) } else {
+    let observation_socket_path = if let Some(path) = config.observability.observation_path {
+        Arc::new(path)
+    } else {
         eprintln!("An observation socket path must be configured using the observation-path option in the [observability] section of the configuration");
         std::process::exit(1);
     };
@@ -179,12 +181,7 @@ async fn run(options: NtpMetricsExporterOptions) -> Result<(), Box<dyn std::erro
                 debug!("Client unexpectedly closed connection: {e}");
                 continue;
             }
-            Err(e)
-                if matches!(
-                    e.raw_os_error(),
-                    Some(ENFILE | EMFILE | ENOMEM | ENOBUFS)
-                ) =>
-            {
+            Err(e) if matches!(e.raw_os_error(), Some(ENFILE | EMFILE | ENOMEM | ENOBUFS)) => {
                 error!("Not enough resources available to accept incoming connection: {e}");
                 tokio::time::sleep(timeout).await;
                 continue;

@@ -132,7 +132,7 @@ pub(crate) async fn force_sync(config: Option<PathBuf>) -> std::io::Result<ExitC
             config::NtpSourceConfig::Pool(PoolSourceConfig { count, .. }) => total_sources += count,
             #[cfg(feature = "unstable_nts-pool")]
             config::NtpSourceConfig::NtsPool(NtsPoolSourceConfig { count, .. }) => {
-                total_sources += count
+                total_sources += count;
             }
         }
     }
