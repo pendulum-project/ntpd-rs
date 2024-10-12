@@ -285,6 +285,8 @@ impl TimestampMode {
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+    #[allow(clippy::unused_self)]
+    #[allow(clippy::enum_glob_use)]
     pub(crate) fn as_general_mode(self) -> timestamped_socket::socket::GeneralTimestampMode {
         use timestamped_socket::socket::GeneralTimestampMode::*;
         None
@@ -370,6 +372,7 @@ impl Config {
         let meta = std::fs::metadata(&file)?;
         let perm = meta.permissions();
 
+        #[allow(clippy::cast_possible_truncation)]
         if perm.mode() as libc::mode_t & libc::S_IWOTH != 0 {
             warn!("Unrestricted config file permissions: Others can write.");
         }
