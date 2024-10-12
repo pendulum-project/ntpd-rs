@@ -78,6 +78,18 @@ enum SocketResult {
     Abort,
 }
 
+#[allow(clippy::large_enum_variant)]
+enum SelectResult<Controller: SourceController> {
+    Timer,
+    Recv(Result<RecvResult<SocketAddr>, std::io::Error>),
+    SystemUpdate(
+        Result<
+            SystemSourceUpdate<Controller::ControllerMessage>,
+            tokio::sync::broadcast::error::RecvError,
+        >,
+    ),
+}
+
 impl<C, Controller: SourceController, T> SourceTask<C, Controller, T>
 where
     C: 'static + NtpClock + Send + Sync,
@@ -112,18 +124,6 @@ where
     async fn run(&mut self, mut poll_wait: Pin<&mut T>) {
         loop {
             let mut buf = [0_u8; 1024];
-
-            #[allow(clippy::large_enum_variant)]
-            enum SelectResult<Controller: SourceController> {
-                Timer,
-                Recv(Result<RecvResult<SocketAddr>, std::io::Error>),
-                SystemUpdate(
-                    Result<
-                        SystemSourceUpdate<Controller::ControllerMessage>,
-                        tokio::sync::broadcast::error::RecvError,
-                    >,
-                ),
-            }
 
             let selected: SelectResult<Controller> = tokio::select! {
                 () = &mut poll_wait => {

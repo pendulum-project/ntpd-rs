@@ -31,14 +31,15 @@ impl<C: NtpClock> SingleShotController<C> {
     const ASSUMED_UNCERTAINTY: NtpDuration = NtpDuration::from_exponent(-1);
 
     fn try_steer(&self) {
-        if self.sources.len() < self.min_agreeing {
-            return;
-        }
-
         struct Event {
             offset: NtpDuration,
             count: isize,
         }
+
+        if self.sources.len() < self.min_agreeing {
+            return;
+        }
+
         let mut events: Vec<_> = self
             .sources
             .values()

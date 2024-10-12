@@ -438,14 +438,14 @@ mod tests {
 
     #[test]
     fn test_deserialize_source_pem_certificate() {
-        let contents = include_bytes!("../../../testdata/certificates/nos-nl.pem");
-        let path = std::env::temp_dir().join("nos-nl.pem");
-        std::fs::write(&path, contents).unwrap();
-
         #[derive(Deserialize, Debug)]
         struct TestConfig {
             source: NtpSourceConfig,
         }
+
+        let contents = include_bytes!("../../../testdata/certificates/nos-nl.pem");
+        let path = std::env::temp_dir().join("nos-nl.pem");
+        std::fs::write(&path, contents).unwrap();
 
         let test: TestConfig = toml::from_str(&format!(
             r#"
