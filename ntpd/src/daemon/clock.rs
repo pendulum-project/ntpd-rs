@@ -40,9 +40,11 @@ impl NtpClock for NtpClockWrapper {
         offset: ntp_proto::NtpDuration,
     ) -> Result<ntp_proto::NtpTimestamp, Self::Error> {
         let (seconds, nanos) = offset.as_seconds_nanos();
+
+        #[allow(clippy::cast_lossless)]
         self.0
             .step_clock(TimeOffset {
-                seconds: i64::from(seconds),
+                seconds: seconds as _,
                 nanos,
             })
             .map(convert_clock_timestamp)
