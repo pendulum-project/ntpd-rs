@@ -315,8 +315,8 @@ pub struct ObservabilityConfig {
 impl Default for ObservabilityConfig {
     fn default() -> Self {
         Self {
-            log_level: Default::default(),
-            observation_path: Default::default(),
+            log_level: Option::default(),
+            observation_path: Option::default(),
             observation_permissions: default_observation_permissions(),
             metrics_exporter_listen: default_metrics_exporter_listen(),
         }

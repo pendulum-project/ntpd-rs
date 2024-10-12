@@ -302,7 +302,7 @@ mod tests {
 
         let join = ServerTask::spawn(
             config,
-            Default::default(),
+            ServerStats::default(),
             system_snapshots,
             keyset,
             clock,

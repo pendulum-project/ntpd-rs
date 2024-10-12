@@ -141,12 +141,12 @@ impl<C: NtpClock> TimeSyncController for SingleShotController<C> {
         self.sources.insert(id, message);
         // TODO, check and update time once we have sufficient sources
         self.try_steer();
-        Default::default()
+        ntp_proto::StateUpdate::default()
     }
 
     fn time_update(&mut self) -> ntp_proto::StateUpdate<Self::SourceId, Self::ControllerMessage> {
         // no need for action
-        Default::default()
+        ntp_proto::StateUpdate::default()
     }
 }
 

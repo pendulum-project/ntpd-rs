@@ -196,7 +196,8 @@ mod tests {
     #[cfg(feature = "unstable_ntpv5")]
     use ntp_proto::v5::{BloomFilter, ServerId};
     use ntp_proto::{
-        NtpDuration, NtpLeapIndicator, PollIntervalLimits, Reach, ReferenceId, TimeSnapshot,
+        NtpDuration, NtpLeapIndicator, ObservableSourceTimedata, PollIntervalLimits, Reach,
+        ReferenceId, TimeSnapshot,
     };
     use tokio::{io::AsyncReadExt, net::UnixStream};
 
@@ -218,7 +219,7 @@ mod tests {
         source_snapshots.insert(
             id,
             ObservableSourceState {
-                timedata: Default::default(),
+                timedata: ObservableSourceTimedata::default(),
                 unanswered_polls: Reach::default().unanswered_polls(),
                 poll_interval: PollIntervalLimits::default().min,
                 nts_cookies: None,
@@ -285,7 +286,7 @@ mod tests {
         source_snapshots.insert(
             id,
             ObservableSourceState {
-                timedata: Default::default(),
+                timedata: ObservableSourceTimedata::default(),
                 unanswered_polls: Reach::default().unanswered_polls(),
                 poll_interval: PollIntervalLimits::default().min,
                 nts_cookies: None,

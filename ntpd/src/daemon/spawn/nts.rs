@@ -53,7 +53,7 @@ impl NtsSpawner {
     pub fn new(config: NtsSourceConfig) -> NtsSpawner {
         NtsSpawner {
             config,
-            id: Default::default(),
+            id: SpawnerId::default(),
             has_spawned: false,
         }
     }

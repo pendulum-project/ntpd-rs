@@ -286,8 +286,11 @@ mod tests {
     use std::os::unix::prelude::PermissionsExt;
     use std::path::Path;
 
+    use ntp_proto::SystemSnapshot;
+
     use crate::daemon::{
         config::ObservabilityConfig,
+        observer::ProgramData,
         sockets::{create_unix_socket_with_permissions, write_json},
     };
 
@@ -297,7 +300,7 @@ mod tests {
         command: Format,
         socket_name: &str,
     ) -> std::io::Result<Result<ExitCode, std::io::Error>> {
-        let config: ObservabilityConfig = Default::default();
+        let config = ObservabilityConfig::default();
 
         // be careful with copying: tests run concurrently and should use a unique socket name!
         let path = std::env::temp_dir().join(socket_name);
@@ -314,8 +317,8 @@ mod tests {
         let handle = tokio::spawn(fut);
 
         let value = ObservableState {
-            program: Default::default(),
-            system: Default::default(),
+            program: ProgramData::default(),
+            system: SystemSnapshot::default(),
             sources: vec![],
             servers: vec![],
         };
@@ -356,7 +359,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_control_socket_source_invalid_input() -> std::io::Result<()> {
-        let config: ObservabilityConfig = Default::default();
+        let config = ObservabilityConfig::default();
 
         // be careful with copying: tests run concurrently and should use a unique socket name!
         let path = std::env::temp_dir().join("ntp-test-stream-10");

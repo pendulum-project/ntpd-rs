@@ -264,9 +264,9 @@ impl<
                 spawn_rx,
                 spawn_tx,
 
-                sources: Default::default(),
-                servers: Default::default(),
-                spawners: Default::default(),
+                sources: HashMap::default(),
+                servers: Vec::default(),
+                spawners: Vec::default(),
                 clock,
                 timestamp_mode,
                 interface,
