@@ -284,7 +284,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_ne!(test.keyset, KeysetConfig::default())
+        assert_ne!(test.keyset, KeysetConfig::default());
     }
 
     #[test]

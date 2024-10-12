@@ -157,7 +157,7 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper, Sourc
         }
     }
 
-    for server_config in server_configs.iter() {
+    for server_config in server_configs {
         system.add_server(server_config.to_owned()).await;
     }
 
@@ -363,7 +363,7 @@ impl<
                     let _ = self.system_update_sender.send(update);
                 }
                 ntp_proto::SystemAction::SetTimer(duration) => {
-                    wait.as_mut().reset(tokio::time::Instant::now() + duration)
+                    wait.as_mut().reset(tokio::time::Instant::now() + duration);
                 }
             }
         }
@@ -483,10 +483,7 @@ impl<
         info!(source_id=?source_id, addr=?params.get_addr(), spawner=?spawner_id, "new source");
         self.sources.insert(
             source_id,
-            SourceState {
-                source_id,
-                spawner_id,
-            },
+            SourceState { spawner_id, source_id },
         );
 
         match params {

@@ -112,7 +112,7 @@ impl<C: NtpClock> SingleShotController<C> {
                 }
             }
 
-            let avg_offset = NtpDuration::from_seconds(sum / (count as f64));
+            let avg_offset = NtpDuration::from_seconds(sum / f64::from(count));
             self.offer_clock_change(avg_offset);
 
             std::process::exit(0);
