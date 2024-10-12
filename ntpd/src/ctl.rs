@@ -306,7 +306,7 @@ mod tests {
         command: Format,
         value: T,
     ) -> std::io::Result<Result<ExitCode, std::io::Error>> {
-        let config: ObservabilityConfig = Default::default();
+        let config = ObservabilityConfig::default();
 
         // be careful with copying: tests run concurrently and should use a unique socket name!
         let path = std::env::temp_dir().join(format!("ntp-test-stream-{}", alloc_port()));

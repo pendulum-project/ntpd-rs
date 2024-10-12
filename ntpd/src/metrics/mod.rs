@@ -12,7 +12,7 @@ struct Measurement<T> {
 impl<T> Measurement<T> {
     fn simple(value: T) -> Vec<Measurement<T>> {
         vec![Measurement {
-            labels: Default::default(),
+            labels: Vec::default(),
             value,
         }]
     }

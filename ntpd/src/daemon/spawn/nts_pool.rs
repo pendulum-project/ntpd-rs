@@ -48,8 +48,8 @@ impl NtsPoolSpawner {
     pub fn new(config: NtsPoolSourceConfig) -> NtsPoolSpawner {
         NtsPoolSpawner {
             config,
-            id: Default::default(),
-            current_sources: Default::default(),
+            id: SpawnerId::default(),
+            current_sources: Vec::default(),
             //known_ips: Default::default(),
         }
     }
