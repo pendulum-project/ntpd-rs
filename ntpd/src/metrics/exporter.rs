@@ -109,6 +109,9 @@ impl NtpMetricsExporterOptions {
     }
 }
 
+/// # Errors
+///
+/// Returns `Error` if `MetricsAction::Run` fails.
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let options = NtpMetricsExporterOptions::try_parse_from(std::env::args())?;
     match options.action {

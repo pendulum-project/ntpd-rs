@@ -144,6 +144,9 @@ async fn validate(config: Option<PathBuf>) -> std::io::Result<ExitCode> {
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// # Errors
+///
+/// Returns `Error` if options input in `std::env::args()` is invalid.
 pub async fn main() -> std::io::Result<ExitCode> {
     let options = match NtpCtlOptions::try_parse_from(std::env::args()) {
         Ok(options) => options,
