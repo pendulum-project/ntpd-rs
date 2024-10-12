@@ -24,20 +24,20 @@ fn human_readable_duration(abs_offset: f64) -> String {
     if offset >= 86400.0 {
         let days = (offset / 86400.0).floor() as u64;
         offset -= days as f64 * 86400.0;
-        res.push_str(&format!("{} day(s) ", days));
+        res.push_str(&format!("{days} day(s) "));
     }
     if offset >= 3600.0 {
         let hours = (offset / 3600.0).floor() as u64;
         offset -= hours as f64 * 3600.0;
-        res.push_str(&format!("{} hour(s) ", hours));
+        res.push_str(&format!("{hours} hour(s) "));
     }
     if offset >= 60.0 {
         let minutes = (offset / 60.0).floor() as u64;
         offset -= minutes as f64 * 60.0;
-        res.push_str(&format!("{} minute(s) ", minutes));
+        res.push_str(&format!("{minutes} minute(s) "));
     }
     if offset >= 1.0 {
-        res.push_str(&format!("{:.0} second(s)", offset));
+        res.push_str(&format!("{offset:.0} second(s)"));
     }
     res
 }
@@ -52,7 +52,7 @@ fn try_date_display(offset: NtpDuration) -> Option<String> {
 
     std::process::Command::new("date")
         .arg("-d")
-        .arg(format!("@{}", ts))
+        .arg(format!("@{ts}"))
         .arg("+%c")
         .output()
         .ok()
@@ -127,7 +127,7 @@ pub(crate) async fn force_sync(config: Option<PathBuf>) -> std::io::Result<ExitC
     for source in &config.sources {
         match source {
             config::NtpSourceConfig::Standard(_) | config::NtpSourceConfig::Nts(_) => {
-                total_sources += 1
+                total_sources += 1;
             }
             config::NtpSourceConfig::Pool(PoolSourceConfig { count, .. }) => total_sources += count,
             #[cfg(feature = "unstable_nts-pool")]

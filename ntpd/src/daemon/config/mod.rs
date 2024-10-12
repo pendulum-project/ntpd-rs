@@ -81,13 +81,13 @@ impl CliArg {
 
                     if let Some((key, value)) = long_arg.split_once('=') {
                         if takes_argument.contains(&key) {
-                            processed.push(CliArg::Argument(key.to_string(), value.to_string()))
+                            processed.push(CliArg::Argument(key.to_string(), value.to_string()));
                         } else {
-                            invalid?
+                            invalid?;
                         }
                     } else if takes_argument.contains(&long_arg) {
                         if let Some(next) = arg_iter.next() {
-                            processed.push(CliArg::Argument(long_arg.to_string(), next))
+                            processed.push(CliArg::Argument(long_arg.to_string(), next));
                         } else {
                             Err(format!("'{}' expects an argument", &long_arg))?;
                         }
@@ -114,12 +114,12 @@ impl CliArg {
                                 // short version of --help has no arguments
                                 processed.push(CliArg::Flag(flag));
                             } else {
-                                Err(format!("'-{}' expects an argument", char))?;
+                                Err(format!("'-{char}' expects an argument"))?;
                             }
                             break;
-                        } else {
-                            processed.push(CliArg::Flag(flag));
                         }
+
+                        processed.push(CliArg::Flag(flag));
                     }
                 }
                 _argument => rest.push(arg),
@@ -223,10 +223,10 @@ where
 
         #[cfg(not(target_os = "linux"))]
         panic!("Custom clock paths not supported on this platform");
-    } else {
-        tracing::debug!("using REALTIME clock");
-        Ok(NtpClockWrapper::new(UnixClock::CLOCK_REALTIME))
     }
+
+    tracing::debug!("using REALTIME clock");
+    Ok(NtpClockWrapper::new(UnixClock::CLOCK_REALTIME))
 }
 
 fn deserialize_interface<'de, D>(deserializer: D) -> Result<Option<InterfaceName>, D::Error>
@@ -263,7 +263,7 @@ pub enum TimestampMode {
 impl TimestampMode {
     #[cfg(target_os = "linux")]
     pub(crate) fn as_interface_mode(self) -> timestamped_socket::socket::InterfaceTimestampMode {
-        use timestamped_socket::socket::InterfaceTimestampMode::*;
+        use timestamped_socket::socket::InterfaceTimestampMode::{HardwareAll, None, SoftwareAll, SoftwareRecv};
         match self {
             TimestampMode::Software => None,
             TimestampMode::KernelRecv => SoftwareRecv,
@@ -274,7 +274,7 @@ impl TimestampMode {
 
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     pub(crate) fn as_general_mode(self) -> timestamped_socket::socket::GeneralTimestampMode {
-        use timestamped_socket::socket::GeneralTimestampMode::*;
+        use timestamped_socket::socket::GeneralTimestampMode::{None, SoftwareAll, SoftwareRecv};
         match self {
             TimestampMode::Software => None,
             TimestampMode::KernelRecv => SoftwareRecv,
@@ -685,18 +685,18 @@ mod tests {
     #[test]
     fn system_config_accumulated_threshold() {
         let config: Result<SynchronizationConfig, _> = toml::from_str(
-            r#"
+            r"
             accumulated-step-panic-threshold = 0
-            "#,
+            ",
         );
 
         let config = config.unwrap();
         assert!(config.accumulated_step_panic_threshold.is_none());
 
         let config: Result<SynchronizationConfig, _> = toml::from_str(
-            r#"
+            r"
             accumulated-step-panic-threshold = 1000
-            "#,
+            ",
         );
 
         let config = config.unwrap();
@@ -709,9 +709,9 @@ mod tests {
     #[test]
     fn system_config_startup_panic_threshold() {
         let config: Result<SynchronizationConfig, _> = toml::from_str(
-            r#"
+            r"
             startup-step-panic-threshold = { forward = 10, backward = 20 }
-            "#,
+            ",
         );
 
         let config = config.unwrap();
@@ -734,9 +734,9 @@ mod tests {
         }
 
         let result: Result<Helper, _> = toml::from_str(
-            r#"
+            r"
             duration = nan
-            "#,
+            ",
         );
 
         let error = result.unwrap_err();
@@ -752,9 +752,9 @@ mod tests {
         }
 
         let result: Result<Helper, _> = toml::from_str(
-            r#"
+            r"
             threshold = nan
-            "#,
+            ",
         );
 
         let error = result.unwrap_err();
@@ -764,9 +764,9 @@ mod tests {
     #[test]
     fn deny_unknown_fields() {
         let config: Result<SynchronizationConfig, _> = toml::from_str(
-            r#"
+            r"
             unknown-field = 42
-            "#,
+            ",
         );
 
         let error = config.unwrap_err();
@@ -793,20 +793,20 @@ mod tests {
     #[test]
     fn daemon_synchronization_config() {
         let config: Result<DaemonSynchronizationConfig, _> = toml::from_str(
-            r#"
+            r"
             does_not_exist = 5
-            "#,
+            ",
         );
 
         assert!(config.is_err());
 
         let config: Result<DaemonSynchronizationConfig, _> = toml::from_str(
-            r#"
+            r"
             minimum-agreeing-sources = 2
 
             [algorithm]
             initial-wander = 1e-7
-            "#,
+            ",
         );
 
         let config = config.unwrap();

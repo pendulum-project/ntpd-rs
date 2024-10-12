@@ -42,7 +42,7 @@ impl NtpClock for NtpClockWrapper {
         let (seconds, nanos) = offset.as_seconds_nanos();
         self.0
             .step_clock(TimeOffset {
-                seconds: seconds as _,
+                seconds: i64::from(seconds),
                 nanos,
             })
             .map(convert_clock_timestamp)

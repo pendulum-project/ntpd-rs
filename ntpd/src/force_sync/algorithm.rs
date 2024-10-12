@@ -75,11 +75,11 @@ impl<C: NtpClock> SingleShotController<C> {
             for source in self.sources.values() {
                 if source.offset.abs_diff(peak_offset) < Self::ASSUMED_UNCERTAINTY {
                     count += 1;
-                    sum += source.offset.to_seconds()
+                    sum += source.offset.to_seconds();
                 }
             }
 
-            let avg_offset = NtpDuration::from_seconds(sum / (count as f64));
+            let avg_offset = NtpDuration::from_seconds(sum / f64::from(count));
             self.offer_clock_change(avg_offset);
 
             std::process::exit(0);

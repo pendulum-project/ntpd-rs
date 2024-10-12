@@ -224,7 +224,7 @@ async fn key_exchange_server(
                 Err(e)
                     if matches!(
                         e.raw_os_error(),
-                        Some(ENFILE) | Some(EMFILE) | Some(ENOMEM) | Some(ENOBUFS)
+                        Some(ENFILE | EMFILE | ENOMEM | ENOBUFS)
                     ) =>
                 {
                     error!("Out of resources in NTS-KE, consider raising limits or lowering max parallel connections: {}", e);
@@ -920,17 +920,14 @@ mod tests {
 
         let error = result.unwrap_err();
 
-        match error {
-            KeyExchangeError::Io(error) => {
-                assert_eq!(error.kind(), std::io::ErrorKind::ConnectionRefused);
-            }
-            _ => panic!(),
-        }
+        if let KeyExchangeError::Io(error) = error {
+            assert_eq!(error.kind(), std::io::ErrorKind::ConnectionRefused);
+        } else { panic!() }
     }
 
     fn client_key_exchange_message_length() -> usize {
         let mut buffer = Vec::with_capacity(1024);
-        for record in ntp_proto::NtsRecord::client_key_exchange_records(vec![]).iter() {
+        for record in &ntp_proto::NtsRecord::client_key_exchange_records(vec![]) {
             record.write(&mut buffer).unwrap();
         }
 

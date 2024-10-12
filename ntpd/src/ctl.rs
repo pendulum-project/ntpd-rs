@@ -100,7 +100,7 @@ impl NtpCtlOptions {
                 },
                 CliArg::Rest(rest) => {
                     if rest.len() > 1 {
-                        eprintln!("Warning: Too many commands provided.")
+                        eprintln!("Warning: Too many commands provided.");
                     }
                     for command in rest {
                         match command.as_str() {
@@ -267,7 +267,7 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
                         "    NTS cookies: {}/{} available",
                         nts_cookies,
                         ntp_proto::MAX_COOKIES
-                    )
+                    );
                 }
             }
             println!();

@@ -142,14 +142,11 @@ where
                     tracing::debug!("accept packet");
                     match accept_packet(result, &buf, &self.clock) {
                         AcceptResult::Accept(packet, recv_timestamp) => {
-                            let send_timestamp = match self.last_send_timestamp {
-                                Some(ts) => ts,
-                                None => {
-                                    debug!(
-                                        "we received a message without having sent one; discarding"
-                                    );
-                                    continue;
-                                }
+                            let send_timestamp = if let Some(ts) = self.last_send_timestamp { ts } else {
+                                debug!(
+                                    "we received a message without having sent one; discarding"
+                                );
+                                continue;
                             };
                             let actions = self.source.handle_incoming(
                                 packet,
@@ -247,24 +244,23 @@ where
                             Err(error) => {
                                 warn!(?error, "poll message could not be sent");
 
-                                match error.raw_os_error() {
-                                    Some(libc::EHOSTDOWN)
-                                    | Some(libc::EHOSTUNREACH)
-                                    | Some(libc::ENETDOWN)
-                                    | Some(libc::ENETUNREACH) => {
-                                        self.channels
-                                            .msg_for_system_sender
-                                            .send(MsgForSystem::NetworkIssue(self.index))
-                                            .await
-                                            .ok();
-                                        self.channels
-                                            .source_snapshots
-                                            .write()
-                                            .expect("Unexpected poisoned mutex")
-                                            .remove(&self.index);
-                                        return;
-                                    }
-                                    _ => {}
+                                if let Some(
+                                        libc::EHOSTDOWN
+                                        | libc::EHOSTUNREACH
+                                        | libc::ENETDOWN
+                                        | libc::ENETUNREACH,
+                                    ) = error.raw_os_error() {
+                                    self.channels
+                                        .msg_for_system_sender
+                                        .send(MsgForSystem::NetworkIssue(self.index))
+                                        .await
+                                        .ok();
+                                    self.channels
+                                        .source_snapshots
+                                        .write()
+                                        .expect("Unexpected poisoned mutex")
+                                        .remove(&self.index);
+                                    return;
                                 }
                             }
                             Ok(opt_send_timestamp) => {
@@ -283,7 +279,7 @@ where
                             .ok();
                     }
                     ntp_proto::NtpSourceAction::SetTimer(timeout) => {
-                        poll_wait.as_mut().reset(Instant::now() + timeout)
+                        poll_wait.as_mut().reset(Instant::now() + timeout);
                     }
                     ntp_proto::NtpSourceAction::Reset => {
                         self.channels
@@ -348,7 +344,7 @@ where
                             unreachable!("Should not be updating system from startup")
                         }
                         ntp_proto::NtpSourceAction::SetTimer(timeout) => {
-                            poll_wait.as_mut().reset(Instant::now() + timeout)
+                            poll_wait.as_mut().reset(Instant::now() + timeout);
                         }
                         ntp_proto::NtpSourceAction::Reset => {
                             unreachable!("Should not be resetting from startup")
@@ -423,10 +419,10 @@ fn accept_packet<'a, C: NtpClock>(
             warn!(?receive_error, "could not receive packet");
 
             match receive_error.raw_os_error() {
-                Some(libc::EHOSTDOWN)
-                | Some(libc::EHOSTUNREACH)
-                | Some(libc::ENETDOWN)
-                | Some(libc::ENETUNREACH) => AcceptResult::NetworkGone,
+                Some(libc::EHOSTDOWN
+                | libc::EHOSTUNREACH
+                | libc::ENETDOWN
+                | libc::ENETUNREACH) => AcceptResult::NetworkGone,
                 _ => AcceptResult::Ignore,
             }
         }
@@ -754,7 +750,7 @@ mod tests {
         poll_send.notify();
 
         tokio::select! {
-            _ = tokio::time::sleep(Duration::from_millis(10)) => {/*expected */},
+            () = tokio::time::sleep(Duration::from_millis(10)) => {/*expected */},
             _ = socket.recv(&mut buf) => { unreachable!("should not receive anything") }
         }
 

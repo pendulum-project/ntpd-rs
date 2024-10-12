@@ -117,7 +117,7 @@ impl Spawner for PoolSpawner {
     }
 
     fn get_addr_description(&self) -> String {
-        format!("{} ({})", self.config.addr.deref(), self.config.count)
+        format!("{} ({})", &*self.config.addr, self.config.count)
     }
 
     fn get_description(&self) -> &str {

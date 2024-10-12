@@ -174,8 +174,7 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
         Some(Unit::Seconds),
         Measurement::simple(state.system
             .accumulated_steps_threshold
-            .map(|v| v.to_seconds())
-            .unwrap_or(-1.0)),
+            .map_or(-1.0, ntp_proto::NtpDuration::to_seconds)),
     )?;
 
     format_metric(
