@@ -22,19 +22,19 @@ fn human_readable_duration(abs_offset: f64) -> String {
     let mut offset = abs_offset;
     let mut res = String::new();
     if offset >= 86400.0 {
-        let days = (offset / 86400.0).floor() as u64;
-        offset -= days as f64 * 86400.0;
-        res.push_str(&format!("{days} day(s) "));
+        let days = (offset / 86400.0).floor();
+        offset -= days * 86400.0;
+        res.push_str(&format!("{days:.0} day(s) "));
     }
     if offset >= 3600.0 {
-        let hours = (offset / 3600.0).floor() as u64;
-        offset -= hours as f64 * 3600.0;
-        res.push_str(&format!("{hours} hour(s) "));
+        let hours = (offset / 3600.0).floor();
+        offset -= hours * 3600.0;
+        res.push_str(&format!("{hours:.0} hour(s) "));
     }
     if offset >= 60.0 {
-        let minutes = (offset / 60.0).floor() as u64;
-        offset -= minutes as f64 * 60.0;
-        res.push_str(&format!("{minutes} minute(s) "));
+        let minutes = (offset / 60.0).floor();
+        offset -= minutes * 60.0;
+        res.push_str(&format!("{minutes:.0} minute(s) "));
     }
     if offset >= 1.0 {
         res.push_str(&format!("{offset:.0} second(s)"));
@@ -48,6 +48,9 @@ fn try_date_display(offset: NtpDuration) -> Option<String> {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
+
+    #[allow(clippy::cast_possible_truncation)]
+    #[allow(clippy::cast_sign_loss)]
     let ts = since_epoch + (offset.to_seconds() as u64);
 
     std::process::Command::new("date")

@@ -529,6 +529,7 @@ mod tests {
             let cur =
                 std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH)?;
 
+            #[allow(clippy::cast_possible_truncation)]
             Ok(NtpTimestamp::from_seconds_nanos_since_ntp_era(
                 EPOCH_OFFSET.wrapping_add(cur.as_secs() as u32),
                 cur.subsec_nanos(),

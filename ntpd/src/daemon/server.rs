@@ -285,6 +285,7 @@ mod tests {
         let mut cursor = Cursor::new(buf.as_mut_slice());
         send_packet.serialize(&mut cursor, &NoCipher, None).unwrap();
 
+        #[allow(clippy::cast_possible_truncation)]
         let end = cursor.position() as usize;
         buf.truncate(end);
         buf
