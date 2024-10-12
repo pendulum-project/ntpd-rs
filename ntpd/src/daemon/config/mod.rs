@@ -813,6 +813,8 @@ mod tests {
 
         let config = config.unwrap();
         assert_eq!(config.synchronization_base.minimum_agreeing_sources, 2);
-        assert_eq!(config.algorithm.initial_wander, 1e-7);
+
+        // see https://rust-lang.github.io/rust-clippy/master/index.html#float_cmp
+        assert!((config.algorithm.initial_wander - 1e-7).abs() < 1e-8);
     }
 }
