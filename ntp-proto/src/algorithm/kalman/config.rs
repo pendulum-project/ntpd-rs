@@ -27,7 +27,7 @@ pub struct AlgorithmConfig {
     #[serde(default = "default_poll_interval_low_weight")]
     pub poll_interval_low_weight: f64,
     /// Amount which a measurement contributes to the state, above
-    /// which we start decreasing the poll_interval interval. (weight, 0-1)
+    /// which we start decreasing the `poll_interval` interval. (weight, 0-1)
     #[serde(default = "default_poll_interval_high_weight")]
     pub poll_interval_high_weight: f64,
     /// Amount of hysteresis in changing the poll interval (count, 1+)

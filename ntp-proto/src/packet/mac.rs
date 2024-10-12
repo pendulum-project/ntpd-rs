@@ -54,7 +54,7 @@ mod tests {
             mac: Cow::Borrowed(&[1, 2, 3, 4, 5, 6, 7, 8]),
         };
 
-        let input = input.to_owned();
+        let input = input.clone();
 
         let mut w = Vec::new();
         input.serialize(&mut w).unwrap();

@@ -41,7 +41,7 @@ pub(super) fn combine<Index: Copy>(
     selection.first().map(|first| {
         let mut estimate = first.state;
         if !algo_config.ignore_server_dispersion {
-            estimate = estimate.add_server_dispersion(first.source_uncertainty.to_seconds())
+            estimate = estimate.add_server_dispersion(first.source_uncertainty.to_seconds());
         }
 
         let mut used_sources = vec![(first.index, estimate.uncertainty.determinant())];

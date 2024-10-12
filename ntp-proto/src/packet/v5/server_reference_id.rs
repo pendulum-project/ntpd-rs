@@ -66,11 +66,11 @@ pub struct BloomFilter([u8; Self::BYTES]);
 impl BloomFilter {
     pub const BYTES: usize = 512;
 
-    pub const fn new() -> Self {
+    #[must_use] pub const fn new() -> Self {
         Self([0; Self::BYTES])
     }
 
-    pub fn contains_id(&self, other: &ServerId) -> bool {
+    #[must_use] pub fn contains_id(&self, other: &ServerId) -> bool {
         other.0.iter().all(|idx| self.is_set(*idx))
     }
 
@@ -96,11 +96,11 @@ impl BloomFilter {
         union
     }
 
-    pub fn count_ones(&self) -> u16 {
+    #[must_use] pub fn count_ones(&self) -> u16 {
         self.0.iter().map(|b| b.count_ones() as u16).sum()
     }
 
-    pub const fn as_bytes(&self) -> &[u8; Self::BYTES] {
+    #[must_use] pub const fn as_bytes(&self) -> &[u8; Self::BYTES] {
         &self.0
     }
 
@@ -133,7 +133,7 @@ impl Debug for BloomFilter {
             .0
             .chunks_exact(32)
             .map(|chunk| chunk.iter().fold(0, |acc, b| acc | b))
-            .map(|b| char::from_u32(0x2800 + b as u32).unwrap())
+            .map(|b| char::from_u32(0x2800 + u32::from(b)).unwrap())
             .collect();
 
         f.debug_tuple("BloomFilter").field(&str).finish()
@@ -383,7 +383,7 @@ mod tests {
                 continue;
             };
 
-            for _chunk in 0..((512 / chunk_size) + 1) {
+            for _chunk in 0..=(512 / chunk_size) {
                 let cookie = NtpClientCookie::new_random();
                 let request = bf.next_request(cookie);
                 let response = request.to_response(&target_filter).unwrap();

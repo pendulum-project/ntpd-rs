@@ -1,4 +1,4 @@
-/// Write trait for structs that implement std::io::Write without doing blocking io
+/// Write trait for structs that implement `std::io::Write` without doing blocking io
 pub trait NonBlockingWrite: std::io::Write {}
 
 impl<W> NonBlockingWrite for std::io::Cursor<W> where std::io::Cursor<W>: std::io::Write {}

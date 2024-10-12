@@ -93,7 +93,7 @@ pub struct Server<C> {
 
 // Quick estimation of ntp packet message version without doing full parsing
 fn fallback_message_version(message: &[u8]) -> u8 {
-    message.first().map(|v| (v & 0b0011_1000) >> 3).unwrap_or(0)
+    message.first().map_or(0, |v| (v & 0b0011_1000) >> 3)
 }
 
 impl<C> Server<C> {
@@ -261,7 +261,7 @@ impl<C: NtpClock> Server<C> {
             ServerResponse::Ignore => unreachable!(),
         };
         match result {
-            Ok(_) => {
+            Ok(()) => {
                 stats_handler.register(version, nts, reason, action);
                 let length = cursor.position();
                 ServerAction::Respond {

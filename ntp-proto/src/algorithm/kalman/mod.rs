@@ -111,9 +111,9 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 next_update: None,
             };
         }
-        for (_, (state, _)) in self.sources.iter_mut() {
+        for (_, (state, _)) in &mut self.sources {
             if let Some(ref mut snapshot) = state {
-                snapshot.state = snapshot.state.progress_time(time, snapshot.wander)
+                snapshot.state = snapshot.state.progress_time(time, snapshot.wander);
             }
         }
 
@@ -131,7 +131,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                         }
                     },
                 )
-                .cloned()
+                .copied()
                 .collect(),
         );
 
@@ -237,8 +237,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 || self
                     .synchronization_config
                     .accumulated_step_panic_threshold
-                    .map(|v| self.timedata.accumulated_steps > v)
-                    .unwrap_or(false)
+                    .is_some_and(|v| self.timedata.accumulated_steps > v)
             {
                 error!("Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate. If the clock is significantly wrong, you can use `ntp-ctl force-sync` to correct it.");
                 #[cfg(not(test))]
@@ -318,7 +317,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 state.state =
                     state
                         .state
-                        .process_frequency_steering(freq_update, actual_change, state.wander)
+                        .process_frequency_steering(freq_update, actual_change, state.wander);
             }
         }
         debug!(

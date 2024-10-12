@@ -75,7 +75,7 @@ impl BitTree {
             *val = apply_mask(*val, *len);
         }
         // Ensure values are sorted by value and then by length
-        data.sort();
+        data.sort_unstable();
 
         let mut result = BitTree {
             nodes: vec![TreeNode::default()],
@@ -219,23 +219,23 @@ impl IpFilter {
 
 #[cfg(feature = "__internal-fuzz")]
 pub mod fuzz {
-    use super::*;
+    use super::{IpAddr, IpFilter, IpSubnet};
 
     fn contains(subnet: &IpSubnet, addr: &IpAddr) -> bool {
         match (subnet.addr, addr) {
             (IpAddr::V4(net), IpAddr::V4(addr)) => {
                 let net = u32::from_be_bytes(net.octets());
                 let addr = u32::from_be_bytes(addr.octets());
-                let mask = 0xFFFFFFFF_u32
-                    .checked_shl((32 - subnet.mask) as u32)
+                let mask = 0xFFFF_FFFF_u32
+                    .checked_shl(u32::from(32 - subnet.mask))
                     .unwrap_or(0);
                 (net & mask) == (addr & mask)
             }
             (IpAddr::V6(net), IpAddr::V6(addr)) => {
                 let net = u128::from_be_bytes(net.octets());
                 let addr = u128::from_be_bytes(addr.octets());
-                let mask = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF_u128
-                    .checked_shl((128 - subnet.mask) as u32)
+                let mask = 0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_u128
+                    .checked_shl(u32::from(128 - subnet.mask))
                     .unwrap_or(0);
                 (net & mask) == (addr & mask)
             }

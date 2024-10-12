@@ -493,11 +493,11 @@ mod tests {
         );
         assert_eq!(
             parsed.receive_timestamp,
-            NtpTimestamp::from_fixed_int(0x1111111111111111)
+            NtpTimestamp::from_fixed_int(0x1111_1111_1111_1111)
         );
         assert_eq!(
             parsed.transmit_timestamp,
-            NtpTimestamp::from_fixed_int(0x2222222222222222)
+            NtpTimestamp::from_fixed_int(0x2222_2222_2222_2222)
         );
 
         let mut buffer: [u8; 48] = [0u8; 48];

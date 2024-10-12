@@ -28,9 +28,9 @@ pub struct StepThreshold {
 }
 
 impl StepThreshold {
-    pub fn is_within(&self, duration: NtpDuration) -> bool {
-        self.forward.map(|v| duration < v).unwrap_or(true)
-            && self.backward.map(|v| duration > -v).unwrap_or(true)
+    #[must_use] pub fn is_within(&self, duration: NtpDuration) -> bool {
+        self.forward.map_or(true, |v| duration < v)
+            && self.backward.map_or(true, |v| duration > -v)
     }
 }
 
@@ -226,7 +226,7 @@ pub struct SynchronizationConfig {
     /// Minimum number of survivors needed to be able to discipline the system clock.
     /// More survivors (so more servers from which to get the time) means a more accurate time.
     ///
-    /// The spec notes (CMIN was renamed to MIN_INTERSECTION_SURVIVORS in our implementation):
+    /// The spec notes (CMIN was renamed to `MIN_INTERSECTION_SURVIVORS` in our implementation):
     ///
     /// > CMIN defines the minimum number of servers consistent with the correctness requirements.
     /// > Suspicious operators would set CMIN to ensure multiple redundant servers are available for the
@@ -240,7 +240,7 @@ pub struct SynchronizationConfig {
     /// remote servers from causing us to drift too far.
     ///
     /// Note that this is not used during startup. To limit system clock changes
-    /// during startup, use startup_panic_threshold
+    /// during startup, use `startup_panic_threshold`
     #[serde(default = "default_single_step_panic_threshold")]
     pub single_step_panic_threshold: StepThreshold,
 
