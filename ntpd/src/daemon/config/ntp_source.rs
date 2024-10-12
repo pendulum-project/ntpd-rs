@@ -284,6 +284,7 @@ impl NormalizedAddress {
     }
 
     #[cfg(test)]
+    #[allow(clippy::unused_async)]
     pub async fn lookup_host(&self) -> std::io::Result<impl Iterator<Item = SocketAddr> + '_> {
         // We don't want to spam a real DNS server during testing. This is an attempt to randomize
         // the returned addresses somewhat.

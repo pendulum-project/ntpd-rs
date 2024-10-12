@@ -95,7 +95,7 @@ where
     C: 'static + NtpClock + Send + Sync,
     T: Wait,
 {
-    async fn setup_socket(&mut self) -> SocketResult {
+    fn setup_socket(&mut self) -> SocketResult {
         let socket_res = match self.interface {
             #[cfg(target_os = "linux")]
             Some(interface) => {
@@ -137,52 +137,38 @@ where
                 },
             };
 
-            let actions = match selected {
-                SelectResult::Recv(result) => {
-                    tracing::debug!("accept packet");
-                    match accept_packet(result, &buf, &self.clock) {
-                        AcceptResult::Accept(packet, recv_timestamp) => {
-                            let send_timestamp = if let Some(ts) = self.last_send_timestamp { ts } else {
-                                debug!(
-                                    "we received a message without having sent one; discarding"
-                                );
-                                continue;
-                            };
-                            let actions = self.source.handle_incoming(
-                                packet,
-                                NtpInstant::now(),
-                                send_timestamp,
-                                recv_timestamp,
-                            );
-                            self.channels
-                                .source_snapshots
-                                .write()
-                                .expect("Unexpected poisoned mutex")
-                                .insert(
-                                    self.index,
-                                    self.source.observe(self.name.clone(), self.index),
-                                );
-                            actions
-                        }
-                        AcceptResult::NetworkGone => {
-                            self.channels
-                                .msg_for_system_sender
-                                .send(MsgForSystem::NetworkIssue(self.index))
-                                .await
-                                .ok();
-                            self.channels
-                                .source_snapshots
-                                .write()
-                                .expect("Unexpected poisoned mutex")
-                                .remove(&self.index);
-                            return;
-                        }
-                        AcceptResult::Ignore => NtpSourceActionIterator::default(),
-                    }
+            let actions = self.handle_selected_actions(selected, &buf).await;
+            for action in actions {
+                if self.process_action(action, &mut poll_wait).await {
+                    return;
                 }
-                SelectResult::Timer => {
-                    tracing::debug!("wait completed");
-                    let actions = self.source.handle_timer();
+            }
+        }
+    }
+
+    async fn handle_selected_actions(
+        &mut self,
+        selected: SelectResult<Controller>,
+        buf: &[u8],
+    ) -> NtpSourceActionIterator<Controller::SourceMessage> {
+        match selected {
+            SelectResult::Recv(result) => self.handle_recv(result, buf).await,
+            SelectResult::Timer => {
+                tracing::debug!("wait completed");
+                let actions = self.source.handle_timer();
+                self.channels
+                    .source_snapshots
+                    .write()
+                    .expect("Unexpected poisoned mutex")
+                    .insert(
+                        self.index,
+                        self.source.observe(self.name.clone(), self.index),
+                    );
+                actions
+            }
+            SelectResult::SystemUpdate(result) => match result {
+                Ok(update) => {
+                    let actions = self.source.handle_system_update(update);
                     self.channels
                         .source_snapshots
                         .write()
@@ -193,27 +179,101 @@ where
                         );
                     actions
                 }
-                SelectResult::SystemUpdate(result) => match result {
-                    Ok(update) => {
-                        let actions = self.source.handle_system_update(update);
-                        self.channels
-                            .source_snapshots
-                            .write()
-                            .expect("Unexpected poisoned mutex")
-                            .insert(
-                                self.index,
-                                self.source.observe(self.name.clone(), self.index),
-                            );
-                        actions
-                    }
-                    Err(_) => NtpSourceActionIterator::default(),
-                },
-            };
+                Err(_) => NtpSourceActionIterator::default(),
+            },
+        }
+    }
 
-            for action in actions {
-                match action {
-                    ntp_proto::NtpSourceAction::Send(packet) => {
-                        if matches!(self.setup_socket().await, SocketResult::Abort) {
+    async fn handle_recv(
+        &mut self,
+        result: Result<RecvResult<SocketAddr>, std::io::Error>,
+        buf: &[u8],
+    ) -> NtpSourceActionIterator<<Controller as SourceController>::SourceMessage> {
+        tracing::debug!("accept packet");
+        match accept_packet(result, buf, &self.clock) {
+            AcceptResult::Accept(packet, recv_timestamp) => {
+                let Some(send_timestamp) = self.last_send_timestamp else {
+                    debug!("we received a message without having sent one; discarding");
+                    return NtpSourceActionIterator::default();
+                };
+                let actions = self.source.handle_incoming(
+                    packet,
+                    NtpInstant::now(),
+                    send_timestamp,
+                    recv_timestamp,
+                );
+                self.channels
+                    .source_snapshots
+                    .write()
+                    .expect("Unexpected poisoned mutex")
+                    .insert(
+                        self.index,
+                        self.source.observe(self.name.clone(), self.index),
+                    );
+                actions
+            }
+            AcceptResult::NetworkGone => {
+                self.channels
+                    .msg_for_system_sender
+                    .send(MsgForSystem::NetworkIssue(self.index))
+                    .await
+                    .ok();
+                self.channels
+                    .source_snapshots
+                    .write()
+                    .expect("Unexpected poisoned mutex")
+                    .remove(&self.index);
+                NtpSourceActionIterator::default()
+            }
+            AcceptResult::Ignore => NtpSourceActionIterator::default(),
+        }
+    }
+
+    async fn process_action(
+        &mut self,
+        action: ntp_proto::NtpSourceAction<<Controller as SourceController>::SourceMessage>,
+        poll_wait: &mut Pin<&mut T>,
+    ) -> bool {
+        match action {
+            ntp_proto::NtpSourceAction::Send(packet) => {
+                if matches!(self.setup_socket(), SocketResult::Abort) {
+                    self.channels
+                        .msg_for_system_sender
+                        .send(MsgForSystem::NetworkIssue(self.index))
+                        .await
+                        .ok();
+                    self.channels
+                        .source_snapshots
+                        .write()
+                        .expect("Unexpected poisoned mutex")
+                        .remove(&self.index);
+                    return true;
+                }
+
+                match self.clock.now() {
+                    Err(e) => {
+                        // we cannot determine the origin_timestamp
+                        error!(error = ?e, "There was an error retrieving the current time");
+
+                        // report as no permissions, since this seems the most likely
+                        std::process::exit(exitcode::NOPERM);
+                    }
+                    Ok(ts) => {
+                        self.last_send_timestamp = Some(ts);
+                    }
+                }
+
+                match self.socket.as_mut().unwrap().send(&packet).await {
+                    Err(error) => {
+                        warn!(?error, "poll message could not be sent");
+
+                        if let Some(
+                            libc::EHOSTDOWN
+                            | libc::EHOSTUNREACH
+                            | libc::ENETDOWN
+                            | libc::ENETUNREACH,
+                        ) = error.raw_os_error()
+                        {
                             self.channels
                                 .msg_for_system_sender
                                 .send(MsgForSystem::NetworkIssue(self.index))
@@ -224,92 +284,56 @@ where
                                 .write()
                                 .expect("Unexpected poisoned mutex")
                                 .remove(&self.index);
-                            return;
-                        }
-
-                        match self.clock.now() {
-                            Err(e) => {
-                                // we cannot determine the origin_timestamp
-                                error!(error = ?e, "There was an error retrieving the current time");
-
-                                // report as no permissions, since this seems the most likely
-                                std::process::exit(exitcode::NOPERM);
-                            }
-                            Ok(ts) => {
-                                self.last_send_timestamp = Some(ts);
-                            }
-                        }
-
-                        match self.socket.as_mut().unwrap().send(&packet).await {
-                            Err(error) => {
-                                warn!(?error, "poll message could not be sent");
-
-                                if let Some(
-                                        libc::EHOSTDOWN
-                                        | libc::EHOSTUNREACH
-                                        | libc::ENETDOWN
-                                        | libc::ENETUNREACH,
-                                    ) = error.raw_os_error() {
-                                    self.channels
-                                        .msg_for_system_sender
-                                        .send(MsgForSystem::NetworkIssue(self.index))
-                                        .await
-                                        .ok();
-                                    self.channels
-                                        .source_snapshots
-                                        .write()
-                                        .expect("Unexpected poisoned mutex")
-                                        .remove(&self.index);
-                                    return;
-                                }
-                            }
-                            Ok(opt_send_timestamp) => {
-                                // update the last_send_timestamp with the one given by the kernel, if available
-                                self.last_send_timestamp = opt_send_timestamp
-                                    .map(convert_net_timestamp)
-                                    .or(self.last_send_timestamp);
-                            }
+                            return true;
                         }
                     }
-                    ntp_proto::NtpSourceAction::UpdateSystem(update) => {
-                        self.channels
-                            .msg_for_system_sender
-                            .send(MsgForSystem::SourceUpdate(self.index, update))
-                            .await
-                            .ok();
-                    }
-                    ntp_proto::NtpSourceAction::SetTimer(timeout) => {
-                        poll_wait.as_mut().reset(Instant::now() + timeout);
-                    }
-                    ntp_proto::NtpSourceAction::Reset => {
-                        self.channels
-                            .msg_for_system_sender
-                            .send(MsgForSystem::Unreachable(self.index))
-                            .await
-                            .ok();
-                        self.channels
-                            .source_snapshots
-                            .write()
-                            .expect("Unexpected poisoned mutex")
-                            .remove(&self.index);
-                        return;
-                    }
-                    ntp_proto::NtpSourceAction::Demobilize => {
-                        self.channels
-                            .msg_for_system_sender
-                            .send(MsgForSystem::MustDemobilize(self.index))
-                            .await
-                            .ok();
-                        self.channels
-                            .source_snapshots
-                            .write()
-                            .expect("Unexpected poisoned mutex")
-                            .remove(&self.index);
-                        return;
+                    Ok(opt_send_timestamp) => {
+                        // update the last_send_timestamp with the one given by the kernel, if available
+                        self.last_send_timestamp = opt_send_timestamp
+                            .map(convert_net_timestamp)
+                            .or(self.last_send_timestamp);
                     }
                 }
             }
+            ntp_proto::NtpSourceAction::UpdateSystem(update) => {
+                self.channels
+                    .msg_for_system_sender
+                    .send(MsgForSystem::SourceUpdate(self.index, update))
+                    .await
+                    .ok();
+            }
+            ntp_proto::NtpSourceAction::SetTimer(timeout) => {
+                poll_wait.as_mut().reset(Instant::now() + timeout);
+            }
+            ntp_proto::NtpSourceAction::Reset => {
+                self.channels
+                    .msg_for_system_sender
+                    .send(MsgForSystem::Unreachable(self.index))
+                    .await
+                    .ok();
+                self.channels
+                    .source_snapshots
+                    .write()
+                    .expect("Unexpected poisoned mutex")
+                    .remove(&self.index);
+                return true;
+            }
+            ntp_proto::NtpSourceAction::Demobilize => {
+                self.channels
+                    .msg_for_system_sender
+                    .send(MsgForSystem::MustDemobilize(self.index))
+                    .await
+                    .ok();
+                self.channels
+                    .source_snapshots
+                    .write()
+                    .expect("Unexpected poisoned mutex")
+                    .remove(&self.index);
+                return true;
+            }
         }
+
+        false
     }
 }
 
@@ -394,14 +418,17 @@ fn accept_packet<'a, C: NtpClock>(
             timestamp,
             ..
         }) => {
-            let recv_timestamp = timestamp.map(convert_net_timestamp).unwrap_or_else(|| {
-                if let Ok(now) = clock.now() {
-                    debug!(?size, "received a packet without a timestamp, substituting");
-                    now
-                } else {
-                    panic!("Received packet without timestamp and couldn't substitute");
-                }
-            });
+            let recv_timestamp = timestamp.map_or_else(
+                || {
+                    if let Ok(now) = clock.now() {
+                        debug!(?size, "received a packet without a timestamp, substituting");
+                        now
+                    } else {
+                        panic!("Received packet without timestamp and couldn't substitute");
+                    }
+                },
+                convert_net_timestamp,
+            );
 
             // Note: packets are allowed to be bigger when including extensions.
             // we don't expect them, but the server may still send them. The
@@ -419,10 +446,9 @@ fn accept_packet<'a, C: NtpClock>(
             warn!(?receive_error, "could not receive packet");
 
             match receive_error.raw_os_error() {
-                Some(libc::EHOSTDOWN
-                | libc::EHOSTUNREACH
-                | libc::ENETDOWN
-                | libc::ENETUNREACH) => AcceptResult::NetworkGone,
+                Some(libc::EHOSTDOWN | libc::EHOSTUNREACH | libc::ENETDOWN | libc::ENETUNREACH) => {
+                    AcceptResult::NetworkGone
+                }
                 _ => AcceptResult::Ignore,
             }
         }
@@ -568,7 +594,8 @@ mod tests {
         }
     }
 
-    async fn test_startup<T: Wait>(
+    #[allow(clippy::type_complexity)]
+    fn test_startup<T: Wait>(
         port_base: u16,
     ) -> (
         SourceTask<TestClock, KalmanSourceController<SourceId>, T>,
@@ -634,7 +661,7 @@ mod tests {
     #[tokio::test]
     async fn test_poll_sends_state_update_and_packet() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, socket, _, _system_update_sender) = test_startup(8006).await;
+        let (mut process, socket, _, _system_update_sender) = test_startup(8006);
 
         let (poll_wait, poll_send) = TestWait::new();
 
@@ -665,8 +692,7 @@ mod tests {
     #[tokio::test]
     async fn test_timeroundtrip() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, mut socket, mut msg_recv, _system_update_sender) =
-            test_startup(8008).await;
+        let (mut process, mut socket, mut msg_recv, _system_update_sender) = test_startup(8008);
 
         let system = SystemSnapshot {
             time_snapshot: TimeSnapshot {
@@ -715,8 +741,7 @@ mod tests {
     #[tokio::test]
     async fn test_deny_stops_poll() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, mut socket, mut msg_recv, _system_update_sender) =
-            test_startup(8010).await;
+        let (mut process, mut socket, mut msg_recv, _system_update_sender) = test_startup(8010);
 
         let (poll_wait, poll_send) = TestWait::new();
 
