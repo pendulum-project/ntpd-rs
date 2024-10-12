@@ -94,9 +94,8 @@ async fn observer(
     let start_time = Instant::now();
     let timeout = std::time::Duration::from_millis(500);
 
-    let path = match config.observation_path {
-        Some(path) => path,
-        None => return Ok(()),
+    let Some(path) = config.observation_path else {
+        return Ok(());
     };
 
     // this binary needs to run as root to be able to adjust the system clock.
