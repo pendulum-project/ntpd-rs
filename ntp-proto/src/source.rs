@@ -743,19 +743,17 @@ impl<Controller: SourceController> NtpSource<Controller> {
             let bloom_responses = if self.nts.is_some() {
                 message
                     .authenticated_extension_fields()
-                    .filter_map(|ef| match ef {
+                    .find_map(|ef| match ef {
                         ExtensionField::ReferenceIdResponse(response) => Some(response),
                         _ => None,
                     })
-                    .next()
             } else {
                 message
                     .untrusted_extension_fields()
-                    .filter_map(|ef| match ef {
+                    .find_map(|ef| match ef {
                         ExtensionField::ReferenceIdResponse(response) => Some(response),
                         _ => None,
                     })
-                    .next()
             };
 
             if let Some(ref_id) = bloom_responses {
