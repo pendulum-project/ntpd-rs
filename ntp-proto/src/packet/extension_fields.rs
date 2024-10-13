@@ -486,10 +486,8 @@ impl<'a> ExtensionField<'a> {
         Ok(ExtensionField::UniqueIdentifier(message[..].into()))
     }
 
-    fn decode_nts_cookie(
-        message: &'a [u8],
-    ) -> Result<Self, ParsingError<std::convert::Infallible>> {
-        Ok(ExtensionField::NtsCookie(message[..].into()))
+    fn decode_nts_cookie(message: &'a [u8]) -> Self {
+        ExtensionField::NtsCookie(message[..].into())
     }
 
     fn decode_nts_cookie_placeholder(
@@ -504,14 +502,11 @@ impl<'a> ExtensionField<'a> {
         }
     }
 
-    fn decode_unknown(
-        type_id: u16,
-        message: &'a [u8],
-    ) -> Result<Self, ParsingError<std::convert::Infallible>> {
-        Ok(ExtensionField::Unknown {
+    fn decode_unknown(type_id: u16, message: &'a [u8]) -> Self {
+        ExtensionField::Unknown {
             type_id,
             data: Cow::Borrowed(message),
-        })
+        }
     }
 
     #[cfg(feature = "ntpv5")]
@@ -544,17 +539,17 @@ impl<'a> ExtensionField<'a> {
 
         match raw.type_id {
             TypeId::UniqueIdentifier => EF::decode_unique_identifier(message),
-            TypeId::NtsCookie => EF::decode_nts_cookie(message),
+            TypeId::NtsCookie => Ok(EF::decode_nts_cookie(message)),
             TypeId::NtsCookiePlaceholder => EF::decode_nts_cookie_placeholder(message),
             #[cfg(feature = "ntpv5")]
             TypeId::DraftIdentification => {
                 EF::decode_draft_identification(message, extension_header_version)
             }
             #[cfg(feature = "ntpv5")]
-            TypeId::ReferenceIdRequest => Ok(ReferenceIdRequest::decode(message)?.into()),
+            TypeId::ReferenceIdRequest => Ok(ReferenceIdRequest::decode(message).into()),
             #[cfg(feature = "ntpv5")]
             TypeId::ReferenceIdResponse => Ok(ReferenceIdResponse::decode(message).into()),
-            type_id => EF::decode_unknown(type_id.to_type_id(), message),
+            type_id => Ok(EF::decode_unknown(type_id.to_type_id(), message)),
         }
     }
 }
