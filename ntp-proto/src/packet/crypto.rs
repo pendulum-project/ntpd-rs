@@ -168,7 +168,8 @@ impl AesSivCmac256 {
     #[cfg(feature = "nts-pool")]
     pub fn key_size() -> usize {
         // prefer trust in compiler optimisation over trust in mental arithmetic
-        Self::new(Default::default()).key.len()
+        use aead::generic_array::GenericArray;
+        Self::new(GenericArray::default()).key.len()
     }
 
     #[cfg(feature = "nts-pool")]
@@ -253,7 +254,8 @@ impl AesSivCmac512 {
     #[cfg(feature = "nts-pool")]
     pub fn key_size() -> usize {
         // prefer trust in compiler optimisation over trust in mental arithmetic
-        Self::new(Default::default()).key.len()
+        use aead::generic_array::GenericArray;
+        Self::new(GenericArray::default()).key.len()
     }
 
     #[cfg(feature = "nts-pool")]

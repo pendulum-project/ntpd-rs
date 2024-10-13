@@ -668,7 +668,7 @@ impl SourceState {
                 leap_indicator: filter.last_measurement.leap,
                 last_update: filter.last_iter,
             }),
-            _ => None,
+            SourceStateInner::Initial(_) => None,
         }
     }
 
@@ -754,16 +754,17 @@ impl<SourceId: std::fmt::Debug + Copy + Send + 'static> SourceController
     }
 
     fn observe(&self) -> super::super::ObservableSourceTimedata {
-        self.state
-            .snapshot(&self.index, &self.algo_config)
-            .map_or(ObservableSourceTimedata {
+        self.state.snapshot(&self.index, &self.algo_config).map_or(
+            ObservableSourceTimedata {
                 offset: NtpDuration::ZERO,
                 uncertainty: NtpDuration::MAX,
                 delay: NtpDuration::MAX,
                 remote_delay: NtpDuration::MAX,
                 remote_uncertainty: NtpDuration::MAX,
                 last_update: NtpTimestamp::default(),
-            }, |snapshot| snapshot.observe())
+            },
+            |snapshot| snapshot.observe(),
+        )
     }
 }
 
@@ -795,8 +796,8 @@ mod tests {
             last_measurement: Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base,
                 monotime: basei,
 
@@ -815,8 +816,8 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(2800),
 
@@ -846,8 +847,8 @@ mod tests {
             last_measurement: Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base,
                 monotime: basei,
 
@@ -862,13 +863,13 @@ mod tests {
         }));
         source.process_offset_steering(-1800.0);
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(2800),
 
@@ -898,8 +899,8 @@ mod tests {
             last_measurement: Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base,
                 monotime: basei,
 
@@ -914,13 +915,13 @@ mod tests {
         }));
         source.process_offset_steering(1800.0);
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base + NtpDuration::from_seconds(2800.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
 
@@ -955,8 +956,8 @@ mod tests {
             last_measurement: Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base,
                 monotime: basei,
 
@@ -998,8 +999,8 @@ mod tests {
             last_measurement: Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base,
                 monotime: basei,
 
@@ -1025,13 +1026,13 @@ mod tests {
         );
 
         source.update_self_using_raw_measurement(
-            &SourceDefaultsConfig::default(),
+            SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
 
@@ -1081,8 +1082,8 @@ mod tests {
             last_measurement: Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(-20e-3),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base,
                 monotime: basei,
 
@@ -1108,13 +1109,13 @@ mod tests {
         );
 
         source.update_self_using_raw_measurement(
-            &SourceDefaultsConfig::default(),
+            SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(-20e-3),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
 
@@ -1169,8 +1170,8 @@ mod tests {
             last_measurement: Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(0.0),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base,
                 monotime: basei,
 
@@ -1210,8 +1211,8 @@ mod tests {
             last_measurement: Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(0.0),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base,
                 monotime: basei,
 
@@ -1281,8 +1282,8 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(0e-3),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
 
@@ -1307,8 +1308,8 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(1e-3),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
 
@@ -1333,8 +1334,8 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(2e-3),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
 
@@ -1359,8 +1360,8 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(3e-3),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
 
@@ -1385,8 +1386,8 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(4e-3),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
 
@@ -1411,8 +1412,8 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(5e-3),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
 
@@ -1437,8 +1438,8 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(6e-3),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
 
@@ -1463,8 +1464,8 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(7e-3),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
 
@@ -1510,8 +1511,8 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(4e-3),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
 
@@ -1536,8 +1537,8 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(5e-3),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
 
@@ -1562,8 +1563,8 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(6e-3),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
 
@@ -1588,8 +1589,8 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(7e-3),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
 
@@ -1615,8 +1616,8 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(4e-3),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
 
@@ -1641,8 +1642,8 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(5e-3),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
 
@@ -1667,8 +1668,8 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(6e-3),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
 
@@ -1693,8 +1694,8 @@ mod tests {
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(7e-3),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base + NtpDuration::from_seconds(1000.0),
                 monotime: basei + std::time::Duration::from_secs(1000),
 
@@ -1731,7 +1732,7 @@ mod tests {
         let config = SourceDefaultsConfig::default();
         let algo_config = AlgorithmConfig {
             poll_interval_hysteresis: 2,
-            ..Default::default()
+            ..AlgorithmConfig::default()
         };
 
         let base = NtpTimestamp::from_fixed_int(0);
@@ -1753,8 +1754,8 @@ mod tests {
             last_measurement: Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(0.0),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base,
                 monotime: basei,
 
@@ -1859,7 +1860,7 @@ mod tests {
     fn test_wander_estimation() {
         let algo_config = AlgorithmConfig {
             precision_hysteresis: 2,
-            ..Default::default()
+            ..AlgorithmConfig::default()
         };
 
         let base = NtpTimestamp::from_fixed_int(0);
@@ -1881,8 +1882,8 @@ mod tests {
             last_measurement: Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(0.0),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
                 localtime: base,
                 monotime: basei,
 

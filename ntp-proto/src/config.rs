@@ -214,7 +214,7 @@ pub struct SourceDefaultsConfig {
 impl Default for SourceDefaultsConfig {
     fn default() -> Self {
         Self {
-            poll_interval_limits: Default::default(),
+            poll_interval_limits: PollIntervalLimits::default(),
             initial_poll_interval: default_initial_poll_interval(),
         }
     }

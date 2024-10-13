@@ -215,7 +215,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
             source_defaults_config,
             system,
             ip_list,
-            sources: Default::default(),
+            sources: HashMap::default(),
             controller: Controller::new(
                 clock,
                 synchronization_config,
@@ -368,7 +368,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
 mod tests {
     use std::net::{Ipv4Addr, SocketAddr};
 
-    use crate::time_types::PollIntervalLimits;
+    use crate::{time_types::PollIntervalLimits, Reach};
 
     use super::*;
 
@@ -393,10 +393,10 @@ mod tests {
                     source_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
                     source_id: ReferenceId::KISS_DENY,
                     poll_interval: PollIntervalLimits::default().max,
-                    reach: Default::default(),
+                    reach: Reach::default(),
                     stratum: 2,
                     reference_id: ReferenceId::NONE,
-                    protocol_version: Default::default(),
+                    protocol_version: ProtocolVersion::default(),
                     #[cfg(feature = "ntpv5")]
                     bloom_filter: None,
                 },
@@ -404,10 +404,10 @@ mod tests {
                     source_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
                     source_id: ReferenceId::KISS_RATE,
                     poll_interval: PollIntervalLimits::default().max,
-                    reach: Default::default(),
+                    reach: Reach::default(),
                     stratum: 3,
                     reference_id: ReferenceId::NONE,
-                    protocol_version: Default::default(),
+                    protocol_version: ProtocolVersion::default(),
                     #[cfg(feature = "ntpv5")]
                     bloom_filter: None,
                 },

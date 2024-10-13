@@ -278,7 +278,7 @@ impl NtpSourceSnapshot {
 
         reach,
         poll_interval: crate::time_types::PollIntervalLimits::default().min,
-        protocol_version: Default::default(),
+        protocol_version: ProtocolVersion::default(),
         #[cfg(feature = "ntpv5")]
         bloom_filter: None,
     }
@@ -442,7 +442,7 @@ impl<Controller: SourceController> NtpSource<Controller> {
                 current_request_identifier: None,
                 source_id: ReferenceId::from_ip(source_addr.ip()),
                 source_addr,
-                reach: Default::default(),
+                reach: Reach::default(),
                 tries: 0,
 
                 stratum: 16,
@@ -799,7 +799,7 @@ impl<Controller: SourceController> NtpSource<Controller> {
 
             buffer: [0; 1024],
 
-            protocol_version: Default::default(),
+            protocol_version: ProtocolVersion::default(),
 
             #[cfg(feature = "ntpv5")]
             bloom_filter: RemoteBloomFilter::new(16).unwrap(),

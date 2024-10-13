@@ -251,7 +251,7 @@ impl NtpHeaderV3V4 {
             // Timestamp must be last to make it as accurate as possible.
             transmit_timestamp: clock.now().expect("Failed to read time"),
             leap: system.time_snapshot.leap_indicator,
-            reference_timestamp: Default::default(),
+            reference_timestamp: NtpTimestamp::default(),
         }
     }
 
@@ -583,7 +583,7 @@ impl<'a> NtpPacket<'a> {
         (
             NtpPacket {
                 header: NtpHeader::V4(header),
-                efdata: Default::default(),
+                efdata: ExtensionFieldData::default(),
                 mac: None,
             },
             id,
@@ -645,7 +645,7 @@ impl<'a> NtpPacket<'a> {
                     recv_timestamp,
                     clock,
                 )),
-                efdata: Default::default(),
+                efdata: ExtensionFieldData::default(),
                 mac: None,
             },
             NtpHeader::V4(header) => {
@@ -841,7 +841,7 @@ impl<'a> NtpPacket<'a> {
         match packet_from_client.header {
             NtpHeader::V3(header) => NtpPacket {
                 header: NtpHeader::V3(NtpHeaderV3V4::rate_limit_response(header)),
-                efdata: Default::default(),
+                efdata: ExtensionFieldData::default(),
                 mac: None,
             },
             NtpHeader::V4(header) => NtpPacket {
@@ -925,7 +925,7 @@ impl<'a> NtpPacket<'a> {
         match packet_from_client.header {
             NtpHeader::V3(header) => NtpPacket {
                 header: NtpHeader::V3(NtpHeaderV3V4::deny_response(header)),
-                efdata: Default::default(),
+                efdata: ExtensionFieldData::default(),
                 mac: None,
             },
             NtpHeader::V4(header) => NtpPacket {
@@ -1418,7 +1418,7 @@ impl<'a> Default for NtpPacket<'a> {
     fn default() -> Self {
         Self {
             header: NtpHeader::V4(NtpHeaderV3V4::new()),
-            efdata: Default::default(),
+            efdata: ExtensionFieldData::default(),
             mac: None,
         }
     }
@@ -1515,7 +1515,7 @@ mod tests {
                 receive_timestamp: NtpTimestamp::from_fixed_int(0xe5f6_6366_8140_5590),
                 transmit_timestamp: NtpTimestamp::from_fixed_int(0xe5f6_63a8_761d_de48),
             }),
-            efdata: Default::default(),
+            efdata: ExtensionFieldData::default(),
             mac: None,
         };
 
@@ -1544,7 +1544,7 @@ mod tests {
                 receive_timestamp: NtpTimestamp::from_fixed_int(0xe5f6_6366_8140_5590),
                 transmit_timestamp: NtpTimestamp::from_fixed_int(0xe5f6_63a8_761d_de48),
             }),
-            efdata: Default::default(),
+            efdata: ExtensionFieldData::default(),
             mac: None,
         };
 
@@ -1576,7 +1576,7 @@ mod tests {
                 receive_timestamp: NtpTimestamp::from_fixed_int(0xe5f6_63a8_798c_6581),
                 transmit_timestamp: NtpTimestamp::from_fixed_int(0xe5f6_63a8_798e_ae2b),
             }),
-            efdata: Default::default(),
+            efdata: ExtensionFieldData::default(),
             mac: None,
         };
 
