@@ -128,8 +128,12 @@ impl<'a> std::fmt::Debug for ExtensionField<'a> {
 impl<'a> ExtensionField<'a> {
     const HEADER_LENGTH: usize = 4;
 
-    #[must_use] pub fn into_owned(self) -> ExtensionField<'static> {
-        use ExtensionField::{DraftIdentification, InvalidNtsEncryptedField, NtsCookie, NtsCookiePlaceholder, Padding, ReferenceIdRequest, ReferenceIdResponse, UniqueIdentifier, Unknown};
+    #[must_use]
+    pub fn into_owned(self) -> ExtensionField<'static> {
+        use ExtensionField::{
+            DraftIdentification, InvalidNtsEncryptedField, NtsCookie, NtsCookiePlaceholder,
+            Padding, ReferenceIdRequest, ReferenceIdResponse, UniqueIdentifier, Unknown,
+        };
 
         match self {
             Unknown {
@@ -164,7 +168,10 @@ impl<'a> ExtensionField<'a> {
         minimum_size: u16,
         version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
-        use ExtensionField::{DraftIdentification, InvalidNtsEncryptedField, NtsCookie, NtsCookiePlaceholder, Padding, ReferenceIdRequest, ReferenceIdResponse, UniqueIdentifier, Unknown};
+        use ExtensionField::{
+            DraftIdentification, InvalidNtsEncryptedField, NtsCookie, NtsCookiePlaceholder,
+            Padding, ReferenceIdRequest, ReferenceIdResponse, UniqueIdentifier, Unknown,
+        };
 
         match self {
             Unknown { type_id, data } => {
@@ -777,7 +784,9 @@ impl<'a> RawEncryptedField<'a> {
             version,
         )
         .map(|encrypted_field| {
-            let encrypted_field = encrypted_field.map_err(super::error::ParsingError::generalize)?.1;
+            let encrypted_field = encrypted_field
+                .map_err(super::error::ParsingError::generalize)?
+                .1;
             if encrypted_field.type_id == ExtensionFieldTypeId::NtsEncryptedField {
                 // TODO: Discuss whether we want this check
                 Err(ParsingError::MalformedNtsExtensionFields)

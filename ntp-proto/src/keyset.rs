@@ -50,7 +50,8 @@ impl KeySetProvider {
     /// Create a new keysetprovider that keeps history old
     /// keys around (so in total, history+1 keys are valid
     /// at any time)
-    #[must_use] pub fn new(history: usize) -> Self {
+    #[must_use]
+    pub fn new(history: usize) -> Self {
         KeySetProvider {
             current: Arc::new(KeySet {
                 keys: vec![AesSivCmac512::new(aes_siv::Aes256SivAead::generate_key(
@@ -165,7 +166,8 @@ impl KeySetProvider {
     }
 
     /// Get the current `KeySet`
-    #[must_use] pub fn get(&self) -> Arc<KeySet> {
+    #[must_use]
+    pub fn get(&self) -> Arc<KeySet> {
         self.current.clone()
     }
 }
@@ -178,7 +180,8 @@ pub struct KeySet {
 
 impl KeySet {
     #[cfg(feature = "__internal-fuzz")]
-    #[must_use] pub fn encode_cookie_pub(&self, cookie: &DecodedServerCookie) -> Vec<u8> {
+    #[must_use]
+    pub fn encode_cookie_pub(&self, cookie: &DecodedServerCookie) -> Vec<u8> {
         self.encode_cookie(cookie)
     }
 
@@ -311,7 +314,8 @@ impl std::fmt::Debug for KeySet {
 }
 
 #[cfg(any(test, feature = "__internal-fuzz"))]
-#[must_use] pub fn test_cookie() -> DecodedServerCookie {
+#[must_use]
+pub fn test_cookie() -> DecodedServerCookie {
     DecodedServerCookie {
         algorithm: AeadAlgorithm::AeadAesSivCmac256,
         s2c: Box::new(AesSivCmac256::new((0..32_u8).collect())),

@@ -41,7 +41,8 @@ impl SourceNtsData {
         self.cookies.get()
     }
 
-    #[must_use] pub fn get_keys(self) -> (Box<dyn Cipher>, Box<dyn Cipher>) {
+    #[must_use]
+    pub fn get_keys(self) -> (Box<dyn Cipher>, Box<dyn Cipher>) {
         (self.c2s, self.s2c)
     }
 }
@@ -159,7 +160,8 @@ impl std::fmt::Debug for Reach {
 }
 
 impl Reach {
-    #[must_use] pub fn is_reachable(&self) -> bool {
+    #[must_use]
+    pub fn is_reachable(&self) -> bool {
         self.0 != 0
     }
 
@@ -175,7 +177,8 @@ impl Reach {
     }
 
     /// Number of polls since the last message we received
-    #[must_use] pub fn unanswered_polls(&self) -> u32 {
+    #[must_use]
+    pub fn unanswered_polls(&self) -> u32 {
         self.0.trailing_zeros()
     }
 }
@@ -267,7 +270,8 @@ impl NtpSourceSnapshot {
 }
 
 #[cfg(feature = "__internal-test")]
-#[must_use] pub fn source_snapshot() -> NtpSourceSnapshot {
+#[must_use]
+pub fn source_snapshot() -> NtpSourceSnapshot {
     use std::net::Ipv4Addr;
 
     let mut reach = crate::source::Reach::default();
@@ -308,7 +312,8 @@ pub enum ProtocolVersion {
 }
 
 impl ProtocolVersion {
-    #[must_use] pub fn is_expected_incoming_version(&self, incoming_version: u8) -> bool {
+    #[must_use]
+    pub fn is_expected_incoming_version(&self, incoming_version: u8) -> bool {
         match self {
             ProtocolVersion::V4 => incoming_version == 4 || incoming_version == 3,
             #[cfg(feature = "ntpv5")]
@@ -356,7 +361,8 @@ impl<SourceMessage: Clone> Clone for NtpSourceUpdate<SourceMessage> {
 
 #[cfg(feature = "__internal-test")]
 impl<SourceMessage> NtpSourceUpdate<SourceMessage> {
-    #[must_use] pub fn snapshot(snapshot: NtpSourceSnapshot) -> Self {
+    #[must_use]
+    pub fn snapshot(snapshot: NtpSourceSnapshot) -> Self {
         NtpSourceUpdate {
             snapshot,
             message: None,

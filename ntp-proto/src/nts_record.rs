@@ -566,14 +566,14 @@ impl NtsRecord {
 #[cfg(feature = "__internal-fuzz")]
 impl<'a> arbitrary::Arbitrary<'a> for NtsRecord {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        use NtsRecord::{
+            AeadAlgorithm, EndOfMessage, Error, NewCookie, NextProtocol, Port, Server, Warning,
+        };
         let record = u16::arbitrary(u)?;
 
         let critical = record & 0x8000 != 0;
         let record_type = record & !0x8000;
 
-        use NtsRecord::{
-            AeadAlgorithm, EndOfMessage, Error, NewCookie, NextProtocol, Port, Server, Warning,
-        };
         Ok(match record_type {
             0 => EndOfMessage,
             1 => NextProtocol {
@@ -699,8 +699,7 @@ impl Display for KeyExchangeError {
             ),
             Self::NoCookies => write!(f, "Missing cookies"),
             Self::Io(e) => write!(f, "{e}"),
-            Self::Tls(e) => write!(f, "{e}"),
-            Self::Certificate(e) => write!(f, "{e}"),
+            Self::Tls(e) | Self::Certificate(e) => write!(f, "{e}"),
             Self::DnsName(e) => write!(f, "{e}"),
             Self::IncompleteResponse => write!(f, "Incomplete response"),
         }
@@ -747,9 +746,9 @@ impl KeyExchangeError {
 
         match self {
             UnrecognizedCriticalRecord => NtsRecord::UNRECOGNIZED_CRITICAL_RECORD,
-            BadRequest => NtsRecord::BAD_REQUEST,
             InternalServerError | Io(_) => NtsRecord::INTERNAL_SERVER_ERROR,
             UnknownErrorCode(_)
+            | BadRequest
             | BadResponse
             | NoValidProtocol
             | NoValidAlgorithm
@@ -966,6 +965,10 @@ pub struct KeyExchangeResultDecoder {
 }
 
 impl KeyExchangeResultDecoder {
+    fn new() -> Self {
+        Self::default()
+    }
+
     pub fn step_with_slice(
         mut self,
         bytes: &[u8],
@@ -981,6 +984,7 @@ impl KeyExchangeResultDecoder {
         }
     }
 
+    #[allow(clippy::inline_always)]
     #[inline(always)]
     fn step_with_record(
         self,

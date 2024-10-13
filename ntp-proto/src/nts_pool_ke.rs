@@ -13,7 +13,8 @@ pub struct SupportedAlgorithmsDecoder {
 }
 
 impl SupportedAlgorithmsDecoder {
-    #[must_use] pub fn step_with_slice(
+    #[must_use]
+    pub fn step_with_slice(
         mut self,
         bytes: &[u8],
     ) -> ControlFlow<Result<Vec<(u16, u16)>, KeyExchangeError>, Self> {
@@ -101,7 +102,8 @@ impl ClientToPoolData {
 }
 
 impl ClientToPoolDecoder {
-    #[must_use] pub fn step_with_slice(
+    #[must_use]
+    pub fn step_with_slice(
         mut self,
         bytes: &[u8],
     ) -> ControlFlow<Result<ClientToPoolData, KeyExchangeError>, Self> {
@@ -124,7 +126,9 @@ impl ClientToPoolDecoder {
         use self::AeadAlgorithm as Algorithm;
         use ControlFlow::{Break, Continue};
         use KeyExchangeError::{NoValidAlgorithm, NoValidProtocol};
-        use NtsRecord::{AeadAlgorithm, DraftId, EndOfMessage, Error, NextProtocol, NtpServerDeny, Warning};
+        use NtsRecord::{
+            AeadAlgorithm, DraftId, EndOfMessage, Error, NextProtocol, NtpServerDeny, Warning,
+        };
 
         let mut state = self;
 
@@ -241,7 +245,8 @@ pub struct PoolToServerData {
 }
 
 impl PoolToServerDecoder {
-    #[must_use] pub fn step_with_slice(
+    #[must_use]
+    pub fn step_with_slice(
         mut self,
         bytes: &[u8],
     ) -> ControlFlow<Result<PoolToServerData, KeyExchangeError>, Self> {

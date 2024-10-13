@@ -66,11 +66,13 @@ pub struct BloomFilter([u8; Self::BYTES]);
 impl BloomFilter {
     pub const BYTES: usize = 512;
 
-    #[must_use] pub const fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self([0; Self::BYTES])
     }
 
-    #[must_use] pub fn contains_id(&self, other: &ServerId) -> bool {
+    #[must_use]
+    pub fn contains_id(&self, other: &ServerId) -> bool {
         other.0.iter().all(|idx| self.is_set(*idx))
     }
 
@@ -102,7 +104,8 @@ impl BloomFilter {
         self.0.iter().map(|b| b.count_ones() as u16).sum()
     }
 
-    #[must_use] pub const fn as_bytes(&self) -> &[u8; Self::BYTES] {
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8; Self::BYTES] {
         &self.0
     }
 

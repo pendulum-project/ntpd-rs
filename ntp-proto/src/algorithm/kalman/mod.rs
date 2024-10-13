@@ -313,10 +313,11 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
             .expect("Cannot adjust clock");
         for (state, _) in self.sources.values_mut() {
             if let Some(ref mut state) = state {
-                state.state =
-                    state
-                        .state
-                        .process_frequency_steering(freq_update, actual_change, state.wander);
+                state.state = state.state.process_frequency_steering(
+                    freq_update,
+                    actual_change,
+                    state.wander,
+                );
             }
         }
         debug!(

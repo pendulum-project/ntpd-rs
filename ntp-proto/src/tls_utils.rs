@@ -19,7 +19,8 @@ use rustls::{
 };
 
 impl AllowAnyAnonymousOrCertificateBearingClient {
-    #[must_use] pub fn new(provider: &CryptoProvider) -> Self {
+    #[must_use]
+    pub fn new(provider: &CryptoProvider) -> Self {
         AllowAnyAnonymousOrCertificateBearingClient {
             supported_algs: provider.signature_verification_algorithms,
         }
