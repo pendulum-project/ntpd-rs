@@ -61,6 +61,9 @@ pub trait TimeSyncController: Sized + Send + 'static {
     >;
 
     /// Create a new clock controller controlling the given clock
+    /// # Errors
+    ///
+    /// Returns `Error` if Controller can't be made.
     fn new(
         clock: Self::Clock,
         synchronization_config: SynchronizationConfig,
@@ -69,6 +72,9 @@ pub trait TimeSyncController: Sized + Send + 'static {
     ) -> Result<Self, <Self::Clock as NtpClock>::Error>;
 
     /// Take control of the clock (should not be done in new!)
+    /// # Errors
+    ///
+    /// Returns `Error` if clock can't be controlled.
     fn take_control(&mut self) -> Result<(), <Self::Clock as NtpClock>::Error>;
 
     /// Create a new source with given identity

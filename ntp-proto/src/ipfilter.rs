@@ -210,6 +210,10 @@ impl IpFilter {
     }
 
     fn is_in4(&self, addr: &Ipv4Addr) -> bool {
+    /// # Panics
+    ///
+    /// Panics if `addr` has invalid octets.
+    fn is_in4(&self, addr: Ipv4Addr) -> bool {
         self.ipv4_filter
             .lookup((u32::from_be_bytes(addr.octets()) as u128) << 96)
     }

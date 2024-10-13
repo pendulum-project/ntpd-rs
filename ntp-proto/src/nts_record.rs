@@ -348,6 +348,9 @@ impl NtsRecord {
         response.into_boxed_slice()
     }
 
+    /// # Errors
+    ///
+    /// Errors if reading bytes fails.
     pub fn read(reader: &mut impl NonBlockingRead) -> std::io::Result<NtsRecord> {
         let raw_record_type = read_u16_be(reader)?;
         let critical = raw_record_type & 0x8000 != 0;
@@ -441,6 +444,9 @@ impl NtsRecord {
         })
     }
 
+    /// # Errors
+    ///
+    /// Errors if writing to sink fails.
     pub fn write(&self, mut writer: impl NonBlockingWrite) -> std::io::Result<()> {
         // error out early when the record is invalid
         if let Err(e) = self.validate() {
@@ -622,6 +628,9 @@ impl NtsRecordDecoder {
     const HEADER_BYTES: usize = 4;
 
     /// Try to decode the next record. Returns None when there are not enough bytes
+    /// # Errors
+    ///
+    /// Errors if `NtsRecord` is invalid.
     pub fn step(&mut self) -> std::io::Result<Option<NtsRecord>> {
         if self.bytes.len() < Self::HEADER_BYTES {
             return Ok(None);
@@ -1165,15 +1174,24 @@ impl KeyExchangeClient {
         self.tls_connection.wants_read()
     }
 
+    /// # Errors
+    ///
+    /// Returns error if reading the TLS socket fails.
     pub fn read_socket(&mut self, rd: &mut dyn Read) -> std::io::Result<usize> {
         self.tls_connection.read_tls(rd)
     }
 
+    /// # Errors
+    ///
+    /// Returns error if getting the TLS bool `wants_write` fails.
     #[must_use]
     pub fn wants_write(&self) -> bool {
         self.tls_connection.wants_write()
     }
 
+    /// # Errors
+    ///
+    /// Returns error if writing to the TLS socket fails.
     pub fn write_socket(&mut self, wr: &mut dyn Write) -> std::io::Result<usize> {
         self.tls_connection.write_tls(wr)
     }
@@ -1256,6 +1274,10 @@ impl KeyExchangeClient {
         })
     }
 
+    /// # Errors
+    ///
+    /// Returns error if writing to an `NtsRecord` fails.
+    /// Returns error if writing to the TLS connection fails.
     pub fn new(
         server_name: String,
         tls_config: rustls::ClientConfig,
@@ -1561,19 +1583,32 @@ impl KeyExchangeServer {
         self.tls_connection.wants_read()
     }
 
+    /// # Errors
+    ///
+    /// Returns error if reading the TLS socket fails.
     pub fn read_socket(&mut self, rd: &mut dyn Read) -> std::io::Result<usize> {
         self.tls_connection.read_tls(rd)
     }
 
+    /// # Errors
+    ///
+    /// Returns error if getting the TLS bool `wants_write` fails.
     #[must_use]
     pub fn wants_write(&self) -> bool {
         self.tls_connection.wants_write()
     }
 
+    /// # Errors
+    ///
+    /// Returns error if writing to the TLS socket fails.
     pub fn write_socket(&mut self, wr: &mut dyn Write) -> std::io::Result<usize> {
         self.tls_connection.write_tls(wr)
     }
 
+    /// # Errors
+    ///
+    /// Returns error if writing to an `NtsRecord` fails.
+    /// Returns error if writing to the TLS connection fails.
     fn send_records(
         tls_connection: &mut rustls::ServerConnection,
         records: &[NtsRecord],
@@ -1775,6 +1810,9 @@ impl KeyExchangeServer {
         }
     }
 
+    /// # Errors
+    ///
+    /// Returns `KeyExchangeError` if the `alpn_protocols` is invalid.
     pub fn new(
         tls_config: Arc<rustls::ServerConfig>,
         keyset: Arc<KeySet>,

@@ -103,6 +103,13 @@ impl KeySetProvider {
         });
     }
 
+    /// # Panics
+    ///
+    /// Panics if `buf` can't be converted to system time.
+    ///
+    /// # Errors
+    ///
+    /// Errors if `len` is bigger or equal to `primary`.
     pub fn load(
         reader: &mut impl Read,
         history: usize,
@@ -135,6 +142,14 @@ impl KeySetProvider {
         ))
     }
 
+    /// # Panics
+    ///
+    /// Panics if we can't get the current time.
+    ///
+    /// # Errors
+    ///
+    /// Errors if we can't write to the sink.
+    #[allow(clippy::cast_possible_truncation)]
     pub fn store(&self, writer: &mut impl Write) -> std::io::Result<()> {
         let time = std::time::SystemTime::now()
             .duration_since(std::time::SystemTime::UNIX_EPOCH)
@@ -195,6 +210,7 @@ impl KeySet {
     }
 
     #[cfg(feature = "__internal-fuzz")]
+    #[allow(clippy::missing_errors_doc)]
     pub fn decode_cookie_pub(&self, cookie: &[u8]) -> Result<DecodedServerCookie, DecryptError> {
         self.decode_cookie(cookie)
     }

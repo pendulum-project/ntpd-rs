@@ -61,7 +61,8 @@ impl NtpLeapIndicator {
         }
     }
 
-    #[must_use] pub fn is_synchronized(&self) -> bool {
+    #[must_use]
+    pub fn is_synchronized(&self) -> bool {
         !matches!(self, Self::Unknown)
     }
 }
@@ -287,7 +288,8 @@ impl NtpHeaderV3V4 {
 }
 
 impl<'a> NtpPacket<'a> {
-    #[must_use] pub fn into_owned(self) -> NtpPacket<'static> {
+    #[must_use]
+    pub fn into_owned(self) -> NtpPacket<'static> {
         NtpPacket::<'static> {
             header: self.header,
             efdata: self.efdata.into_owned(),
@@ -295,6 +297,10 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
+    /// # Errors
+    ///
+    /// Returns error if `data` has incorrect length.
+    /// Returns error if the parsing fails.
     #[allow(clippy::result_large_err)]
     pub fn deserialize(
         data: &'a [u8],
@@ -310,10 +316,13 @@ impl<'a> NtpPacket<'a> {
             3 => {
                 let (header, header_size) =
                     NtpHeaderV3V4::deserialize(data).map_err(error::ParsingError::generalize)?;
-                let mac = if header_size != data.len() {
-                    Some(Mac::deserialize(&data[header_size..]).map_err(error::ParsingError::generalize)?)
-                } else {
+                let mac = if header_size == data.len() {
                     None
+                } else {
+                    Some(
+                        Mac::deserialize(&data[header_size..])
+                            .map_err(error::ParsingError::generalize)?,
+                    )
                 };
                 Ok((
                     NtpPacket {
@@ -329,10 +338,10 @@ impl<'a> NtpPacket<'a> {
                     NtpHeaderV3V4::deserialize(data).map_err(error::ParsingError::generalize)?;
 
                 let construct_packet = |remaining_bytes: &'a [u8], efdata| {
-                    let mac = if !remaining_bytes.is_empty() {
-                        Some(Mac::deserialize(remaining_bytes)?)
-                    } else {
+                    let mac = if remaining_bytes.is_empty() {
                         None
+                    } else {
+                        Some(Mac::deserialize(remaining_bytes)?)
                     };
 
                     let packet = NtpPacket {
@@ -373,10 +382,10 @@ impl<'a> NtpPacket<'a> {
                     v5::NtpHeaderV5::deserialize(data).map_err(error::ParsingError::generalize)?;
 
                 let construct_packet = |remaining_bytes: &'a [u8], efdata| {
-                    let mac = if !remaining_bytes.is_empty() {
-                        Some(Mac::deserialize(remaining_bytes)?)
-                    } else {
+                    let mac = if remaining_bytes.is_empty() {
                         None
+                    } else {
+                        Some(Mac::deserialize(remaining_bytes)?)
                     };
 
                     let packet = NtpPacket {
@@ -430,6 +439,7 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
+    #[allow(clippy::missing_errors_doc)]
     #[allow(clippy::cast_possible_truncation)]
     #[cfg(test)]
     pub fn serialize_without_encryption_vec(
@@ -447,6 +457,9 @@ impl<'a> NtpPacket<'a> {
         Ok(buffer)
     }
 
+    /// # Errors
+    ///
+    /// Returns error if the serialization fails.
     #[allow(clippy::cast_possible_truncation)]
     pub fn serialize(
         &self,
@@ -578,7 +591,8 @@ impl<'a> NtpPacket<'a> {
         )
     }
 
-    #[must_use] pub fn poll_message(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
+    #[must_use]
+    pub fn poll_message(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
         let (header, id) = NtpHeaderV3V4::poll_message(poll_interval);
         (
             NtpPacket {
@@ -591,7 +605,8 @@ impl<'a> NtpPacket<'a> {
     }
 
     #[cfg(feature = "ntpv5")]
-    #[must_use] pub fn poll_message_upgrade_request(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
+    #[must_use]
+    pub fn poll_message_upgrade_request(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
         let (mut header, id) = NtpHeaderV3V4::poll_message(poll_interval);
 
         header.reference_timestamp = v5::UPGRADE_TIMESTAMP;
@@ -611,7 +626,8 @@ impl<'a> NtpPacket<'a> {
     }
 
     #[cfg(feature = "ntpv5")]
-    #[must_use] pub fn poll_message_v5(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
+    #[must_use]
+    pub fn poll_message_v5(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
         let (header, id) = v5::NtpHeaderV5::poll_message(poll_interval);
 
         let draft_id = ExtensionField::DraftIdentification(Cow::Borrowed(v5::DRAFT_VERSION));
@@ -837,7 +853,8 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
-    #[must_use] pub fn rate_limit_response(packet_from_client: Self) -> Self {
+    #[must_use]
+    pub fn rate_limit_response(packet_from_client: Self) -> Self {
         match packet_from_client.header {
             NtpHeader::V3(header) => NtpPacket {
                 header: NtpHeader::V3(NtpHeaderV3V4::rate_limit_response(header)),
@@ -883,7 +900,8 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
-    #[must_use] pub fn nts_rate_limit_response(packet_from_client: Self) -> Self {
+    #[must_use]
+    pub fn nts_rate_limit_response(packet_from_client: Self) -> Self {
         match packet_from_client.header {
             NtpHeader::V3(_) => unreachable!("NTS shouldn't work with NTPv3"),
             NtpHeader::V4(header) => NtpPacket {
@@ -921,7 +939,8 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
-    #[must_use] pub fn deny_response(packet_from_client: Self) -> Self {
+    #[must_use]
+    pub fn deny_response(packet_from_client: Self) -> Self {
         match packet_from_client.header {
             NtpHeader::V3(header) => NtpPacket {
                 header: NtpHeader::V3(NtpHeaderV3V4::deny_response(header)),
@@ -967,7 +986,8 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
-    #[must_use] pub fn nts_deny_response(packet_from_client: Self) -> Self {
+    #[must_use]
+    pub fn nts_deny_response(packet_from_client: Self) -> Self {
         match packet_from_client.header {
             NtpHeader::V3(_) => unreachable!("NTS shouldn't work with NTPv3"),
             NtpHeader::V4(header) => NtpPacket {
@@ -1005,7 +1025,8 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
-    #[must_use] pub fn nts_nak_response(packet_from_client: Self) -> Self {
+    #[must_use]
+    pub fn nts_nak_response(packet_from_client: Self) -> Self {
         match packet_from_client.header {
             NtpHeader::V3(_) => unreachable!("NTS shouldn't work with NTPv3"),
             NtpHeader::V4(header) => NtpPacket {
@@ -1054,7 +1075,8 @@ impl<'a> NtpPacket<'a> {
         })
     }
 
-    #[must_use] pub fn version(&self) -> u8 {
+    #[must_use]
+    pub fn version(&self) -> u8 {
         match self.header {
             NtpHeader::V3(_) => 3,
             NtpHeader::V4(_) => 4,
@@ -1063,11 +1085,13 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
-    #[must_use] pub fn header(&self) -> NtpHeader {
+    #[must_use]
+    pub fn header(&self) -> NtpHeader {
         self.header
     }
 
-    #[must_use] pub fn leap(&self) -> NtpLeapIndicator {
+    #[must_use]
+    pub fn leap(&self) -> NtpLeapIndicator {
         match self.header {
             NtpHeader::V3(header) => header.leap,
             NtpHeader::V4(header) => header.leap,
@@ -1076,7 +1100,8 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
-    #[must_use] pub fn mode(&self) -> NtpAssociationMode {
+    #[must_use]
+    pub fn mode(&self) -> NtpAssociationMode {
         match self.header {
             NtpHeader::V3(header) => header.mode,
             NtpHeader::V4(header) => header.mode,
@@ -1090,7 +1115,8 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
-    #[must_use] pub fn poll(&self) -> PollInterval {
+    #[must_use]
+    pub fn poll(&self) -> PollInterval {
         match self.header {
             NtpHeader::V3(h) | NtpHeader::V4(h) => h.poll,
             #[cfg(feature = "ntpv5")]
@@ -1098,7 +1124,8 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
-    #[must_use] pub fn stratum(&self) -> u8 {
+    #[must_use]
+    pub fn stratum(&self) -> u8 {
         match self.header {
             NtpHeader::V3(header) => header.stratum,
             NtpHeader::V4(header) => header.stratum,
@@ -1107,7 +1134,8 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
-    #[must_use] pub fn precision(&self) -> i8 {
+    #[must_use]
+    pub fn precision(&self) -> i8 {
         match self.header {
             NtpHeader::V3(header) => header.precision,
             NtpHeader::V4(header) => header.precision,
@@ -1116,7 +1144,8 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
-    #[must_use] pub fn root_delay(&self) -> NtpDuration {
+    #[must_use]
+    pub fn root_delay(&self) -> NtpDuration {
         match self.header {
             NtpHeader::V3(header) => header.root_delay,
             NtpHeader::V4(header) => header.root_delay,
@@ -1125,7 +1154,8 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
-    #[must_use] pub fn root_dispersion(&self) -> NtpDuration {
+    #[must_use]
+    pub fn root_dispersion(&self) -> NtpDuration {
         match self.header {
             NtpHeader::V3(header) => header.root_dispersion,
             NtpHeader::V4(header) => header.root_dispersion,
@@ -1134,7 +1164,8 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
-    #[must_use] pub fn receive_timestamp(&self) -> NtpTimestamp {
+    #[must_use]
+    pub fn receive_timestamp(&self) -> NtpTimestamp {
         match self.header {
             NtpHeader::V3(header) => header.receive_timestamp,
             NtpHeader::V4(header) => header.receive_timestamp,
@@ -1143,7 +1174,8 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
-    #[must_use] pub fn transmit_timestamp(&self) -> NtpTimestamp {
+    #[must_use]
+    pub fn transmit_timestamp(&self) -> NtpTimestamp {
         match self.header {
             NtpHeader::V3(header) => header.transmit_timestamp,
             NtpHeader::V4(header) => header.transmit_timestamp,
@@ -1152,7 +1184,8 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
-    #[must_use] pub fn reference_id(&self) -> ReferenceId {
+    #[must_use]
+    pub fn reference_id(&self) -> ReferenceId {
         match self.header {
             NtpHeader::V3(header) => header.reference_id,
             NtpHeader::V4(header) => header.reference_id,
@@ -1174,7 +1207,8 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
-    #[must_use] pub fn is_kiss(&self) -> bool {
+    #[must_use]
+    pub fn is_kiss(&self) -> bool {
         match self.header {
             NtpHeader::V3(header) => header.stratum == 0,
             NtpHeader::V4(header) => header.stratum == 0,
@@ -1183,7 +1217,8 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
-    #[must_use] pub fn is_kiss_deny(&self) -> bool {
+    #[must_use]
+    pub fn is_kiss_deny(&self) -> bool {
         self.is_kiss()
             && match self.header {
                 NtpHeader::V3(_) | NtpHeader::V4(_) => self.kiss_code().is_deny(),
@@ -1192,7 +1227,8 @@ impl<'a> NtpPacket<'a> {
             }
     }
 
-    #[must_use] pub fn is_kiss_rate(
+    #[must_use]
+    pub fn is_kiss_rate(
         &self,
         #[cfg_attr(not(feature = "ntpv5"), allow(unused))] own_interval: PollInterval,
     ) -> bool {
@@ -1206,7 +1242,8 @@ impl<'a> NtpPacket<'a> {
             }
     }
 
-    #[must_use] pub fn is_kiss_rstr(&self) -> bool {
+    #[must_use]
+    pub fn is_kiss_rstr(&self) -> bool {
         self.is_kiss()
             && match self.header {
                 NtpHeader::V3(_) | NtpHeader::V4(_) => self.kiss_code().is_rstr(),
@@ -1215,7 +1252,8 @@ impl<'a> NtpPacket<'a> {
             }
     }
 
-    #[must_use] pub fn is_kiss_ntsn(&self) -> bool {
+    #[must_use]
+    pub fn is_kiss_ntsn(&self) -> bool {
         self.is_kiss()
             && match self.header {
                 NtpHeader::V3(_) | NtpHeader::V4(_) => self.kiss_code().is_ntsn(),
@@ -1225,7 +1263,8 @@ impl<'a> NtpPacket<'a> {
     }
 
     #[cfg(feature = "ntpv5")]
-    #[must_use] pub fn is_upgrade(&self) -> bool {
+    #[must_use]
+    pub fn is_upgrade(&self) -> bool {
         matches!(
             self.header,
             NtpHeader::V4(NtpHeaderV3V4 {
@@ -1235,7 +1274,8 @@ impl<'a> NtpPacket<'a> {
         )
     }
 
-    #[must_use] pub fn valid_server_response(&self, identifier: RequestIdentifier, nts_enabled: bool) -> bool {
+    #[must_use]
+    pub fn valid_server_response(&self, identifier: RequestIdentifier, nts_enabled: bool) -> bool {
         if let Some(uid) = identifier.uid {
             let auth = check_uid_extensionfield(self.efdata.authenticated.iter(), &uid);
             let encr = check_uid_extensionfield(self.efdata.encrypted.iter(), &uid);
@@ -1310,7 +1350,8 @@ fn check_uid_extensionfield<'a, I: IntoIterator<Item = &'a ExtensionField<'a>>>(
 
 #[cfg(any(test, feature = "__internal-fuzz", feature = "__internal-test"))]
 impl<'a> NtpPacket<'a> {
-    #[must_use] pub fn test() -> Self {
+    #[must_use]
+    pub fn test() -> Self {
         Self::default()
     }
 

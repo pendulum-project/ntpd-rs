@@ -643,6 +643,7 @@ impl Mul<FrequencyTolerance> for NtpDuration {
     }
 }
 
+#[allow(clippy::missing_panics_doc)]
 #[cfg(feature = "__internal-fuzz")]
 pub fn fuzz_duration_from_seconds(v: f64) {
     if v.is_finite() {

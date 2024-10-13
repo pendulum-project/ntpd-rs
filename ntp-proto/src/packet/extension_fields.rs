@@ -191,6 +191,7 @@ impl<'a> ExtensionField<'a> {
         }
     }
 
+    #[allow(clippy::missing_errors_doc)]
     #[cfg(feature = "__internal-fuzz")]
     pub fn serialize_pub(
         &self,
@@ -453,6 +454,9 @@ impl<'a> ExtensionField<'a> {
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// Returns error if writing to the sink fails.
     #[cfg(feature = "ntpv5")]
     pub fn encode_padding_field(
         mut w: impl NonBlockingWrite,

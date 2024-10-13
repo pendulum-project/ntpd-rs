@@ -84,6 +84,9 @@ pub trait Cipher: Sync + Send + ZeroizeOnDrop + 'static {
     /// - encrypts `plaintext_length` bytes from the buffer
     /// - puts the nonce followed by the ciphertext into the buffer
     /// - returns the size of the nonce and ciphertext
+    /// # Errors
+    ///
+    /// Returns error if encryption fails.
     fn encrypt(
         &self,
         buffer: &mut [u8],
@@ -91,6 +94,9 @@ pub trait Cipher: Sync + Send + ZeroizeOnDrop + 'static {
         associated_data: &[u8],
     ) -> std::io::Result<EncryptResult>;
 
+    /// # Errors
+    ///
+    /// Returns error if decryption fails.
     // MUST support arbitrary length nonces
     fn decrypt(
         &self,

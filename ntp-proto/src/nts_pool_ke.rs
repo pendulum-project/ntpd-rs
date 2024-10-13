@@ -87,6 +87,9 @@ pub struct ClientToPoolData {
 }
 
 impl ClientToPoolData {
+    /// # Errors
+    ///
+    /// Returns `KeyExchangeError` if extracting the `NtsKeys` fails.
     pub fn extract_nts_keys<ConnectionData>(
         &self,
         stream: &rustls::ConnectionCommon<ConnectionData>,
