@@ -313,129 +313,131 @@ impl<'a> NtpPacket<'a> {
         let version = (data[0] & 0b0011_1000) >> 3;
 
         match version {
-            3 => {
-                let (header, header_size) =
-                    NtpHeaderV3V4::deserialize(data).map_err(error::ParsingError::generalize)?;
-                let mac = if header_size == data.len() {
-                    None
-                } else {
-                    Some(
-                        Mac::deserialize(&data[header_size..])
-                            .map_err(error::ParsingError::generalize)?,
-                    )
-                };
-                Ok((
-                    NtpPacket {
-                        header: NtpHeader::V3(header),
-                        efdata: ExtensionFieldData::default(),
-                        mac,
-                    },
-                    None,
+            3 => Self::deserialize_v3(data),
+            4 => Self::deserialize_v4(data, cipher),
+            #[cfg(feature = "ntpv5")]
+            5 => Self::deserialize_v5(data, cipher),
+            _ => Err(PacketParsingError::InvalidVersion(version)),
+        }
+    }
+
+    #[allow(clippy::result_large_err)]
+    fn deserialize_v3(
+        data: &'a [u8],
+    ) -> Result<(Self, Option<DecodedServerCookie>), PacketParsingError<'a>> {
+        let (header, header_size) =
+            NtpHeaderV3V4::deserialize(data).map_err(error::ParsingError::generalize)?;
+        let mac = if header_size == data.len() {
+            None
+        } else {
+            Some(Mac::deserialize(&data[header_size..]).map_err(error::ParsingError::generalize)?)
+        };
+        Ok((
+            NtpPacket {
+                header: NtpHeader::V3(header),
+                efdata: ExtensionFieldData::default(),
+                mac,
+            },
+            None,
+        ))
+    }
+
+    #[allow(clippy::result_large_err)]
+    fn deserialize_v4(
+        data: &'a [u8],
+        cipher: &(impl CipherProvider + ?Sized),
+    ) -> Result<(Self, Option<DecodedServerCookie>), PacketParsingError<'a>> {
+        let (header, header_size) =
+            NtpHeaderV3V4::deserialize(data).map_err(error::ParsingError::generalize)?;
+
+        Self::deserialize_with_extension_fields(
+            data,
+            header_size,
+            cipher,
+            ExtensionHeaderVersion::V4,
+            NtpHeader::V4,
+            header,
+        )
+    }
+
+    #[allow(clippy::result_large_err)]
+    #[cfg(feature = "ntpv5")]
+    fn deserialize_v5(
+        data: &'a [u8],
+        cipher: &(impl CipherProvider + ?Sized),
+    ) -> Result<(Self, Option<DecodedServerCookie>), PacketParsingError<'a>> {
+        let (header, header_size) =
+            v5::NtpHeaderV5::deserialize(data).map_err(error::ParsingError::generalize)?;
+
+        // TODO: Check extension field handling in V5
+        let (packet, cookie) = Self::deserialize_with_extension_fields(
+            data,
+            header_size,
+            cipher,
+            ExtensionHeaderVersion::V5,
+            NtpHeader::V5,
+            header,
+        )?;
+
+        match packet.draft_id() {
+            Some(id) if id == v5::DRAFT_VERSION => Ok((packet, cookie)),
+            received @ (Some(_) | None) => {
+                tracing::error!(
+                    expected = v5::DRAFT_VERSION,
+                    received,
+                    "Mismatched draft ID ignoring packet!"
+                );
+                Err(PacketParsingError::V5(
+                    v5::V5Error::InvalidDraftIdentification,
                 ))
             }
-            4 => {
-                let (header, header_size) =
-                    NtpHeaderV3V4::deserialize(data).map_err(error::ParsingError::generalize)?;
+        }
+    }
 
-                let construct_packet = |remaining_bytes: &'a [u8], efdata| {
-                    let mac = if remaining_bytes.is_empty() {
-                        None
-                    } else {
-                        Some(Mac::deserialize(remaining_bytes)?)
-                    };
+    #[allow(clippy::result_large_err)]
+    fn deserialize_with_extension_fields<H, F>(
+        data: &'a [u8],
+        header_size: usize,
+        cipher: &(impl CipherProvider + ?Sized),
+        extension_header_version: ExtensionHeaderVersion,
+        header_constructor: F,
+        header: H,
+    ) -> Result<(Self, Option<DecodedServerCookie>), PacketParsingError<'a>>
+    where
+        F: Fn(H) -> NtpHeader,
+    {
+        let construct_packet = |remaining_bytes: &'a [u8], efdata| {
+            let mac = if remaining_bytes.is_empty() {
+                None
+            } else {
+                Some(Mac::deserialize(remaining_bytes)?)
+            };
 
-                    let packet = NtpPacket {
-                        header: NtpHeader::V4(header),
-                        efdata,
-                        mac,
-                    };
+            let packet = NtpPacket {
+                header: header_constructor(header),
+                efdata,
+                mac,
+            };
 
-                    Ok::<_, ParsingError<std::convert::Infallible>>(packet)
-                };
+            Ok::<_, ParsingError<std::convert::Infallible>>(packet)
+        };
 
-                match ExtensionFieldData::deserialize(
-                    data,
-                    header_size,
-                    cipher,
-                    ExtensionHeaderVersion::V4,
-                ) {
-                    Ok(decoded) => {
-                        let packet = construct_packet(decoded.remaining_bytes, decoded.efdata)
-                            .map_err(error::ParsingError::generalize)?;
+        match ExtensionFieldData::deserialize(data, header_size, cipher, extension_header_version) {
+            Ok(decoded) => {
+                let packet = construct_packet(decoded.remaining_bytes, decoded.efdata)
+                    .map_err(error::ParsingError::generalize)?;
 
-                        Ok((packet, decoded.cookie))
-                    }
-                    Err(e) => {
-                        // return early if it is anything but a decrypt error
-                        let invalid = e.get_decrypt_error()?;
-
-                        let packet = construct_packet(invalid.remaining_bytes, invalid.efdata)
-                            .map_err(error::ParsingError::generalize)?;
-
-                        Err(ParsingError::DecryptError(packet))
-                    }
-                }
+                Ok((packet, decoded.cookie))
             }
-            #[cfg(feature = "ntpv5")]
-            5 => {
-                let (header, header_size) =
-                    v5::NtpHeaderV5::deserialize(data).map_err(error::ParsingError::generalize)?;
+            Err(e) => {
+                // return early if it is anything but a decrypt error
+                let invalid = e.get_decrypt_error()?;
 
-                let construct_packet = |remaining_bytes: &'a [u8], efdata| {
-                    let mac = if remaining_bytes.is_empty() {
-                        None
-                    } else {
-                        Some(Mac::deserialize(remaining_bytes)?)
-                    };
+                let packet = construct_packet(invalid.remaining_bytes, invalid.efdata)
+                    .map_err(error::ParsingError::generalize)?;
 
-                    let packet = NtpPacket {
-                        header: NtpHeader::V5(header),
-                        efdata,
-                        mac,
-                    };
-
-                    Ok::<_, ParsingError<std::convert::Infallible>>(packet)
-                };
-
-                // TODO: Check extension field handling in V5
-                let res_packet = match ExtensionFieldData::deserialize(
-                    data,
-                    header_size,
-                    cipher,
-                    ExtensionHeaderVersion::V5,
-                ) {
-                    Ok(decoded) => {
-                        let packet = construct_packet(decoded.remaining_bytes, decoded.efdata)
-                            .map_err(error::ParsingError::generalize)?;
-
-                        Ok((packet, decoded.cookie))
-                    }
-                    Err(e) => {
-                        // return early if it is anything but a decrypt error
-                        let invalid = e.get_decrypt_error()?;
-
-                        let packet = construct_packet(invalid.remaining_bytes, invalid.efdata)
-                            .map_err(error::ParsingError::generalize)?;
-
-                        Err(ParsingError::DecryptError(packet))
-                    }
-                };
-
-                let (packet, cookie) = res_packet?;
-
-                match packet.draft_id() {
-                    Some(id) if id == v5::DRAFT_VERSION => Ok((packet, cookie)),
-                    received @ (Some(_) | None) => {
-                        tracing::error!(
-                            expected = v5::DRAFT_VERSION,
-                            received,
-                            "Mismatched draft ID ignoring packet!"
-                        );
-                        Err(ParsingError::V5(v5::V5Error::InvalidDraftIdentification))
-                    }
-                }
+                Err(ParsingError::DecryptError(packet))
             }
-            _ => Err(PacketParsingError::InvalidVersion(version)),
         }
     }
 
@@ -1466,6 +1468,7 @@ impl<'a> Default for NtpPacket<'a> {
 }
 
 #[allow(clippy::cast_possible_truncation)]
+#[allow(clippy::too_many_lines)]
 #[cfg(test)]
 mod tests {
     use crate::{

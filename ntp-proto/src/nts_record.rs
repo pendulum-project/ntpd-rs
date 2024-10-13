@@ -990,166 +990,189 @@ impl KeyExchangeResultDecoder {
         self,
         record: NtsRecord,
     ) -> ControlFlow<Result<PartialKeyExchangeData, KeyExchangeError>, Self> {
-        use self::AeadAlgorithm as Algorithm;
-        use ControlFlow::{Break, Continue};
-        use KeyExchangeError::{BadResponse, NoValidAlgorithm, NoValidProtocol};
-        use NtsRecord::{
-            AeadAlgorithm, DraftId, EndOfMessage, Error, FixedKeyRequest, KeepAlive, NewCookie,
-            NextProtocol, NtpServerDeny, Port, Server, SupportedAlgorithmList, Unknown, Warning,
-        };
-
-        let mut state = self;
-
         match record {
-            EndOfMessage => {
-                let Some(protocol) = state.protocol else {
-                    return ControlFlow::Break(Err(KeyExchangeError::NoValidProtocol));
-                };
-
-                // the spec notes
-                //
-                // > If the NTS Next Protocol Negotiation record offers Protocol ID 0 (for NTPv4),
-                // > then this record MUST be included exactly once. Other protocols MAY require it as well.
-                //
-                // but we only support Protocol ID 0 (and assume ntpv5 behaves like ntpv4 in this regard)
-                let Some(algorithm) = state.algorithm else {
-                    return ControlFlow::Break(Err(KeyExchangeError::NoValidAlgorithm));
-                };
-
-                if state.cookies.is_empty() {
-                    Break(Err(KeyExchangeError::NoCookies))
-                } else {
-                    Break(Ok(PartialKeyExchangeData {
-                        remote: state.remote,
-                        port: state.port,
-                        protocol,
-                        algorithm,
-                        cookies: state.cookies,
-                        #[cfg(feature = "nts-pool")]
-                        supported_algorithms: state.supported_algorithms,
-                    }))
-                }
-            }
+            NtsRecord::EndOfMessage => self.handle_end_of_message(),
             #[cfg(feature = "ntpv5")]
-            DraftId { .. } => {
-                tracing::debug!("Unexpected draft id");
-                Continue(state)
+            NtsRecord::DraftId { .. } => self.handle_unexpected_draft_id(),
+            NtsRecord::NewCookie { cookie_data } => self.handle_new_cookie(cookie_data),
+            NtsRecord::Server { name, .. } => self.handle_server(name),
+            NtsRecord::Port { port, .. } => self.handle_port(port),
+            NtsRecord::Warning { warningcode } => self.handle_warning(warningcode),
+            NtsRecord::NextProtocol { protocol_ids } => self.handle_next_protocol(&protocol_ids),
+            NtsRecord::AeadAlgorithm { algorithm_ids, .. } => {
+                self.handle_aead_algorithm(&algorithm_ids)
             }
-            NewCookie { cookie_data } => {
-                state.cookies.store(cookie_data);
-                Continue(state)
-            }
-            Server { name, .. } => {
-                state.remote = Some(name);
-                Continue(state)
-            }
-            Port { port, .. } => {
-                state.port = Some(port);
-                Continue(state)
-            }
-            Error { errorcode } => {
-                //
-                Break(Err(KeyExchangeError::from_error_code(errorcode)))
-            }
-            Warning { warningcode } => {
-                tracing::warn!(warningcode, "Received key exchange warning code");
-
-                Continue(state)
-            }
-            NextProtocol { protocol_ids } => {
-                let selected = ProtocolId::IN_ORDER_OF_PREFERENCE
-                    .iter()
-                    .find_map(|proto| protocol_ids.contains(&(*proto as u16)).then_some(*proto));
-
-                match selected {
-                    None => Break(Err(NoValidProtocol)),
-                    Some(protocol) => {
-                        // The NTS Next Protocol Negotiation record [..] MUST occur exactly once in every NTS-KE request and response.
-                        match state.protocol {
-                            None => {
-                                state.protocol = Some(protocol);
-                                Continue(state)
-                            }
-                            Some(_) => Break(Err(KeyExchangeError::BadResponse)),
-                        }
-                    }
-                }
-            }
-            AeadAlgorithm { algorithm_ids, .. } => {
-                // it MUST include at most one
-                let algorithm_id = match algorithm_ids[..] {
-                    [] => return Break(Err(NoValidAlgorithm)),
-                    [algorithm_id] => algorithm_id,
-                    _ => return Break(Err(BadResponse)),
-                };
-
-                let selected = Algorithm::IN_ORDER_OF_PREFERENCE
-                    .iter()
-                    .find(|algo| (algorithm_id == (**algo as u16)));
-
-                match selected {
-                    None => Break(Err(NoValidAlgorithm)),
-                    Some(algorithm) => {
-                        // for the protocol ids we support, the AeadAlgorithm record must be present
-                        match state.algorithm {
-                            None => {
-                                state.algorithm = Some(*algorithm);
-                                Continue(state)
-                            }
-                            Some(_) => Break(Err(KeyExchangeError::BadResponse)),
-                        }
-                    }
-                }
-            }
-
-            Unknown { critical, .. } => {
-                if critical {
-                    Break(Err(KeyExchangeError::UnrecognizedCriticalRecord))
-                } else {
-                    Continue(state)
-                }
+            NtsRecord::Unknown { critical, .. } => self.handle_unknown(critical),
+            NtsRecord::Error { errorcode } => {
+                ControlFlow::Break(Err(KeyExchangeError::from_error_code(errorcode)))
             }
             #[cfg(feature = "nts-pool")]
-            KeepAlive => {
-                state.keep_alive = true;
-                Continue(state)
-            }
+            NtsRecord::KeepAlive => self.handle_keep_alive(),
             #[cfg(feature = "nts-pool")]
-            SupportedAlgorithmList {
+            NtsRecord::SupportedAlgorithmList {
                 supported_algorithms,
-            } => {
-                use self::AeadAlgorithm;
-
-                state.supported_algorithms = Some(
-                    supported_algorithms
-                        .into_iter()
-                        .filter_map(|(aead_protocol_id, key_length)| {
-                            let aead_algorithm = AeadAlgorithm::try_deserialize(aead_protocol_id)?;
-                            Some((aead_algorithm, key_length))
-                        })
-                        .collect::<Vec<_>>()
-                        .into_boxed_slice(),
-                );
-
-                Continue(state)
-            }
+            } => self.handle_supported_algorithm_list(supported_algorithms),
             #[cfg(feature = "nts-pool")]
-            FixedKeyRequest { .. } => {
-                // a client should never receive a FixedKeyRequest
+            NtsRecord::FixedKeyRequest { .. } => {
                 tracing::warn!("Unexpected fixed key request");
-                Continue(state)
+                ControlFlow::Continue(self)
             }
             #[cfg(feature = "nts-pool")]
-            NtpServerDeny { .. } => {
-                // a client should never receive a NtpServerDeny
-                tracing::warn!("Unexpected ntp server deny");
-                Continue(state)
+            NtsRecord::NtpServerDeny { .. } => {
+                tracing::warn!("Unexpected NTP server deny");
+                ControlFlow::Continue(self)
             }
         }
     }
 
-    fn new() -> Self {
-        Self::default()
+    fn handle_end_of_message(
+        self,
+    ) -> ControlFlow<Result<PartialKeyExchangeData, KeyExchangeError>, Self> {
+        let Some(protocol) = self.protocol else {
+            return ControlFlow::Break(Err(KeyExchangeError::NoValidProtocol));
+        };
+
+        let Some(algorithm) = self.algorithm else {
+            return ControlFlow::Break(Err(KeyExchangeError::NoValidAlgorithm));
+        };
+
+        if self.cookies.is_empty() {
+            ControlFlow::Break(Err(KeyExchangeError::NoCookies))
+        } else {
+            ControlFlow::Break(Ok(PartialKeyExchangeData {
+                remote: self.remote.clone(),
+                port: self.port,
+                protocol,
+                algorithm,
+                cookies: self.cookies,
+                #[cfg(feature = "nts-pool")]
+                supported_algorithms: self.supported_algorithms.clone(),
+            }))
+        }
+    }
+
+    #[cfg(feature = "ntpv5")]
+    fn handle_unexpected_draft_id(
+        self,
+    ) -> ControlFlow<Result<PartialKeyExchangeData, KeyExchangeError>, Self> {
+        tracing::debug!("Unexpected draft id");
+        ControlFlow::Continue(self)
+    }
+
+    fn handle_new_cookie(
+        mut self,
+        cookie_data: Vec<u8>,
+    ) -> ControlFlow<Result<PartialKeyExchangeData, KeyExchangeError>, Self> {
+        self.cookies.store(cookie_data);
+        ControlFlow::Continue(self)
+    }
+
+    fn handle_server(
+        mut self,
+        name: String,
+    ) -> ControlFlow<Result<PartialKeyExchangeData, KeyExchangeError>, Self> {
+        self.remote = Some(name);
+        ControlFlow::Continue(self)
+    }
+
+    fn handle_port(
+        mut self,
+        port: u16,
+    ) -> ControlFlow<Result<PartialKeyExchangeData, KeyExchangeError>, Self> {
+        self.port = Some(port);
+        ControlFlow::Continue(self)
+    }
+
+    fn handle_warning(
+        self,
+        warningcode: u16,
+    ) -> ControlFlow<Result<PartialKeyExchangeData, KeyExchangeError>, Self> {
+        tracing::warn!(warningcode, "Received key exchange warning code");
+        ControlFlow::Continue(self)
+    }
+
+    fn handle_next_protocol(
+        mut self,
+        protocol_ids: &[u16],
+    ) -> ControlFlow<Result<PartialKeyExchangeData, KeyExchangeError>, Self> {
+        let selected = ProtocolId::IN_ORDER_OF_PREFERENCE
+            .iter()
+            .find_map(|proto| protocol_ids.contains(&(*proto as u16)).then_some(*proto));
+
+        match selected {
+            None => ControlFlow::Break(Err(KeyExchangeError::NoValidProtocol)),
+            Some(protocol) => match self.protocol {
+                None => {
+                    self.protocol = Some(protocol);
+                    ControlFlow::Continue(self)
+                }
+                Some(_) => ControlFlow::Break(Err(KeyExchangeError::BadResponse)),
+            },
+        }
+    }
+
+    fn handle_aead_algorithm(
+        mut self,
+        algorithm_ids: &[u16],
+    ) -> ControlFlow<Result<PartialKeyExchangeData, KeyExchangeError>, Self> {
+        let algorithm_id = match algorithm_ids {
+            [] => return ControlFlow::Break(Err(KeyExchangeError::NoValidAlgorithm)),
+            [algorithm_id] => *algorithm_id,
+            _ => return ControlFlow::Break(Err(KeyExchangeError::BadResponse)),
+        };
+
+        let selected = AeadAlgorithm::IN_ORDER_OF_PREFERENCE
+            .iter()
+            .find(|algo| (algorithm_id == (**algo as u16)));
+
+        match selected {
+            None => ControlFlow::Break(Err(KeyExchangeError::NoValidAlgorithm)),
+            Some(algorithm) => match self.algorithm {
+                None => {
+                    self.algorithm = Some(*algorithm);
+                    ControlFlow::Continue(self)
+                }
+                Some(_) => ControlFlow::Break(Err(KeyExchangeError::BadResponse)),
+            },
+        }
+    }
+
+    fn handle_unknown(
+        self,
+        critical: bool,
+    ) -> ControlFlow<Result<PartialKeyExchangeData, KeyExchangeError>, Self> {
+        if critical {
+            ControlFlow::Break(Err(KeyExchangeError::UnrecognizedCriticalRecord))
+        } else {
+            ControlFlow::Continue(self)
+        }
+    }
+
+    #[cfg(feature = "nts-pool")]
+    fn handle_keep_alive(
+        mut self,
+    ) -> ControlFlow<Result<PartialKeyExchangeData, KeyExchangeError>, Self> {
+        self.keep_alive = true;
+        ControlFlow::Continue(self)
+    }
+
+    #[cfg(feature = "nts-pool")]
+    fn handle_supported_algorithm_list(
+        mut self,
+        supported_algorithms: Vec<(u16, u16)>,
+    ) -> ControlFlow<Result<PartialKeyExchangeData, KeyExchangeError>, Self> {
+        self.supported_algorithms = Some(
+            supported_algorithms
+                .into_iter()
+                .filter_map(|(aead_protocol_id, key_length)| {
+                    let aead_algorithm = AeadAlgorithm::try_deserialize(aead_protocol_id)?;
+                    Some((aead_algorithm, key_length))
+                })
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        );
+
+        ControlFlow::Continue(self)
     }
 }
 
@@ -1411,9 +1434,7 @@ impl KeyExchangeServerDecoder {
         self,
         record: NtsRecord,
     ) -> ControlFlow<Result<ServerKeyExchangeData, KeyExchangeError>, Self> {
-        use self::AeadAlgorithm as Algorithm;
         use ControlFlow::{Break, Continue};
-        use KeyExchangeError::{NoValidAlgorithm, NoValidProtocol};
         use NtsRecord::{
             AeadAlgorithm, DraftId, EndOfMessage, Error, FixedKeyRequest, KeepAlive, NewCookie,
             NextProtocol, NtpServerDeny, Port, Server, SupportedAlgorithmList, Unknown, Warning,
@@ -1458,7 +1479,7 @@ impl KeyExchangeServerDecoder {
                 Continue(state)
             }
             Error { errorcode } => {
-                //
+                // Return error from `errorcode`
                 Break(Err(KeyExchangeError::from_error_code(errorcode)))
             }
             Warning { warningcode } => {
@@ -1466,61 +1487,8 @@ impl KeyExchangeServerDecoder {
 
                 Continue(state)
             }
-            NextProtocol { protocol_ids } => {
-                #[cfg(feature = "ntpv5")]
-                let selected = if state.allow_v5 {
-                    protocol_ids
-                        .iter()
-                        .copied()
-                        .find_map(ProtocolId::try_deserialize_v5)
-                } else {
-                    protocol_ids
-                        .iter()
-                        .copied()
-                        .find_map(ProtocolId::try_deserialize)
-                };
-
-                #[cfg(not(feature = "ntpv5"))]
-                let selected = protocol_ids
-                    .iter()
-                    .copied()
-                    .find_map(ProtocolId::try_deserialize);
-
-                match selected {
-                    None => Break(Err(NoValidProtocol)),
-                    Some(protocol) => {
-                        // The NTS Next Protocol Negotiation record [..] MUST occur exactly once in every NTS-KE request and response.
-                        match state.protocol {
-                            None => {
-                                state.protocol = Some(protocol);
-                                Continue(state)
-                            }
-                            Some(_) => Break(Err(KeyExchangeError::BadRequest)),
-                        }
-                    }
-                }
-            }
-            AeadAlgorithm { algorithm_ids, .. } => {
-                let selected = algorithm_ids
-                    .iter()
-                    .copied()
-                    .find_map(Algorithm::try_deserialize);
-
-                match selected {
-                    None => Break(Err(NoValidAlgorithm)),
-                    Some(algorithm) => {
-                        // for the protocol ids we support, the AeadAlgorithm record must be present
-                        match state.algorithm {
-                            None => {
-                                state.algorithm = Some(algorithm);
-                                Continue(state)
-                            }
-                            Some(_) => Break(Err(KeyExchangeError::BadRequest)),
-                        }
-                    }
-                }
-            }
-
+            NextProtocol { protocol_ids } => state.handle_next_protocol(&protocol_ids),
+            AeadAlgorithm { algorithm_ids, .. } => state.handle_aead_algorithm(&algorithm_ids),
             #[cfg(feature = "nts-pool")]
             KeepAlive => {
                 state.keep_alive = Some(true);
@@ -1560,6 +1528,76 @@ impl KeyExchangeServerDecoder {
 
     fn new() -> Self {
         Self::default()
+    }
+
+    fn handle_next_protocol(
+        mut self,
+        protocol_ids: &[u16],
+    ) -> ControlFlow<Result<ServerKeyExchangeData, KeyExchangeError>, KeyExchangeServerDecoder>
+    {
+        use crate::nts_record::ControlFlow::{Break, Continue};
+        use crate::KeyExchangeError::NoValidProtocol;
+
+        #[cfg(feature = "ntpv5")]
+        let selected = if self.allow_v5 {
+            protocol_ids
+                .iter()
+                .copied()
+                .find_map(ProtocolId::try_deserialize_v5)
+        } else {
+            protocol_ids
+                .iter()
+                .copied()
+                .find_map(ProtocolId::try_deserialize)
+        };
+
+        #[cfg(not(feature = "ntpv5"))]
+        let selected = protocol_ids
+            .iter()
+            .copied()
+            .find_map(ProtocolId::try_deserialize);
+
+        match selected {
+            None => Break(Err(NoValidProtocol)),
+            Some(protocol) => {
+                // The NTS Next Protocol Negotiation record [..] MUST occur exactly once in every NTS-KE request and response.
+                match self.protocol {
+                    None => {
+                        self.protocol = Some(protocol);
+                        Continue(self)
+                    }
+                    Some(_) => Break(Err(KeyExchangeError::BadRequest)),
+                }
+            }
+        }
+    }
+
+    fn handle_aead_algorithm(
+        mut self,
+        algorithm_ids: &[u16],
+    ) -> ControlFlow<Result<ServerKeyExchangeData, KeyExchangeError>, KeyExchangeServerDecoder>
+    {
+        use self::AeadAlgorithm as Algorithm;
+        use ControlFlow::{Break, Continue};
+        use KeyExchangeError::NoValidAlgorithm;
+        let selected = algorithm_ids
+            .iter()
+            .copied()
+            .find_map(Algorithm::try_deserialize);
+
+        match selected {
+            None => Break(Err(NoValidAlgorithm)),
+            Some(algorithm) => {
+                // for the protocol ids we support, the AeadAlgorithm record must be present
+                match self.algorithm {
+                    None => {
+                        self.algorithm = Some(algorithm);
+                        Continue(self)
+                    }
+                    Some(_) => Break(Err(KeyExchangeError::BadRequest)),
+                }
+            }
+        }
     }
 }
 

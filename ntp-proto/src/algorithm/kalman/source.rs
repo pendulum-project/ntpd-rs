@@ -768,6 +768,7 @@ impl<SourceId: std::fmt::Debug + Copy + Send + 'static> SourceController
     }
 }
 
+#[allow(clippy::too_many_lines)]
 #[cfg(test)]
 mod tests {
     use crate::{packet::NtpLeapIndicator, time_types::NtpInstant};

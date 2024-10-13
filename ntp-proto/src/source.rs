@@ -817,6 +817,7 @@ impl<Controller: SourceController> NtpSource<Controller> {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 #[allow(clippy::cast_possible_truncation)]
 #[cfg(test)]
 mod test {
