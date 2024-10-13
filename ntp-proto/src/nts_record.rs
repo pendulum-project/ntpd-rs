@@ -823,7 +823,7 @@ impl AeadAlgorithm {
     const IN_ORDER_OF_PREFERENCE: &'static [Self] =
         &[Self::AeadAesSivCmac512, Self::AeadAesSivCmac256];
 
-    pub(crate) fn extract_nts_keys<ConnectionData>(
+    pub fn extract_nts_keys<ConnectionData>(
         &self,
         protocol: ProtocolId,
         tls_connection: &rustls::ConnectionCommon<ConnectionData>,
@@ -878,8 +878,8 @@ impl AeadAlgorithm {
 }
 
 pub struct NtsKeys {
-    c2s: Box<dyn Cipher>,
-    s2c: Box<dyn Cipher>,
+    pub c2s: Box<dyn Cipher>,
+    pub s2c: Box<dyn Cipher>,
 }
 
 impl NtsKeys {
