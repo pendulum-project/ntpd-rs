@@ -96,7 +96,9 @@ impl BloomFilter {
         union
     }
 
-    #[must_use] pub fn count_ones(&self) -> u16 {
+    #[allow(clippy::cast_possible_truncation)]
+    #[must_use]
+    pub fn count_ones(&self) -> u16 {
         self.0.iter().map(|b| b.count_ones() as u16).sum()
     }
 
@@ -219,6 +221,7 @@ impl RemoteBloomFilter {
         Ok(())
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn advance_next_to_request(&mut self) {
         self.next_to_request = (self.next_to_request + self.chunk_size) % BloomFilter::BYTES as u16;
 
@@ -316,6 +319,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     #[test]
     fn requesting() {
         use ResponseHandlingError::{MismatchedCookie, MismatchedLength, NotAwaitingResponse};

@@ -169,6 +169,7 @@ impl<C: NtpClock> Server<C> {
     /// If the buffer isn't large enough to encode the reply, this
     /// will log an error and ignore the incoming packet. A buffer
     /// as large as the message will always suffice.
+    #[allow(clippy::cast_possible_truncation)]
     pub fn handle<'a>(
         &mut self,
         client_ip: IpAddr,
@@ -312,6 +313,7 @@ impl<T: std::hash::Hash + Eq> TimestampedCache<T> {
         }
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn index(&self, item: &T) -> usize {
         use std::hash::{BuildHasher, Hasher};
 
@@ -479,6 +481,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn serialize_packet_unencrypted(send_packet: &NtpPacket) -> Vec<u8> {
         let mut buf = vec![0; 1024];
         let mut cursor = Cursor::new(buf.as_mut_slice());
@@ -489,6 +492,7 @@ mod tests {
         buf
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn serialize_packet_encrypted(send_packet: &NtpPacket, key: &dyn Cipher) -> Vec<u8> {
         let mut buf = vec![0; 1024];
         let mut cursor = Cursor::new(buf.as_mut_slice());

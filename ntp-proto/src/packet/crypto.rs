@@ -341,6 +341,7 @@ impl IdentityCipher {
 #[cfg(test)]
 impl ZeroizeOnDrop for IdentityCipher {}
 
+#[allow(clippy::cast_possible_truncation)]
 #[cfg(test)]
 impl Cipher for IdentityCipher {
     fn encrypt(

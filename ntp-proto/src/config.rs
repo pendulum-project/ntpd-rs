@@ -62,6 +62,7 @@ impl<'de> Deserialize<'de> for ThresholdPart {
             where
                 E: de::Error,
             {
+                #[allow(clippy::cast_precision_loss)]
                 self.visit_f64(v as f64)
             }
 
@@ -69,6 +70,7 @@ impl<'de> Deserialize<'de> for ThresholdPart {
             where
                 E: de::Error,
             {
+                #[allow(clippy::cast_precision_loss)]
                 self.visit_f64(v as f64)
             }
 
@@ -129,6 +131,7 @@ impl<'de> Deserialize<'de> for StepThreshold {
             where
                 E: de::Error,
             {
+                #[allow(clippy::cast_precision_loss)]
                 self.visit_f64(v as f64)
             }
 
@@ -136,6 +139,7 @@ impl<'de> Deserialize<'de> for StepThreshold {
             where
                 E: de::Error,
             {
+                #[allow(clippy::cast_precision_loss)]
                 self.visit_f64(v as f64)
             }
 
