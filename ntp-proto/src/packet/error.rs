@@ -38,12 +38,12 @@ impl<T> ParsingError<T> {
 
 impl ParsingError<std::convert::Infallible> {
     pub(super) fn generalize<U>(self) -> ParsingError<U> {
+        #[cfg(feature = "ntpv5")]
+        use ParsingError::V5;
         use ParsingError::{
             DecryptError, IncorrectLength, InvalidVersion, MalformedCookiePlaceholder,
             MalformedNonce, MalformedNtsExtensionFields,
         };
-        #[cfg(feature = "ntpv5")]
-        use ParsingError::V5;
 
         match self {
             InvalidVersion(v) => InvalidVersion(v),
