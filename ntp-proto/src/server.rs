@@ -217,10 +217,10 @@ impl<C: NtpClock> Server<C> {
             if non_nts_action == FilterAction::Ignore {
                 stats_handler.register(version, nts, ServerReason::Policy, ServerResponse::Ignore);
                 return ServerAction::Ignore;
-            } else {
-                action = ServerResponse::Deny;
-                reason = ServerReason::Policy;
             }
+
+            action = ServerResponse::Deny;
+            reason = ServerReason::Policy;
         }
 
         let mut cursor = Cursor::new(buffer);

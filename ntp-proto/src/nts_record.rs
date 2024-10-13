@@ -1661,9 +1661,8 @@ impl KeyExchangeServer {
                     // see https://docs.rs/rustls/latest/rustls/struct.Reader.html#method.read
                     if self.wants_write() {
                         return ControlFlow::Continue(self);
-                    } else {
-                        return ControlFlow::Break(self.end_of_file());
                     }
+                    return ControlFlow::Break(self.end_of_file());
                 }
                 Ok(n) => {
                     match self.state {
