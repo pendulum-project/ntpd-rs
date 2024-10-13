@@ -761,7 +761,7 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
                 leap_indicator: filter.last_measurement.leap,
                 last_update: filter.last_iter,
             }),
-            _ => None,
+            SourceStateInner::Initial(_) => None,
         }
     }
 
@@ -869,16 +869,17 @@ impl<
     }
 
     fn observe(&self) -> super::super::ObservableSourceTimedata {
-        self.state
-            .snapshot(&self.index, &self.algo_config)
-            .map_or(ObservableSourceTimedata {
+        self.state.snapshot(&self.index, &self.algo_config).map_or(
+            ObservableSourceTimedata {
                 offset: NtpDuration::ZERO,
                 uncertainty: NtpDuration::MAX,
                 delay: NtpDuration::MAX,
                 remote_delay: NtpDuration::MAX,
                 remote_uncertainty: NtpDuration::MAX,
                 last_update: NtpTimestamp::default(),
-            }, |snapshot| snapshot.observe())
+            },
+            |snapshot| snapshot.observe(),
+        )
     }
 }
 
@@ -971,7 +972,7 @@ mod tests {
         }));
         source.process_offset_steering(-1800.0);
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -1019,7 +1020,7 @@ mod tests {
         }));
         source.process_offset_steering(1800.0);
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -1123,7 +1124,7 @@ mod tests {
         );
 
         source.update_self_using_raw_measurement(
-            &SourceDefaultsConfig::default(),
+            SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay,
@@ -1199,7 +1200,7 @@ mod tests {
         );
 
         source.update_self_using_raw_measurement(
-            &SourceDefaultsConfig::default(),
+            SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay,
@@ -1821,7 +1822,7 @@ mod tests {
         let config = SourceDefaultsConfig::default();
         let algo_config = AlgorithmConfig {
             poll_interval_hysteresis: 2,
-            ..Default::default()
+            ..AlgorithmConfig::default()
         };
 
         let base = NtpTimestamp::from_fixed_int(0);
@@ -1947,7 +1948,7 @@ mod tests {
     fn test_wander_estimation() {
         let algo_config = AlgorithmConfig {
             precision_hysteresis: 2,
-            ..Default::default()
+            ..AlgorithmConfig::default()
         };
 
         let base = NtpTimestamp::from_fixed_int(0);
