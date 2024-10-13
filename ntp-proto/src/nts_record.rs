@@ -1438,11 +1438,16 @@ impl KeyExchangeServerDecoder {
         #[cfg(feature = "ntpv5")]
         use NtsRecord::DraftId;
         use NtsRecord::{
-            AeadAlgorithm, EndOfMessage, Error, FixedKeyRequest, KeepAlive, NewCookie,
-            NextProtocol, NtpServerDeny, Port, Server, SupportedAlgorithmList, Unknown, Warning,
+            AeadAlgorithm, EndOfMessage, Error, NewCookie, NextProtocol, Port, Server, Unknown,
+            Warning,
         };
+        #[cfg(feature = "nts-pool")]
+        use NtsRecord::{FixedKeyRequest, KeepAlive, NtpServerDeny, SupportedAlgorithmList};
 
+        #[cfg(feature = "nts-pool")]
         let mut state = self;
+        #[cfg(not(feature = "nts-pool"))]
+        let state = self;
 
         match record {
             EndOfMessage => {
