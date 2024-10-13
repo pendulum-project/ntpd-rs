@@ -256,10 +256,12 @@ fn chi_1(chi: f64) -> f64 {
 }
 
 impl AveragingBuffer {
+    #[allow(clippy::cast_precision_loss)]
     fn mean(&self) -> f64 {
         self.data.iter().sum::<f64>() / (self.data.len() as f64)
     }
 
+    #[allow(clippy::cast_precision_loss)]
     fn variance(&self) -> f64 {
         let mean = self.mean();
         self.data.iter().map(|v| sqr(v - mean)).sum::<f64>() / ((self.data.len() - 1) as f64)
@@ -606,6 +608,7 @@ impl SourceState {
         }
     }
 
+    #[allow(clippy::cast_sign_loss)]
     fn snapshot<Index: Copy>(
         &self,
         index: Index,

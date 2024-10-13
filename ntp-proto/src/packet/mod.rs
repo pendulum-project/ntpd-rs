@@ -172,6 +172,7 @@ impl NtpHeaderV3V4 {
         }
     }
 
+    #[allow(clippy::cast_possible_wrap)]
     fn deserialize(data: &[u8]) -> Result<(Self, usize), ParsingError<std::convert::Infallible>> {
         if data.len() < Self::WIRE_LENGTH {
             return Err(ParsingError::IncorrectLength);
@@ -196,6 +197,7 @@ impl NtpHeaderV3V4 {
         ))
     }
 
+    #[allow(clippy::cast_sign_loss)]
     fn serialize(&self, mut w: impl NonBlockingWrite, version: u8) -> std::io::Result<()> {
         w.write_all(&[(self.leap.to_bits() << 6) | (version << 3) | self.mode.to_bits()])?;
         w.write_all(&[self.stratum, self.poll.as_byte(), self.precision as u8])?;
@@ -428,6 +430,7 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     #[cfg(test)]
     pub fn serialize_without_encryption_vec(
         &self,
@@ -444,6 +447,7 @@ impl<'a> NtpPacket<'a> {
         Ok(buffer)
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     pub fn serialize(
         &self,
         w: &mut Cursor<&mut [u8]>,
@@ -492,7 +496,9 @@ impl<'a> NtpPacket<'a> {
         Ok(())
     }
 
-    #[must_use] pub fn nts_poll_message(
+    #[allow(clippy::cast_possible_truncation)]
+    #[must_use]
+    pub fn nts_poll_message(
         cookie: &'a [u8],
         new_cookies: u8,
         poll_interval: PollInterval,
@@ -529,8 +535,10 @@ impl<'a> NtpPacket<'a> {
         )
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     #[cfg(feature = "ntpv5")]
-    #[must_use] pub fn nts_poll_message_v5(
+    #[must_use]
+    pub fn nts_poll_message_v5(
         cookie: &'a [u8],
         new_cookies: u8,
         poll_interval: PollInterval,
@@ -1416,6 +1424,7 @@ impl<'a> Default for NtpPacket<'a> {
     }
 }
 
+#[allow(clippy::cast_possible_truncation)]
 #[cfg(test)]
 mod tests {
     use crate::{

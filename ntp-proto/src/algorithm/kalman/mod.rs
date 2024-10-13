@@ -589,6 +589,7 @@ mod tests {
         algo.steer_offset(-1000.0, 0.0);
     }
 
+    #[allow(clippy::float_cmp)]
     #[test]
     fn test_jumps_update_state() {
         let synchronization_config = SynchronizationConfig::default();

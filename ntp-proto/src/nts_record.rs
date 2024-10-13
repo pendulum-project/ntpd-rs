@@ -1,3 +1,4 @@
+#![allow(clippy::cast_possible_truncation)]
 use std::{
     fmt::Display,
     io::{Read, Write},
@@ -882,7 +883,7 @@ impl AeadAlgorithm {
     }
 
     #[cfg(feature = "nts-pool")]
-    fn key_size(&self) -> u16 {
+    fn key_size(self) -> u16 {
         match self {
             AeadAlgorithm::AeadAesSivCmac256 => AesSivCmac256::key_size() as u16,
             AeadAlgorithm::AeadAesSivCmac512 => AesSivCmac512::key_size() as u16,

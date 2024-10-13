@@ -87,6 +87,8 @@ impl BitTree {
     /// Create the substructure for a node, recursively.
     /// Max recursion depth is maximum value of data[i].1/4
     /// for any i
+    #[allow(clippy::cast_possible_truncation)]
+    #[allow(clippy::cast_sign_loss)]
     fn fill_node(&mut self, mut data: &mut [(u128, u8)], node_index: usize) {
         // distribute the data into 16 4-bit buckets
         let mut counts = [0; 16];

@@ -1,3 +1,7 @@
+#![allow(clippy::cast_lossless)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_possible_truncation)]
 use rand::{
     distributions::{Distribution, Standard},
     Rng,
@@ -259,7 +263,9 @@ impl NtpDuration {
 
     /// Convert to an f64; required for statistical calculations
     /// (e.g. in clock filtering)
-    #[must_use] pub fn to_seconds(self) -> f64 {
+    #[allow(clippy::cast_precision_loss)]
+    #[must_use]
+    pub fn to_seconds(self) -> f64 {
         // dividing by u32::MAX moves the decimal point to the right position
         self.duration as f64 / f64::from(u32::MAX)
     }

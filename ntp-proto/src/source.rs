@@ -502,6 +502,7 @@ impl<Controller: SourceController> NtpSource<Controller> {
             .max(self.remote_min_poll_interval)
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     #[cfg_attr(not(feature = "ntpv5"), allow(unused_mut))]
     pub fn handle_timer(&mut self) -> NtpSourceActionIterator<Controller::SourceMessage> {
         if !self.reach.is_reachable() && self.tries >= STARTUP_TRIES_THRESHOLD {
@@ -807,6 +808,7 @@ impl<Controller: SourceController> NtpSource<Controller> {
     }
 }
 
+#[allow(clippy::cast_possible_truncation)]
 #[cfg(test)]
 mod test {
     use crate::{packet::NoCipher, time_types::PollIntervalLimits, NtpClock};

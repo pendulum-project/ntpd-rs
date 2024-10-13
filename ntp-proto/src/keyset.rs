@@ -64,7 +64,9 @@ impl KeySetProvider {
     }
 
     #[cfg(feature = "__internal-fuzz")]
-    #[must_use] pub fn dangerous_new_deterministic(history: usize) -> Self {
+    #[allow(clippy::cast_possible_truncation)]
+    #[must_use]
+    pub fn dangerous_new_deterministic(history: usize) -> Self {
         KeySetProvider {
             current: Arc::new(KeySet {
                 keys: vec![AesSivCmac512::new(
@@ -78,6 +80,7 @@ impl KeySetProvider {
     }
 
     /// Rotate a new key in as primary, forgetting an old one if needed
+    #[allow(clippy::cast_possible_truncation)]
     pub fn rotate(&mut self) {
         let next_key = AesSivCmac512::new(aes_siv::Aes256SivAead::generate_key(rand::thread_rng()));
         let mut keys = Vec::with_capacity((self.history + 1).min(self.current.keys.len() + 1));
@@ -164,6 +167,7 @@ impl KeySet {
         self.encode_cookie(cookie)
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     pub(crate) fn encode_cookie(&self, cookie: &DecodedServerCookie) -> Vec<u8> {
         let mut output = cookie.plaintext();
         let plaintext_length = output.as_slice().len();
