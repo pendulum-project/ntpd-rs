@@ -3129,7 +3129,7 @@ mod test {
         let (mut client, server) = client_server_pair(&ClientType::Uncertified);
 
         let mut buffer = Vec::with_capacity(1024);
-        for record in &NtsRecord::client_key_exchange_records([]) {
+        for record in NtsRecord::client_key_exchange_records([]).iter() {
             record.write(&mut buffer).unwrap();
         }
         client.tls_connection.writer().write_all(&buffer).unwrap();
@@ -3227,7 +3227,7 @@ mod test {
     #[test]
     fn test_keyexchange_invalid_input() {
         let mut buffer = Vec::with_capacity(1024);
-        for record in &NtsRecord::client_key_exchange_records([]) {
+        for record in NtsRecord::client_key_exchange_records([]).iter() {
             record.write(&mut buffer).unwrap();
         }
 
