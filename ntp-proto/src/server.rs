@@ -409,6 +409,7 @@ impl<'de> Deserialize<'de> for IpSubnet {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 #[cfg(test)]
 mod tests {
     use std::net::{Ipv4Addr, Ipv6Addr};
