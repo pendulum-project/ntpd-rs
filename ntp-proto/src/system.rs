@@ -198,6 +198,9 @@ pub struct System<SourceId, Controller> {
 impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId = SourceId>>
     System<SourceId, Controller>
 {
+    /// # Errors
+    ///
+    /// Returns `NtpClock::Error` if the `Controller` can't be created.
     pub fn new(
         clock: Controller::Clock,
         synchronization_config: SynchronizationConfig,
@@ -236,10 +239,16 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         self.system
     }
 
+    /// # Errors
+    ///
+    /// Returns `NtpClock::Error` if controlling the `Controller` fails.
     pub fn check_clock_access(&mut self) -> Result<(), <Controller::Clock as NtpClock>::Error> {
         self.ensure_controller_control()
     }
 
+    /// # Errors
+    ///
+    /// Returns `NtpClock::Error` if controlling the `Controller` fails.
     fn ensure_controller_control(&mut self) -> Result<(), <Controller::Clock as NtpClock>::Error> {
         if !self.controller_took_control {
             self.controller.take_control()?;
@@ -290,6 +299,9 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         ))
     }
 
+    /// # Errors
+    ///
+    /// Returns `NtpClock::Error` if removing the source fails.
     pub fn handle_source_remove(
         &mut self,
         id: SourceId,
@@ -299,6 +311,13 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// Returns `NtpClock::Error` if synchronization can't be updated.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the source does not exist.
     pub fn handle_source_update(
         &mut self,
         id: SourceId,

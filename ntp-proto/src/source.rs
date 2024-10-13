@@ -237,6 +237,9 @@ pub struct NtpSourceSnapshot {
 }
 
 impl NtpSourceSnapshot {
+    /// # Errors
+    ///
+    /// Returns `AcceptSynchronizationError` if source is rejected.
     pub fn accept_synchronization(
         &self,
         local_stratum: u8,
@@ -523,6 +526,9 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
             .max(self.remote_min_poll_interval)
     }
 
+    /// # Panics
+    ///
+    /// Panics if the packet can't be serialized.
     #[allow(clippy::cast_possible_truncation)]
     #[cfg_attr(not(feature = "ntpv5"), allow(unused_mut))]
     pub fn handle_timer(&mut self) -> NtpSourceActionIterator<Controller::SourceMessage> {
