@@ -562,7 +562,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Couldn't create controller.")]
+    #[should_panic(expected = "Threshold exceeded")]
     fn jumps_add_absolutely() {
         let synchronization_config = SynchronizationConfig {
             minimum_agreeing_sources: 1,
@@ -682,7 +682,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Couldn't create controller.")]
+    #[should_panic(expected = "Threshold exceeded")]
     fn test_large_offset_eventually_panics() {
         let synchronization_config = SynchronizationConfig {
             minimum_agreeing_sources: 1,
@@ -739,7 +739,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Couldn't create controller.")]
+    #[should_panic(expected = "Threshold exceeded")]
     fn test_backward_step_panics_before_steer() {
         let synchronization_config = SynchronizationConfig {
             minimum_agreeing_sources: 1,
