@@ -1316,7 +1316,7 @@ impl KeyExchangeClient {
         // We use an intermediary buffer to ensure that all records are sent at once.
         // This should not be needed, but works around issues in some NTS-ke server implementations
         let mut buffer = Vec::with_capacity(1024);
-        for record in &NtsRecord::client_key_exchange_records(denied_servers) {
+        for record in NtsRecord::client_key_exchange_records(denied_servers).iter() {
             record.write(&mut buffer)?;
         }
         client.tls_connection.writer().write_all(&buffer)?;

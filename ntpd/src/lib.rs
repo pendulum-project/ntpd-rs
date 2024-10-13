@@ -1,5 +1,6 @@
 #![deny(clippy::pedantic)]
 #![allow(clippy::module_name_repetitions)]
+#![allow(clippy::explicit_iter_loop)] // breaking on msrv
 #![forbid(unsafe_code)]
 
 mod ctl;

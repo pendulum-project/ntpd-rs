@@ -923,7 +923,6 @@ mod tests {
     fn client_key_exchange_message_length() -> usize {
         let mut buffer = Vec::with_capacity(1024);
 
-        #[allow(clippy::explicit_iter_loop)]
         for record in ntp_proto::NtsRecord::client_key_exchange_records(vec![]).iter() {
             record.write(&mut buffer).unwrap();
         }
