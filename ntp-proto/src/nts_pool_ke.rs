@@ -126,9 +126,9 @@ impl ClientToPoolDecoder {
         use self::AeadAlgorithm as Algorithm;
         use ControlFlow::{Break, Continue};
         use KeyExchangeError::{NoValidAlgorithm, NoValidProtocol};
-        use NtsRecord::{
-            AeadAlgorithm, DraftId, EndOfMessage, Error, NextProtocol, NtpServerDeny, Warning,
-        };
+        #[cfg(feature = "ntpv5")]
+        use NtsRecord::DraftId;
+        use NtsRecord::{AeadAlgorithm, EndOfMessage, Error, NextProtocol, NtpServerDeny, Warning};
 
         let mut state = self;
 
@@ -269,7 +269,9 @@ impl PoolToServerDecoder {
         use self::AeadAlgorithm as Algorithm;
         use ControlFlow::{Break, Continue};
         use KeyExchangeError::{NoValidAlgorithm, NoValidProtocol};
-        use NtsRecord::{AeadAlgorithm, DraftId, EndOfMessage, Error, NextProtocol, Warning};
+        #[cfg(feature = "ntpv5")]
+        use NtsRecord::DraftId;
+        use NtsRecord::{AeadAlgorithm, EndOfMessage, Error, NextProtocol, Warning};
 
         let mut state = self;
 
