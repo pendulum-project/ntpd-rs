@@ -109,7 +109,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 next_update: None,
             };
         }
-        for (_, (state, _)) in &mut self.sources {
+        for (state, _) in self.sources.values_mut() {
             if let Some(ref mut snapshot) = state {
                 snapshot.state = snapshot.state.progress_time(time, snapshot.wander);
             }
@@ -130,7 +130,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                     },
                 )
                 .copied()
-                .collect(),
+                .collect::<Vec<SourceSnapshot<SourceId>>>(),
         );
 
         if let Some(combined) = combine(&selection, &self.algo_config) {
