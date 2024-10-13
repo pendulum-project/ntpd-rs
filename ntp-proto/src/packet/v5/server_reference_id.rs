@@ -239,7 +239,7 @@ impl Debug for RemoteBloomFilter {
             .field("last_requested", &self.last_requested)
             .field("next_to_request", &self.next_to_request)
             .field("is_filled", &self.is_filled)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
