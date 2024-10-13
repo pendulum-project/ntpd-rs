@@ -102,7 +102,7 @@ impl ReferenceIdRequest {
         Some(ReferenceIdResponse { bytes })
     }
 
-    pub fn serialize(&self, mut writer: impl NonBlockingWrite) -> std::io::Result<()> {
+    pub fn serialize(self, mut writer: impl NonBlockingWrite) -> std::io::Result<()> {
         let payload_len = self.payload_len;
         let ef_len: u16 = payload_len + 4;
 
@@ -132,11 +132,11 @@ impl ReferenceIdRequest {
         })
     }
 
-    pub const fn offset(&self) -> u16 {
+    pub const fn offset(self) -> u16 {
         self.offset
     }
 
-    pub const fn payload_len(&self) -> u16 {
+    pub const fn payload_len(self) -> u16 {
         self.payload_len
     }
 }

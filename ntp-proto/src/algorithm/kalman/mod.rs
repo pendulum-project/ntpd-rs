@@ -118,7 +118,8 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
         let selection = select::select(
             &self.synchronization_config,
             &self.algo_config,
-            self.sources
+            &self
+                .sources
                 .iter()
                 .filter_map(
                     |(_, (state, usable))| {

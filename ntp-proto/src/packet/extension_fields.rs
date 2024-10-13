@@ -533,14 +533,14 @@ impl<'a> ExtensionField<'a> {
     }
 
     fn decode(
-        raw: RawExtensionField<'a>,
+        raw: &RawExtensionField<'a>,
         #[cfg_attr(not(feature = "ntpv5"), allow(unused_variables))]
         extension_header_version: ExtensionHeaderVersion,
     ) -> Result<Self, ParsingError<std::convert::Infallible>> {
         type EF<'a> = ExtensionField<'a>;
         type TypeId = ExtensionFieldTypeId;
 
-        let message = &raw.message_bytes;
+        let message = raw.message_bytes;
 
         match raw.type_id {
             TypeId::UniqueIdentifier => EF::decode_unique_identifier(message),
@@ -699,8 +699,8 @@ impl<'a> ExtensionFieldData<'a> {
                 // All previous untrusted fields are now validated
                 efdata.authenticated.append(&mut efdata.untrusted);
             } else {
-                let field =
-                    ExtensionField::decode(field, version).map_err(super::error::ParsingError::generalize)?;
+                let field = ExtensionField::decode(&field, version)
+                    .map_err(super::error::ParsingError::generalize)?;
                 efdata.untrusted.push(field);
             }
         }
@@ -783,7 +783,7 @@ impl<'a> RawEncryptedField<'a> {
                 // TODO: Discuss whether we want this check
                 Err(ParsingError::MalformedNtsExtensionFields)
             } else {
-                Ok(ExtensionField::decode(encrypted_field, version)
+                Ok(ExtensionField::decode(&encrypted_field, version)
                     .map_err(super::error::ParsingError::generalize)?
                     .into_owned())
             }
@@ -1010,7 +1010,7 @@ mod tests {
             type_id: ExtensionFieldTypeId::NtsCookiePlaceholder,
             message_bytes: &[1; COOKIE_LENGTH],
         };
-        let output = ExtensionField::decode(raw, ExtensionHeaderVersion::V4).unwrap_err();
+        let output = ExtensionField::decode(&raw, ExtensionHeaderVersion::V4).unwrap_err();
 
         assert!(matches!(output, ParsingError::MalformedCookiePlaceholder));
 
@@ -1018,7 +1018,7 @@ mod tests {
             type_id: ExtensionFieldTypeId::NtsCookiePlaceholder,
             message_bytes: &[0; COOKIE_LENGTH],
         };
-        let output = ExtensionField::decode(raw, ExtensionHeaderVersion::V4).unwrap();
+        let output = ExtensionField::decode(&raw, ExtensionHeaderVersion::V4).unwrap();
 
         let ExtensionField::NtsCookiePlaceholder { cookie_length } = output else {
             panic!("incorrect variant");
@@ -1051,7 +1051,7 @@ mod tests {
         data.extend(&[0]); // Padding
 
         let raw = RawExtensionField::deserialize(&data, 4, ExtensionHeaderVersion::V5).unwrap();
-        let ef = ExtensionField::decode(raw, ExtensionHeaderVersion::V4).unwrap();
+        let ef = ExtensionField::decode(&raw, ExtensionHeaderVersion::V4).unwrap();
 
         let ExtensionField::DraftIdentification(ref parsed) = ef else {
             panic!("Unexpected extension field {ef:?}... expected DraftIdentification");
