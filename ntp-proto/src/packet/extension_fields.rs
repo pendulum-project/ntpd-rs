@@ -130,9 +130,12 @@ impl<'a> ExtensionField<'a> {
 
     #[must_use]
     pub fn into_owned(self) -> ExtensionField<'static> {
+        #[cfg(feature = "ntpv5")]
         use ExtensionField::{
-            DraftIdentification, InvalidNtsEncryptedField, NtsCookie, NtsCookiePlaceholder,
-            Padding, ReferenceIdRequest, ReferenceIdResponse, UniqueIdentifier, Unknown,
+            DraftIdentification, Padding, ReferenceIdRequest, ReferenceIdResponse,
+        };
+        use ExtensionField::{
+            InvalidNtsEncryptedField, NtsCookie, NtsCookiePlaceholder, UniqueIdentifier, Unknown,
         };
 
         match self {
@@ -168,9 +171,12 @@ impl<'a> ExtensionField<'a> {
         minimum_size: u16,
         version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
+        #[cfg(feature = "ntpv5")]
         use ExtensionField::{
-            DraftIdentification, InvalidNtsEncryptedField, NtsCookie, NtsCookiePlaceholder,
-            Padding, ReferenceIdRequest, ReferenceIdResponse, UniqueIdentifier, Unknown,
+            DraftIdentification, Padding, ReferenceIdRequest, ReferenceIdResponse,
+        };
+        use ExtensionField::{
+            InvalidNtsEncryptedField, NtsCookie, NtsCookiePlaceholder, UniqueIdentifier, Unknown,
         };
 
         match self {

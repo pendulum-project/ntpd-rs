@@ -1435,8 +1435,10 @@ impl KeyExchangeServerDecoder {
         record: NtsRecord,
     ) -> ControlFlow<Result<ServerKeyExchangeData, KeyExchangeError>, Self> {
         use ControlFlow::{Break, Continue};
+        #[cfg(feature = "ntpv5")]
+        use NtsRecord::DraftId;
         use NtsRecord::{
-            AeadAlgorithm, DraftId, EndOfMessage, Error, FixedKeyRequest, KeepAlive, NewCookie,
+            AeadAlgorithm, EndOfMessage, Error, FixedKeyRequest, KeepAlive, NewCookie,
             NextProtocol, NtpServerDeny, Port, Server, SupportedAlgorithmList, Unknown, Warning,
         };
 
@@ -1494,6 +1496,7 @@ impl KeyExchangeServerDecoder {
                 state.keep_alive = Some(true);
                 Continue(state)
             }
+            #[allow(clippy::used_underscore_binding)]
             #[cfg(feature = "nts-pool")]
             SupportedAlgorithmList {
                 supported_algorithms: _supported_algorithms,

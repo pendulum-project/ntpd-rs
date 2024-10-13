@@ -16,9 +16,11 @@ pub enum ParsingError<T> {
 
 impl<T> ParsingError<T> {
     pub(super) fn get_decrypt_error<U>(self) -> Result<T, ParsingError<U>> {
+        #[cfg(feature = "ntpv5")]
+        use ParsingError::V5;
         use ParsingError::{
             DecryptError, IncorrectLength, InvalidVersion, MalformedCookiePlaceholder,
-            MalformedNonce, MalformedNtsExtensionFields, V5,
+            MalformedNonce, MalformedNtsExtensionFields,
         };
 
         match self {
@@ -38,8 +40,10 @@ impl ParsingError<std::convert::Infallible> {
     pub(super) fn generalize<U>(self) -> ParsingError<U> {
         use ParsingError::{
             DecryptError, IncorrectLength, InvalidVersion, MalformedCookiePlaceholder,
-            MalformedNonce, MalformedNtsExtensionFields, V5,
+            MalformedNonce, MalformedNtsExtensionFields,
         };
+        #[cfg(feature = "ntpv5")]
+        use ParsingError::V5;
 
         match self {
             InvalidVersion(v) => InvalidVersion(v),
