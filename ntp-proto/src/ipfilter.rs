@@ -204,12 +204,11 @@ impl IpFilter {
     /// Complexity: O(1)
     pub fn is_in(&self, addr: &IpAddr) -> bool {
         match addr {
-            IpAddr::V4(addr) => self.is_in4(addr),
-            IpAddr::V6(addr) => self.is_in6(addr),
+            IpAddr::V4(addr) => self.is_in4(*addr),
+            IpAddr::V6(addr) => self.is_in6(*addr),
         }
     }
 
-    fn is_in4(&self, addr: &Ipv4Addr) -> bool {
     /// # Panics
     ///
     /// Panics if `addr` has invalid octets.
@@ -218,7 +217,7 @@ impl IpFilter {
             .lookup((u32::from_be_bytes(addr.octets()) as u128) << 96)
     }
 
-    fn is_in6(&self, addr: &Ipv6Addr) -> bool {
+    fn is_in6(&self, addr: Ipv6Addr) -> bool {
         self.ipv6_filter.lookup(u128::from_be_bytes(addr.octets()))
     }
 }
@@ -258,6 +257,7 @@ pub mod fuzz {
         false
     }
 
+    #[allow(clippy::missing_panics_doc)]
     pub fn fuzz_ipfilter(nets: &[IpSubnet], addr: &[IpAddr]) {
         let filter = IpFilter::new(nets);
 

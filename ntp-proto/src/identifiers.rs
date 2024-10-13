@@ -33,20 +33,20 @@ impl ReferenceId {
         ReferenceId(value)
     }
 
-    pub(crate) fn is_deny(&self) -> bool {
-        *self == Self::KISS_DENY
+    pub(crate) fn is_deny(self) -> bool {
+        self == Self::KISS_DENY
     }
 
-    pub(crate) fn is_rate(&self) -> bool {
-        *self == Self::KISS_RATE
+    pub(crate) fn is_rate(self) -> bool {
+        self == Self::KISS_RATE
     }
 
-    pub(crate) fn is_rstr(&self) -> bool {
-        *self == Self::KISS_RSTR
+    pub(crate) fn is_rstr(self) -> bool {
+        self == Self::KISS_RSTR
     }
 
-    pub(crate) fn is_ntsn(&self) -> bool {
-        *self == Self::KISS_NTSN
+    pub(crate) fn is_ntsn(self) -> bool {
+        self == Self::KISS_NTSN
     }
 
     pub(crate) fn to_bytes(self) -> [u8; 4] {
