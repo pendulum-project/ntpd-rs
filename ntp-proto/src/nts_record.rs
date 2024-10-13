@@ -1444,10 +1444,7 @@ impl KeyExchangeServerDecoder {
         #[cfg(feature = "nts-pool")]
         use NtsRecord::{FixedKeyRequest, KeepAlive, NtpServerDeny, SupportedAlgorithmList};
 
-        #[cfg(feature = "nts-pool")]
         let mut state = self;
-        #[cfg(not(feature = "nts-pool"))]
-        let state = self;
 
         match record {
             EndOfMessage => {
