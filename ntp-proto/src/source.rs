@@ -727,13 +727,13 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
             warn!("Received packet with invalid mode");
             actions!()
         } else {
-            self.process_message(message, local_clock_time, send_time, recv_time)
+            self.process_message(&message, local_clock_time, send_time, recv_time)
         }
     }
 
     fn process_message(
         &mut self,
-        message: NtpPacket,
+        message: &NtpPacket,
         local_clock_time: NtpInstant,
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
@@ -792,8 +792,7 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
         }
 
         // generate and handle measurement
-        let measurement =
-            Measurement::from_packet(&message, send_time, recv_time, local_clock_time);
+        let measurement = Measurement::from_packet(message, send_time, recv_time, local_clock_time);
 
         let controller_message = self.controller.handle_measurement(measurement);
 

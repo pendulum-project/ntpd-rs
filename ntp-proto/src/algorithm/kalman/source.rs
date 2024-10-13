@@ -449,7 +449,7 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
     /// not so much that each individual poll message gives us very little new information.
     fn update_desired_poll(
         &mut self,
-        source_defaults_config: &SourceDefaultsConfig,
+        source_defaults_config: SourceDefaultsConfig,
         algo_config: &AlgorithmConfig,
         p: f64,
         weight: f64,
@@ -527,7 +527,7 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
     /// Update our estimates based on a new measurement.
     fn update(
         &mut self,
-        source_defaults_config: &SourceDefaultsConfig,
+        source_defaults_config: SourceDefaultsConfig,
         algo_config: &AlgorithmConfig,
         measurement: Measurement<D>,
     ) -> bool {
@@ -634,7 +634,7 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
     // Returns whether the clock may need adjusting.
     pub fn update_self_using_measurement(
         &mut self,
-        source_defaults_config: &SourceDefaultsConfig,
+        source_defaults_config: SourceDefaultsConfig,
         algo_config: &AlgorithmConfig,
         mut measurement: Measurement<D>,
     ) -> bool {
@@ -650,7 +650,7 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
 
     fn update_self_using_raw_measurement(
         &mut self,
-        source_defaults_config: &SourceDefaultsConfig,
+        source_defaults_config: SourceDefaultsConfig,
         algo_config: &AlgorithmConfig,
         measurement: Measurement<D>,
     ) -> bool {
@@ -765,7 +765,7 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
         }
     }
 
-    pub fn get_desired_poll(&self, limits: &PollIntervalLimits) -> PollInterval {
+    pub fn get_desired_poll(&self, limits: PollIntervalLimits) -> PollInterval {
         match &self.0 {
             SourceStateInner::Initial(_) => limits.min,
             SourceStateInner::Stable(filter) => filter.desired_poll_interval,
@@ -851,7 +851,7 @@ impl<
         measurement: Measurement<Self::MeasurementDelay>,
     ) -> Option<Self::SourceMessage> {
         if self.state.update_self_using_measurement(
-            &self.source_defaults_config,
+            self.source_defaults_config,
             &self.algo_config,
             measurement,
         ) {
@@ -865,7 +865,7 @@ impl<
 
     fn desired_poll_interval(&self) -> PollInterval {
         self.state
-            .get_desired_poll(&self.source_defaults_config.poll_interval_limits)
+            .get_desired_poll(self.source_defaults_config.poll_interval_limits)
     }
 
     fn observe(&self) -> super::super::ObservableSourceTimedata {
@@ -923,7 +923,7 @@ mod tests {
             last_iter: base,
         }));
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -1382,7 +1382,7 @@ mod tests {
             .snapshot(0_usize, &AlgorithmConfig::default())
             .is_none());
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay,
@@ -1406,7 +1406,7 @@ mod tests {
                 > 1.0
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay,
@@ -1430,7 +1430,7 @@ mod tests {
                 > 1.0
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay,
@@ -1454,7 +1454,7 @@ mod tests {
                 > 1.0
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay,
@@ -1478,7 +1478,7 @@ mod tests {
                 > 1.0
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay,
@@ -1502,7 +1502,7 @@ mod tests {
                 > 1.0
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay,
@@ -1526,7 +1526,7 @@ mod tests {
                 > 1.0
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay,
@@ -1550,7 +1550,7 @@ mod tests {
                 > 1.0
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay,
@@ -1611,7 +1611,7 @@ mod tests {
             .snapshot(0_usize, &AlgorithmConfig::default())
             .is_none());
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -1635,7 +1635,7 @@ mod tests {
                 > 1.0
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -1659,7 +1659,7 @@ mod tests {
                 > 1.0
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -1683,7 +1683,7 @@ mod tests {
                 > 1.0
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -1708,7 +1708,7 @@ mod tests {
                 > 1.0
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -1732,7 +1732,7 @@ mod tests {
                 > 1.0
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -1756,7 +1756,7 @@ mod tests {
                 > 1.0
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -1780,7 +1780,7 @@ mod tests {
                 > 1.0
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            SourceDefaultsConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -1860,59 +1860,59 @@ mod tests {
         let pollup = source
             .desired_poll_interval
             .inc(PollIntervalLimits::default());
-        source.update_desired_poll(&config, &algo_config, 1.0, 1.0, baseinterval * 2.);
+        source.update_desired_poll(config, &algo_config, 1.0, 1.0, baseinterval * 2.);
         assert_eq!(source.poll_score, 0);
         assert_eq!(
             source.desired_poll_interval,
             PollIntervalLimits::default().min
         );
-        source.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval * 2.);
+        source.update_desired_poll(config, &algo_config, 1.0, 0.0, baseinterval * 2.);
         assert_eq!(source.poll_score, -1);
         assert_eq!(
             source.desired_poll_interval,
             PollIntervalLimits::default().min
         );
-        source.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval * 2.);
+        source.update_desired_poll(config, &algo_config, 1.0, 0.0, baseinterval * 2.);
         assert_eq!(source.poll_score, 0);
         assert_eq!(source.desired_poll_interval, pollup);
-        source.update_desired_poll(&config, &algo_config, 1.0, 1.0, baseinterval * 3.);
+        source.update_desired_poll(config, &algo_config, 1.0, 1.0, baseinterval * 3.);
         assert_eq!(source.poll_score, 0);
         assert_eq!(source.desired_poll_interval, pollup);
-        source.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval);
+        source.update_desired_poll(config, &algo_config, 1.0, 0.0, baseinterval);
         assert_eq!(source.poll_score, 0);
         assert_eq!(source.desired_poll_interval, pollup);
-        source.update_desired_poll(&config, &algo_config, 0.0, 0.0, baseinterval * 3.);
+        source.update_desired_poll(config, &algo_config, 0.0, 0.0, baseinterval * 3.);
         assert_eq!(source.poll_score, 0);
         assert_eq!(
             source.desired_poll_interval,
             PollIntervalLimits::default().min
         );
-        source.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval * 2.);
+        source.update_desired_poll(config, &algo_config, 1.0, 0.0, baseinterval * 2.);
         assert_eq!(source.poll_score, -1);
         assert_eq!(
             source.desired_poll_interval,
             PollIntervalLimits::default().min
         );
-        source.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval * 2.);
+        source.update_desired_poll(config, &algo_config, 1.0, 0.0, baseinterval * 2.);
         assert_eq!(source.poll_score, 0);
         assert_eq!(source.desired_poll_interval, pollup);
-        source.update_desired_poll(&config, &algo_config, 1.0, 1.0, baseinterval);
+        source.update_desired_poll(config, &algo_config, 1.0, 1.0, baseinterval);
         assert_eq!(source.poll_score, 1);
         assert_eq!(source.desired_poll_interval, pollup);
-        source.update_desired_poll(&config, &algo_config, 1.0, 1.0, baseinterval);
+        source.update_desired_poll(config, &algo_config, 1.0, 1.0, baseinterval);
         assert_eq!(source.poll_score, 0);
         assert_eq!(
             source.desired_poll_interval,
             PollIntervalLimits::default().min
         );
-        source.update_desired_poll(&config, &algo_config, 1.0, 0.0, baseinterval);
+        source.update_desired_poll(config, &algo_config, 1.0, 0.0, baseinterval);
         assert_eq!(source.poll_score, -1);
         assert_eq!(
             source.desired_poll_interval,
             PollIntervalLimits::default().min
         );
         source.update_desired_poll(
-            &config,
+            config,
             &algo_config,
             1.0,
             (algo_config.poll_interval_high_weight + algo_config.poll_interval_low_weight) / 2.,
@@ -1923,14 +1923,14 @@ mod tests {
             source.desired_poll_interval,
             PollIntervalLimits::default().min
         );
-        source.update_desired_poll(&config, &algo_config, 1.0, 1.0, baseinterval);
+        source.update_desired_poll(config, &algo_config, 1.0, 1.0, baseinterval);
         assert_eq!(source.poll_score, 1);
         assert_eq!(
             source.desired_poll_interval,
             PollIntervalLimits::default().min
         );
         source.update_desired_poll(
-            &config,
+            config,
             &algo_config,
             1.0,
             (algo_config.poll_interval_high_weight + algo_config.poll_interval_low_weight) / 2.,

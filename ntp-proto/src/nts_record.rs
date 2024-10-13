@@ -859,7 +859,7 @@ impl AeadAlgorithm {
         &[Self::AeadAesSivCmac512, Self::AeadAesSivCmac256];
 
     pub(crate) fn extract_nts_keys<ConnectionData>(
-        &self,
+        self,
         protocol: ProtocolId,
         tls_connection: &tls_utils::ConnectionCommon<ConnectionData>,
     ) -> Result<NtsKeys, tls_utils::Error> {
@@ -886,7 +886,7 @@ impl AeadAlgorithm {
     }
 
     #[cfg(feature = "nts-pool")]
-    fn try_into_nts_keys(&self, RequestedKeys { c2s, s2c }: &RequestedKeys) -> Option<NtsKeys> {
+    fn try_into_nts_keys(self, RequestedKeys { c2s, s2c }: &RequestedKeys) -> Option<NtsKeys> {
         match self {
             AeadAlgorithm::AeadAesSivCmac256 => {
                 let c2s = Box::new(AesSivCmac256::from_key_bytes(c2s).ok()?);
@@ -1662,7 +1662,7 @@ impl KeyExchangeServer {
                                 // all records have been decoded; send a response
                                 // continues for a clean shutdown of the connection by the client
                                 self.state = State::Done;
-                                return self.decoder_done(data);
+                                return self.decoder_done(&data);
                             }
                             ControlFlow::Break(Err(error)) => {
                                 Self::send_error_record(&mut self.tls_connection, &error);
@@ -1772,7 +1772,7 @@ impl KeyExchangeServer {
 
         tracing::debug!(?protocol, ?algorithm, "selected AEAD algorithm");
 
-        match self.extract_nts_keys(&data) {
+        match self.extract_nts_keys(data) {
             Ok(keys) => {
                 let records = NtsRecord::server_key_exchange_records(
                     protocol,
@@ -3089,7 +3089,7 @@ mod test {
 
     #[test]
     fn test_keyexchange_roundtrip() {
-        let (mut client, server) = client_server_pair(ClientType::Uncertified);
+        let (mut client, server) = client_server_pair(&ClientType::Uncertified);
 
         let mut buffer = Vec::with_capacity(1024);
         for record in NtsRecord::client_key_exchange_records(None, []).iter() {
@@ -3115,7 +3115,7 @@ mod test {
     #[test]
     #[cfg(feature = "nts-pool")]
     fn test_keyexchange_roundtrip_fixed_not_authorized() {
-        let (mut client, server) = client_server_pair(ClientType::Uncertified);
+        let (mut client, server) = client_server_pair(&ClientType::Uncertified);
 
         let c2s: Vec<_> = (0..).take(64).collect();
         let s2c: Vec<_> = (0..).skip(64).take(64).collect();
@@ -3137,7 +3137,7 @@ mod test {
     #[test]
     #[cfg(feature = "nts-pool")]
     fn test_keyexchange_roundtrip_fixed_authorized() {
-        let (mut client, server) = client_server_pair(ClientType::Certified);
+        let (mut client, server) = client_server_pair(&ClientType::Certified);
 
         let c2s: Vec<_> = (0..).take(64).collect();
         let s2c: Vec<_> = (0..).skip(64).take(64).collect();
@@ -3167,7 +3167,7 @@ mod test {
     #[cfg(feature = "nts-pool")]
     #[test]
     fn test_supported_algos_roundtrip() {
-        let (mut client, server) = client_server_pair(ClientType::Uncertified);
+        let (mut client, server) = client_server_pair(&ClientType::Uncertified);
 
         let mut buffer = Vec::with_capacity(1024);
         for record in [
@@ -3195,7 +3195,7 @@ mod test {
         }
 
         for n in 0..buffer.len() {
-            let (mut client, server) = client_server_pair(ClientType::Uncertified);
+            let (mut client, server) = client_server_pair(&ClientType::Uncertified);
             client
                 .tls_connection
                 .writer()
