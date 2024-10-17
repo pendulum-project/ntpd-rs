@@ -388,8 +388,8 @@ impl<
                     Ok(timer) => self.handle_state_update(timer, wait),
                 }
             }
-            MsgForSystem::SockSourceUpdate(index, update) => {
-                match self.system.handle_sock_source_update(index, update) {
+            MsgForSystem::OneWaySourceUpdate(index, update) => {
+                match self.system.handle_one_way_source_update(index, update) {
                     Err(e) => unreachable!("Could not process source measurement: {}", e),
                     Ok(timer) => self.handle_state_update(timer, wait),
                 }

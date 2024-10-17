@@ -17,7 +17,7 @@ use crate::{
     source::{NtpSource, NtpSourceActionIterator, ProtocolVersion, SourceNtsData},
     time_types::NtpDuration,
 };
-use crate::{SockSource, SockSourceUpdate};
+use crate::{OneWaySource, OneWaySourceUpdate};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TimeSnapshot {
@@ -78,7 +78,7 @@ impl SystemSnapshot {
         if let Some(system_source_snapshot) = used_sources.peek() {
             let (stratum, source_id) = match system_source_snapshot {
                 SourceSnapshot::Ntp(snapshot) => (snapshot.stratum, snapshot.source_id),
-                SourceSnapshot::Sock(snapshot) => (snapshot.stratum, snapshot.source_id),
+                SourceSnapshot::OneWay(snapshot) => (snapshot.stratum, snapshot.source_id),
             };
 
             self.stratum = stratum.saturating_add(1);
@@ -252,14 +252,16 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         &mut self,
         id: SourceId,
         measurement_noise_estimate: f64,
-    ) -> Result<SockSource<Controller::SockSourceController>, <Controller::Clock as NtpClock>::Error>
-    {
+    ) -> Result<
+        OneWaySource<Controller::OneWaySourceController>,
+        <Controller::Clock as NtpClock>::Error,
+    > {
         self.ensure_controller_control()?;
         let controller = self
             .controller
-            .add_sock_source(id, measurement_noise_estimate);
+            .add_one_way_source(id, measurement_noise_estimate);
         self.sources.insert(id, None);
-        Ok(SockSource::new(controller))
+        Ok(OneWaySource::new(controller))
     }
 
     #[allow(clippy::type_complexity)]
@@ -323,16 +325,16 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         }
     }
 
-    pub fn handle_sock_source_update(
+    pub fn handle_one_way_source_update(
         &mut self,
         id: SourceId,
-        update: SockSourceUpdate<Controller::SourceMessage>,
+        update: OneWaySourceUpdate<Controller::SourceMessage>,
     ) -> Result<
         SystemActionIterator<Controller::ControllerMessage>,
         <Controller::Clock as NtpClock>::Error,
     > {
         self.controller.source_update(id, true);
-        *self.sources.get_mut(&id).unwrap() = Some(SourceSnapshot::Sock(update.snapshot));
+        *self.sources.get_mut(&id).unwrap() = Some(SourceSnapshot::OneWay(update.snapshot));
         if let Some(message) = update.message {
             let update = self.controller.source_message(id, message);
             Ok(self.handle_algorithm_state_update(update))
