@@ -796,6 +796,11 @@ pub struct KalmanSourceController<
     source_defaults_config: SourceDefaultsConfig,
 }
 
+pub type TwoWayKalmanSourceController<SourceId> =
+    KalmanSourceController<SourceId, NtpDuration, AveragingBuffer>;
+
+pub type OneWayKalmanSourceController<SourceId> = KalmanSourceController<SourceId, (), f64>;
+
 impl<
         SourceId: Copy,
         D: Debug + Copy + Clone,

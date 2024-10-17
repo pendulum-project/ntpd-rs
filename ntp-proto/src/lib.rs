@@ -38,9 +38,9 @@ pub(crate) mod exitcode {
 
 mod exports {
     pub use super::algorithm::{
-        AlgorithmConfig, AveragingBuffer, KalmanClockController, KalmanControllerMessage,
-        KalmanSourceController, KalmanSourceMessage, ObservableSourceTimedata, SourceController,
-        StateUpdate, TimeSyncController,
+        AlgorithmConfig, KalmanClockController, KalmanControllerMessage, KalmanSourceController,
+        KalmanSourceMessage, ObservableSourceTimedata, SourceController, StateUpdate,
+        TimeSyncController, TwoWayKalmanSourceController,
     };
     pub use super::clock::NtpClock;
     pub use super::config::{SourceDefaultsConfig, StepThreshold, SynchronizationConfig};

@@ -451,10 +451,9 @@ mod tests {
     };
 
     use ntp_proto::{
-        AlgorithmConfig, AveragingBuffer, KalmanClockController, KalmanControllerMessage,
-        KalmanSourceController, KalmanSourceMessage, NoCipher, NtpDuration, NtpLeapIndicator,
-        NtpPacket, ProtocolVersion, SourceDefaultsConfig, SynchronizationConfig, SystemSnapshot,
-        TimeSnapshot,
+        AlgorithmConfig, KalmanClockController, KalmanControllerMessage, KalmanSourceMessage,
+        NoCipher, NtpDuration, NtpLeapIndicator, NtpPacket, ProtocolVersion, SourceDefaultsConfig,
+        SynchronizationConfig, SystemSnapshot, TimeSnapshot, TwoWayKalmanSourceController,
     };
     use timestamped_socket::socket::{open_ip, GeneralTimestampMode, Open};
     use tokio::sync::{broadcast, mpsc};
@@ -583,7 +582,7 @@ mod tests {
     async fn test_startup<T: Wait>(
         port_base: u16,
     ) -> (
-        SourceTask<TestClock, KalmanSourceController<SourceId, NtpDuration, AveragingBuffer>, T>,
+        SourceTask<TestClock, TwoWayKalmanSourceController<SourceId>, T>,
         Socket<SocketAddr, Open>,
         mpsc::Receiver<MsgForSystem<KalmanSourceMessage<SourceId>>>,
         broadcast::Sender<SystemSourceUpdate<KalmanControllerMessage>>,
