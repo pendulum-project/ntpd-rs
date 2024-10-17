@@ -4,7 +4,7 @@ use std::{
 
 use ntp_proto::{
     NtpClock, NtpDuration, NtpInstant, NtpSource, NtpSourceActionIterator, NtpSourceUpdate,
-    NtpTimestamp, ObservableSourceState, SockSourceUpdate, SourceController, SystemSourceUpdate,
+    NtpTimestamp, ObservableSourceState, OneWaySourceUpdate, SourceController, SystemSourceUpdate,
 };
 #[cfg(target_os = "linux")]
 use timestamped_socket::socket::open_interface_udp;
@@ -41,7 +41,7 @@ pub enum MsgForSystem<SourceMessage> {
     /// Update from source
     SourceUpdate(SourceId, NtpSourceUpdate<SourceMessage>),
     /// Update from sock source
-    SockSourceUpdate(SourceId, SockSourceUpdate<SourceMessage>),
+    OneWaySourceUpdate(SourceId, OneWaySourceUpdate<SourceMessage>),
 }
 
 #[derive(Debug)]

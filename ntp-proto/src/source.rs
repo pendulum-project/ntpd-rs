@@ -90,13 +90,13 @@ pub struct NtpSource<Controller: SourceController<MeasurementDelay = NtpDuration
     bloom_filter: RemoteBloomFilter,
 }
 
-pub struct SockSource<Controller: SourceController<MeasurementDelay = ()>> {
+pub struct OneWaySource<Controller: SourceController<MeasurementDelay = ()>> {
     controller: Controller,
 }
 
-impl<Controller: SourceController<MeasurementDelay = ()>> SockSource<Controller> {
-    pub(crate) fn new(controller: Controller) -> SockSource<Controller> {
-        SockSource { controller }
+impl<Controller: SourceController<MeasurementDelay = ()>> OneWaySource<Controller> {
+    pub(crate) fn new(controller: Controller) -> OneWaySource<Controller> {
+        OneWaySource { controller }
     }
 
     pub fn handle_measurement(
@@ -198,8 +198,8 @@ impl Reach {
 }
 
 #[derive(Debug, Clone)]
-pub struct SockSourceUpdate<SourceMessage> {
-    pub snapshot: SockSourceSnapshot,
+pub struct OneWaySourceUpdate<SourceMessage> {
+    pub snapshot: OneWaySourceSnapshot,
     pub message: Option<SourceMessage>,
 }
 
@@ -207,11 +207,11 @@ pub struct SockSourceUpdate<SourceMessage> {
 #[allow(clippy::large_enum_variant)]
 pub enum SourceSnapshot {
     Ntp(NtpSourceSnapshot),
-    Sock(SockSourceSnapshot),
+    OneWay(OneWaySourceSnapshot),
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct SockSourceSnapshot {
+pub struct OneWaySourceSnapshot {
     pub source_id: ReferenceId,
     pub stratum: u8,
 }

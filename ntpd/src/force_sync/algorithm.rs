@@ -127,7 +127,7 @@ impl<C: NtpClock> TimeSyncController for SingleShotController<C> {
     type ControllerMessage = SingleShotControllerMessage;
     type SourceMessage = Measurements;
     type NtpSourceController = SingleShotSourceController<NtpDuration>;
-    type SockSourceController = SingleShotSourceController<()>;
+    type OneWaySourceController = SingleShotSourceController<()>;
 
     fn new(
         clock: Self::Clock,
@@ -158,11 +158,11 @@ impl<C: NtpClock> TimeSyncController for SingleShotController<C> {
         }
     }
 
-    fn add_sock_source(
+    fn add_one_way_source(
         &mut self,
         _id: Self::SourceId,
         _measurement_noise_estimate: f64,
-    ) -> Self::SockSourceController {
+    ) -> Self::OneWaySourceController {
         SingleShotSourceController::<()> {
             delay_type: PhantomData,
             min_poll_interval: self.min_poll_interval,

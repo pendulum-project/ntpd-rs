@@ -66,7 +66,8 @@ mod exports {
     pub use super::source::{
         AcceptSynchronizationError, Measurement, NtpSource, NtpSourceAction,
         NtpSourceActionIterator, NtpSourceSnapshot, NtpSourceUpdate, ObservableSourceState,
-        ProtocolVersion, Reach, SockSource, SockSourceSnapshot, SockSourceUpdate, SourceNtsData,
+        OneWaySource, OneWaySourceSnapshot, OneWaySourceUpdate, ProtocolVersion, Reach,
+        SourceNtsData,
     };
     pub use super::system::{
         System, SystemAction, SystemActionIterator, SystemSnapshot, SystemSourceUpdate,

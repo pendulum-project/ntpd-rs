@@ -347,7 +347,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug + Send + 'static> TimeSyncC
     type ControllerMessage = KalmanControllerMessage;
     type SourceMessage = KalmanSourceMessage<SourceId>;
     type NtpSourceController = TwoWayKalmanSourceController<SourceId>;
-    type SockSourceController = OneWayKalmanSourceController<SourceId>;
+    type OneWaySourceController = OneWayKalmanSourceController<SourceId>;
 
     fn new(
         clock: C,
@@ -387,11 +387,11 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug + Send + 'static> TimeSyncC
         )
     }
 
-    fn add_sock_source(
+    fn add_one_way_source(
         &mut self,
         id: SourceId,
         measurement_noise_estimate: f64,
-    ) -> Self::SockSourceController {
+    ) -> Self::OneWaySourceController {
         self.sources.insert(id, (None, false));
         KalmanSourceController::new(
             id,

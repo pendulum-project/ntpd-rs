@@ -60,7 +60,7 @@ pub trait TimeSyncController: Sized + Send + 'static {
         SourceMessage = Self::SourceMessage,
         MeasurementDelay = NtpDuration,
     >;
-    type SockSourceController: SourceController<
+    type OneWaySourceController: SourceController<
         ControllerMessage = Self::ControllerMessage,
         SourceMessage = Self::SourceMessage,
         MeasurementDelay = (),
@@ -79,12 +79,12 @@ pub trait TimeSyncController: Sized + Send + 'static {
 
     /// Create a new source with given identity
     fn add_source(&mut self, id: Self::SourceId) -> Self::NtpSourceController;
-    /// Create a new sock source with given identity
-    fn add_sock_source(
+    /// Create a new one way source with given identity (used e.g. with GPS sock sources)
+    fn add_one_way_source(
         &mut self,
         id: Self::SourceId,
         measurement_noise_estimate: f64,
-    ) -> Self::SockSourceController;
+    ) -> Self::OneWaySourceController;
     /// Notify the controller that a previous source has gone
     fn remove_source(&mut self, id: Self::SourceId);
     /// Notify the controller that the status of a source (whether
@@ -123,5 +123,5 @@ mod kalman;
 
 pub use kalman::{
     config::AlgorithmConfig, KalmanClockController, KalmanControllerMessage,
-    KalmanSourceController, TwoWayKalmanSourceController, KalmanSourceMessage,
+    KalmanSourceController, KalmanSourceMessage, TwoWayKalmanSourceController,
 };
