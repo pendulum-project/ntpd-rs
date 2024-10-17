@@ -515,6 +515,9 @@ impl<
                 );
             }
             SourceCreateParameters::Sock(ref params) => {
+                let source = self
+                    .system
+                    .create_sock_source(source_id, params.noise_estimate)?;
                 SockSourceTask::spawn(
                     source_id,
                     params.path.clone(),
@@ -524,8 +527,7 @@ impl<
                         system_update_receiver: self.system_update_sender.subscribe(),
                         source_snapshots: self.source_snapshots.clone(),
                     },
-                    self.system
-                        .create_sock_source_controller(source_id, params.noise_estimate)?,
+                    source,
                 );
             }
         };

@@ -8,7 +8,6 @@ use std::{fmt::Debug, hash::Hash};
 #[cfg(feature = "ntpv5")]
 use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
 use crate::source::{NtpSourceUpdate, SourceSnapshot};
-use crate::SockSourceUpdate;
 use crate::{
     algorithm::{StateUpdate, TimeSyncController},
     clock::NtpClock,
@@ -18,6 +17,7 @@ use crate::{
     source::{NtpSource, NtpSourceActionIterator, ProtocolVersion, SourceNtsData},
     time_types::NtpDuration,
 };
+use crate::{SockSource, SockSourceUpdate};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TimeSnapshot {
@@ -248,27 +248,18 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         Ok(())
     }
 
-    pub fn create_source_controller(
-        &mut self,
-        id: SourceId,
-    ) -> Result<Controller::NtpSourceController, <Controller::Clock as NtpClock>::Error> {
-        self.ensure_controller_control()?;
-        let controller = self.controller.add_source(id);
-        self.sources.insert(id, None);
-        Ok(controller)
-    }
-
-    pub fn create_sock_source_controller(
+    pub fn create_sock_source(
         &mut self,
         id: SourceId,
         measurement_noise_estimate: f64,
-    ) -> Result<Controller::SockSourceController, <Controller::Clock as NtpClock>::Error> {
+    ) -> Result<SockSource<Controller::SockSourceController>, <Controller::Clock as NtpClock>::Error>
+    {
         self.ensure_controller_control()?;
         let controller = self
             .controller
             .add_sock_source(id, measurement_noise_estimate);
         self.sources.insert(id, None);
-        Ok(controller)
+        Ok(SockSource::new(controller))
     }
 
     #[allow(clippy::type_complexity)]
@@ -285,11 +276,14 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         ),
         <Controller::Clock as NtpClock>::Error,
     > {
+        self.ensure_controller_control()?;
+        let controller = self.controller.add_source(id);
+        self.sources.insert(id, None);
         Ok(NtpSource::new(
             source_addr,
             self.source_defaults_config,
             protocol_version,
-            self.create_source_controller(id)?,
+            controller,
             nts,
         ))
     }

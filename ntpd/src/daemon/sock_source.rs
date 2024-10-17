@@ -1,7 +1,7 @@
 use std::{fmt::Display, path::Path};
 
 use ntp_proto::{
-    Measurement, NtpClock, NtpDuration, NtpInstant, NtpLeapIndicator, ReferenceId,
+    Measurement, NtpClock, NtpDuration, NtpInstant, NtpLeapIndicator, ReferenceId, SockSource,
     SockSourceSnapshot, SockSourceUpdate, SourceController, SystemSourceUpdate,
 };
 use tracing::debug;
@@ -78,12 +78,15 @@ fn deserialize_sample(
     Ok(sample)
 }
 
-pub(crate) struct SockSourceTask<C: 'static + NtpClock + Send, Controller: SourceController> {
+pub(crate) struct SockSourceTask<
+    C: 'static + NtpClock + Send,
+    Controller: SourceController<MeasurementDelay = ()>,
+> {
     index: SourceId,
     socket: UnixDatagram,
     clock: C,
     channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
-    controller: Controller,
+    source: SockSource<Controller>,
 }
 
 fn create_socket(socket_path: String) -> std::io::Result<UnixDatagram> {
@@ -156,7 +159,7 @@ where
                             precision: 0, // TODO: compute on startup?
                         };
 
-                        let controller_message = self.controller.handle_measurement(measurement);
+                        let controller_message = self.source.handle_measurement(measurement);
 
                         let update = SockSourceUpdate {
                             snapshot: SockSourceSnapshot {
@@ -178,7 +181,7 @@ where
                 },
                 SelectResult::SystemUpdate(result) => match result {
                     Ok(update) => {
-                        self.controller.handle_message(update.message);
+                        self.source.handle_message(update.message);
                     }
                     Err(e) => {
                         error!("Error receiving system update: {:?}", e)
@@ -189,13 +192,13 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[instrument(level = tracing::Level::ERROR, name = "Sock Source", skip(clock, channels, controller))]
+    #[instrument(level = tracing::Level::ERROR, name = "Sock Source", skip(clock, channels, source))]
     pub fn spawn(
         index: SourceId,
         socket_path: String,
         clock: C,
         channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
-        controller: Controller,
+        source: SockSource<Controller>,
     ) -> tokio::task::JoinHandle<()> {
         let socket = create_socket(socket_path).expect("Could not create socket");
         tokio::spawn(
@@ -205,7 +208,7 @@ where
                     socket,
                     clock,
                     channels,
-                    controller,
+                    source,
                 };
 
                 process.run().await;
@@ -314,7 +317,7 @@ mod tests {
                 system_update_receiver,
                 source_snapshots: Arc::new(RwLock::new(HashMap::new())),
             },
-            system.create_sock_source_controller(index, 0.001).unwrap(),
+            system.create_sock_source(index, 0.001).unwrap(),
         );
 
         // Send example data to socket
