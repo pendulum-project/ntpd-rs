@@ -1,6 +1,7 @@
 use std::{collections::HashMap, fmt::Debug, hash::Hash, time::Duration};
 
-pub use source::AveragingBuffer;
+pub(crate) use source::AveragingBuffer;
+use source::OneWayKalmanSourceController;
 use tracing::{debug, error, info};
 
 use crate::{
@@ -21,7 +22,7 @@ mod matrix;
 mod select;
 mod source;
 
-pub use source::KalmanSourceController;
+pub use source::{KalmanSourceController, TwoWayKalmanSourceController};
 
 fn sqr(x: f64) -> f64 {
     x * x
@@ -345,8 +346,8 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug + Send + 'static> TimeSyncC
     type AlgorithmConfig = AlgorithmConfig;
     type ControllerMessage = KalmanControllerMessage;
     type SourceMessage = KalmanSourceMessage<SourceId>;
-    type NtpSourceController = KalmanSourceController<SourceId, NtpDuration, AveragingBuffer>;
-    type SockSourceController = KalmanSourceController<SourceId, (), f64>;
+    type NtpSourceController = TwoWayKalmanSourceController<SourceId>;
+    type SockSourceController = OneWayKalmanSourceController<SourceId>;
 
     fn new(
         clock: C,

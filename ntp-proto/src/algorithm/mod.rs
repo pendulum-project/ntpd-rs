@@ -1,6 +1,5 @@
 use std::{fmt::Debug, time::Duration};
 
-pub use kalman::AveragingBuffer;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::{
@@ -124,5 +123,5 @@ mod kalman;
 
 pub use kalman::{
     config::AlgorithmConfig, KalmanClockController, KalmanControllerMessage,
-    KalmanSourceController, KalmanSourceMessage,
+    KalmanSourceController, TwoWayKalmanSourceController, KalmanSourceMessage,
 };
