@@ -92,6 +92,27 @@ pub struct NtpSource<Controller: SourceController<MeasurementDelay = NtpDuration
     bloom_filter: RemoteBloomFilter,
 }
 
+pub struct SockSource<Controller: SourceController<MeasurementDelay = ()>> {
+    controller: Controller,
+}
+
+impl<Controller: SourceController<MeasurementDelay = ()>> SockSource<Controller> {
+    pub(crate) fn new(controller: Controller) -> SockSource<Controller> {
+        SockSource { controller }
+    }
+
+    pub fn handle_measurement(
+        &mut self,
+        measurement: Measurement<()>,
+    ) -> Option<Controller::SourceMessage> {
+        self.controller.handle_measurement(measurement)
+    }
+
+    pub fn handle_message(&mut self, message: Controller::ControllerMessage) {
+        self.controller.handle_message(message)
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 pub struct Measurement<D: Debug + Copy + Clone> {
     pub delay: D,
