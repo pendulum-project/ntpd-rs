@@ -1,8 +1,8 @@
 use std::{fmt::Display, path::Path};
 
 use ntp_proto::{
-    Measurement, NtpClock, NtpDuration, NtpInstant, NtpLeapIndicator, ReferenceId, SockSource,
-    SockSourceSnapshot, SockSourceUpdate, SourceController, SystemSourceUpdate,
+    Measurement, NtpClock, NtpDuration, NtpInstant, NtpLeapIndicator, OneWaySource,
+    OneWaySourceUpdate, ReferenceId, OneWaySourceSnapshot, SourceController, SystemSourceUpdate,
 };
 use tracing::debug;
 use tracing::{error, instrument, Instrument, Span};
@@ -86,7 +86,7 @@ pub(crate) struct SockSourceTask<
     socket: UnixDatagram,
     clock: C,
     channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
-    source: SockSource<Controller>,
+    source: OneWaySource<Controller>,
 }
 
 fn create_socket(socket_path: String) -> std::io::Result<UnixDatagram> {
@@ -161,8 +161,8 @@ where
 
                         let controller_message = self.source.handle_measurement(measurement);
 
-                        let update = SockSourceUpdate {
-                            snapshot: SockSourceSnapshot {
+                        let update = OneWaySourceUpdate {
+                            snapshot: OneWaySourceSnapshot {
                                 source_id: ReferenceId::SOCK,
                                 stratum: 0,
                             },
@@ -170,7 +170,7 @@ where
                         };
                         self.channels
                             .msg_for_system_sender
-                            .send(MsgForSystem::SockSourceUpdate(self.index, update))
+                            .send(MsgForSystem::OneWaySourceUpdate(self.index, update))
                             .await
                             .ok();
                     }
@@ -198,7 +198,7 @@ where
         socket_path: String,
         clock: C,
         channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
-        source: SockSource<Controller>,
+        source: OneWaySource<Controller>,
     ) -> tokio::task::JoinHandle<()> {
         let socket = create_socket(socket_path).expect("Could not create socket");
         tokio::spawn(
@@ -332,7 +332,7 @@ mod tests {
         // Receive system update
         let msg = msg_for_system_receiver.recv().await.unwrap();
         let update = match msg {
-            MsgForSystem::SockSourceUpdate(source_id, sock_source_update) => {
+            MsgForSystem::OneWaySourceUpdate(source_id, sock_source_update) => {
                 assert_eq!(source_id, index);
                 sock_source_update
             }
