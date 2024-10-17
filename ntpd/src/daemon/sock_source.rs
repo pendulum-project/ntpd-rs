@@ -2,7 +2,7 @@ use std::{fmt::Display, path::Path};
 
 use ntp_proto::{
     Measurement, NtpClock, NtpDuration, NtpInstant, NtpLeapIndicator, OneWaySource,
-    OneWaySourceUpdate, ReferenceId, OneWaySourceSnapshot, SourceController, SystemSourceUpdate,
+    OneWaySourceSnapshot, OneWaySourceUpdate, ReferenceId, SourceController, SystemSourceUpdate,
 };
 use tracing::debug;
 use tracing::{error, instrument, Instrument, Span};
