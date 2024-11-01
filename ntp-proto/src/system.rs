@@ -7,18 +7,17 @@ use std::{fmt::Debug, hash::Hash};
 
 #[cfg(feature = "ntpv5")]
 use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
-use crate::source::NtpSourceUpdate;
+use crate::source::{NtpSourceUpdate, SourceSnapshot};
 use crate::{
     algorithm::{StateUpdate, TimeSyncController},
     clock::NtpClock,
     config::{SourceDefaultsConfig, SynchronizationConfig},
     identifiers::ReferenceId,
     packet::NtpLeapIndicator,
-    source::{
-        NtpSource, NtpSourceActionIterator, NtpSourceSnapshot, ProtocolVersion, SourceNtsData,
-    },
+    source::{NtpSource, NtpSourceActionIterator, ProtocolVersion, SourceNtsData},
     time_types::NtpDuration,
 };
+use crate::{OneWaySource, OneWaySourceUpdate};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TimeSnapshot {
@@ -74,21 +73,28 @@ impl SystemSnapshot {
         self.accumulated_steps_threshold = config.accumulated_step_panic_threshold;
     }
 
-    pub fn update_used_sources(&mut self, used_sources: impl Iterator<Item = NtpSourceSnapshot>) {
+    pub fn update_used_sources(&mut self, used_sources: impl Iterator<Item = SourceSnapshot>) {
         let mut used_sources = used_sources.peekable();
         if let Some(system_source_snapshot) = used_sources.peek() {
-            self.stratum = system_source_snapshot.stratum.saturating_add(1);
-            self.reference_id = system_source_snapshot.source_id;
+            let (stratum, source_id) = match system_source_snapshot {
+                SourceSnapshot::Ntp(snapshot) => (snapshot.stratum, snapshot.source_id),
+                SourceSnapshot::OneWay(snapshot) => (snapshot.stratum, snapshot.source_id),
+            };
+
+            self.stratum = stratum.saturating_add(1);
+            self.reference_id = source_id;
         }
 
         #[cfg(feature = "ntpv5")]
         {
             self.bloom_filter = BloomFilter::new();
             for source in used_sources {
-                if let Some(bf) = &source.bloom_filter {
-                    self.bloom_filter.add(bf);
-                } else if let ProtocolVersion::V5 = source.protocol_version {
-                    tracing::warn!("Using NTPv5 source without a bloom filter!");
+                if let SourceSnapshot::Ntp(source) = source {
+                    if let Some(bf) = &source.bloom_filter {
+                        self.bloom_filter.add(bf);
+                    } else if let ProtocolVersion::V5 = source.protocol_version {
+                        tracing::warn!("Using NTPv5 source without a bloom filter!");
+                    }
                 }
             }
             self.bloom_filter.add_id(&self.server_id);
@@ -112,7 +118,7 @@ impl Default for SystemSnapshot {
 }
 
 pub struct SystemSourceUpdate<ControllerMessage> {
-    pub(crate) message: ControllerMessage,
+    pub message: ControllerMessage,
 }
 
 impl<ControllerMessage: Debug> std::fmt::Debug for SystemSourceUpdate<ControllerMessage> {
@@ -183,7 +189,7 @@ pub struct System<SourceId, Controller> {
     system: SystemSnapshot,
     ip_list: Arc<[IpAddr]>,
 
-    sources: HashMap<SourceId, Option<NtpSourceSnapshot>>,
+    sources: HashMap<SourceId, Option<SourceSnapshot>>,
 
     controller: Controller,
     controller_took_control: bool,
@@ -242,15 +248,32 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         Ok(())
     }
 
+    pub fn create_sock_source(
+        &mut self,
+        id: SourceId,
+        measurement_noise_estimate: f64,
+    ) -> Result<
+        OneWaySource<Controller::OneWaySourceController>,
+        <Controller::Clock as NtpClock>::Error,
+    > {
+        self.ensure_controller_control()?;
+        let controller = self
+            .controller
+            .add_one_way_source(id, measurement_noise_estimate);
+        self.sources.insert(id, None);
+        Ok(OneWaySource::new(controller))
+    }
+
     #[allow(clippy::type_complexity)]
     pub fn create_ntp_source(
         &mut self,
         id: SourceId,
         source_addr: SocketAddr,
         protocol_version: ProtocolVersion,
+        nts: Option<Box<SourceNtsData>>,
     ) -> Result<
         (
-            NtpSource<Controller::SourceController>,
+            NtpSource<Controller::NtpSourceController>,
             NtpSourceActionIterator<Controller::SourceMessage>,
         ),
         <Controller::Clock as NtpClock>::Error,
@@ -259,31 +282,6 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         let controller = self.controller.add_source(id);
         self.sources.insert(id, None);
         Ok(NtpSource::new(
-            source_addr,
-            self.source_defaults_config,
-            protocol_version,
-            controller,
-        ))
-    }
-
-    #[allow(clippy::type_complexity)]
-    pub fn create_nts_source(
-        &mut self,
-        id: SourceId,
-        source_addr: SocketAddr,
-        protocol_version: ProtocolVersion,
-        nts: Box<SourceNtsData>,
-    ) -> Result<
-        (
-            NtpSource<Controller::SourceController>,
-            NtpSourceActionIterator<Controller::SourceMessage>,
-        ),
-        <Controller::Clock as NtpClock>::Error,
-    > {
-        self.ensure_controller_control()?;
-        let controller = self.controller.add_source(id);
-        self.sources.insert(id, None);
-        Ok(NtpSource::new_nts(
             source_addr,
             self.source_defaults_config,
             protocol_version,
@@ -318,7 +316,25 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
             )
             .is_ok();
         self.controller.source_update(id, usable);
-        *self.sources.get_mut(&id).unwrap() = Some(update.snapshot);
+        *self.sources.get_mut(&id).unwrap() = Some(SourceSnapshot::Ntp(update.snapshot));
+        if let Some(message) = update.message {
+            let update = self.controller.source_message(id, message);
+            Ok(self.handle_algorithm_state_update(update))
+        } else {
+            Ok(actions!())
+        }
+    }
+
+    pub fn handle_one_way_source_update(
+        &mut self,
+        id: SourceId,
+        update: OneWaySourceUpdate<Controller::SourceMessage>,
+    ) -> Result<
+        SystemActionIterator<Controller::ControllerMessage>,
+        <Controller::Clock as NtpClock>::Error,
+    > {
+        self.controller.source_update(id, true);
+        *self.sources.get_mut(&id).unwrap() = Some(SourceSnapshot::OneWay(update.snapshot));
         if let Some(message) = update.message {
             let update = self.controller.source_message(id, message);
             Ok(self.handle_algorithm_state_update(update))
@@ -368,7 +384,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
 mod tests {
     use std::net::{Ipv4Addr, SocketAddr};
 
-    use crate::time_types::PollIntervalLimits;
+    use crate::{time_types::PollIntervalLimits, NtpSourceSnapshot};
 
     use super::*;
 
@@ -389,7 +405,7 @@ mod tests {
 
         system.update_used_sources(
             vec![
-                NtpSourceSnapshot {
+                SourceSnapshot::Ntp(NtpSourceSnapshot {
                     source_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
                     source_id: ReferenceId::KISS_DENY,
                     poll_interval: PollIntervalLimits::default().max,
@@ -399,8 +415,8 @@ mod tests {
                     protocol_version: Default::default(),
                     #[cfg(feature = "ntpv5")]
                     bloom_filter: None,
-                },
-                NtpSourceSnapshot {
+                }),
+                SourceSnapshot::Ntp(NtpSourceSnapshot {
                     source_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
                     source_id: ReferenceId::KISS_RATE,
                     poll_interval: PollIntervalLimits::default().max,
@@ -410,7 +426,7 @@ mod tests {
                     protocol_version: Default::default(),
                     #[cfg(feature = "ntpv5")]
                     bloom_filter: None,
-                },
+                }),
             ]
             .into_iter(),
         );

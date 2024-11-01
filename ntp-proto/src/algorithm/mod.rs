@@ -55,9 +55,15 @@ pub trait TimeSyncController: Sized + Send + 'static {
     type AlgorithmConfig: Debug + Copy + DeserializeOwned + Send;
     type ControllerMessage: Debug + Clone + Send + 'static;
     type SourceMessage: Debug + Clone + Send + 'static;
-    type SourceController: SourceController<
+    type NtpSourceController: SourceController<
         ControllerMessage = Self::ControllerMessage,
         SourceMessage = Self::SourceMessage,
+        MeasurementDelay = NtpDuration,
+    >;
+    type OneWaySourceController: SourceController<
+        ControllerMessage = Self::ControllerMessage,
+        SourceMessage = Self::SourceMessage,
+        MeasurementDelay = (),
     >;
 
     /// Create a new clock controller controlling the given clock
@@ -72,7 +78,13 @@ pub trait TimeSyncController: Sized + Send + 'static {
     fn take_control(&mut self) -> Result<(), <Self::Clock as NtpClock>::Error>;
 
     /// Create a new source with given identity
-    fn add_source(&mut self, id: Self::SourceId) -> Self::SourceController;
+    fn add_source(&mut self, id: Self::SourceId) -> Self::NtpSourceController;
+    /// Create a new one way source with given identity (used e.g. with GPS sock sources)
+    fn add_one_way_source(
+        &mut self,
+        id: Self::SourceId,
+        measurement_noise_estimate: f64,
+    ) -> Self::OneWaySourceController;
     /// Notify the controller that a previous source has gone
     fn remove_source(&mut self, id: Self::SourceId);
     /// Notify the controller that the status of a source (whether
@@ -93,10 +105,14 @@ pub trait TimeSyncController: Sized + Send + 'static {
 pub trait SourceController: Sized + Send + 'static {
     type ControllerMessage: Debug + Clone + Send + 'static;
     type SourceMessage: Debug + Clone + Send + 'static;
+    type MeasurementDelay: Debug + Copy + Clone;
 
     fn handle_message(&mut self, message: Self::ControllerMessage);
 
-    fn handle_measurement(&mut self, measurement: Measurement) -> Option<Self::SourceMessage>;
+    fn handle_measurement(
+        &mut self,
+        measurement: Measurement<Self::MeasurementDelay>,
+    ) -> Option<Self::SourceMessage>;
 
     fn desired_poll_interval(&self) -> PollInterval;
 
@@ -107,5 +123,5 @@ mod kalman;
 
 pub use kalman::{
     config::AlgorithmConfig, KalmanClockController, KalmanControllerMessage,
-    KalmanSourceController, KalmanSourceMessage,
+    KalmanSourceController, KalmanSourceMessage, TwoWayKalmanSourceController,
 };

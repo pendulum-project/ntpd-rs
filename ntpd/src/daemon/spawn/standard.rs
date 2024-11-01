@@ -87,7 +87,7 @@ impl Spawner for StandardSpawner {
         action_tx
             .send(SpawnEvent::new(
                 self.id,
-                SpawnAction::create(
+                SpawnAction::create_ntp(
                     SourceId::new(),
                     addr,
                     self.config.address.deref().clone(),
@@ -138,8 +138,8 @@ mod tests {
     use crate::daemon::{
         config::{NormalizedAddress, StandardSource},
         spawn::{
-            standard::StandardSpawner, tests::get_create_params, SourceRemovalReason,
-            SourceRemovedEvent, Spawner,
+            standard::StandardSpawner, tests::get_ntp_create_params, SourceRemovalReason,
+            SourceRemovedEvent, SpawnAction, Spawner,
         },
         system::MESSAGE_BUFFER_SIZE,
     };
@@ -161,7 +161,9 @@ mod tests {
         spawner.try_spawn(&action_tx).await.unwrap();
         let res = action_rx.try_recv().unwrap();
         assert_eq!(res.id, spawner_id);
-        let params = get_create_params(res);
+        let SpawnAction::Create(create_params) = &res.action;
+        assert_eq!(create_params.get_addr(), "127.0.0.1:123");
+        let params = get_ntp_create_params(res).unwrap();
         assert_eq!(params.addr.to_string(), "127.0.0.1:123");
 
         // Should be complete after spawning
@@ -183,7 +185,7 @@ mod tests {
         assert!(!spawner.is_complete());
         spawner.try_spawn(&action_tx).await.unwrap();
         let res = action_rx.try_recv().unwrap();
-        let params = get_create_params(res);
+        let params = get_ntp_create_params(res).unwrap();
         assert!(spawner.is_complete());
 
         spawner
@@ -197,7 +199,7 @@ mod tests {
         assert!(!spawner.is_complete());
         spawner.try_spawn(&action_tx).await.unwrap();
         let res = action_rx.try_recv().unwrap();
-        let params = get_create_params(res);
+        let params = get_ntp_create_params(res).unwrap();
         assert_eq!(params.addr.to_string(), "127.0.0.1:123");
         assert!(spawner.is_complete());
     }
@@ -220,7 +222,7 @@ mod tests {
         assert!(!spawner.is_complete());
         spawner.try_spawn(&action_tx).await.unwrap();
         let res = action_rx.recv().await.unwrap();
-        let params = get_create_params(res);
+        let params = get_ntp_create_params(res).unwrap();
         let initial_addr = params.addr;
         assert!(spawner.is_complete());
 
@@ -239,7 +241,7 @@ mod tests {
             assert!(!spawner.is_complete());
             spawner.try_spawn(&action_tx).await.unwrap();
             let res = action_rx.recv().await.unwrap();
-            let params = get_create_params(res);
+            let params = get_ntp_create_params(res).unwrap();
             seen_addresses.push(params.addr);
             assert!(spawner.is_complete());
         }

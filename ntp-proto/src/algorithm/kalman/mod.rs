@@ -1,5 +1,7 @@
 use std::{collections::HashMap, fmt::Debug, hash::Hash, time::Duration};
 
+pub(crate) use source::AveragingBuffer;
+use source::OneWayKalmanSourceController;
 use tracing::{debug, error, info};
 
 use crate::{
@@ -20,7 +22,7 @@ mod matrix;
 mod select;
 mod source;
 
-pub use source::KalmanSourceController;
+pub use source::{KalmanSourceController, TwoWayKalmanSourceController};
 
 fn sqr(x: f64) -> f64 {
     x * x
@@ -344,7 +346,8 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug + Send + 'static> TimeSyncC
     type AlgorithmConfig = AlgorithmConfig;
     type ControllerMessage = KalmanControllerMessage;
     type SourceMessage = KalmanSourceMessage<SourceId>;
-    type SourceController = KalmanSourceController<SourceId>;
+    type NtpSourceController = TwoWayKalmanSourceController<SourceId>;
+    type OneWaySourceController = OneWayKalmanSourceController<SourceId>;
 
     fn new(
         clock: C,
@@ -374,9 +377,28 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug + Send + 'static> TimeSyncC
         Ok(())
     }
 
-    fn add_source(&mut self, id: SourceId) -> Self::SourceController {
+    fn add_source(&mut self, id: SourceId) -> Self::NtpSourceController {
         self.sources.insert(id, (None, false));
-        KalmanSourceController::new(id, self.algo_config, self.source_defaults_config)
+        KalmanSourceController::new(
+            id,
+            self.algo_config,
+            self.source_defaults_config,
+            AveragingBuffer::default(),
+        )
+    }
+
+    fn add_one_way_source(
+        &mut self,
+        id: SourceId,
+        measurement_noise_estimate: f64,
+    ) -> Self::OneWaySourceController {
+        self.sources.insert(id, (None, false));
+        KalmanSourceController::new(
+            id,
+            self.algo_config,
+            self.source_defaults_config,
+            measurement_noise_estimate,
+        )
     }
 
     fn remove_source(&mut self, id: SourceId) {
@@ -415,10 +437,10 @@ mod tests {
 
     use matrix::{Matrix, Vector};
 
-    use crate::algorithm::SourceController;
     use crate::config::StepThreshold;
     use crate::source::Measurement;
     use crate::time_types::NtpInstant;
+    use crate::SourceController;
 
     use super::*;
 
@@ -504,8 +526,6 @@ mod tests {
             let message = source.handle_measurement(Measurement {
                 delay: NtpDuration::from_seconds(0.001 + noise),
                 offset: NtpDuration::from_seconds(1700.0 + noise),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
                 localtime: algo.clock.current_time,
                 monotime: cur_instant,
 
@@ -716,8 +736,6 @@ mod tests {
             let message = source.handle_measurement(Measurement {
                 delay: NtpDuration::from_seconds(0.001 + noise),
                 offset: NtpDuration::from_seconds(1700.0 + noise),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
                 localtime: algo.clock.current_time,
                 monotime: cur_instant,
 
@@ -777,8 +795,6 @@ mod tests {
             let message = source.handle_measurement(Measurement {
                 delay: NtpDuration::from_seconds(0.001 + noise),
                 offset: NtpDuration::from_seconds(-3600.0 + noise),
-                transmit_timestamp: Default::default(),
-                receive_timestamp: Default::default(),
                 localtime: algo.clock.current_time,
                 monotime: cur_instant,
 
