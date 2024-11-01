@@ -27,6 +27,9 @@ use self::tracing::LogLevel;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// # Errors
+///
+/// Returns `Error` if `config::NtpDaemonAction` fails.
 pub async fn main() -> Result<(), Box<dyn Error>> {
     let options = NtpDaemonOptions::try_parse_from(std::env::args())?;
 

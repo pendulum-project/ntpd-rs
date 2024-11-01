@@ -109,6 +109,9 @@ impl NtpMetricsExporterOptions {
     }
 }
 
+/// # Errors
+///
+/// Returns `Error` if `MetricsAction::Run` fails.
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let options = NtpMetricsExporterOptions::try_parse_from(std::env::args())?;
     match options.action {
@@ -128,12 +131,11 @@ async fn run(options: NtpMetricsExporterOptions) -> Result<(), Box<dyn std::erro
     let config = initialize_logging_parse_config(None, options.config).await;
     let timeout = std::time::Duration::from_millis(1000);
 
-    let observation_socket_path = match config.observability.observation_path {
-        Some(path) => Arc::new(path),
-        None => {
-            eprintln!("An observation socket path must be configured using the observation-path option in the [observability] section of the configuration");
-            std::process::exit(1);
-        }
+    let observation_socket_path = if let Some(path) = config.observability.observation_path {
+        Arc::new(path)
+    } else {
+        eprintln!("An observation socket path must be configured using the observation-path option in the [observability] section of the configuration");
+        std::process::exit(1);
     };
 
     println!(
@@ -179,12 +181,7 @@ async fn run(options: NtpMetricsExporterOptions) -> Result<(), Box<dyn std::erro
                 debug!("Client unexpectedly closed connection: {e}");
                 continue;
             }
-            Err(e)
-                if matches!(
-                    e.raw_os_error(),
-                    Some(ENFILE) | Some(EMFILE) | Some(ENOMEM) | Some(ENOBUFS)
-                ) =>
-            {
+            Err(e) if matches!(e.raw_os_error(), Some(ENFILE | EMFILE | ENOMEM | ENOBUFS)) => {
                 error!("Not enough resources available to accept incoming connection: {e}");
                 tokio::time::sleep(timeout).await;
                 continue;
@@ -214,6 +211,12 @@ async fn handle_connection(
     stream: &mut (impl tokio::io::AsyncWrite + tokio::io::AsyncRead + Unpin),
     observation_socket_path: &Path,
 ) -> std::io::Result<()> {
+    const ERROR_RESPONSE: &str = concat!(
+        "HTTP/1.1 500 Internal Server Error\r\n",
+        "content-type: text/plain\r\n",
+        "content-length: 0\r\n\r\n",
+    );
+
     // Wait until a request was sent, dropping the bytes read when this scope ends
     // to ensure we don't accidentally use them afterwards
     {
@@ -255,12 +258,6 @@ async fn handle_connection(
         }
         Err(e) => {
             tracing::warn!("hit an error: {e}");
-
-            const ERROR_RESPONSE: &str = concat!(
-                "HTTP/1.1 500 Internal Server Error\r\n",
-                "content-type: text/plain\r\n",
-                "content-length: 0\r\n\r\n",
-            );
 
             stream.write_all(ERROR_RESPONSE.as_bytes()).await?;
         }

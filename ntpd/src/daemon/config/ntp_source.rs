@@ -284,6 +284,7 @@ impl NormalizedAddress {
     }
 
     #[cfg(test)]
+    #[allow(clippy::unused_async)]
     pub async fn lookup_host(&self) -> std::io::Result<impl Iterator<Item = SocketAddr> + '_> {
         // We don't want to spam a real DNS server during testing. This is an attempt to randomize
         // the returned addresses somewhat.
@@ -438,14 +439,14 @@ mod tests {
 
     #[test]
     fn test_deserialize_source_pem_certificate() {
-        let contents = include_bytes!("../../../testdata/certificates/nos-nl.pem");
-        let path = std::env::temp_dir().join("nos-nl.pem");
-        std::fs::write(&path, contents).unwrap();
-
         #[derive(Deserialize, Debug)]
         struct TestConfig {
             source: NtpSourceConfig,
         }
+
+        let contents = include_bytes!("../../../testdata/certificates/nos-nl.pem");
+        let path = std::env::temp_dir().join("nos-nl.pem");
+        std::fs::write(&path, contents).unwrap();
 
         let test: TestConfig = toml::from_str(&format!(
             r#"

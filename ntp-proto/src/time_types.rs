@@ -1,3 +1,7 @@
+#![allow(clippy::cast_lossless)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_possible_truncation)]
 use rand::{
     distributions::{Distribution, Standard},
     Rng,
@@ -6,7 +10,7 @@ use serde::{de::Unexpected, Deserialize, Serialize};
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::time::{Duration, Instant};
 
-/// NtpInstant is a monotonically increasing value modelling the uptime of the NTP service
+/// `NtpInstant` is a monotonically increasing value modelling the uptime of the NTP service
 ///
 /// It is used to validate packets that we send out, and to order internal operations.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
@@ -15,12 +19,14 @@ pub struct NtpInstant {
 }
 
 impl NtpInstant {
+    #[must_use]
     pub fn now() -> Self {
         Self {
             instant: Instant::now(),
         }
     }
 
+    #[must_use]
     pub fn abs_diff(self, rhs: Self) -> NtpDuration {
         // our code should always give the bigger argument first.
         debug_assert!(
@@ -40,6 +46,7 @@ impl NtpInstant {
         NtpDuration::from_system_duration(duration)
     }
 
+    #[must_use]
     pub fn elapsed(&self) -> std::time::Duration {
         self.instant.elapsed()
     }
@@ -55,7 +62,7 @@ impl Add<Duration> for NtpInstant {
     }
 }
 
-/// NtpTimestamp represents an ntp timestamp without the era number.
+/// `NtpTimestamp` represents an ntp timestamp without the era number.
 #[derive(Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Default, Serialize, Deserialize)]
 pub struct NtpTimestamp {
     timestamp: u64,
@@ -82,6 +89,7 @@ impl NtpTimestamp {
 
     /// Create an NTP timestamp from the number of seconds and nanoseconds that have
     /// passed since the last ntp era boundary.
+    #[must_use]
     pub const fn from_seconds_nanos_since_ntp_era(seconds: u32, nanos: u32) -> Self {
         // Although having a valid interpretation, providing more
         // than 1 second worth of nanoseconds as input probably
@@ -98,6 +106,7 @@ impl NtpTimestamp {
         NtpTimestamp::from_bits(timestamp.to_be_bytes())
     }
 
+    #[must_use]
     pub fn is_before(self, other: NtpTimestamp) -> bool {
         // Around an era change, self can be near the maximum value
         // for NtpTimestamp and other near the minimum, and that must
@@ -186,7 +195,7 @@ impl SubAssign<NtpDuration> for NtpTimestamp {
     }
 }
 
-/// NtpDuration is used to represent signed intervals between NtpTimestamps.
+/// `NtpDuration` is used to represent signed intervals between `NtpTimestamps`.
 /// A negative duration interval is interpreted to mean that the first
 /// timestamp used to define the interval represents a point in time after
 /// the second timestamp.
@@ -227,11 +236,12 @@ impl NtpDuration {
         // Although saturating is safe to do, it probably still
         // should never happen in practice, so ensure we will
         // see it when running in debug mode.
-        debug_assert!(self.duration <= 0x0000FFFFFFFFFFFF);
+        debug_assert!(self.duration <= 0x0000_FFFF_FFFF_FFFF);
 
-        match self.duration > 0x0000FFFFFFFFFFFF {
-            true => 0xFFFFFFFF_u32,
-            false => ((self.duration & 0x0000FFFFFFFF0000) >> 16) as u32,
+        if self.duration > 0x0000_FFFF_FFFF_FFFF {
+            0xFFFF_FFFF_u32
+        } else {
+            ((self.duration & 0x0000_FFFF_FFFF_0000) >> 16) as u32
         }
         .to_be_bytes()
     }
@@ -259,11 +269,14 @@ impl NtpDuration {
 
     /// Convert to an f64; required for statistical calculations
     /// (e.g. in clock filtering)
+    #[allow(clippy::cast_precision_loss)]
+    #[must_use]
     pub fn to_seconds(self) -> f64 {
         // dividing by u32::MAX moves the decimal point to the right position
-        self.duration as f64 / u32::MAX as f64
+        self.duration as f64 / f64::from(u32::MAX)
     }
 
+    #[must_use]
     pub fn from_seconds(seconds: f64) -> Self {
         debug_assert!(!(seconds.is_nan() || seconds.is_infinite()));
 
@@ -272,11 +285,9 @@ impl NtpDuration {
 
         // Ensure proper saturating behaviour
         let duration = match i as i64 {
-            i if i >= i32::MIN as i64 && i <= i32::MAX as i64 => {
-                (i << 32) | (f * u32::MAX as f64) as i64
-            }
-            i if i < i32::MIN as i64 => i64::MIN,
-            i if i > i32::MAX as i64 => i64::MAX,
+            i if i32::try_from(i).is_ok() => (i << 32) | (f * f64::from(u32::MAX)) as i64,
+            i if i < i64::from(i32::MIN) => i64::MIN,
+            i if i > i64::from(i32::MAX) => i64::MAX,
             _ => unreachable!(),
         };
 
@@ -284,6 +295,7 @@ impl NtpDuration {
     }
 
     /// Interval of same length, but positive direction
+    #[must_use]
     pub const fn abs(self) -> Self {
         Self {
             duration: self.duration.abs(),
@@ -291,6 +303,7 @@ impl NtpDuration {
     }
 
     /// Interval of same length, but positive direction
+    #[must_use]
     pub fn abs_diff(self, other: Self) -> Self {
         (self - other).abs()
     }
@@ -299,14 +312,16 @@ impl NtpDuration {
     /// (second return value) representing the length of this duration.
     /// The number of nanoseconds is guaranteed to be positive and less
     /// than 10^9
+    #[must_use]
     pub const fn as_seconds_nanos(self) -> (i32, u32) {
         (
             (self.duration >> 32) as i32,
-            (((self.duration & 0xFFFFFFFF) * 1_000_000_000) >> 32) as u32,
+            (((self.duration & 0xFFFF_FFFF) * 1_000_000_000) >> 32) as u32,
         )
     }
 
-    /// Interpret an exponent `k` as `2^k` seconds, expressed as an NtpDuration
+    /// Interpret an exponent `k` as `2^k` seconds, expressed as an `NtpDuration`
+    #[must_use]
     pub const fn from_exponent(input: i8) -> Self {
         Self {
             duration: match input {
@@ -318,7 +333,8 @@ impl NtpDuration {
         }
     }
 
-    /// calculate the log2 (floored) of the duration in seconds (i8::MIN if 0)
+    /// calculate the log2 (floored) of the duration in seconds (`i8::MIN` if 0)
+    #[must_use]
     pub fn log2(self) -> i8 {
         if self == NtpDuration::ZERO {
             return i8::MIN;
@@ -327,6 +343,7 @@ impl NtpDuration {
         31 - (self.duration.leading_zeros() as i8)
     }
 
+    #[must_use]
     pub fn from_system_duration(duration: Duration) -> Self {
         let seconds = duration.as_secs();
         let nanos = duration.subsec_nanos();
@@ -336,7 +353,7 @@ impl NtpDuration {
         debug_assert!(nanos < 1_000_000_000);
         // NTP uses 1/2^32 sec as its unit of fractional time.
         // our time is in nanoseconds, so 1/1e9 seconds
-        let fraction = ((nanos as u64) << 32) / 1_000_000_000;
+        let fraction = (u64::from(nanos) << 32) / 1_000_000_000;
 
         // alternatively, abuse FP arithmetic to save an instruction
         // let fraction = (nanos as f64 * 4.294967296) as u64;
@@ -551,7 +568,7 @@ impl Default for PollIntervalLimits {
 
 impl std::fmt::Debug for PollInterval {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "PollInterval({} s)", 2.0_f64.powf(self.0 as _))
+        write!(f, "PollInterval({} s)", 2.0_f64.powf(f64::from(self.0)))
     }
 }
 
@@ -559,14 +576,17 @@ impl PollInterval {
     pub const NEVER: PollInterval = PollInterval(i8::MAX);
 
     #[cfg(test)]
+    #[must_use]
     pub fn test_new(value: i8) -> Self {
         Self(value)
     }
 
+    #[must_use]
     pub fn from_byte(value: u8) -> Self {
         Self(value as i8)
     }
 
+    #[must_use]
     pub fn as_byte(self) -> u8 {
         self.0 as u8
     }
@@ -586,16 +606,19 @@ impl PollInterval {
         Self(self.0 - 1).max(limits.min)
     }
 
+    #[must_use]
     pub const fn as_log(self) -> i8 {
         self.0
     }
 
+    #[must_use]
     pub const fn as_duration(self) -> NtpDuration {
         NtpDuration {
             duration: 1 << (self.0 + 32),
         }
     }
 
+    #[must_use]
     pub const fn as_system_duration(self) -> Duration {
         Duration::from_secs(1 << self.0)
     }
@@ -624,6 +647,7 @@ impl<'de> Deserialize<'de> for FrequencyTolerance {
 }
 
 impl FrequencyTolerance {
+    #[must_use]
     pub const fn ppm(ppm: u32) -> Self {
         Self { ppm }
     }
@@ -637,6 +661,7 @@ impl Mul<FrequencyTolerance> for NtpDuration {
     }
 }
 
+#[allow(clippy::missing_panics_doc)]
 #[cfg(feature = "__internal-fuzz")]
 pub fn fuzz_duration_from_seconds(v: f64) {
     if v.is_finite() {
@@ -660,7 +685,7 @@ mod tests {
     #[test]
     fn test_timestamp_era_change() {
         let mut a = NtpTimestamp::from_fixed_int(1);
-        let b = NtpTimestamp::from_fixed_int(0xFFFFFFFFFFFFFFFF);
+        let b = NtpTimestamp::from_fixed_int(0xFFFF_FFFF_FFFF_FFFF);
         assert_eq!(a - b, NtpDuration::from_fixed_int(2));
         assert_eq!(b - a, NtpDuration::from_fixed_int(-2));
 
@@ -681,7 +706,7 @@ mod tests {
     fn test_timestamp_from_seconds_nanos() {
         assert_eq!(
             NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 500_000_000),
-            NtpTimestamp::from_fixed_int(0x80000000)
+            NtpTimestamp::from_fixed_int(0x8000_0000)
         );
         assert_eq!(
             NtpTimestamp::from_seconds_nanos_since_ntp_era(1, 0),
@@ -704,7 +729,7 @@ mod tests {
     #[test]
     fn test_duration_as_seconds_nanos() {
         assert_eq!(
-            NtpDuration::from_fixed_int(0x80000000).as_seconds_nanos(),
+            NtpDuration::from_fixed_int(0x8000_0000).as_seconds_nanos(),
             (0, 500_000_000)
         );
         assert_eq!(
@@ -797,7 +822,7 @@ mod tests {
             assert!(NtpDuration::from_exponent(i) > NtpDuration::from_fixed_int(0));
         }
         for i in -128..-32 {
-            NtpDuration::from_exponent(i); // should not crash
+            let _ = NtpDuration::from_exponent(i); // should not crash
         }
     }
 

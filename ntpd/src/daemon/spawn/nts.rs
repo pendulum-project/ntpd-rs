@@ -38,13 +38,14 @@ impl From<mpsc::error::SendError<SpawnEvent>> for NtsSpawnError {
 
 pub(super) async fn resolve_addr(address: (&str, u16)) -> Option<SocketAddr> {
     match tokio::net::lookup_host(address).await {
-        Ok(mut addresses) => match addresses.next() {
-            Some(address) => Some(address),
-            None => {
+        Ok(mut addresses) => {
+            if let Some(address) = addresses.next() {
+                Some(address)
+            } else {
                 warn!("received unknown domain name from NTS-ke");
                 None
             }
-        },
+        }
         Err(e) => {
             warn!(error = ?e, "error while resolving source address, retrying");
             None
@@ -56,7 +57,7 @@ impl NtsSpawner {
     pub fn new(config: NtsSourceConfig) -> NtsSpawner {
         NtsSpawner {
             config,
-            id: Default::default(),
+            id: SpawnerId::default(),
             has_spawned: false,
         }
     }

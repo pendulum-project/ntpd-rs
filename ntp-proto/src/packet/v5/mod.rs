@@ -264,6 +264,7 @@ impl NtpHeaderV5 {
     const WIRE_LENGTH: usize = 48;
     const VERSION: u8 = 5;
 
+    #[allow(clippy::cast_possible_wrap)]
     pub(crate) fn deserialize(
         data: &[u8],
     ) -> Result<(Self, usize), ParsingError<std::convert::Infallible>> {
@@ -297,6 +298,8 @@ impl NtpHeaderV5 {
         ))
     }
 
+    #[allow(clippy::cast_sign_loss)]
+    #[allow(clippy::cast_possible_wrap)]
     #[allow(dead_code)]
     pub(crate) fn serialize(&self, mut w: impl NonBlockingWrite) -> std::io::Result<()> {
         w.write_all(&[(self.leap.to_bits() << 6) | (Self::VERSION << 3) | self.mode.to_bits()])?;
@@ -493,11 +496,11 @@ mod tests {
         );
         assert_eq!(
             parsed.receive_timestamp,
-            NtpTimestamp::from_fixed_int(0x1111111111111111)
+            NtpTimestamp::from_fixed_int(0x1111_1111_1111_1111)
         );
         assert_eq!(
             parsed.transmit_timestamp,
-            NtpTimestamp::from_fixed_int(0x2222222222222222)
+            NtpTimestamp::from_fixed_int(0x2222_2222_2222_2222)
         );
 
         let mut buffer: [u8; 48] = [0u8; 48];
@@ -507,6 +510,7 @@ mod tests {
         assert_eq!(data, buffer);
     }
 
+    #[allow(clippy::cast_possible_wrap)]
     #[test]
     fn test_encode_decode_roundtrip() {
         for i in 0..=u8::MAX {

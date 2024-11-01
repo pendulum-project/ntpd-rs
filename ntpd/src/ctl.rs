@@ -45,11 +45,6 @@ pub enum NtpCtlAction {
 pub(crate) struct NtpCtlOptions {
     config: Option<PathBuf>,
     format: Format,
-    help: bool,
-    version: bool,
-    validate: bool,
-    status: bool,
-    force_sync: bool,
     action: NtpCtlAction,
 }
 
@@ -76,10 +71,10 @@ impl NtpCtlOptions {
             match arg {
                 CliArg::Flag(flag) => match flag.as_str() {
                     "-h" | "--help" => {
-                        options.help = true;
+                        options.action = NtpCtlAction::Help;
                     }
                     "-v" | "--version" => {
-                        options.version = true;
+                        options.action = NtpCtlAction::Version;
                     }
                     option => {
                         Err(format!("invalid option provided: {option}"))?;
@@ -100,18 +95,18 @@ impl NtpCtlOptions {
                 },
                 CliArg::Rest(rest) => {
                     if rest.len() > 1 {
-                        eprintln!("Warning: Too many commands provided.")
+                        eprintln!("Warning: Too many commands provided.");
                     }
                     for command in rest {
                         match command.as_str() {
                             "validate" => {
-                                options.validate = true;
+                                options.action = NtpCtlAction::Validate;
                             }
                             "status" => {
-                                options.status = true;
+                                options.action = NtpCtlAction::Status;
                             }
                             "force-sync" => {
-                                options.force_sync = true;
+                                options.action = NtpCtlAction::ForceSync;
                             }
                             unknown => {
                                 eprintln!("Warning: Unknown command {unknown}");
@@ -122,27 +117,9 @@ impl NtpCtlOptions {
             }
         }
 
-        options.resolve_action();
         // nothing to validate at the moment
 
         Ok(options)
-    }
-
-    /// from the arguments resolve which action should be performed
-    fn resolve_action(&mut self) {
-        if self.help {
-            self.action = NtpCtlAction::Help;
-        } else if self.version {
-            self.action = NtpCtlAction::Version;
-        } else if self.validate {
-            self.action = NtpCtlAction::Validate;
-        } else if self.status {
-            self.action = NtpCtlAction::Status;
-        } else if self.force_sync {
-            self.action = NtpCtlAction::ForceSync;
-        } else {
-            self.action = NtpCtlAction::Help;
-        }
     }
 }
 
@@ -167,6 +144,9 @@ async fn validate(config: Option<PathBuf>) -> std::io::Result<ExitCode> {
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// # Errors
+///
+/// Returns `Error` if options input in `std::env::args()` is invalid.
 pub async fn main() -> std::io::Result<ExitCode> {
     let options = match NtpCtlOptions::try_parse_from(std::env::args()) {
         Ok(options) => options,
@@ -267,7 +247,7 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
                         "    NTS cookies: {}/{} available",
                         nts_cookies,
                         ntp_proto::MAX_COOKIES
-                    )
+                    );
                 }
             }
             println!();
@@ -309,8 +289,11 @@ mod tests {
     use std::os::unix::prelude::PermissionsExt;
     use std::path::Path;
 
+    use ntp_proto::SystemSnapshot;
+
     use crate::daemon::{
         config::ObservabilityConfig,
+        observer::ProgramData,
         sockets::{create_unix_socket_with_permissions, write_json},
     };
 
@@ -320,7 +303,7 @@ mod tests {
         command: Format,
         socket_name: &str,
     ) -> std::io::Result<Result<ExitCode, std::io::Error>> {
-        let config: ObservabilityConfig = Default::default();
+        let config = ObservabilityConfig::default();
 
         // be careful with copying: tests run concurrently and should use a unique socket name!
         let path = std::env::temp_dir().join(socket_name);
@@ -337,8 +320,8 @@ mod tests {
         let handle = tokio::spawn(fut);
 
         let value = ObservableState {
-            program: Default::default(),
-            system: Default::default(),
+            program: ProgramData::default(),
+            system: SystemSnapshot::default(),
             sources: vec![],
             servers: vec![],
         };
@@ -379,7 +362,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_control_socket_source_invalid_input() -> std::io::Result<()> {
-        let config: ObservabilityConfig = Default::default();
+        let config = ObservabilityConfig::default();
 
         // be careful with copying: tests run concurrently and should use a unique socket name!
         let path = std::env::temp_dir().join("ntp-test-stream-10");
