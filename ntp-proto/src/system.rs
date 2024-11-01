@@ -242,52 +242,48 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         Ok(())
     }
 
+    pub fn create_source_controller(
+        &mut self,
+        id: SourceId,
+    ) -> Result<Controller::NtpSourceController, <Controller::Clock as NtpClock>::Error> {
+        self.ensure_controller_control()?;
+        let controller = self.controller.add_source(id);
+        self.sources.insert(id, None);
+        Ok(controller)
+    }
+
+    pub fn create_sock_source_controller(
+        &mut self,
+        id: SourceId,
+        measurement_noise_estimate: f64,
+    ) -> Result<Controller::SockSourceController, <Controller::Clock as NtpClock>::Error> {
+        self.ensure_controller_control()?;
+        let controller = self
+            .controller
+            .add_sock_source(id, measurement_noise_estimate);
+        self.sources.insert(id, None);
+        Ok(controller)
+    }
+
     #[allow(clippy::type_complexity)]
     pub fn create_ntp_source(
         &mut self,
         id: SourceId,
         source_addr: SocketAddr,
         protocol_version: ProtocolVersion,
+        nts: Option<Box<SourceNtsData>>,
     ) -> Result<
         (
-            NtpSource<Controller::SourceController>,
+            NtpSource<Controller::NtpSourceController>,
             NtpSourceActionIterator<Controller::SourceMessage>,
         ),
         <Controller::Clock as NtpClock>::Error,
     > {
-        self.ensure_controller_control()?;
-        let controller = self.controller.add_source(id);
-        self.sources.insert(id, None);
         Ok(NtpSource::new(
             source_addr,
             self.source_defaults_config,
             protocol_version,
-            controller,
-        ))
-    }
-
-    #[allow(clippy::type_complexity)]
-    pub fn create_nts_source(
-        &mut self,
-        id: SourceId,
-        source_addr: SocketAddr,
-        protocol_version: ProtocolVersion,
-        nts: Box<SourceNtsData>,
-    ) -> Result<
-        (
-            NtpSource<Controller::SourceController>,
-            NtpSourceActionIterator<Controller::SourceMessage>,
-        ),
-        <Controller::Clock as NtpClock>::Error,
-    > {
-        self.ensure_controller_control()?;
-        let controller = self.controller.add_source(id);
-        self.sources.insert(id, None);
-        Ok(NtpSource::new_nts(
-            source_addr,
-            self.source_defaults_config,
-            protocol_version,
-            controller,
+            self.create_source_controller(id)?,
             nts,
         ))
     }
