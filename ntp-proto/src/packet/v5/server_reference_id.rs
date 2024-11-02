@@ -66,10 +66,12 @@ pub struct BloomFilter([u8; Self::BYTES]);
 impl BloomFilter {
     pub const BYTES: usize = 512;
 
+    #[must_use]
     pub const fn new() -> Self {
         Self([0; Self::BYTES])
     }
 
+    #[must_use]
     pub fn contains_id(&self, other: &ServerId) -> bool {
         other.0.iter().all(|idx| self.is_set(*idx))
     }
@@ -96,10 +98,13 @@ impl BloomFilter {
         union
     }
 
+    #[allow(clippy::cast_possible_truncation)]
+    #[must_use]
     pub fn count_ones(&self) -> u16 {
         self.0.iter().map(|b| b.count_ones() as u16).sum()
     }
 
+    #[must_use]
     pub const fn as_bytes(&self) -> &[u8; Self::BYTES] {
         &self.0
     }
@@ -133,7 +138,7 @@ impl Debug for BloomFilter {
             .0
             .chunks_exact(32)
             .map(|chunk| chunk.iter().fold(0, |acc, b| acc | b))
-            .map(|b| char::from_u32(0x2800 + b as u32).unwrap())
+            .map(|b| char::from_u32(0x2800 + u32::from(b)).unwrap())
             .collect();
 
         f.debug_tuple("BloomFilter").field(&str).finish()
@@ -219,6 +224,7 @@ impl RemoteBloomFilter {
         Ok(())
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn advance_next_to_request(&mut self) {
         self.next_to_request = (self.next_to_request + self.chunk_size) % BloomFilter::BYTES as u16;
 
@@ -236,7 +242,7 @@ impl Debug for RemoteBloomFilter {
             .field("last_requested", &self.last_requested)
             .field("next_to_request", &self.next_to_request)
             .field("is_filled", &self.is_filled)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -316,6 +322,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     #[test]
     fn requesting() {
         use ResponseHandlingError::{MismatchedCookie, MismatchedLength, NotAwaitingResponse};
@@ -383,7 +390,7 @@ mod tests {
                 continue;
             };
 
-            for _chunk in 0..((512 / chunk_size) + 1) {
+            for _chunk in 0..=(512 / chunk_size) {
                 let cookie = NtpClientCookie::new_random();
                 let request = bf.next_request(cookie);
                 let response = request.to_response(&target_filter).unwrap();

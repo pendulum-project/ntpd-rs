@@ -93,7 +93,7 @@ pub struct Server<C> {
 
 // Quick estimation of ntp packet message version without doing full parsing
 fn fallback_message_version(message: &[u8]) -> u8 {
-    message.first().map(|v| (v & 0b0011_1000) >> 3).unwrap_or(0)
+    message.first().map_or(0, |v| (v & 0b0011_1000) >> 3)
 }
 
 impl<C> Server<C> {
@@ -169,6 +169,7 @@ impl<C: NtpClock> Server<C> {
     /// If the buffer isn't large enough to encode the reply, this
     /// will log an error and ignore the incoming packet. A buffer
     /// as large as the message will always suffice.
+    #[allow(clippy::cast_possible_truncation)]
     pub fn handle<'a>(
         &mut self,
         client_ip: IpAddr,
@@ -216,10 +217,10 @@ impl<C: NtpClock> Server<C> {
             if non_nts_action == FilterAction::Ignore {
                 stats_handler.register(version, nts, ServerReason::Policy, ServerResponse::Ignore);
                 return ServerAction::Ignore;
-            } else {
-                action = ServerResponse::Deny;
-                reason = ServerReason::Policy;
             }
+
+            action = ServerResponse::Deny;
+            reason = ServerReason::Policy;
         }
 
         let mut cursor = Cursor::new(buffer);
@@ -261,7 +262,7 @@ impl<C: NtpClock> Server<C> {
             ServerResponse::Ignore => unreachable!(),
         };
         match result {
-            Ok(_) => {
+            Ok(()) => {
                 stats_handler.register(version, nts, reason, action);
                 let length = cursor.position();
                 ServerAction::Respond {
@@ -312,6 +313,7 @@ impl<T: std::hash::Hash + Eq> TimestampedCache<T> {
         }
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn index(&self, item: &T) -> usize {
         use std::hash::{BuildHasher, Hasher};
 
@@ -407,6 +409,7 @@ impl<'de> Deserialize<'de> for IpSubnet {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 #[cfg(test)]
 mod tests {
     use std::net::{Ipv4Addr, Ipv6Addr};
@@ -479,6 +482,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn serialize_packet_unencrypted(send_packet: &NtpPacket) -> Vec<u8> {
         let mut buf = vec![0; 1024];
         let mut cursor = Cursor::new(buf.as_mut_slice());
@@ -489,6 +493,7 @@ mod tests {
         buf
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn serialize_packet_encrypted(send_packet: &NtpPacket, key: &dyn Cipher) -> Vec<u8> {
         let mut buf = vec![0; 1024];
         let mut cursor = Cursor::new(buf.as_mut_slice());

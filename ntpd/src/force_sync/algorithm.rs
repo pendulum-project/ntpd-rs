@@ -31,14 +31,15 @@ impl<C: NtpClock> SingleShotController<C> {
     const ASSUMED_UNCERTAINTY: NtpDuration = NtpDuration::from_exponent(-1);
 
     fn try_steer(&self) {
-        if self.sources.len() < self.min_agreeing {
-            return;
-        }
-
         struct Event {
             offset: NtpDuration,
             count: isize,
         }
+
+        if self.sources.len() < self.min_agreeing {
+            return;
+        }
+
         let mut events: Vec<_> = self
             .sources
             .values()
@@ -69,17 +70,18 @@ impl<C: NtpClock> SingleShotController<C> {
             }
         }
 
+        #[allow(clippy::cast_sign_loss)]
         if peak as usize >= self.min_agreeing {
             let mut sum = 0.0;
             let mut count = 0;
             for source in self.sources.values() {
                 if source.offset.abs_diff(peak_offset) < Self::ASSUMED_UNCERTAINTY {
                     count += 1;
-                    sum += source.offset.to_seconds()
+                    sum += source.offset.to_seconds();
                 }
             }
 
-            let avg_offset = NtpDuration::from_seconds(sum / (count as f64));
+            let avg_offset = NtpDuration::from_seconds(sum / f64::from(count));
             self.offer_clock_change(avg_offset);
 
             std::process::exit(0);
@@ -141,12 +143,12 @@ impl<C: NtpClock> TimeSyncController for SingleShotController<C> {
         self.sources.insert(id, message);
         // TODO, check and update time once we have sufficient sources
         self.try_steer();
-        Default::default()
+        ntp_proto::StateUpdate::default()
     }
 
     fn time_update(&mut self) -> ntp_proto::StateUpdate<Self::SourceId, Self::ControllerMessage> {
         // no need for action
-        Default::default()
+        ntp_proto::StateUpdate::default()
     }
 }
 

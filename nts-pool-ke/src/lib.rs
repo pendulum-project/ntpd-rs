@@ -1,3 +1,6 @@
+#![deny(clippy::pedantic)]
+#![allow(clippy::module_name_repetitions)]
+#![allow(clippy::explicit_iter_loop)] // breaking on msrv
 mod cli;
 mod config;
 
@@ -38,6 +41,9 @@ pub(crate) mod exitcode {
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// # Errors
+///
+/// Will return `Err` if `cli::NtsPoolKeAction` fails.
 pub async fn nts_pool_ke_main() -> Result<(), Box<dyn std::error::Error>> {
     let options = NtsPoolKeOptions::try_parse_from(std::env::args())?;
 
@@ -382,6 +388,8 @@ async fn handle_client(
             Err(e)
         }
         Ok(records_for_client) => {
+            const NTP_DEFAULT_PORT: u16 = 123;
+
             info!("received cookies from the NTS KE server");
 
             // now we just forward the response
@@ -401,7 +409,6 @@ async fn handle_client(
                 .write(&mut buffer)?;
             }
 
-            const NTP_DEFAULT_PORT: u16 = 123;
             if !mentions_port {
                 NtsRecord::Port {
                     critical: true,

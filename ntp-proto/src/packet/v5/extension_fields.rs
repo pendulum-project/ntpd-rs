@@ -1,9 +1,7 @@
 use crate::io::NonBlockingWrite;
-use crate::packet::error::ParsingError;
 use crate::packet::v5::server_reference_id::BloomFilter;
 use crate::packet::ExtensionField;
 use std::borrow::Cow;
-use std::convert::Infallible;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Type {
@@ -102,7 +100,7 @@ impl ReferenceIdRequest {
         Some(ReferenceIdResponse { bytes })
     }
 
-    pub fn serialize(&self, mut writer: impl NonBlockingWrite) -> std::io::Result<()> {
+    pub fn serialize(self, mut writer: impl NonBlockingWrite) -> std::io::Result<()> {
         let payload_len = self.payload_len;
         let ef_len: u16 = payload_len + 4;
 
@@ -121,22 +119,22 @@ impl ReferenceIdRequest {
         Ok(())
     }
 
-    pub fn decode(msg: &[u8]) -> Result<Self, ParsingError<Infallible>> {
+    pub fn decode(msg: &[u8]) -> Self {
         let payload_len =
             u16::try_from(msg.len()).expect("NTP fields can not be longer than u16::MAX");
         let offset_bytes: [u8; 2] = msg[0..2].try_into().unwrap();
 
-        Ok(Self {
+        Self {
             payload_len,
             offset: u16::from_be_bytes(offset_bytes),
-        })
+        }
     }
 
-    pub const fn offset(&self) -> u16 {
+    pub const fn offset(self) -> u16 {
         self.offset
     }
 
-    pub const fn payload_len(&self) -> u16 {
+    pub const fn payload_len(self) -> u16 {
         self.payload_len
     }
 }

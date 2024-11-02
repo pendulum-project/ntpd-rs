@@ -58,7 +58,7 @@ impl ServerStatHandler for ServerStats {
                 (ServerResponse::ProvideTime, _) => self.nts_accepted_packets.inc(),
                 (ServerResponse::Deny, _) => self.nts_denied_packets.inc(),
                 (ServerResponse::Ignore, ServerReason::RateLimit) => {
-                    self.nts_rate_limited_packets.inc()
+                    self.nts_rate_limited_packets.inc();
                 }
                 _ => { /* counted above */ }
             }
@@ -285,6 +285,7 @@ mod tests {
         let mut cursor = Cursor::new(buf.as_mut_slice());
         send_packet.serialize(&mut cursor, &NoCipher, None).unwrap();
 
+        #[allow(clippy::cast_possible_truncation)]
         let end = cursor.position() as usize;
         buf.truncate(end);
         buf
@@ -302,7 +303,7 @@ mod tests {
 
         let join = ServerTask::spawn(
             config,
-            Default::default(),
+            ServerStats::default(),
             system_snapshots,
             keyset,
             clock,

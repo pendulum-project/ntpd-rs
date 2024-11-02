@@ -13,6 +13,7 @@ pub struct SupportedAlgorithmsDecoder {
 }
 
 impl SupportedAlgorithmsDecoder {
+    #[must_use]
     pub fn step_with_slice(
         mut self,
         bytes: &[u8],
@@ -34,7 +35,7 @@ impl SupportedAlgorithmsDecoder {
         record: NtsRecord,
     ) -> ControlFlow<Result<Vec<(u16, u16)>, KeyExchangeError>, Self> {
         use ControlFlow::{Break, Continue};
-        use NtsRecord::*;
+        use NtsRecord::{EndOfMessage, Error, SupportedAlgorithmList, Warning};
 
         let mut state = self;
 
@@ -87,6 +88,9 @@ pub struct ClientToPoolData {
 }
 
 impl ClientToPoolData {
+    /// # Errors
+    ///
+    /// Returns `KeyExchangeError` if extracting the `NtsKeys` fails.
     pub fn extract_nts_keys<ConnectionData>(
         &self,
         stream: &rustls::ConnectionCommon<ConnectionData>,
@@ -98,6 +102,7 @@ impl ClientToPoolData {
 }
 
 impl ClientToPoolDecoder {
+    #[must_use]
     pub fn step_with_slice(
         mut self,
         bytes: &[u8],
@@ -120,8 +125,10 @@ impl ClientToPoolDecoder {
     ) -> ControlFlow<Result<ClientToPoolData, KeyExchangeError>, Self> {
         use self::AeadAlgorithm as Algorithm;
         use ControlFlow::{Break, Continue};
-        use KeyExchangeError::*;
-        use NtsRecord::*;
+        use KeyExchangeError::{NoValidAlgorithm, NoValidProtocol};
+        #[cfg(feature = "ntpv5")]
+        use NtsRecord::DraftId;
+        use NtsRecord::{AeadAlgorithm, EndOfMessage, Error, NextProtocol, NtpServerDeny, Warning};
 
         let mut state = self;
 
@@ -238,6 +245,7 @@ pub struct PoolToServerData {
 }
 
 impl PoolToServerDecoder {
+    #[must_use]
     pub fn step_with_slice(
         mut self,
         bytes: &[u8],
@@ -260,8 +268,10 @@ impl PoolToServerDecoder {
     ) -> ControlFlow<Result<PoolToServerData, KeyExchangeError>, Self> {
         use self::AeadAlgorithm as Algorithm;
         use ControlFlow::{Break, Continue};
-        use KeyExchangeError::*;
-        use NtsRecord::*;
+        use KeyExchangeError::{NoValidAlgorithm, NoValidProtocol};
+        #[cfg(feature = "ntpv5")]
+        use NtsRecord::DraftId;
+        use NtsRecord::{AeadAlgorithm, EndOfMessage, Error, NextProtocol, Warning};
 
         let mut state = self;
 

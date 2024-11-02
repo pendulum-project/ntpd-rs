@@ -16,6 +16,10 @@ impl ReferenceId {
     // Network Time Security (NTS) negative-acknowledgment (NAK), from rfc8915
     pub const KISS_NTSN: ReferenceId = ReferenceId(u32::from_be_bytes(*b"NTSN"));
 
+    /// # Panics
+    ///
+    /// Will panic if `addr` is not a valid ip address.
+    #[must_use]
     pub fn from_ip(addr: IpAddr) -> ReferenceId {
         match addr {
             IpAddr::V4(addr) => ReferenceId(u32::from_be_bytes(addr.octets())),
@@ -29,20 +33,20 @@ impl ReferenceId {
         ReferenceId(value)
     }
 
-    pub(crate) fn is_deny(&self) -> bool {
-        *self == Self::KISS_DENY
+    pub(crate) fn is_deny(self) -> bool {
+        self == Self::KISS_DENY
     }
 
-    pub(crate) fn is_rate(&self) -> bool {
-        *self == Self::KISS_RATE
+    pub(crate) fn is_rate(self) -> bool {
+        self == Self::KISS_RATE
     }
 
-    pub(crate) fn is_rstr(&self) -> bool {
-        *self == Self::KISS_RSTR
+    pub(crate) fn is_rstr(self) -> bool {
+        self == Self::KISS_RSTR
     }
 
-    pub(crate) fn is_ntsn(&self) -> bool {
-        *self == Self::KISS_NTSN
+    pub(crate) fn is_ntsn(self) -> bool {
+        self == Self::KISS_NTSN
     }
 
     pub(crate) fn to_bytes(self) -> [u8; 4] {

@@ -43,6 +43,7 @@ impl SourceNtsData {
         self.cookies.get()
     }
 
+    #[must_use]
     pub fn get_keys(self) -> (Box<dyn Cipher>, Box<dyn Cipher>) {
         (self.c2s, self.s2c)
     }
@@ -52,7 +53,7 @@ impl std::fmt::Debug for SourceNtsData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SourceNtsData")
             .field("cookies", &self.cookies)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -161,6 +162,7 @@ impl std::fmt::Debug for Reach {
 }
 
 impl Reach {
+    #[must_use]
     pub fn is_reachable(&self) -> bool {
         self.0 != 0
     }
@@ -177,6 +179,7 @@ impl Reach {
     }
 
     /// Number of polls since the last message we received
+    #[must_use]
     pub fn unanswered_polls(&self) -> u32 {
         self.0.trailing_zeros()
     }
@@ -201,13 +204,16 @@ pub struct NtpSourceSnapshot {
 }
 
 impl NtpSourceSnapshot {
+    /// # Errors
+    ///
+    /// Returns `AcceptSynchronizationError` if source is rejected.
     pub fn accept_synchronization(
         &self,
         local_stratum: u8,
         local_ips: &[IpAddr],
         #[cfg_attr(not(feature = "ntpv5"), allow(unused_variables))] system: &SystemSnapshot,
     ) -> Result<(), AcceptSynchronizationError> {
-        use AcceptSynchronizationError::*;
+        use AcceptSynchronizationError::{Loop, ServerUnreachable, Stratum};
 
         if self.stratum >= local_stratum {
             debug!(
@@ -266,6 +272,7 @@ impl NtpSourceSnapshot {
 }
 
 #[cfg(feature = "__internal-test")]
+#[must_use]
 pub fn source_snapshot() -> NtpSourceSnapshot {
     use std::net::Ipv4Addr;
 
@@ -280,7 +287,7 @@ pub fn source_snapshot() -> NtpSourceSnapshot {
 
         reach,
         poll_interval: crate::time_types::PollIntervalLimits::default().min,
-        protocol_version: Default::default(),
+        protocol_version: ProtocolVersion::default(),
         #[cfg(feature = "ntpv5")]
         bloom_filter: None,
     }
@@ -309,6 +316,7 @@ pub enum ProtocolVersion {
 }
 
 impl ProtocolVersion {
+    #[must_use]
     pub fn is_expected_incoming_version(&self, incoming_version: u8) -> bool {
         match self {
             ProtocolVersion::V4 => incoming_version == 4 || incoming_version == 3,
@@ -357,6 +365,7 @@ impl<SourceMessage: Clone> Clone for NtpSourceUpdate<SourceMessage> {
 
 #[cfg(feature = "__internal-test")]
 impl<SourceMessage> NtpSourceUpdate<SourceMessage> {
+    #[must_use]
     pub fn snapshot(snapshot: NtpSourceSnapshot) -> Self {
         NtpSourceUpdate {
             snapshot,
@@ -446,7 +455,7 @@ impl<Controller: SourceController> NtpSource<Controller> {
                 current_request_identifier: None,
                 source_id: ReferenceId::from_ip(source_addr.ip()),
                 source_addr,
-                reach: Default::default(),
+                reach: Reach::default(),
                 tries: 0,
 
                 stratum: 16,
@@ -506,6 +515,10 @@ impl<Controller: SourceController> NtpSource<Controller> {
             .max(self.remote_min_poll_interval)
     }
 
+    /// # Panics
+    ///
+    /// Panics if the packet can't be serialized.
+    #[allow(clippy::cast_possible_truncation)]
     #[cfg_attr(not(feature = "ntpv5"), allow(unused_mut))]
     pub fn handle_timer(&mut self) -> NtpSourceActionIterator<Controller::SourceMessage> {
         if !self.reach.is_reachable() && self.tries >= STARTUP_TRIES_THRESHOLD {
@@ -709,13 +722,13 @@ impl<Controller: SourceController> NtpSource<Controller> {
             warn!("Received packet with invalid mode");
             actions!()
         } else {
-            self.process_message(message, local_clock_time, send_time, recv_time)
+            self.process_message(&message, local_clock_time, send_time, recv_time)
         }
     }
 
     fn process_message(
         &mut self,
-        message: NtpPacket,
+        message: &NtpPacket,
         local_clock_time: NtpInstant,
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
@@ -748,19 +761,17 @@ impl<Controller: SourceController> NtpSource<Controller> {
             let bloom_responses = if self.nts.is_some() {
                 message
                     .authenticated_extension_fields()
-                    .filter_map(|ef| match ef {
+                    .find_map(|ef| match ef {
                         ExtensionField::ReferenceIdResponse(response) => Some(response),
                         _ => None,
                     })
-                    .next()
             } else {
                 message
                     .untrusted_extension_fields()
-                    .filter_map(|ef| match ef {
+                    .find_map(|ef| match ef {
                         ExtensionField::ReferenceIdResponse(response) => Some(response),
                         _ => None,
                     })
-                    .next()
             };
 
             if let Some(ref_id) = bloom_responses {
@@ -768,14 +779,13 @@ impl<Controller: SourceController> NtpSource<Controller> {
                     .bloom_filter
                     .handle_response(header.client_cookie, ref_id);
                 if let Err(err) = result {
-                    warn!(?err, "Invalid ReferenceIdResponse from source, ignoring...")
+                    warn!(?err, "Invalid ReferenceIdResponse from source, ignoring...");
                 }
             }
         }
 
         // generate and handle measurement
-        let measurement =
-            Measurement::from_packet(&message, send_time, recv_time, local_clock_time);
+        let measurement = Measurement::from_packet(message, send_time, recv_time, local_clock_time);
 
         let controller_message = self.controller.handle_measurement(measurement);
 
@@ -817,7 +827,7 @@ impl<Controller: SourceController> NtpSource<Controller> {
 
             buffer: [0; 1024],
 
-            protocol_version: Default::default(),
+            protocol_version: ProtocolVersion::default(),
 
             #[cfg(feature = "ntpv5")]
             bloom_filter: RemoteBloomFilter::new(16).unwrap(),
@@ -825,6 +835,8 @@ impl<Controller: SourceController> NtpSource<Controller> {
     }
 }
 
+#[allow(clippy::too_many_lines)]
+#[allow(clippy::cast_possible_truncation)]
 #[cfg(test)]
 mod test {
     use crate::{packet::NoCipher, time_types::PollIntervalLimits, NtpClock};
@@ -885,7 +897,7 @@ mod test {
         type ControllerMessage = ();
         type SourceMessage = ();
 
-        fn handle_message(&mut self, _: Self::ControllerMessage) {
+        fn handle_message(&mut self, (): Self::ControllerMessage) {
             // do nothing
         }
 
@@ -1014,7 +1026,7 @@ mod test {
             type ControllerMessage = ();
             type SourceMessage = ();
 
-            fn handle_message(&mut self, _: Self::ControllerMessage) {}
+            fn handle_message(&mut self, (): Self::ControllerMessage) {}
 
             fn handle_measurement(&mut self, _: Measurement) -> Option<Self::SourceMessage> {
                 None

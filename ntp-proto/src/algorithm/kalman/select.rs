@@ -19,11 +19,11 @@ enum BoundType {
 pub(super) fn select<Index: Copy>(
     synchronization_config: &SynchronizationConfig,
     algo_config: &AlgorithmConfig,
-    candidates: Vec<SourceSnapshot<Index>>,
+    candidates: &[SourceSnapshot<Index>],
 ) -> Vec<SourceSnapshot<Index>> {
     let mut bounds: Vec<(f64, BoundType)> = Vec::with_capacity(2 * candidates.len());
 
-    for snapshot in candidates.iter() {
+    for snapshot in candidates {
         let radius = snapshot.offset_uncertainty() * algo_config.range_statistical_weight
             + snapshot.delay * algo_config.range_delay_weight;
         if radius > algo_config.maximum_source_uncertainty
@@ -42,7 +42,7 @@ pub(super) fn select<Index: Copy>(
     let mut maxt: f64 = 0.0;
     let mut cur: usize = 0;
 
-    for (time, boundtype) in bounds.iter() {
+    for (time, boundtype) in &bounds {
         match boundtype {
             BoundType::Start => cur += 1,
             BoundType::End => cur -= 1,
@@ -64,7 +64,7 @@ pub(super) fn select<Index: Copy>(
                     && snapshot.offset() + radius >= maxt
                     && snapshot.leap_indicator.is_synchronized()
             })
-            .cloned()
+            .copied()
             .collect()
     } else {
         vec![]
@@ -125,7 +125,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = select(&sysconfig, &algconfig, candidates.clone());
+        let result = select(&sysconfig, &algconfig, &candidates.clone());
         assert_eq!(result.len(), 0);
 
         let algconfig = AlgorithmConfig {
@@ -134,7 +134,7 @@ mod tests {
             range_delay_weight: 1.0,
             ..Default::default()
         };
-        let result = select(&sysconfig, &algconfig, candidates.clone());
+        let result = select(&sysconfig, &algconfig, &candidates.clone());
         assert_eq!(result.len(), 0);
 
         let algconfig = AlgorithmConfig {
@@ -143,7 +143,7 @@ mod tests {
             range_delay_weight: 1.0,
             ..Default::default()
         };
-        let result = select(&sysconfig, &algconfig, candidates);
+        let result = select(&sysconfig, &algconfig, &candidates);
         assert_eq!(result.len(), 4);
     }
 
@@ -166,7 +166,7 @@ mod tests {
             range_delay_weight: 1.0,
             ..Default::default()
         };
-        let result = select(&sysconfig, &algconfig, candidates.clone());
+        let result = select(&sysconfig, &algconfig, &candidates.clone());
         assert_eq!(result.len(), 3);
 
         let algconfig = AlgorithmConfig {
@@ -175,7 +175,7 @@ mod tests {
             range_delay_weight: 1.0,
             ..Default::default()
         };
-        let result = select(&sysconfig, &algconfig, candidates.clone());
+        let result = select(&sysconfig, &algconfig, &candidates.clone());
         assert_eq!(result.len(), 2);
 
         let algconfig = AlgorithmConfig {
@@ -184,7 +184,7 @@ mod tests {
             range_delay_weight: 1.0,
             ..Default::default()
         };
-        let result = select(&sysconfig, &algconfig, candidates.clone());
+        let result = select(&sysconfig, &algconfig, &candidates.clone());
         assert_eq!(result.len(), 1);
 
         let algconfig = AlgorithmConfig {
@@ -193,7 +193,7 @@ mod tests {
             range_delay_weight: 1.0,
             ..Default::default()
         };
-        let result = select(&sysconfig, &algconfig, candidates);
+        let result = select(&sysconfig, &algconfig, &candidates);
         assert_eq!(result.len(), 0);
     }
 
@@ -218,14 +218,14 @@ mod tests {
             minimum_agreeing_sources: 3,
             ..Default::default()
         };
-        let result = select(&sysconfig, &algconfig, candidates.clone());
+        let result = select(&sysconfig, &algconfig, &candidates.clone());
         assert_eq!(result.len(), 3);
 
         let sysconfig = SynchronizationConfig {
             minimum_agreeing_sources: 4,
             ..Default::default()
         };
-        let result = select(&sysconfig, &algconfig, candidates);
+        let result = select(&sysconfig, &algconfig, &candidates);
         assert_eq!(result.len(), 0);
     }
 
@@ -248,7 +248,7 @@ mod tests {
             minimum_agreeing_sources: 1,
             ..Default::default()
         };
-        let result = select(&sysconfig, &algconfig, candidates);
+        let result = select(&sysconfig, &algconfig, &candidates);
         assert_eq!(result.len(), 0);
     }
 }

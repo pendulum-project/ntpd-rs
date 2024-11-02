@@ -84,6 +84,9 @@ pub trait Cipher: Sync + Send + ZeroizeOnDrop + 'static {
     /// - encrypts `plaintext_length` bytes from the buffer
     /// - puts the nonce followed by the ciphertext into the buffer
     /// - returns the size of the nonce and ciphertext
+    /// # Errors
+    ///
+    /// Returns error if encryption fails.
     fn encrypt(
         &self,
         buffer: &mut [u8],
@@ -91,6 +94,9 @@ pub trait Cipher: Sync + Send + ZeroizeOnDrop + 'static {
         associated_data: &[u8],
     ) -> std::io::Result<EncryptResult>;
 
+    /// # Errors
+    ///
+    /// Returns error if decryption fails.
     // MUST support arbitrary length nonces
     fn decrypt(
         &self,
@@ -168,7 +174,8 @@ impl AesSivCmac256 {
     #[cfg(feature = "nts-pool")]
     pub fn key_size() -> usize {
         // prefer trust in compiler optimisation over trust in mental arithmetic
-        Self::new(Default::default()).key.len()
+        use aead::generic_array::GenericArray;
+        Self::new(GenericArray::default()).key.len()
     }
 
     #[cfg(feature = "nts-pool")]
@@ -253,7 +260,8 @@ impl AesSivCmac512 {
     #[cfg(feature = "nts-pool")]
     pub fn key_size() -> usize {
         // prefer trust in compiler optimisation over trust in mental arithmetic
-        Self::new(Default::default()).key.len()
+        use aead::generic_array::GenericArray;
+        Self::new(GenericArray::default()).key.len()
     }
 
     #[cfg(feature = "nts-pool")]
@@ -341,6 +349,7 @@ impl IdentityCipher {
 #[cfg(test)]
 impl ZeroizeOnDrop for IdentityCipher {}
 
+#[allow(clippy::cast_possible_truncation)]
 #[cfg(test)]
 impl Cipher for IdentityCipher {
     fn encrypt(

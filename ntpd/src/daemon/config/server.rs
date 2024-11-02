@@ -130,7 +130,7 @@ impl TryFrom<&str> for ServerConfig {
             denylist: default_denylist(),
             allowlist: default_allowlist(),
             rate_limiting_cache_size: Default::default(),
-            rate_limiting_cutoff: Default::default(),
+            rate_limiting_cutoff: Duration::default(),
             require_nts: None,
         })
     }
@@ -270,7 +270,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_ne!(test.keyset, KeysetConfig::default())
+        assert_ne!(test.keyset, KeysetConfig::default());
     }
 
     #[test]
