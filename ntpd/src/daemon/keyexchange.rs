@@ -10,7 +10,7 @@ use std::{
 
 use libc::{ECONNABORTED, EMFILE, ENFILE, ENOBUFS, ENOMEM};
 use ntp_proto::{
-    KeyExchangeClient, KeyExchangeError, KeyExchangeResult, KeyExchangeServer, KeySet,
+    KeyExchangeClient, KeyExchangeError, KeyExchangeResult, KeyExchangeServer, KeySet, NtpVersion,
 };
 use rustls::{
     pki_types::{CertificateDer, PrivateKeyDer},
@@ -56,11 +56,12 @@ pub(crate) async fn key_exchange_client(
     server_name: String,
     port: u16,
     extra_certificates: &[CertificateDer<'_>],
+    ntp_version: Option<NtpVersion>,
 ) -> Result<KeyExchangeResult, KeyExchangeError> {
     let socket = tokio::net::TcpStream::connect((server_name.as_str(), port)).await?;
     let config = build_client_config(extra_certificates).await?;
 
-    BoundKeyExchangeClient::new(socket, server_name, config, Vec::new())?.await
+    BoundKeyExchangeClient::new(socket, server_name, config, ntp_version, Vec::new())?.await
 }
 
 #[cfg(feature = "unstable_nts-pool")]
@@ -68,12 +69,13 @@ pub(crate) async fn key_exchange_client_with_denied_servers(
     server_name: String,
     port: u16,
     extra_certificates: &[CertificateDer<'_>],
+    ntp_version: Option<NtpVersion>,
     denied_servers: impl IntoIterator<Item = String>,
 ) -> Result<KeyExchangeResult, KeyExchangeError> {
     let socket = tokio::net::TcpStream::connect((server_name.as_str(), port)).await?;
     let config = build_client_config(extra_certificates).await?;
 
-    BoundKeyExchangeClient::new(socket, server_name, config, denied_servers)?.await
+    BoundKeyExchangeClient::new(socket, server_name, config, ntp_version, denied_servers)?.await
 }
 
 #[instrument(level = tracing::Level::ERROR, name = "Nts Server", skip_all, fields(address = debug(nts_ke_config.listen)))]
@@ -283,12 +285,13 @@ where
         io: IO,
         server_name: String,
         config: rustls::ClientConfig,
+        ntp_version: Option<NtpVersion>,
         denied_servers: impl IntoIterator<Item = String>,
     ) -> Result<Self, KeyExchangeError> {
         Ok(Self {
             inner: Some(BoundKeyExchangeClientData {
                 io,
-                client: KeyExchangeClient::new(server_name, config, denied_servers)?,
+                client: KeyExchangeClient::new(server_name, config, ntp_version, denied_servers)?,
                 need_flush: false,
             }),
         })
@@ -698,6 +701,7 @@ mod tests {
             "localhost".to_string(),
             5431,
             &certificates_from_bufread(BufReader::new(Cursor::new(ca))).unwrap(),
+            None,
         )
         .await
         .unwrap();
@@ -821,6 +825,7 @@ mod tests {
                 "localhost".to_string(),
                 5435,
                 &certificates_from_bufread(BufReader::new(Cursor::new(ca))).unwrap(),
+                None,
             )
         )
         .await
@@ -835,6 +840,7 @@ mod tests {
                 "localhost".to_string(),
                 5435,
                 &certificates_from_bufread(BufReader::new(Cursor::new(ca))).unwrap(),
+                None,
             ),
         )
         .await
@@ -875,6 +881,7 @@ mod tests {
             "localhost".to_string(),
             5432,
             &certificates_from_bufread(BufReader::new(Cursor::new(ca))).unwrap(),
+            None,
         )
         .await
         .unwrap();
@@ -916,7 +923,7 @@ mod tests {
 
     #[tokio::test]
     async fn client_connection_refused() {
-        let result = key_exchange_client("localhost".to_string(), 5434, &[]).await;
+        let result = key_exchange_client("localhost".to_string(), 5434, &[], None).await;
 
         let error = result.unwrap_err();
 
@@ -930,7 +937,7 @@ mod tests {
 
     fn client_key_exchange_message_length() -> usize {
         let mut buffer = Vec::with_capacity(1024);
-        for record in ntp_proto::NtsRecord::client_key_exchange_records(vec![]).iter() {
+        for record in ntp_proto::NtsRecord::client_key_exchange_records(None, vec![]).iter() {
             record.write(&mut buffer).unwrap();
         }
 
@@ -978,7 +985,7 @@ mod tests {
         let extra_certificates =
             &certificates_from_bufread(BufReader::new(Cursor::new(ca))).unwrap();
 
-        key_exchange_client("localhost".to_string(), port, extra_certificates).await
+        key_exchange_client("localhost".to_string(), port, extra_certificates, None).await
     }
 
     async fn run_server(listener: tokio::net::TcpListener) -> Result<(), KeyExchangeError> {
@@ -1138,7 +1145,7 @@ mod tests {
 
     #[tokio::test]
     async fn server_expected_client_records() {
-        let records = NtsRecord::client_key_exchange_records(vec![]).to_vec();
+        let records = NtsRecord::client_key_exchange_records(None, vec![]).to_vec();
         let result = send_records_to_server(records).await;
 
         assert!(result.is_ok());

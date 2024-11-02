@@ -6,15 +6,34 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+#[cfg(feature = "unstable_ntpv5")]
+use ntp_proto::NtpVersion;
 use rustls::pki_types::CertificateDer;
 use serde::{de, Deserialize, Deserializer};
 
 use super::super::keyexchange::certificates_from_file;
 
+#[cfg(feature = "unstable_ntpv5")]
+fn deserialize_ntp_version<'de, D>(deserializer: D) -> Result<Option<NtpVersion>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let version = Option::<u8>::deserialize(deserializer)?;
+    match version {
+        None => Ok(None),
+        Some(4) => Ok(Some(NtpVersion::V4)),
+        Some(5) => Ok(Some(NtpVersion::V5)),
+        Some(v) => Err(de::Error::custom(format!("Invalid ntp version {v}"))),
+    }
+}
+
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct StandardSource {
     pub address: NtpAddress,
+    #[cfg(feature = "unstable_ntpv5")]
+    #[serde(default, deserialize_with = "deserialize_ntp_version")]
+    pub ntp_version: Option<NtpVersion>,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
@@ -27,6 +46,9 @@ pub struct NtsSourceConfig {
         rename = "certificate-authority"
     )]
     pub certificate_authorities: Arc<[CertificateDer<'static>]>,
+    #[cfg(feature = "unstable_ntpv5")]
+    #[serde(default, deserialize_with = "deserialize_ntp_version")]
+    pub ntp_version: Option<NtpVersion>,
 }
 
 fn deserialize_certificate_authorities<'de, D>(
@@ -59,6 +81,9 @@ pub struct PoolSourceConfig {
     pub count: usize,
     #[serde(default)]
     pub ignore: Vec<IpAddr>,
+    #[cfg(feature = "unstable_ntpv5")]
+    #[serde(default, deserialize_with = "deserialize_ntp_version")]
+    pub ntp_version: Option<NtpVersion>,
 }
 
 fn max_sources_default() -> usize {
@@ -79,6 +104,9 @@ pub struct NtsPoolSourceConfig {
     pub certificate_authorities: Arc<[CertificateDer<'static>]>,
     #[serde(default = "max_sources_default")]
     pub count: usize,
+    #[cfg(feature = "unstable_ntpv5")]
+    #[serde(default, deserialize_with = "deserialize_ntp_version")]
+    pub ntp_version: Option<NtpVersion>,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
@@ -311,6 +339,8 @@ impl TryFrom<&str> for StandardSource {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Ok(Self {
             address: NormalizedAddress::from_string_ntp(value.to_string())?.into(),
+            #[cfg(feature = "unstable_ntpv5")]
+            ntp_version: None,
         })
     }
 }

@@ -1,6 +1,8 @@
 use std::fmt::Display;
 use std::{net::SocketAddr, ops::Deref};
 
+#[cfg(feature = "unstable_ntpv5")]
+use ntp_proto::NtpVersion;
 use ntp_proto::ProtocolVersion;
 use tokio::sync::mpsc;
 use tracing::warn;
@@ -91,7 +93,14 @@ impl Spawner for StandardSpawner {
                     SourceId::new(),
                     addr,
                     self.config.address.deref().clone(),
+                    #[cfg(not(feature = "unstable_ntpv5"))]
                     ProtocolVersion::default(),
+                    #[cfg(feature = "unstable_ntpv5")]
+                    match self.config.ntp_version {
+                        Some(NtpVersion::V4) => ProtocolVersion::V4,
+                        Some(NtpVersion::V5) => ProtocolVersion::V5,
+                        None => ProtocolVersion::default(),
+                    },
                     None,
                 ),
             ))
@@ -153,6 +162,8 @@ mod tests {
                 vec!["127.0.0.1:123".parse().unwrap()],
             )
             .into(),
+            #[cfg(feature = "unstable_ntpv5")]
+            ntp_version: None,
         });
         let spawner_id = spawner.get_id();
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
@@ -177,6 +188,8 @@ mod tests {
                 vec!["127.0.0.1:123".parse().unwrap()],
             )
             .into(),
+            #[cfg(feature = "unstable_ntpv5")]
+            ntp_version: None,
         });
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
@@ -214,6 +227,8 @@ mod tests {
                 addresses.to_vec(),
             )
             .into(),
+            #[cfg(feature = "unstable_ntpv5")]
+            ntp_version: None,
         });
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
@@ -266,6 +281,8 @@ mod tests {
     async fn works_if_address_does_not_resolve() {
         let mut spawner = StandardSpawner::new(StandardSource {
             address: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![]).into(),
+            #[cfg(feature = "unstable_ntpv5")]
+            ntp_version: None,
         });
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 

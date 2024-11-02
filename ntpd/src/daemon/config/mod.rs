@@ -3,6 +3,8 @@ mod server;
 pub mod subnet;
 
 use clock_steering::unix::UnixClock;
+#[cfg(feature = "unstable_ntpv5")]
+use ntp_proto::NtpVersion;
 use ntp_proto::{AlgorithmConfig, SourceDefaultsConfig, SynchronizationConfig};
 pub use ntp_source::*;
 use serde::{Deserialize, Deserializer};
@@ -464,6 +466,18 @@ impl Config {
             ok = false;
         }
 
+        #[cfg(feature = "unstable_ntpv5")]
+        if self.sources.iter().any(|config| match config {
+            NtpSourceConfig::Standard(config) => matches!(config.ntp_version, Some(NtpVersion::V5)),
+            NtpSourceConfig::Nts(config) => matches!(config.ntp_version, Some(NtpVersion::V5)),
+            NtpSourceConfig::Pool(config) => matches!(config.ntp_version, Some(NtpVersion::V5)),
+            #[cfg(feature = "unstable_nts-pool")]
+            NtpSourceConfig::NtsPool(config) => matches!(config.ntp_version, Some(NtpVersion::V5)),
+        }) {
+            warn!("Forcing a source into NTPv5, which is still a draft. There is no guarantee that the server will remain compatible with this or future versions of ntpd-rs.");
+            ok = false;
+        }
+
         ok
     }
 }
@@ -511,6 +525,8 @@ mod tests {
             config.sources,
             vec![NtpSourceConfig::Standard(StandardSource {
                 address: NormalizedAddress::new_unchecked("example.com", 123).into(),
+                #[cfg(feature = "unstable_ntpv5")]
+                ntp_version: None,
             })]
         );
         assert!(config.observability.log_level.is_none());
@@ -524,6 +540,8 @@ mod tests {
             config.sources,
             vec![NtpSourceConfig::Standard(StandardSource {
                 address: NormalizedAddress::new_unchecked("example.com", 123).into(),
+                #[cfg(feature = "unstable_ntpv5")]
+                ntp_version: None,
             })]
         );
 
@@ -535,6 +553,8 @@ mod tests {
             config.sources,
             vec![NtpSourceConfig::Standard(StandardSource {
                 address: NormalizedAddress::new_unchecked("example.com", 123).into(),
+                #[cfg(feature = "unstable_ntpv5")]
+                ntp_version: None,
             })]
         );
         assert_eq!(
@@ -562,6 +582,8 @@ mod tests {
             config.sources,
             vec![NtpSourceConfig::Standard(StandardSource {
                 address: NormalizedAddress::new_unchecked("example.com", 123).into(),
+                #[cfg(feature = "unstable_ntpv5")]
+                ntp_version: None,
             })]
         );
         assert!(config
@@ -604,6 +626,8 @@ mod tests {
             config.sources,
             vec![NtpSourceConfig::Standard(StandardSource {
                 address: NormalizedAddress::new_unchecked("example.com", 123).into(),
+                #[cfg(feature = "unstable_ntpv5")]
+                ntp_version: None,
             })]
         );
 

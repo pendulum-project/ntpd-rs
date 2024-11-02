@@ -83,8 +83,8 @@ mod exports {
     #[cfg(feature = "__internal-fuzz")]
     pub use super::nts_record::fuzz_key_exchange_server_decoder;
     pub use super::nts_record::{
-        KeyExchangeClient, KeyExchangeError, KeyExchangeResult, KeyExchangeServer, NtsRecord,
-        NtsRecordDecoder, WriteError,
+        KeyExchangeClient, KeyExchangeError, KeyExchangeResult, KeyExchangeServer, NtpVersion,
+        NtsRecord, NtsRecordDecoder, WriteError,
     };
 
     pub use super::cookiestash::MAX_COOKIES;
