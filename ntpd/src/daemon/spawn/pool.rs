@@ -1,6 +1,8 @@
 use std::fmt::Display;
 use std::{net::SocketAddr, ops::Deref};
 
+#[cfg(feature = "unstable_ntpv5")]
+use ntp_proto::NtpVersion;
 use ntp_proto::ProtocolVersion;
 use tokio::sync::mpsc;
 use tracing::warn;
@@ -83,7 +85,14 @@ impl Spawner for PoolSpawner {
                     id,
                     addr,
                     self.config.addr.deref().clone(),
+                    #[cfg(not(feature = "unstable_ntpv5"))]
                     ProtocolVersion::default(),
+                    #[cfg(feature = "unstable_ntpv5")]
+                    match self.config.ntp_version {
+                        Some(NtpVersion::V4) => ProtocolVersion::V4,
+                        Some(NtpVersion::V5) => ProtocolVersion::V5,
+                        None => ProtocolVersion::default(),
+                    },
                     None,
                 );
                 tracing::debug!(?action, "intending to spawn new pool source at");
@@ -148,6 +157,8 @@ mod tests {
                 .into(),
             count: 2,
             ignore: vec![],
+            #[cfg(feature = "unstable_ntpv5")]
+            ntp_version: None,
         });
         let spawner_id = pool.get_id();
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
@@ -184,6 +195,8 @@ mod tests {
                 .into(),
             count: 2,
             ignore: ignores.clone(),
+            #[cfg(feature = "unstable_ntpv5")]
+            ntp_version: None,
         });
         let spawner_id = pool.get_id();
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
@@ -221,6 +234,8 @@ mod tests {
                 .into(),
             count: 2,
             ignore: vec![],
+            #[cfg(feature = "unstable_ntpv5")]
+            ntp_version: None,
         });
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
@@ -262,6 +277,8 @@ mod tests {
             addr: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![]).into(),
             count: 2,
             ignore: vec![],
+            #[cfg(feature = "unstable_ntpv5")]
+            ntp_version: None,
         });
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
         assert!(!pool.is_complete());

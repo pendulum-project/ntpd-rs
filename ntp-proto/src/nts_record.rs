@@ -15,6 +15,13 @@ use crate::{
     source::{ProtocolVersion, SourceNtsData},
 };
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum NtpVersion {
+    V4,
+    #[cfg(feature = "ntpv5")]
+    V5,
+}
+
 #[derive(Debug)]
 pub enum WriteError {
     Invalid,
@@ -208,8 +215,9 @@ impl NtsRecord {
     pub const BAD_REQUEST: u16 = 1;
     pub const INTERNAL_SERVER_ERROR: u16 = 2;
 
-    #[cfg_attr(not(feature = "nts-pool"), allow(unused_variables))]
+    #[allow(unused_variables)]
     pub fn client_key_exchange_records(
+        ntp_version: Option<NtpVersion>,
         denied_servers: impl IntoIterator<Item = String>,
     ) -> Box<[NtsRecord]> {
         let mut base = vec![
@@ -217,6 +225,19 @@ impl NtsRecord {
             NtsRecord::DraftId {
                 data: crate::packet::v5::DRAFT_VERSION.as_bytes().into(),
             },
+            #[cfg(feature = "ntpv5")]
+            match ntp_version {
+                None => NtsRecord::NextProtocol {
+                    protocol_ids: vec![0x8001, 0],
+                },
+                Some(NtpVersion::V4) => NtsRecord::NextProtocol {
+                    protocol_ids: vec![0],
+                },
+                Some(NtpVersion::V5) => NtsRecord::NextProtocol {
+                    protocol_ids: vec![0x8001],
+                },
+            },
+            #[cfg(not(feature = "ntpv5"))]
             NtsRecord::NextProtocol {
                 protocol_ids: vec![
                     #[cfg(feature = "ntpv5")]
@@ -1240,6 +1261,7 @@ impl KeyExchangeClient {
     pub fn new(
         server_name: String,
         tls_config: rustls::ClientConfig,
+        ntp_version: Option<NtpVersion>,
         denied_servers: impl IntoIterator<Item = String>,
     ) -> Result<Self, KeyExchangeError> {
         let mut client = Self::new_without_tls_write(server_name, tls_config)?;
@@ -1248,7 +1270,7 @@ impl KeyExchangeClient {
         // We use an intermediary buffer to ensure that all records are sent at once.
         // This should not be needed, but works around issues in some NTS-ke server implementations
         let mut buffer = Vec::with_capacity(1024);
-        for record in NtsRecord::client_key_exchange_records(denied_servers).iter() {
+        for record in NtsRecord::client_key_exchange_records(ntp_version, denied_servers).iter() {
             record.write(&mut buffer)?;
         }
         client.tls_connection.writer().write_all(&buffer)?;
@@ -1842,7 +1864,7 @@ mod test {
     #[test]
     fn test_client_key_exchange_records() {
         let mut buffer = Vec::with_capacity(1024);
-        for record in NtsRecord::client_key_exchange_records([]).iter() {
+        for record in NtsRecord::client_key_exchange_records(None, []).iter() {
             record.write(&mut buffer).unwrap();
         }
 
@@ -1866,7 +1888,7 @@ mod test {
                 decoder.step().unwrap().unwrap(),
                 decoder.step().unwrap().unwrap(),
             ],
-            NtsRecord::client_key_exchange_records(vec![]).as_ref()
+            NtsRecord::client_key_exchange_records(None, vec![]).as_ref()
         );
 
         assert!(decoder.step().unwrap().is_none());
@@ -2596,14 +2618,14 @@ mod test {
     #[test]
     fn server_decoder_finds_algorithm() {
         let result =
-            server_decode_records(&NtsRecord::client_key_exchange_records(vec![])).unwrap();
+            server_decode_records(&NtsRecord::client_key_exchange_records(None, vec![])).unwrap();
 
         assert_eq!(result.algorithm, AeadAlgorithm::AeadAesSivCmac512);
     }
 
     #[test]
     fn server_decoder_ignores_new_cookie() {
-        let mut records = NtsRecord::client_key_exchange_records(vec![]).to_vec();
+        let mut records = NtsRecord::client_key_exchange_records(None, vec![]).to_vec();
         records.insert(
             0,
             NtsRecord::NewCookie {
@@ -2617,7 +2639,7 @@ mod test {
 
     #[test]
     fn server_decoder_ignores_server_and_port_preference() {
-        let mut records = NtsRecord::client_key_exchange_records(vec![]).to_vec();
+        let mut records = NtsRecord::client_key_exchange_records(None, vec![]).to_vec();
         records.insert(
             0,
             NtsRecord::Server {
@@ -2640,7 +2662,7 @@ mod test {
 
     #[test]
     fn server_decoder_ignores_warn() {
-        let mut records = NtsRecord::client_key_exchange_records(vec![]).to_vec();
+        let mut records = NtsRecord::client_key_exchange_records(None, vec![]).to_vec();
         records.insert(0, NtsRecord::Warning { warningcode: 42 });
 
         let result = server_decode_records(&records).unwrap();
@@ -2649,7 +2671,7 @@ mod test {
 
     #[test]
     fn server_decoder_ignores_unknown_not_critical() {
-        let mut records = NtsRecord::client_key_exchange_records(vec![]).to_vec();
+        let mut records = NtsRecord::client_key_exchange_records(None, vec![]).to_vec();
         records.insert(
             0,
             NtsRecord::Unknown {
@@ -2665,7 +2687,7 @@ mod test {
 
     #[test]
     fn server_decoder_reports_unknown_critical() {
-        let mut records = NtsRecord::client_key_exchange_records(vec![]).to_vec();
+        let mut records = NtsRecord::client_key_exchange_records(None, vec![]).to_vec();
         records.insert(
             0,
             NtsRecord::Unknown {
@@ -2684,7 +2706,7 @@ mod test {
 
     #[test]
     fn server_decoder_reports_error() {
-        let mut records = NtsRecord::client_key_exchange_records(vec![]).to_vec();
+        let mut records = NtsRecord::client_key_exchange_records(None, vec![]).to_vec();
         records.insert(0, NtsRecord::Error { errorcode: 2 });
 
         let error = server_decode_records(&records).unwrap_err();
@@ -2842,7 +2864,8 @@ mod test {
             .with_no_client_auth();
 
         let mut server = rustls::ServerConnection::new(Arc::new(serverconfig)).unwrap();
-        let mut client = KeyExchangeClient::new("localhost".into(), clientconfig, vec![]).unwrap();
+        let mut client =
+            KeyExchangeClient::new("localhost".into(), clientconfig, None, vec![]).unwrap();
 
         server.writer().write_all(NTS_TIME_NL_RESPONSE).unwrap();
 
@@ -3018,7 +3041,7 @@ mod test {
         let (mut client, server) = client_server_pair(ClientType::Uncertified);
 
         let mut buffer = Vec::with_capacity(1024);
-        for record in NtsRecord::client_key_exchange_records([]).iter() {
+        for record in NtsRecord::client_key_exchange_records(None, []).iter() {
             record.write(&mut buffer).unwrap();
         }
         client.tls_connection.writer().write_all(&buffer).unwrap();
@@ -3116,7 +3139,7 @@ mod test {
     #[test]
     fn test_keyexchange_invalid_input() {
         let mut buffer = Vec::with_capacity(1024);
-        for record in NtsRecord::client_key_exchange_records([]).iter() {
+        for record in NtsRecord::client_key_exchange_records(None, []).iter() {
             record.write(&mut buffer).unwrap();
         }
 
