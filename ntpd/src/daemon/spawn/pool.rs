@@ -136,6 +136,7 @@ impl Spawner for PoolSpawner {
 
 #[cfg(test)]
 mod tests {
+    use ntp_proto::ProtocolVersion;
     use tokio::sync::mpsc::{self, error::TryRecvError};
 
     use crate::daemon::{
@@ -169,11 +170,105 @@ mod tests {
         assert_eq!(spawner_id, res.id);
         let params = get_create_params(res);
         let addr1 = params.addr;
+        #[cfg(feature = "unstable_ntpv5")]
+        assert_eq!(
+            params.protocol_version,
+            ProtocolVersion::V4UpgradingToV5 { tries_left: 8 }
+        );
 
         let res = action_rx.try_recv().unwrap();
         assert_eq!(spawner_id, res.id);
         let params = get_create_params(res);
         let addr2 = params.addr;
+        #[cfg(feature = "unstable_ntpv5")]
+        assert_eq!(
+            params.protocol_version,
+            ProtocolVersion::V4UpgradingToV5 { tries_left: 8 }
+        );
+
+        assert_ne!(addr1, addr2);
+        assert!(addresses.contains(&addr1));
+        assert!(addresses.contains(&addr2));
+
+        let res = action_rx.try_recv().unwrap_err();
+        assert_eq!(res, TryRecvError::Empty);
+        assert!(pool.is_complete());
+    }
+
+    #[cfg(feature = "unstable_ntpv5")]
+    #[tokio::test]
+    async fn respects_ntp_version_force_v5() {
+        let address_strings = ["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
+        let addresses = address_strings.map(|addr| addr.parse().unwrap());
+
+        let mut pool = PoolSpawner::new(PoolSourceConfig {
+            addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
+                .into(),
+            count: 2,
+            ignore: vec![],
+            #[cfg(feature = "unstable_ntpv5")]
+            ntp_version: Some(ntp_proto::NtpVersion::V5),
+        });
+        let spawner_id = pool.get_id();
+        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
+
+        assert!(!pool.is_complete());
+        pool.try_spawn(&action_tx).await.unwrap();
+        let res = action_rx.try_recv().unwrap();
+        assert_eq!(spawner_id, res.id);
+        let params = get_create_params(res);
+        let addr1 = params.addr;
+        #[cfg(feature = "unstable_ntpv5")]
+        assert_eq!(params.protocol_version, ProtocolVersion::V5);
+
+        let res = action_rx.try_recv().unwrap();
+        assert_eq!(spawner_id, res.id);
+        let params = get_create_params(res);
+        let addr2 = params.addr;
+        #[cfg(feature = "unstable_ntpv5")]
+        assert_eq!(params.protocol_version, ProtocolVersion::V5);
+
+        assert_ne!(addr1, addr2);
+        assert!(addresses.contains(&addr1));
+        assert!(addresses.contains(&addr2));
+
+        let res = action_rx.try_recv().unwrap_err();
+        assert_eq!(res, TryRecvError::Empty);
+        assert!(pool.is_complete());
+    }
+
+    #[cfg(feature = "unstable_ntpv5")]
+    #[tokio::test]
+    async fn respects_ntp_version_force_v4() {
+        let address_strings = ["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
+        let addresses = address_strings.map(|addr| addr.parse().unwrap());
+
+        let mut pool = PoolSpawner::new(PoolSourceConfig {
+            addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
+                .into(),
+            count: 2,
+            ignore: vec![],
+            #[cfg(feature = "unstable_ntpv5")]
+            ntp_version: Some(ntp_proto::NtpVersion::V4),
+        });
+        let spawner_id = pool.get_id();
+        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
+
+        assert!(!pool.is_complete());
+        pool.try_spawn(&action_tx).await.unwrap();
+        let res = action_rx.try_recv().unwrap();
+        assert_eq!(spawner_id, res.id);
+        let params = get_create_params(res);
+        let addr1 = params.addr;
+        #[cfg(feature = "unstable_ntpv5")]
+        assert_eq!(params.protocol_version, ProtocolVersion::V4);
+
+        let res = action_rx.try_recv().unwrap();
+        assert_eq!(spawner_id, res.id);
+        let params = get_create_params(res);
+        let addr2 = params.addr;
+        #[cfg(feature = "unstable_ntpv5")]
+        assert_eq!(params.protocol_version, ProtocolVersion::V4);
 
         assert_ne!(addr1, addr2);
         assert!(addresses.contains(&addr1));
