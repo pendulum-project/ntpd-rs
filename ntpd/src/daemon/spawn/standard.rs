@@ -142,6 +142,7 @@ impl Spawner for StandardSpawner {
 
 #[cfg(test)]
 mod tests {
+    use ntp_proto::ProtocolVersion;
     use tokio::sync::mpsc::{self, error::TryRecvError};
 
     use crate::daemon::{
@@ -174,6 +175,65 @@ mod tests {
         assert_eq!(res.id, spawner_id);
         let params = get_create_params(res);
         assert_eq!(params.addr.to_string(), "127.0.0.1:123");
+        #[cfg(feature = "unstable_ntpv5")]
+        assert_eq!(
+            params.protocol_version,
+            ProtocolVersion::V4UpgradingToV5 { tries_left: 8 }
+        );
+
+        // Should be complete after spawning
+        assert!(spawner.is_complete());
+    }
+
+    #[cfg(feature = "unstable_ntpv5")]
+    #[tokio::test]
+    async fn respects_ntp_version_force_v5() {
+        let mut spawner = StandardSpawner::new(StandardSource {
+            address: NormalizedAddress::with_hardcoded_dns(
+                "example.com",
+                123,
+                vec!["127.0.0.1:123".parse().unwrap()],
+            )
+            .into(),
+            ntp_version: Some(ntp_proto::NtpVersion::V5),
+        });
+        let spawner_id = spawner.get_id();
+        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
+
+        assert!(!spawner.is_complete());
+        spawner.try_spawn(&action_tx).await.unwrap();
+        let res = action_rx.try_recv().unwrap();
+        assert_eq!(res.id, spawner_id);
+        let params = get_create_params(res);
+        assert_eq!(params.addr.to_string(), "127.0.0.1:123");
+        assert_eq!(params.protocol_version, ProtocolVersion::V5);
+
+        // Should be complete after spawning
+        assert!(spawner.is_complete());
+    }
+
+    #[cfg(feature = "unstable_ntpv5")]
+    #[tokio::test]
+    async fn respects_ntp_version_force_v4() {
+        let mut spawner = StandardSpawner::new(StandardSource {
+            address: NormalizedAddress::with_hardcoded_dns(
+                "example.com",
+                123,
+                vec!["127.0.0.1:123".parse().unwrap()],
+            )
+            .into(),
+            ntp_version: Some(ntp_proto::NtpVersion::V4),
+        });
+        let spawner_id = spawner.get_id();
+        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
+
+        assert!(!spawner.is_complete());
+        spawner.try_spawn(&action_tx).await.unwrap();
+        let res = action_rx.try_recv().unwrap();
+        assert_eq!(res.id, spawner_id);
+        let params = get_create_params(res);
+        assert_eq!(params.addr.to_string(), "127.0.0.1:123");
+        assert_eq!(params.protocol_version, ProtocolVersion::V4);
 
         // Should be complete after spawning
         assert!(spawner.is_complete());
