@@ -307,6 +307,8 @@ pub struct ObservabilityConfig {
     #[serde(default)]
     pub log_level: Option<LogLevel>,
     #[serde(default)]
+    pub disable_ansi: bool,
+    #[serde(default)]
     pub observation_path: Option<PathBuf>,
     #[serde(default = "default_observation_permissions")]
     pub observation_permissions: u32,
@@ -318,6 +320,7 @@ impl Default for ObservabilityConfig {
     fn default() -> Self {
         Self {
             log_level: Default::default(),
+            disable_ansi: false,
             observation_path: Default::default(),
             observation_permissions: default_observation_permissions(),
             metrics_exporter_listen: default_metrics_exporter_listen(),

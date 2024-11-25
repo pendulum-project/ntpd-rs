@@ -148,7 +148,7 @@ impl NtpCtlOptions {
 
 async fn validate(config: Option<PathBuf>) -> std::io::Result<ExitCode> {
     // Late completion not needed, so ignore result.
-    crate::daemon::tracing::tracing_init(LogLevel::Info).init();
+    crate::daemon::tracing::tracing_init(LogLevel::Info, false).init();
     match Config::from_args(config, vec![], vec![]).await {
         Ok(config) => {
             if config.check() {

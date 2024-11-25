@@ -51,7 +51,7 @@ pub(crate) async fn initialize_logging_parse_config(
 ) -> Config {
     let mut log_level = initial_log_level.unwrap_or_default();
 
-    let config_tracing = crate::daemon::tracing::tracing_init(log_level);
+    let config_tracing = crate::daemon::tracing::tracing_init(log_level, false);
     let config = ::tracing::subscriber::with_default(config_tracing, || {
         async {
             match Config::from_args(config_path, vec![], vec![]).await {
@@ -73,7 +73,7 @@ pub(crate) async fn initialize_logging_parse_config(
     }
 
     // set a default global subscriber from now on
-    let tracing_inst = self::tracing::tracing_init(log_level);
+    let tracing_inst = self::tracing::tracing_init(log_level, config.observability.disable_ansi);
     tracing_inst.init();
 
     config
