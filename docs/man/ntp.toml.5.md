@@ -9,21 +9,21 @@ title: NTP.TOML(5) ntpd-rs 1.3.0 | ntpd-rs
 # DESCRIPTION
 
 Configuration of ntpd-rs happens in the `ntp.toml` configuration format. The
-toml format is in lots of ways similar to a simple ini with several extensions
-allowing a json-like syntax.
+TOML format is in lots of ways similar to a simple INI with several extensions
+allowing a JSON-like syntax.
 
 The ntpd-rs configuration file consists of several sections, each of which
 configures a separate part of the ntp-daemon process. Each of the sections is
 described in the rest of this document. Many settings will have defaults, which
 will be indicated by each configuration setting shown.
 
-The ntp daemon only supports unicast client-server connections. Most NTP
+The NTP daemon only supports unicast client-server connections. Most NTP
 traffic, especially across the public internet, almost exclusively uses this
 mode, so it is not considered a practical limitation for most scenarios.
 
 # SOURCE MODES
 Different types of sources (see the section below for details) are supported by
-the ntp daemon. To set the type of the source, you can configure the mode field
+the NTP daemon. To set the type of the source, you can configure the mode field
 with any of these options:
 
 `server`
@@ -78,7 +78,7 @@ sources.
 `address` = *address*
 :   Specify the remote address of the source. For server sources this will be
     the remote address of the NTP server. For pools, this will be the DNS
-    address of the NTP pool and for nts this will be the address of the key
+    address of the NTP pool and for NTS this will be the address of the key
     exchange server. The server address may include a port number by appending a
     colon (`:`) followed by a port number. If not specified the daemon will
     connect to `server` and `pool` servers via port *123*, for `nts` sources the
@@ -88,7 +88,7 @@ sources.
 :   Can only be set on sources with the `nts` mode. Path to a certificate for an
     additional certificate authority to use, aside from the certificate
     authorities specified by the system configuration. Note that this cannot be
-    used to specify a self signed certificate.
+    used to specify a self-signed certificate.
 
 `count` = *number* (**4**)
 :   Can only be set on sources with the `pool` mode. Specifies the maximum
@@ -98,7 +98,7 @@ sources.
     value.
 
 `ignore` = *ip addresses*
-:   `pool` mode only. Specifies a list of ip addresses of servers in the pool
+:   `pool` mode only. Specifies a list of IP addresses of servers in the pool
     which should not be used. For example: `["127.0.0.1"]`. Empty by default.
 
 ## `[[server]]`
@@ -168,7 +168,7 @@ time.
 
 ## `[observability]`
 Settings in this section configure how you can observe the behavior of the
-daemon. Currently the daemon can be observed either through the logs or by
+daemon. Currently, the daemon can be observed either through the logs or by
 retrieving several key metrics either through ntp-ctl(8) or through
 ntp-metrics-exporter(8).
 
@@ -180,7 +180,7 @@ ntp-metrics-exporter(8).
     set (the default), then logging will be completely disabled.
 
 `observation-path` = *path* (**unset**)
-:   Path where the daemon will create an observation unix domain socket. This
+:   Path where the daemon will create an observation Unix domain socket. This
     socket is used by `ntp-ctl` and `ntp-metrics-exporter` to read the current
     status of the daemon. If not set (the default) no observation socket will be
     created and it is not possible to use `ntp-ctl` or `ntp-metrics-exporter` to
@@ -190,7 +190,7 @@ ntp-metrics-exporter(8).
 :   The file system permissions with which the observation socket should be
     created. Warning: You should always write this number with the octal prefix
     `0o`, otherwise your permissions might be interpreted wrongly. The default
-    should be ok for most applications however.
+    should be OK for most applications however.
 
 `metrics-exporter-listen` = *socketaddr* (**127.0.0.1:9975**)
 :   The listen address that is used for the ntp-metrics-exporter(8).
@@ -223,9 +223,9 @@ The daemon can be configured to operate as an NTS key exchange server by
 repeating any number of `[[nts-ke-server]]` sections. If no such sections have
 been defined, the daemon will offer no NTS key exchange services. All NTS-KE
 servers make use of the shared keyset. It is the purpose of the key exchange
-server to distribute cookies to clients in a safe way. These cookies can then
+server to safely distribute cookies to clients. These cookies can then
 be used in NTP packets with the normal server to validate that the traffic was
-untampered with.
+not tampered with.
 
 `listen` = *socket*
 :   Address of a TCP socket on which the server should listen for incoming NTS
@@ -361,7 +361,7 @@ such may change in future ntpd-rs versions.
 
 `maximum-source-uncertainty` = *uncertainty* (**0.25**)
 :   Maximum source uncertainty before we start disregarding it. Note that this
-    is combined uncertainty due to noise and possible assymetry error (see also
+    is combined uncertainty due to noise and possible asymmetry error (see also
     weights below). Unit: seconds
 
 `range-statistical-weight` = *weight* (**2.0**)
@@ -402,7 +402,7 @@ such may change in future ntpd-rs versions.
 :   Absolute maximum frequency correction. Unit: s/s
 
 `ignore-server-dispersion` = *bool* (**false**)
-:   Ignore a servers advertised dispersion when synchronizing. Can improve
+:   Ignore a server's advertised dispersion when synchronizing. Can improve
     synchronization quality with servers reporting overly conservative root
     dispersion.
 

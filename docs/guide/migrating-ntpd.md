@@ -37,7 +37,7 @@ A source in `pool` mode must explicitly define an integer `count`, the maximum n
 
 The symmetric and broadcasting association modes are deliberately not supported in ntpd-rs because these modes have security issues. The `peer` command can be substituted with a standard `server` source. For the `broadcast` command, configuring the NTP server via DHCP instead may be an alternative
 
-There is no direct equivalent of ntpd's `maxpoll` and `minpoll` flags that can be configured on a per-source basis. Instead ntpd-rs defines poll interval bounds globally for all time sources:
+There is no direct equivalent of ntpd's `maxpoll` and `minpoll` flags that can be configured on a per-source basis. Instead, ntpd-rs defines poll interval bounds globally for all time sources:
 ```toml
 [source-defaults]
 poll-interval-limits = { min = <minpoll>, max = <maxpoll> }
@@ -103,7 +103,7 @@ The `allowlist.action` and `denylist.action` properties can have two values:
 - `ignore` corresponds to ntpd's `ignore` and silently ignores the request
 - `deny` corresponds to ntpd's `kod` and sends a deny kiss-o'-death packet
 
-The stratum can can be configured in ntpd-rs with the `local-stratum` key:
+The stratum can be configured in ntpd-rs with the `local-stratum` key:
 ```toml
 [synchronization]
 local-stratum = <stratum>
@@ -114,8 +114,8 @@ local-stratum = <stratum>
 Not all functionality in ntpd currently has an equivalent in ntpd-rs. In particular, the following major features currently don't have good alternatives in ntpd-rs:
 
 - Local hardware devices as time sources.
-- Support for ntp mac authentication.
+- Support for NTP MAC authentication.
 - Marking subsets of sources as more trusted than others
-- protocol modes beside server and client
-- bursting
+- Protocol modes beside server and client
+- Bursting
 If any of these features are critical for your use case, ntpd-rs might not be an option for you yet. Please let us know if you miss these features or want to sponsor any of them, as this helps us prioritise our work.

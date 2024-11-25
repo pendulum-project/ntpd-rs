@@ -13,7 +13,7 @@ ntpd-rs is split into several crates with three goals in mind:
  - Limit the scopes where we use unsafe code, ensuring that it is more
    straightforward to verify.
 
-The main `ntp-proto` and `ntpd` crates are setup such that neither contains any
+The main `ntp-proto` and `ntpd` crates are set up such that neither contains any
 unsafe code. Unsafe code is limited to the `ntp-udp` and `ntp-clock` crates,
 which are purposefully kept small and only offer a safe API.
 
@@ -67,18 +67,18 @@ is the crate to add it to.
 
 ## NTP daemon startup and operating sequence.
 
-This section provides a high-level overview of the operation of the ntp daemon,
-and how its various tasks are setup, configured and communicate.
+This section provides a high-level overview of the operation of the NTP daemon,
+and how its various tasks are set up, configured and communicate.
 
 Upon startup, the daemon first parses any given command line arguments and uses
-these arguments to setup an initial logging system. This early setup of logging
+these arguments to set up an initial logging system. This early setup of logging
 is done to ensure that during reading and parsing of the configuration files the
 logging system is available to expose information on errors.
 
 Immediately after, further configuration is read from file and used to generate
 the definitive logging system. At this point, the main configuration steps are
 completed, and the combined command line and file base configuration is used to
-setup at least these kinds of tasks:
+set up at least these kinds of tasks:
  - The main clock steering task.
  - One source task per configured source (remote server).
  - One server task per configured interface on which to serve time.
@@ -89,7 +89,7 @@ setup at least these kinds of tasks:
 
 The daemon runs a single source task per configured source. This task is
 responsible for managing the network connection with that specific source,
-sending  the poll message to start a clock difference measurement, handling the
+sending the poll message to start a clock difference measurement, handling the
 response, and doing an initial filtering step over the measurements.
 
 The main loop of the source waits on 3 futures concurrently:
@@ -104,7 +104,7 @@ main clock steering task.
 
 ### Server task
 
-The daemon runs a single task per interface on which ntp packets are served
+The daemon runs a single task per interface on which NTP packets are served
 (where the any (0.0.0.0) interface counts as a single interface). This task is
 responsible for managing the socket for that interface, reading messages and
 providing the proper server responses.
