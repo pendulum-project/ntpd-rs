@@ -8,3 +8,5 @@
 *[OS]: Operating System
 *[DNS]: Domain Name System
 *[CIDR]: Classless Inter-Domain Routing
+*[GPS]: Global Positioning System
+*[PPS]: Pulse Per Second
