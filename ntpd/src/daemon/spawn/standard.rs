@@ -208,7 +208,7 @@ mod tests {
         spawner.try_spawn(&action_tx).await.unwrap();
         let res = action_rx.try_recv().unwrap();
         assert_eq!(res.id, spawner_id);
-        let params = get_create_params(res);
+        let params = get_ntp_create_params(res).unwrap();
         assert_eq!(params.addr.to_string(), "127.0.0.1:123");
         assert_eq!(params.protocol_version, ProtocolVersion::V5);
 
@@ -235,7 +235,7 @@ mod tests {
         spawner.try_spawn(&action_tx).await.unwrap();
         let res = action_rx.try_recv().unwrap();
         assert_eq!(res.id, spawner_id);
-        let params = get_create_params(res);
+        let params = get_ntp_create_params(res).unwrap();
         assert_eq!(params.addr.to_string(), "127.0.0.1:123");
         assert_eq!(params.protocol_version, ProtocolVersion::V4);
 

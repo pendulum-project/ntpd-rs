@@ -476,6 +476,7 @@ impl Config {
 
         #[cfg(feature = "unstable_ntpv5")]
         if self.sources.iter().any(|config| match config {
+            NtpSourceConfig::Sock(_) => false,
             NtpSourceConfig::Standard(config) => matches!(config.ntp_version, Some(NtpVersion::V5)),
             NtpSourceConfig::Nts(config) => matches!(config.ntp_version, Some(NtpVersion::V5)),
             NtpSourceConfig::Pool(config) => matches!(config.ntp_version, Some(NtpVersion::V5)),
