@@ -30,8 +30,8 @@ new contributions!
 * See our [discussions] page instead and avoid the issue tracker
 
 ## Developing and building
-Our project mostly is a standard rust project so you should be able to use the
-normal Rust tooling. One thing to consider though is that the ntp daemon uses
+Our project mostly is a standard rust project, so you should be able to use the
+normal Rust tooling. One thing to consider though is that the NTP daemon uses
 port 123 by default for its server and needs to be able to adjust the clock when
 used as a client. You may need root (or the correct Linux capabilities) to do
 those two things.
@@ -63,7 +63,7 @@ Tests can be written using the standard rust testing framework (ran using
 integration tests (which would be encouraged) you can do so in the `tests`
 folder in the ntpd crate.
 
-Additionally we have a few fuzz testing targets. If you can think of any new
+Additionally, we have a few fuzz testing targets. If you can think of any new
 targets let us know or add them!
 
 ## Coding conventions

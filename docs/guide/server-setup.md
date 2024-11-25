@@ -1,15 +1,15 @@
 # Setting up an NTP server
 
-By default, ntpd-rs only acts as an ntp client, and doesn't serve time on any
+By default, ntpd-rs only acts as an NTP client, and doesn't serve time on any
 network interface. To enable ntpd-rs as a server, the following can be added to
 the configuration:
 ```toml
 [[server]]
 listen = "0.0.0.0:123"
 ```
-This will cause ntpd-rs to listen on all network interfaces on udp port 123 for
-ntp client requests. If you only want to listen on a specific network
-interface, change `0.0.0.0` to the ip address of that interface.
+This will cause ntpd-rs to listen on all network interfaces on UDP port 123 for
+NTP client requests. If you only want to listen on a specific network
+interface, change `0.0.0.0` to the IP address of that interface.
 
 You can now configure a different machine to use your new server by adding to
 its configuration:
@@ -62,7 +62,7 @@ The `allowlist.action` and `denylist.action` properties can have two values:
 
 ## Adding your server to the NTP pool
 
-If your ntp server has a public IP address, you can consider making it
+If your NTP server has a public IP address, you can consider making it
 available as part of the [NTP pool](https://www.ntppool.org). Please note that
 this can have significant long-term impact in terms of NTP traffic to that
 particular IP address. Please read [the join instructions](https://www.ntppool.org/en/join.html)

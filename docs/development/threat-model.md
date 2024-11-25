@@ -420,11 +420,11 @@ We model the following assets:
   world-writable, the system will emit a warning
 - If the configuration socket (used to update the configuration) is
   world-writable, the system will emit a warning
-- The observability socket (used to read the configuration/status) is a unix
+- The observability socket (used to read the configuration/status) is a Unix
   socket, which is unreachable over the network by default
 - If any actor tries to read the clock too often, the system will stop
   responding a valid time to them
-- If the nts cookie key storage file is world-readable, the system will emit a
+- If the NTS cookie key storage file is world-readable, the system will emit a
   warning. The system will never create this file with permissions other than
   `0600`.
 
@@ -433,6 +433,6 @@ We model the following assets:
 ![](flowdiagram.svg)
 
 - The security boundaries between the admin and system users and ntpd-rs run
-  through the unix sockets used for communication.
+  through the Unix sockets used for communication.
 - The security boundaries for reference sources and external clients run
   through the network sockets used for communication.

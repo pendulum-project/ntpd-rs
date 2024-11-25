@@ -23,8 +23,8 @@
 .PP
 Configuration of ntpd-rs happens in the \f[V]ntp.toml\f[R] configuration
 format.
-The toml format is in lots of ways similar to a simple ini with several
-extensions allowing a json-like syntax.
+The TOML format is in lots of ways similar to a simple INI with several
+extensions allowing a JSON-like syntax.
 .PP
 The ntpd-rs configuration file consists of several sections, each of
 which configures a separate part of the ntp-daemon process.
@@ -32,14 +32,14 @@ Each of the sections is described in the rest of this document.
 Many settings will have defaults, which will be indicated by each
 configuration setting shown.
 .PP
-The ntp daemon only supports unicast client-server connections.
+The NTP daemon only supports unicast client-server connections.
 Most NTP traffic, especially across the public internet, almost
 exclusively uses this mode, so it is not considered a practical
 limitation for most scenarios.
 .SH SOURCE MODES
 .PP
 Different types of sources (see the section below for details) are
-supported by the ntp daemon.
+supported by the NTP daemon.
 To set the type of the source, you can configure the mode field with any
 of these options:
 .TP
@@ -103,7 +103,7 @@ MODES\f[R] section.
 \f[V]address\f[R] = \f[I]address\f[R]
 Specify the remote address of the source.
 For server sources this will be the remote address of the NTP server.
-For pools, this will be the DNS address of the NTP pool and for nts this
+For pools, this will be the DNS address of the NTP pool and for NTS this
 will be the address of the key exchange server.
 The server address may include a port number by appending a colon
 (\f[V]:\f[R]) followed by a port number.
@@ -116,7 +116,7 @@ Can only be set on sources with the \f[V]nts\f[R] mode.
 Path to a certificate for an additional certificate authority to use,
 aside from the certificate authorities specified by the system
 configuration.
-Note that this cannot be used to specify a self signed certificate.
+Note that this cannot be used to specify a self-signed certificate.
 .TP
 \f[V]count\f[R] = \f[I]number\f[R] (\f[B]4\f[R])
 Can only be set on sources with the \f[V]pool\f[R] mode.
@@ -128,7 +128,7 @@ value.
 .TP
 \f[V]ignore\f[R] = \f[I]ip addresses\f[R]
 \f[V]pool\f[R] mode only.
-Specifies a list of ip addresses of servers in the pool which should not
+Specifies a list of IP addresses of servers in the pool which should not
 be used.
 For example: \f[V][\[dq]127.0.0.1\[dq]]\f[R].
 Empty by default.
@@ -222,7 +222,7 @@ allowed.
 .PP
 Settings in this section configure how you can observe the behavior of
 the daemon.
-Currently the daemon can be observed either through the logs or by
+Currently, the daemon can be observed either through the logs or by
 retrieving several key metrics either through ntp-ctl(8) or through
 ntp-metrics-exporter(8).
 .TP
@@ -235,7 +235,7 @@ Levels higher than the given log level are logged as well.
 If not set (the default), then logging will be completely disabled.
 .TP
 \f[V]observation-path\f[R] = \f[I]path\f[R] (\f[B]unset\f[R])
-Path where the daemon will create an observation unix domain socket.
+Path where the daemon will create an observation Unix domain socket.
 This socket is used by \f[V]ntp-ctl\f[R] and
 \f[V]ntp-metrics-exporter\f[R] to read the current status of the daemon.
 If not set (the default) no observation socket will be created and it is
@@ -247,7 +247,7 @@ The file system permissions with which the observation socket should be
 created.
 Warning: You should always write this number with the octal prefix
 \f[V]0o\f[R], otherwise your permissions might be interpreted wrongly.
-The default should be ok for most applications however.
+The default should be OK for most applications however.
 .TP
 \f[V]metrics-exporter-listen\f[R] = \f[I]socketaddr\f[R] (\f[B]127.0.0.1:9975\f[R])
 The listen address that is used for the ntp-metrics-exporter(8).
@@ -285,10 +285,10 @@ repeating any number of \f[V][[nts-ke-server]]\f[R] sections.
 If no such sections have been defined, the daemon will offer no NTS key
 exchange services.
 All NTS-KE servers make use of the shared keyset.
-It is the purpose of the key exchange server to distribute cookies to
-clients in a safe way.
+It is the purpose of the key exchange server to safely distribute
+cookies to clients.
 These cookies can then be used in NTP packets with the normal server to
-validate that the traffic was untampered with.
+validate that the traffic was not tampered with.
 .TP
 \f[V]listen\f[R] = \f[I]socket\f[R]
 Address of a TCP socket on which the server should listen for incoming
@@ -447,7 +447,7 @@ Unit: s/s
 \f[V]maximum-source-uncertainty\f[R] = \f[I]uncertainty\f[R] (\f[B]0.25\f[R])
 Maximum source uncertainty before we start disregarding it.
 Note that this is combined uncertainty due to noise and possible
-assymetry error (see also weights below).
+asymmetry error (see also weights below).
 Unit: seconds
 .TP
 \f[V]range-statistical-weight\f[R] = \f[I]weight\f[R] (\f[B]2.0\f[R])
@@ -494,7 +494,7 @@ Absolute maximum frequency correction.
 Unit: s/s
 .TP
 \f[V]ignore-server-dispersion\f[R] = \f[I]bool\f[R] (\f[B]false\f[R])
-Ignore a servers advertised dispersion when synchronizing.
+Ignore a server\[cq]s advertised dispersion when synchronizing.
 Can improve synchronization quality with servers reporting overly
 conservative root dispersion.
 .TP

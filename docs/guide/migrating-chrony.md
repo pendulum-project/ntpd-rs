@@ -125,7 +125,7 @@ listen = "<IP or [::]>:4460"
 certificate-chain-path = <ntsservercert>
 private-key-path = <ntsserverkey>
 ```
-Here the names of the corresponding chrony directives are used on the right hand side of the assignment. Note that unlike chrony, ntpd-rs does not have a default IP address on which it listens for nts-ke traffic: this need to be provided explicitly. The port is optional however and defaults to the standard value 4460.
+Here the names of the corresponding chrony directives are used on the right-hand side of the assignment. Note that unlike chrony, ntpd-rs does not have a default IP address on which it listens for NTS-KE traffic: this need to be provided explicitly. The port is optional however and defaults to the standard value 4460.
 
 The keys used to encrypt the cookies are ephemeral by default. If these should be kept across reboots of the server, the path for storing these can be configured:
 ```toml
@@ -158,7 +158,7 @@ Broadcast mode is not supported in ntpd-rs. If this is used in your current setu
 Not all functionality in chrony currently has an equivalent in ntpd-rs. In particular, the following major features currently don't have good alternatives in ntpd-rs:
 
 - Local hardware devices as time sources.
-- Support for ntp mac authentication.
+- Support for NTP MAC authentication.
 - Marking subsets of sources as more trusted than others.
 - Acting as a source of leap second data.
 
