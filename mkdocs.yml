@@ -33,6 +33,7 @@ nav:
     - guide/getting-started.md
     - guide/installation.md
     - guide/server-setup.md
+    - guide/gpsd-socket.md
     - guide/exporting-metrics.md
     - guide/nts.md
     - guide/migrating-chrony.md
