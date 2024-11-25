@@ -179,6 +179,10 @@ ntp-metrics-exporter(8).
     daemon. Levels higher than the given log level are logged as well. If not
     set (the default), then logging will be completely disabled.
 
+`disable-ansi` = `true` | `false` (**false**)
+:   Disable ANSI escape codes in logs. By default, ANSI escape codes are used to
+    add some formatting and colors to the logs.
+
 `observation-path` = *path* (**unset**)
 :   Path where the daemon will create an observation unix domain socket. This
     socket is used by `ntp-ctl` and `ntp-metrics-exporter` to read the current
