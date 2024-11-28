@@ -142,7 +142,9 @@ impl Spawner for StandardSpawner {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "unstable_ntpv5")]
     use ntp_proto::ProtocolVersion;
+
     use tokio::sync::mpsc::{self, error::TryRecvError};
 
     use crate::daemon::{

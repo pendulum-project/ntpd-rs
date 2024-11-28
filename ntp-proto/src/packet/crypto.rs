@@ -45,19 +45,19 @@ impl<'a> Buffer<'a> {
     }
 }
 
-impl<'a> AsMut<[u8]> for Buffer<'a> {
+impl AsMut<[u8]> for Buffer<'_> {
     fn as_mut(&mut self) -> &mut [u8] {
         &mut self.buffer[..self.valid]
     }
 }
 
-impl<'a> AsRef<[u8]> for Buffer<'a> {
+impl AsRef<[u8]> for Buffer<'_> {
     fn as_ref(&self) -> &[u8] {
         &self.buffer[..self.valid]
     }
 }
 
-impl<'a> aead::Buffer for Buffer<'a> {
+impl aead::Buffer for Buffer<'_> {
     fn extend_from_slice(&mut self, other: &[u8]) -> aead::Result<()> {
         self.buffer
             .get_mut(self.valid..(self.valid + other.len()))
@@ -107,7 +107,7 @@ pub enum CipherHolder<'a> {
     Other(&'a dyn Cipher),
 }
 
-impl<'a> AsRef<dyn Cipher> for CipherHolder<'a> {
+impl AsRef<dyn Cipher> for CipherHolder<'_> {
     fn as_ref(&self) -> &dyn Cipher {
         match self {
             CipherHolder::DecodedServerCookie(cookie) => cookie.c2s.as_ref(),

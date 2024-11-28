@@ -44,7 +44,7 @@ impl<'de> Deserialize<'de> for ThresholdPart {
     {
         struct ThresholdPartVisitor;
 
-        impl<'de> Visitor<'de> for ThresholdPartVisitor {
+        impl Visitor<'_> for ThresholdPartVisitor {
             type Value = ThresholdPart;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
