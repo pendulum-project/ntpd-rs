@@ -38,6 +38,11 @@ What values to choose for these thresholds depends on what the expected maximum 
 
 Again, note that the thresholds are enforced through ntpd-rs aborting when they are exceeded. Hence, strict values for these will limit the daemons ability to automatically adjust to sudden changes to the clock, potentially decreasing availability of the time synchronization.
 
+When aborting due to the above thresholds, a log message along the lines of the one below is shown:
+```
+2024-11-28T12:40:32.821717Z  ERROR ntp_proto::algorithm::kalman: Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate.
+```
+
 ### The risks of rebooting ntpd-rs
 
 Because the `startup-step-panic-threshold` is typically higher than the `single-step-panic-threshold`, rebooting ntpd-rs makes bigger step adjustments possible. Furthermore, rebooting clears the total accumulated step, and repeated reboots can allow an attacker to bypass the protections offered by `accumulated-step-panic-threshold`.
@@ -51,6 +56,16 @@ The best way to increase availability of time synchronization is to increase the
 For servers being completely unavailable, this is the difference between the number of configured time sources and `minimum-agreeing-sources`. However, note that at most half the servers can fail with incorrect time information before impacting time synchronization.
 
 The downside of a large number of upstream time servers is that an attacker aimed at missteering your local clock is provided with more avenues to do so, because they will need to compromise a smaller fraction of upstream servers to gain clock control. The attacker can then ensure synchronization with that subset through denial of service attacks on the other upstream servers.
+
+If insufficient servers are available for synchronizing the time, or if they don't agree on the current time, this will be logged in a manner similar to
+```
+2024-11-28T12:40:32.821717Z  INFO ntp_proto::algorithm::kalman: No consensus on current time
+```
+Note that this can happen at times, especially during bootup. However, prolonged periods (more than 15 minutes) of seeing this message, without any sign of synchronization in the form of a log line similar to
+```
+Sep 05 13:57:38 magnesium ntp-daemon[1593]: 2024-09-05T11:57:38.128571Z  INFO ntp_proto::algorithm::kalman: Offset: -84.4077443282968+-94.97527051033717ms, frequency: 0+-10000000ppm
+```
+means that the client is not steering the clock and may indicate a problem with the configured time sources.
 
 ## Configuration, logs and observability
 
