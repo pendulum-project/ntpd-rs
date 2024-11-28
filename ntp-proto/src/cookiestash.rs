@@ -1,9 +1,9 @@
-/// Datastructure for managing cookies. It keeps the following
-/// invariants:
-///   - Each cookie is yielded at most once
-///   - The oldest cookie is always yielded first
-///
-/// Note that as a consequence, this type is not Clone!
+//! Datastructure for managing cookies. It keeps the following
+//! invariants:
+//!   - Each cookie is yielded at most once
+//!   - The oldest cookie is always yielded first
+//!
+//! Note that as a consequence, this type is not Clone!
 
 pub const MAX_COOKIES: usize = 8;
 

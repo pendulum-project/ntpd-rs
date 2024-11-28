@@ -65,7 +65,7 @@ fn deserialize_require_nts<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<FilterAction>, D::Error> {
     struct FilterActionVisitor;
-    impl<'de> serde::de::Visitor<'de> for FilterActionVisitor {
+    impl serde::de::Visitor<'_> for FilterActionVisitor {
         type Value = Option<FilterAction>;
 
         fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {

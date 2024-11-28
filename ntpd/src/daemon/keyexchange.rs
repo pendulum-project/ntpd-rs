@@ -559,7 +559,7 @@ struct WriterAdapter<'a, 'b, T> {
     cx: &'a mut Context<'b>,
 }
 
-impl<'a, 'b, T: AsyncWrite + Unpin> Write for WriterAdapter<'a, 'b, T> {
+impl<T: AsyncWrite + Unpin> Write for WriterAdapter<'_, '_, T> {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         match Pin::<&mut T>::new(self.io).poll_write(self.cx, buf) {
@@ -590,7 +590,7 @@ struct ReaderAdapter<'a, 'b, T> {
     cx: &'a mut Context<'b>,
 }
 
-impl<'a, 'b, T: AsyncRead + Unpin> Read for ReaderAdapter<'a, 'b, T> {
+impl<T: AsyncRead + Unpin> Read for ReaderAdapter<'_, '_, T> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, std::io::Error> {
         let mut buf = ReadBuf::new(buf);
         match Pin::<&mut T>::new(self.io).poll_read(self.cx, &mut buf) {

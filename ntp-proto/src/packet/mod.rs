@@ -1301,7 +1301,7 @@ fn check_uid_extensionfield<'a, I: IntoIterator<Item = &'a ExtensionField<'a>>>(
 }
 
 #[cfg(any(test, feature = "__internal-fuzz", feature = "__internal-test"))]
-impl<'a> NtpPacket<'a> {
+impl NtpPacket<'_> {
     pub fn test() -> Self {
         Self::default()
     }
@@ -1406,7 +1406,7 @@ impl<'a> NtpPacket<'a> {
     }
 }
 
-impl<'a> Default for NtpPacket<'a> {
+impl Default for NtpPacket<'_> {
     fn default() -> Self {
         Self {
             header: NtpHeader::V4(NtpHeaderV3V4::new()),

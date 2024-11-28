@@ -89,7 +89,7 @@ pub enum ExtensionField<'a> {
     },
 }
 
-impl<'a> std::fmt::Debug for ExtensionField<'a> {
+impl std::fmt::Debug for ExtensionField<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::UniqueIdentifier(arg0) => f.debug_tuple("UniqueIdentifier").field(arg0).finish(),
