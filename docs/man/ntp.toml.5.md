@@ -294,7 +294,9 @@ time sources is gathered and applied to the system clock.
     this generally indicates a problem. If set to the value `"inf"`, any step
     will be allowed. May either be configured as one number of seconds for both
     forward and backward steps, or separate values for forward and backward
-    steps.
+    steps. When using this, ntp-ctl's force-sync command can still be used to
+    manually set the system time beyond these limits, to recover from a bad
+    system clock.
 
 `accumulated-step-panic-threshold` = *seconds* (**unset**)
 :   Every time the daemon steps the time instead of slowly adjusting the clock

@@ -43,6 +43,8 @@ When aborting due to the above thresholds, a log message along the lines of the 
 2024-11-28T12:40:32.821717Z  ERROR ntp_proto::algorithm::kalman: Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate.
 ```
 
+If the clock is significantly wrong, the force-sync command in [ntp-ctl](../man/ntp-ctl.8.md) can be used to manually correct the systemclock back to a reasonable starting point.
+
 ### The risks of rebooting ntpd-rs
 
 Because the `startup-step-panic-threshold` is typically higher than the `single-step-panic-threshold`, rebooting ntpd-rs makes bigger step adjustments possible. Furthermore, rebooting clears the total accumulated step, and repeated reboots can allow an attacker to bypass the protections offered by `accumulated-step-panic-threshold`.
