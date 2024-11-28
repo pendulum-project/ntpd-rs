@@ -24,5 +24,5 @@ sudo systemctl restart gpsd.socket
 For help with setting up GPSd on e.g. a Raspberry Pi, see for example [this guide](https://n4bfr.com/2020/04/raspberry-pi-with-chrony/2/).
 
 ## Pulse Per Second (PPS)
-Unfortunately, ntpd-rs does currently not yet support PPS timing data, but this may be added in the [future](https://github.com/pendulum-project/ntpd-rs/issues/882).
+Ntpd-rs does currently not yet support PPS timing data, but this may be added in the [future](https://github.com/pendulum-project/ntpd-rs/issues/882).
 Some challenges still need to be solved in order to support PPS data in the Kalman filters used for noise filtering.
