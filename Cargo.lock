@@ -350,7 +350,7 @@ dependencies = [
 
 [[package]]
 name = "ntp-proto"
-version = "1.3.0"
+version = "1.3.1"
 dependencies = [
  "aead",
  "aes-siv",
@@ -367,7 +367,7 @@ dependencies = [
 
 [[package]]
 name = "ntpd"
-version = "1.3.0"
+version = "1.3.1"
 dependencies = [
  "async-trait",
  "clock-steering",
@@ -389,7 +389,7 @@ dependencies = [
 
 [[package]]
 name = "nts-pool-ke"
-version = "1.3.0"
+version = "1.3.1"
 dependencies = [
  "ntp-proto",
  "rustls",

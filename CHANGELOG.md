@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.3.1] - 2024-11-28
+
+### Changed
+- Updated dependencies. Includes fixes for RUSTSEC-2024-0399.
+
 ## [1.3.0] - 2024-09-19
 
 ### Added
@@ -244,6 +249,7 @@ process.
 - Fixed a bug in peer dispersion calculation which resulted in overly
   pessimistic dispersion estimates.
 
+[1.3.1]: https://github.com/pendulum-project/ntpd-rs/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.2.3...v1.3.0
 [1.2.3]: https://github.com/pendulum-project/ntpd-rs/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/pendulum-project/ntpd-rs/compare/v1.2.0...v1.2.2
