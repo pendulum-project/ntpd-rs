@@ -270,7 +270,7 @@ jobs:
       - name: Smoke-test fuzz targets
         run: |
           cargo fuzz build ${{ matrix.features }}
-          for target in $(cargo fuzz list ${{ matrix.features }}) ; do
+          for target in $(cargo fuzz list) ; do
             cargo fuzz run ${{ matrix.features }} $target -- -max_total_time=10
           done
 
