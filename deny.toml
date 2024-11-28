@@ -10,7 +10,7 @@ allow = [
     "Apache-2.0",
     "MIT",
     "ISC",
-    "Unicode-DFS-2016",
+    "Unicode-3.0",
     "BSD-3-Clause",
     "OpenSSL",
 ]
