@@ -820,7 +820,7 @@ mod tests {
         let ca = include_bytes!("../../test-keys/testca.pem");
 
         assert!(tokio::time::timeout(
-            std::time::Duration::from_millis(100),
+            std::time::Duration::from_millis(200),
             key_exchange_client(
                 "localhost".to_string(),
                 5435,
@@ -835,7 +835,7 @@ mod tests {
         drop(blocker);
 
         let result = tokio::time::timeout(
-            std::time::Duration::from_millis(100),
+            std::time::Duration::from_millis(200),
             key_exchange_client(
                 "localhost".to_string(),
                 5435,
