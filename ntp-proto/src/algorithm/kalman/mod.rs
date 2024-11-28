@@ -220,7 +220,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 .startup_step_panic_threshold
                 .is_within(change)
             {
-                error!("Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate.");
+                error!("Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate. If the clock is significantly wrong, you can use `ntp-ctl force-sync` to correct it.");
                 #[cfg(not(test))]
                 std::process::exit(crate::exitcode::SOFTWARE);
                 #[cfg(test)]
@@ -238,7 +238,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                     .map(|v| self.timedata.accumulated_steps > v)
                     .unwrap_or(false)
             {
-                error!("Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate.");
+                error!("Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate. If the clock is significantly wrong, you can use `ntp-ctl force-sync` to correct it.");
                 #[cfg(not(test))]
                 std::process::exit(crate::exitcode::SOFTWARE);
                 #[cfg(test)]
