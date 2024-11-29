@@ -179,7 +179,7 @@ ntp-metrics-exporter(8).
     daemon. Levels higher than the given log level are logged as well. If not
     set (the default), then logging will be completely disabled.
 
-`disable-ansi` = `true` | `false` (**false**)
+`ansi-colors` = `true` | `false` (**true**)
 :   Disable ANSI escape codes in logs. By default, ANSI escape codes are used to
     add some formatting and colors to the logs.
 
