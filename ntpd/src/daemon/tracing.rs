@@ -66,10 +66,10 @@ impl From<LogLevel> for LevelFilter {
 
 pub fn tracing_init(
     level: impl Into<LevelFilter>,
-    disable_ansi: bool,
+    ansi_colors: bool,
 ) -> tracing_subscriber::fmt::Subscriber {
     tracing_subscriber::fmt()
         .with_max_level(level)
-        .with_ansi(!disable_ansi)
+        .with_ansi(ansi_colors)
         .finish()
 }
