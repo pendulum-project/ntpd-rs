@@ -180,8 +180,8 @@ ntp-metrics-exporter(8).
     set (the default), then logging will be completely disabled.
 
 `ansi-colors` = `true` | `false` (**true**)
-:   Disable ANSI escape codes in logs. By default, ANSI escape codes are used to
-    add some formatting and colors to the logs.
+:   Can be used to disable ANSI escape codes in logs. By default, ANSI escape
+    codes are used to add some colors and other formatting to the logs.
 
 `observation-path` = *path* (**unset**)
 :   Path where the daemon will create an observation Unix domain socket. This
