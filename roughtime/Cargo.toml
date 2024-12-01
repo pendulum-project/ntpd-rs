@@ -12,5 +12,7 @@ rust-version.workspace = true
 
 [dependencies]
 tokio = { version = "1.41.0", features = ["io-util", "net", "macros", "rt", "rt-multi-thread"] }
-ed25519_dalek = "2.1.1"
+ed25519-dalek = { version = "2.1.1", features = ["rand_core", "digest"] }
 sha2 = "0.10.8"
+rand.workspace = true
+base64 = "0.22.1"
