@@ -42,7 +42,7 @@ jobs:
           - rust: "stable"
             os: macos-latest
             features: "--features run_tokio_rustls_tests"
-            target: "x86_64-apple-darwin"
+            target: "aarch64-apple-darwin"
           - rust: "stable"
             os: ubuntu-latest
             features: "--all-features"
@@ -58,7 +58,7 @@ jobs:
           - rust: "stable"
             os: macos-latest
             features: "--all-features"
-            target: "x86_64-apple-darwin"
+            target: "aarch64-apple-darwin"
           - rust: "stable"
             os: ubuntu-latest
             features: "--no-default-features --features rustls21"
