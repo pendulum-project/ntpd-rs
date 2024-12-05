@@ -14,7 +14,7 @@ ntpd-rs is split into several crates with three goals in mind:
    straightforward to verify.
 
 The main `ntp-proto` and `ntpd` crates are set up such that neither contains any
-unsafe code. Unsafe code is limited to the `ntp-udp` and `ntp-clock` crates,
+unsafe code. Unsafe code is limited to the (external) `timestamped-socket` and `clock-steering` crates,
 which are purposefully kept small and only offer a safe API.
 
 ### ntp-proto
@@ -30,16 +30,16 @@ This crate only implements the decision and processing logic. It does not
 perform the actual communication, nor does it do any of the handling needed to
 ensure that source and steering logic is regularly called.
 
-### ntp-udp
+### timestamped-socket
 
-The `ntp-udp` crate provides an async interface to the Linux kernel's
+The [`timestamped-socket` crate](https://github.com/pendulum-project/timestamped-socket) provides an async interface to the Linux kernel's
 kernel-level network timestamping functionality. It wraps the system calls for
 configuring kernel-level timestamping and for retrieving the actual timestamps.
 Touching the network layer uses `libc` and is inherently unsafe.
 
-### ntp-clock
+### clock-steering
 
-The `ntp-clock` crate wraps the system calls needed for controlling the system
+The [`clock-steering` crate](https://github.com/pendulum-project/clock-steering) wraps the system calls needed for controlling the system
 clock. Touching the system clock uses `libc` and is inherently unsafe.
 
 ### ntpd
@@ -53,17 +53,6 @@ project produces. This includes
 
 Each of these should mostly contain the actual execution code that calls each
 of the previously mentioned crates when required.
-
-### test-binaries
-
-The `test-binaries` crate contains several binaries that are useful for doing
-integration tests. This includes, among other things
- - A local test server that always replies with a `DENY` kiss code
- - A local test server that enforces a stricter-than-typical rate limit from the
-   client.
-
-If you need an additional program to aid in (manual) integration testing, this
-is the crate to add it to.
 
 ## NTP daemon startup and operating sequence.
 
