@@ -200,12 +200,14 @@ mod tests {
     };
     use tokio::{io::AsyncReadExt, net::UnixStream};
 
+    use crate::test::alloc_port;
+
     use super::*;
 
     #[tokio::test]
     async fn test_observation() {
         // be careful with copying: tests run concurrently and should use a unique socket name!
-        let path = std::env::temp_dir().join("ntp-test-stream-2");
+        let path = std::env::temp_dir().join(format!("ntp-test-stream-{}", alloc_port()));
         let config = super::super::config::ObservabilityConfig {
             log_level: None,
             observation_path: Some(path.clone()),
@@ -272,7 +274,7 @@ mod tests {
     #[tokio::test]
     async fn test_block_during_read() {
         // be careful with copying: tests run concurrently and should use a unique socket name!
-        let path = std::env::temp_dir().join("ntp-test-stream-3");
+        let path = std::env::temp_dir().join(format!("ntp-test-stream-{}", alloc_port()));
         let config = super::super::config::ObservabilityConfig {
             log_level: None,
             observation_path: Some(path.clone()),

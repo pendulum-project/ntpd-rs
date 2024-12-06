@@ -136,6 +136,20 @@ impl TryFrom<&str> for ServerConfig {
     }
 }
 
+#[cfg(test)]
+impl From<SocketAddr> for ServerConfig {
+    fn from(listen: SocketAddr) -> Self {
+        ServerConfig {
+            listen,
+            denylist: default_denylist(),
+            allowlist: default_allowlist(),
+            rate_limiting_cache_size: Default::default(),
+            rate_limiting_cutoff: Default::default(),
+            require_nts: None,
+        }
+    }
+}
+
 impl From<ServerConfig> for ntp_proto::ServerConfig {
     fn from(value: ServerConfig) -> Self {
         ntp_proto::ServerConfig {

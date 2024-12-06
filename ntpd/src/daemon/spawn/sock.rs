@@ -64,7 +64,7 @@ impl Spawner for SockSpawner {
     }
 
     fn get_addr_description(&self) -> String {
-        self.config.path.to_string()
+        self.config.path.display().to_string()
     }
 
     fn get_description(&self) -> &str {
@@ -77,18 +77,21 @@ mod tests {
     use ntp_proto::NtpDuration;
     use tokio::sync::mpsc;
 
-    use crate::daemon::{
-        config::SockSourceConfig,
-        spawn::{sock::SockSpawner, SourceCreateParameters, SpawnAction, Spawner},
-        system::MESSAGE_BUFFER_SIZE,
+    use crate::{
+        daemon::{
+            config::SockSourceConfig,
+            spawn::{sock::SockSpawner, SourceCreateParameters, SpawnAction, Spawner},
+            system::MESSAGE_BUFFER_SIZE,
+        },
+        test::alloc_port,
     };
 
     #[tokio::test]
     async fn creates_a_source() {
-        let socket_path = "/tmp/test.sock";
+        let socket_path = std::env::temp_dir().join(format!("ntp-test-stream-{}", alloc_port()));
         let noise_estimate = 1e-6;
         let mut spawner = SockSpawner::new(SockSourceConfig {
-            path: socket_path.to_string(),
+            path: socket_path.clone(),
             measurement_noise_estimate: NtpDuration::from_seconds(noise_estimate),
         });
         let spawner_id = spawner.get_id();
@@ -100,7 +103,7 @@ mod tests {
         assert_eq!(res.id, spawner_id);
 
         let SpawnAction::Create(create_params) = res.action;
-        assert_eq!(create_params.get_addr(), socket_path);
+        assert_eq!(create_params.get_addr(), socket_path.display().to_string());
 
         let SourceCreateParameters::Sock(params) = create_params else {
             panic!("did not receive sock source create parameters!");
