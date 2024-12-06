@@ -309,21 +309,24 @@ mod tests {
     use std::os::unix::prelude::PermissionsExt;
     use std::path::Path;
 
-    use crate::daemon::{
-        config::ObservabilityConfig,
-        sockets::{create_unix_socket_with_permissions, write_json},
+    use crate::{
+        daemon::{
+            config::ObservabilityConfig,
+            sockets::{create_unix_socket_with_permissions, write_json},
+        },
+        test::alloc_port,
     };
 
     use super::*;
 
-    async fn write_socket_helper(
+    async fn write_socket_helper<T: serde::Serialize>(
         command: Format,
-        socket_name: &str,
+        value: T,
     ) -> std::io::Result<Result<ExitCode, std::io::Error>> {
         let config: ObservabilityConfig = Default::default();
 
         // be careful with copying: tests run concurrently and should use a unique socket name!
-        let path = std::env::temp_dir().join(socket_name);
+        let path = std::env::temp_dir().join(format!("ntp-test-stream-{}", alloc_port()));
         if path.exists() {
             std::fs::remove_file(&path).unwrap();
         }
@@ -336,13 +339,6 @@ mod tests {
         let fut = super::print_state(command, path);
         let handle = tokio::spawn(fut);
 
-        let value = ObservableState {
-            program: Default::default(),
-            system: Default::default(),
-            sources: vec![],
-            servers: vec![],
-        };
-
         let (mut stream, _addr) = sources_listener.accept().await?;
         write_json(&mut stream, &value).await?;
 
@@ -353,8 +349,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_control_socket_source() -> std::io::Result<()> {
-        // be careful with copying: tests run concurrently and should use a unique socket name!
-        let result = write_socket_helper(Format::Plain, "ntp-test-stream-6").await?;
+        let value = ObservableState {
+            program: Default::default(),
+            system: Default::default(),
+            sources: vec![],
+            servers: vec![],
+        };
+        let result = write_socket_helper(Format::Plain, value).await?;
 
         assert_eq!(
             format!("{:?}", result.unwrap()),
@@ -366,8 +367,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_control_socket_prometheus() -> std::io::Result<()> {
-        // be careful with copying: tests run concurrently and should use a unique socket name!
-        let result = write_socket_helper(Format::Prometheus, "ntp-test-stream-8").await?;
+        let value = ObservableState {
+            program: Default::default(),
+            system: Default::default(),
+            sources: vec![],
+            servers: vec![],
+        };
+        let result = write_socket_helper(Format::Prometheus, value).await?;
 
         assert_eq!(
             format!("{:?}", result.unwrap()),
@@ -379,28 +385,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_control_socket_source_invalid_input() -> std::io::Result<()> {
-        let config: ObservabilityConfig = Default::default();
-
-        // be careful with copying: tests run concurrently and should use a unique socket name!
-        let path = std::env::temp_dir().join("ntp-test-stream-10");
-        if path.exists() {
-            std::fs::remove_file(&path).unwrap();
-        }
-
-        let permissions: std::fs::Permissions =
-            PermissionsExt::from_mode(config.observation_permissions);
-
-        let sources_listener = create_unix_socket_with_permissions(&path, permissions)?;
-
-        let fut = super::print_state(Format::Plain, path);
-        let handle = tokio::spawn(fut);
-
         let value = 42u32;
-
-        let (mut stream, _addr) = sources_listener.accept().await?;
-        write_json(&mut stream, &value).await?;
-
-        let result = handle.await.unwrap();
+        let result = write_socket_helper(Format::Plain, value).await?;
 
         assert_eq!(
             format!("{:?}", result.unwrap()),

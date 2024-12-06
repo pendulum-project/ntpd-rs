@@ -229,13 +229,15 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
 
 #[cfg(test)]
 mod tests {
-    use std::{convert::Infallible, io::Cursor};
+    use std::{convert::Infallible, io::Cursor, net::SocketAddr};
 
     use ntp_proto::{
         KeySetProvider, NoCipher, NtpDuration, NtpLeapIndicator, NtpPacket, NtpTimestamp,
         PollIntervalLimits,
     };
     use timestamped_socket::socket::GeneralTimestampMode;
+
+    use crate::test::alloc_port;
 
     use super::*;
 
@@ -292,7 +294,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_server_serves() {
-        let config = ServerConfig::try_from("127.0.0.1:9000").unwrap();
+        let port = alloc_port();
+        let config = ServerConfig::from(SocketAddr::new("127.0.0.1".parse().unwrap(), port));
 
         let clock = TestClock {
             time: NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 1000),
@@ -310,11 +313,13 @@ mod tests {
         );
 
         let socket = open_ip(
-            "127.0.0.1:9001".parse().unwrap(),
+            SocketAddr::new("127.0.0.1".parse().unwrap(), alloc_port()),
             GeneralTimestampMode::SoftwareRecv,
         )
         .unwrap();
-        let mut socket = socket.connect("127.0.0.1:9000".parse().unwrap()).unwrap();
+        let mut socket = socket
+            .connect(SocketAddr::new("127.0.0.1".parse().unwrap(), port))
+            .unwrap();
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
 
         let serialized = serialize_packet_unencrypted(&packet);

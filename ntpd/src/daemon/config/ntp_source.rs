@@ -113,7 +113,7 @@ pub struct NtsPoolSourceConfig {
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct SockSourceConfig {
-    pub path: String,
+    pub path: PathBuf,
     pub measurement_noise_estimate: NtpDuration,
 }
 
