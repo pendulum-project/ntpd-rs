@@ -110,6 +110,23 @@ macro_rules! collect_sources {
     }};
 }
 
+macro_rules! collect_some_sources {
+    ($from: expr, |$ident: ident| $value: expr $(,)?) => {{
+        let mut data = vec![];
+        for $ident in &$from.sources {
+            if let Some(value) = $value {
+                let labels = vec![
+                    ("name", $ident.name.clone()),
+                    ("address", $ident.address.clone()),
+                    ("id", format!("{}", $ident.id)),
+                ];
+                data.push(Measurement { labels, value });
+            }
+        }
+        data
+    }};
+}
+
 macro_rules! collect_servers {
     ($from: expr, |$ident: ident| $value: expr $(,)?) => {{
         let mut data = vec![];
@@ -230,6 +247,15 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
         MetricType::Gauge,
         None,
         collect_sources!(state, |p| p.unanswered_polls),
+    )?;
+
+    format_metric(
+        w,
+        "ntp_source_nts_cookies_available",
+        "Number of unused cookies available for nts-enabled ntp exchanges",
+        MetricType::Gauge,
+        None,
+        collect_some_sources!(state, |p| p.nts_cookies),
     )?;
 
     format_metric(
