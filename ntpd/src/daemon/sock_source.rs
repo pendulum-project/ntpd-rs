@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::{fmt::Display, path::Path};
 
 use ntp_proto::{
@@ -89,11 +90,11 @@ pub(crate) struct SockSourceTask<
     source: OneWaySource<Controller>,
 }
 
-fn create_socket(socket_path: String) -> std::io::Result<UnixDatagram> {
-    let path = Path::new(&socket_path).to_path_buf();
+fn create_socket<T: AsRef<Path>>(path: T) -> std::io::Result<UnixDatagram> {
+    let path = path.as_ref();
     if path.exists() {
         debug!("Removing previous socket file");
-        std::fs::remove_file(&path)?;
+        std::fs::remove_file(path)?;
     }
     debug!("Creating socket at {:?}", path);
     let socket = UnixDatagram::bind(path)?;
@@ -195,7 +196,7 @@ where
     #[instrument(level = tracing::Level::ERROR, name = "Sock Source", skip(clock, channels, source))]
     pub fn spawn(
         index: SourceId,
-        socket_path: String,
+        socket_path: PathBuf,
         clock: C,
         channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
         source: OneWaySource<Controller>,
@@ -232,11 +233,14 @@ mod tests {
     };
     use tokio::sync::mpsc;
 
-    use crate::daemon::{
-        ntp_source::{MsgForSystem, SourceChannels},
-        sock_source::{create_socket, SampleError, SockSourceTask, SOCK_MAGIC},
-        spawn::SourceId,
-        util::EPOCH_OFFSET,
+    use crate::{
+        daemon::{
+            ntp_source::{MsgForSystem, SourceChannels},
+            sock_source::{create_socket, SampleError, SockSourceTask, SOCK_MAGIC},
+            spawn::SourceId,
+            util::EPOCH_OFFSET,
+        },
+        test::alloc_port,
     };
 
     use super::deserialize_sample;
@@ -305,12 +309,12 @@ mod tests {
         )
         .unwrap();
 
-        let socket_path = "/tmp/test.sock";
-        let _socket = create_socket(socket_path.to_string()).unwrap(); // should be overwritten by SockSource's own socket
+        let socket_path = std::env::temp_dir().join(format!("ntp-test-stream-{}", alloc_port()));
+        let _socket = create_socket(&socket_path).unwrap(); // should be overwritten by SockSource's own socket
 
         let handle = SockSourceTask::spawn(
             index,
-            socket_path.to_string(),
+            socket_path.clone(),
             clock,
             SourceChannels {
                 msg_for_system_sender,

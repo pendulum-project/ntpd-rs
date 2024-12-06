@@ -458,7 +458,7 @@ mod tests {
     use timestamped_socket::socket::{open_ip, GeneralTimestampMode, Open};
     use tokio::sync::{broadcast, mpsc};
 
-    use crate::daemon::util::EPOCH_OFFSET;
+    use crate::{daemon::util::EPOCH_OFFSET, test::alloc_port};
 
     use super::*;
 
@@ -579,16 +579,13 @@ mod tests {
         }
     }
 
-    async fn test_startup<T: Wait>(
-        port_base: u16,
-    ) -> (
+    async fn test_startup<T: Wait>() -> (
         SourceTask<TestClock, TwoWayKalmanSourceController<SourceId>, T>,
         Socket<SocketAddr, Open>,
         mpsc::Receiver<MsgForSystem<KalmanSourceMessage<SourceId>>>,
         broadcast::Sender<SystemSourceUpdate<KalmanControllerMessage>>,
     ) {
-        // Note: Ports must be unique among tests to deal with parallelism, hence
-        // port_base
+        let port_base = alloc_port();
         let test_socket = open_ip(
             SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
             GeneralTimestampMode::SoftwareRecv,
@@ -646,7 +643,7 @@ mod tests {
     #[tokio::test]
     async fn test_poll_sends_state_update_and_packet() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, socket, _, _system_update_sender) = test_startup(8006).await;
+        let (mut process, socket, _, _system_update_sender) = test_startup().await;
 
         let (poll_wait, poll_send) = TestWait::new();
 
@@ -677,8 +674,7 @@ mod tests {
     #[tokio::test]
     async fn test_timeroundtrip() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, mut socket, mut msg_recv, _system_update_sender) =
-            test_startup(8008).await;
+        let (mut process, mut socket, mut msg_recv, _system_update_sender) = test_startup().await;
 
         let system = SystemSnapshot {
             time_snapshot: TimeSnapshot {
@@ -727,8 +723,7 @@ mod tests {
     #[tokio::test]
     async fn test_deny_stops_poll() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, mut socket, mut msg_recv, _system_update_sender) =
-            test_startup(8010).await;
+        let (mut process, mut socket, mut msg_recv, _system_update_sender) = test_startup().await;
 
         let (poll_wait, poll_send) = TestWait::new();
 

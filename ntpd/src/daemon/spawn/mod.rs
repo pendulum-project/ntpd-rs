@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, sync::atomic::AtomicU64};
+use std::{net::SocketAddr, path::PathBuf, sync::atomic::AtomicU64};
 
 use ntp_proto::{ProtocolVersion, SourceNtsData};
 use serde::{Deserialize, Serialize};
@@ -147,7 +147,7 @@ impl SourceCreateParameters {
     pub fn get_addr(&self) -> String {
         match self {
             Self::Ntp(params) => params.addr.to_string(),
-            Self::Sock(params) => params.path.clone(),
+            Self::Sock(params) => params.path.clone().display().to_string(),
         }
     }
 }
@@ -164,7 +164,7 @@ pub struct NtpSourceCreateParameters {
 #[derive(Debug)]
 pub struct SockSourceCreateParameters {
     pub id: SourceId,
-    pub path: String,
+    pub path: PathBuf,
     pub noise_estimate: f64,
 }
 
