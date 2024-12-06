@@ -124,7 +124,11 @@ impl ReferenceIdRequest {
     pub fn decode(msg: &[u8]) -> Result<Self, ParsingError<Infallible>> {
         let payload_len =
             u16::try_from(msg.len()).expect("NTP fields can not be longer than u16::MAX");
-        let offset_bytes: [u8; 2] = msg[0..2].try_into().unwrap();
+        let offset_bytes: [u8; 2] = msg
+            .get(0..2)
+            .ok_or(ParsingError::IncorrectLength)?
+            .try_into()
+            .unwrap();
 
         Ok(Self {
             payload_len,
@@ -221,5 +225,20 @@ mod tests {
             let bits2 = ty2.to_bits();
             assert_eq!(bits, bits2);
         }
+    }
+
+    #[test]
+    fn test_reference_id_request_too_short() {
+        assert!(matches!(
+            ReferenceIdRequest::decode(&[]),
+            Err(ParsingError::IncorrectLength)
+        ));
+    }
+
+    #[test]
+    fn test_reference_id_request_decode() {
+        let res = ReferenceIdRequest::decode(&[0, 2, 0, 0, 0]).unwrap();
+        assert_eq!(res.payload_len, 5);
+        assert_eq!(res.offset, 2);
     }
 }
