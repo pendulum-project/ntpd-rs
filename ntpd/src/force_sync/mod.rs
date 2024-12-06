@@ -7,6 +7,7 @@ use std::{
 
 use algorithm::{SingleShotController, SingleShotControllerConfig};
 use ntp_proto::{NtpClock, NtpDuration};
+use tokio::runtime::Builder;
 
 #[cfg(feature = "unstable_nts-pool")]
 use crate::daemon::config::NtsPoolSourceConfig;
@@ -108,8 +109,8 @@ impl<C: NtpClock> SingleShotController<C> {
     }
 }
 
-pub(crate) async fn force_sync(config: Option<PathBuf>) -> std::io::Result<ExitCode> {
-    let config = initialize_logging_parse_config(Some(LogLevel::Warn), config).await;
+pub(crate) fn force_sync(config: Option<PathBuf>) -> std::io::Result<ExitCode> {
+    let config = initialize_logging_parse_config(Some(LogLevel::Warn), config);
 
     // Warn/error if the config is unreasonable. We do this after finishing
     // tracing setup to ensure logging is fully configured.
@@ -122,45 +123,52 @@ pub(crate) async fn force_sync(config: Option<PathBuf>) -> std::io::Result<ExitC
 
     println!("Determining current time...");
 
-    // Count number of sources
-    let mut total_sources = 0;
-    for source in &config.sources {
-        match source {
-            config::NtpSourceConfig::Standard(_)
-            | config::NtpSourceConfig::Nts(_)
-            | config::NtpSourceConfig::Sock(_) => total_sources += 1,
-            config::NtpSourceConfig::Pool(PoolSourceConfig { count, .. }) => total_sources += count,
-            #[cfg(feature = "unstable_nts-pool")]
-            config::NtpSourceConfig::NtsPool(NtsPoolSourceConfig { count, .. }) => {
-                total_sources += count
+    Builder::new_current_thread()
+        .enable_all()
+        .build()?
+        .block_on(async {
+            // Count number of sources
+            let mut total_sources = 0;
+            for source in &config.sources {
+                match source {
+                    config::NtpSourceConfig::Standard(_)
+                    | config::NtpSourceConfig::Nts(_)
+                    | config::NtpSourceConfig::Sock(_) => total_sources += 1,
+                    config::NtpSourceConfig::Pool(PoolSourceConfig { count, .. }) => {
+                        total_sources += count
+                    }
+                    #[cfg(feature = "unstable_nts-pool")]
+                    config::NtpSourceConfig::NtsPool(NtsPoolSourceConfig { count, .. }) => {
+                        total_sources += count
+                    }
+                }
             }
-        }
-    }
 
-    // We will need to have a keyset for the daemon
-    let keyset = nts_key_provider::spawn(config.keyset).await;
+            // We will need to have a keyset for the daemon
+            let keyset = nts_key_provider::spawn(config.keyset).await;
 
-    #[cfg(feature = "hardware-timestamping")]
-    let clock_config = config.clock;
+            #[cfg(feature = "hardware-timestamping")]
+            let clock_config = config.clock;
 
-    #[cfg(not(feature = "hardware-timestamping"))]
-    let clock_config = config::ClockConfig::default();
+            #[cfg(not(feature = "hardware-timestamping"))]
+            let clock_config = config::ClockConfig::default();
 
-    ::tracing::debug!("Configuration loaded, spawning daemon jobs");
-    let (main_loop_handle, _) = spawn::<SingleShotController<_>>(
-        config.synchronization.synchronization_base,
-        SingleShotControllerConfig {
-            expected_sources: total_sources,
-        },
-        config.source_defaults,
-        clock_config,
-        &config.sources,
-        &[], // No serving when operating in force sync mode
-        keyset.clone(),
-    )
-    .await?;
+            ::tracing::debug!("Configuration loaded, spawning daemon jobs");
+            let (main_loop_handle, _) = spawn::<SingleShotController<_>>(
+                config.synchronization.synchronization_base,
+                SingleShotControllerConfig {
+                    expected_sources: total_sources,
+                },
+                config.source_defaults,
+                clock_config,
+                &config.sources,
+                &[], // No serving when operating in force sync mode
+                keyset.clone(),
+            )
+            .await?;
 
-    let _ = main_loop_handle.await;
+            let _ = main_loop_handle.await;
 
-    Ok(ExitCode::SUCCESS)
+            Ok(ExitCode::SUCCESS)
+        })
 }
