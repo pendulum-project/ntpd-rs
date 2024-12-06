@@ -4,6 +4,7 @@ use crate::{
     daemon::{config::CliArg, tracing::LogLevel, Config, ObservableState},
     force_sync,
 };
+use tokio::runtime::Builder;
 use tracing_subscriber::util::SubscriberInitExt;
 
 const USAGE_MSG: &str = "\
@@ -146,10 +147,10 @@ impl NtpCtlOptions {
     }
 }
 
-async fn validate(config: Option<PathBuf>) -> std::io::Result<ExitCode> {
+fn validate(config: Option<PathBuf>) -> std::io::Result<ExitCode> {
     // Late completion not needed, so ignore result.
     crate::daemon::tracing::tracing_init(LogLevel::Info, true).init();
-    match Config::from_args(config, vec![], vec![]).await {
+    match Config::from_args(config, vec![], vec![]) {
         Ok(config) => {
             if config.check() {
                 eprintln!("Config looks good");
@@ -167,7 +168,7 @@ async fn validate(config: Option<PathBuf>) -> std::io::Result<ExitCode> {
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-pub async fn main() -> std::io::Result<ExitCode> {
+pub fn main() -> std::io::Result<ExitCode> {
     let options = match NtpCtlOptions::try_parse_from(std::env::args()) {
         Ok(options) => options,
         Err(msg) => return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, msg)),
@@ -182,10 +183,10 @@ pub async fn main() -> std::io::Result<ExitCode> {
             eprintln!("ntp-ctl {VERSION}");
             Ok(ExitCode::SUCCESS)
         }
-        NtpCtlAction::Validate => validate(options.config).await,
-        NtpCtlAction::ForceSync => force_sync::force_sync(options.config).await,
+        NtpCtlAction::Validate => validate(options.config),
+        NtpCtlAction::ForceSync => force_sync::force_sync(options.config),
         NtpCtlAction::Status => {
-            let config = Config::from_args(options.config, vec![], vec![]).await;
+            let config = Config::from_args(options.config, vec![], vec![]);
 
             if let Err(ref e) = config {
                 println!("Warning: Unable to load configuration file: {e}");
@@ -198,10 +199,15 @@ pub async fn main() -> std::io::Result<ExitCode> {
                 .observation_path
                 .unwrap_or_else(|| PathBuf::from("/var/run/ntpd-rs/observe"));
 
-            match options.format {
-                Format::Plain => print_state(Format::Plain, observation).await,
-                Format::Prometheus => print_state(Format::Prometheus, observation).await,
-            }
+            Builder::new_current_thread()
+                .enable_all()
+                .build()?
+                .block_on(async {
+                    match options.format {
+                        Format::Plain => print_state(Format::Plain, observation).await,
+                        Format::Prometheus => print_state(Format::Prometheus, observation).await,
+                    }
+                })
         }
     }
 }

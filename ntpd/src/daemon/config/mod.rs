@@ -9,6 +9,7 @@ use ntp_proto::{AlgorithmConfig, SourceDefaultsConfig, SynchronizationConfig};
 pub use ntp_source::*;
 use serde::{Deserialize, Deserializer};
 pub use server::*;
+use std::io;
 use std::{
     fmt::Display,
     io::ErrorKind,
@@ -18,7 +19,6 @@ use std::{
     str::FromStr,
 };
 use timestamped_socket::interface::InterfaceName;
-use tokio::{fs::read_to_string, io};
 use tracing::{info, warn};
 
 use super::{clock::NtpClockWrapper, tracing::LogLevel};
@@ -373,7 +373,7 @@ pub struct Config {
 }
 
 impl Config {
-    async fn from_file(file: impl AsRef<Path>) -> Result<Config, ConfigError> {
+    fn from_file(file: impl AsRef<Path>) -> Result<Config, ConfigError> {
         let meta = std::fs::metadata(&file)?;
         let perm = meta.permissions();
 
@@ -381,23 +381,23 @@ impl Config {
             warn!("Unrestricted config file permissions: Others can write.");
         }
 
-        let contents = read_to_string(file).await?;
+        let contents = std::fs::read_to_string(file)?;
         Ok(toml::de::from_str(&contents)?)
     }
 
-    async fn from_first_file(file: Option<impl AsRef<Path>>) -> Result<Config, ConfigError> {
+    fn from_first_file(file: Option<impl AsRef<Path>>) -> Result<Config, ConfigError> {
         // if an explicit file is given, always use that one
         if let Some(f) = file {
             let path: &Path = f.as_ref();
             info!(?path, "using config file");
-            return Config::from_file(f).await;
+            return Config::from_file(f);
         }
 
         // for the global file we also ignore it when there are permission errors
         let global_path = Path::new("/etc/ntpd-rs/ntp.toml");
         if global_path.exists() {
             info!("using config file at default location `{:?}`", global_path);
-            match Config::from_file(global_path).await {
+            match Config::from_file(global_path) {
                 Err(ConfigError::Io(e)) if e.kind() == ErrorKind::PermissionDenied => {
                     warn!("permission denied on global config file! using default config ...");
                 }
@@ -410,12 +410,12 @@ impl Config {
         Ok(Config::default())
     }
 
-    pub async fn from_args(
+    pub fn from_args(
         file: Option<impl AsRef<Path>>,
         sources: Vec<NtpSourceConfig>,
         servers: Vec<ServerConfig>,
     ) -> Result<Config, ConfigError> {
-        let mut config = Config::from_first_file(file.as_ref()).await?;
+        let mut config = Config::from_first_file(file.as_ref())?;
 
         if !sources.is_empty() {
             if !config.sources.is_empty() {
