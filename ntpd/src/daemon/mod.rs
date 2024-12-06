@@ -20,6 +20,7 @@ pub use config::Config;
 use ntp_proto::KalmanClockController;
 pub use observer::ObservableState;
 pub use system::spawn;
+use tokio::runtime::Builder;
 use tracing_subscriber::util::SubscriberInitExt;
 
 use config::NtpDaemonOptions;
@@ -28,7 +29,7 @@ use self::tracing::LogLevel;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-pub async fn main() -> Result<(), Box<dyn Error>> {
+pub fn main() -> Result<(), Box<dyn Error>> {
     let options = NtpDaemonOptions::try_parse_from(std::env::args())?;
 
     match options.action {
@@ -38,7 +39,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         config::NtpDaemonAction::Version => {
             eprintln!("ntp-daemon {VERSION}");
         }
-        config::NtpDaemonAction::Run => run(options).await?,
+        config::NtpDaemonAction::Run => run(options)?,
     }
 
     Ok(())
@@ -46,7 +47,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
 
 // initializes the logger so that logs during config parsing are reported. Then it overrides the
 // log level based on the config if required.
-pub(crate) async fn initialize_logging_parse_config(
+pub(crate) fn initialize_logging_parse_config(
     initial_log_level: Option<LogLevel>,
     config_path: Option<PathBuf>,
 ) -> Config {
@@ -54,18 +55,15 @@ pub(crate) async fn initialize_logging_parse_config(
 
     let config_tracing = crate::daemon::tracing::tracing_init(log_level, true);
     let config = ::tracing::subscriber::with_default(config_tracing, || {
-        async {
-            match Config::from_args(config_path, vec![], vec![]).await {
-                Ok(c) => c,
-                Err(e) => {
-                    // print to stderr because tracing is not yet setup
-                    eprintln!("There was an error loading the config: {e}");
-                    std::process::exit(exitcode::CONFIG);
-                }
+        match Config::from_args(config_path, vec![], vec![]) {
+            Ok(c) => c,
+            Err(e) => {
+                // print to stderr because tracing is not yet setup
+                eprintln!("There was an error loading the config: {e}");
+                std::process::exit(exitcode::CONFIG);
             }
         }
-    })
-    .await;
+    });
 
     if let Some(config_log_level) = config.observability.log_level {
         if initial_log_level.is_none() {
@@ -80,51 +78,59 @@ pub(crate) async fn initialize_logging_parse_config(
     config
 }
 
-async fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
-    let config = initialize_logging_parse_config(options.log_level, options.config).await;
+fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
+    let config = initialize_logging_parse_config(options.log_level, options.config);
 
-    // give the user a warning that we use the command line option
-    if config.observability.log_level.is_some() && options.log_level.is_some() {
-        info!("Log level override from command line arguments is active");
-    }
+    let runtime = if config.servers.is_empty() && config.nts_ke.is_empty() {
+        Builder::new_current_thread().enable_all().build()?
+    } else {
+        Builder::new_multi_thread().enable_all().build()?
+    };
 
-    // Warn/error if the config is unreasonable. We do this after finishing
-    // tracing setup to ensure logging is fully configured.
-    config.check();
+    runtime.block_on(async {
+        // give the user a warning that we use the command line option
+        if config.observability.log_level.is_some() && options.log_level.is_some() {
+            info!("Log level override from command line arguments is active");
+        }
 
-    // we always generate the keyset (even if NTS is not used)
-    let keyset = nts_key_provider::spawn(config.keyset).await;
+        // Warn/error if the config is unreasonable. We do this after finishing
+        // tracing setup to ensure logging is fully configured.
+        config.check();
 
-    #[cfg(feature = "hardware-timestamping")]
-    let clock_config = config.clock;
+        // we always generate the keyset (even if NTS is not used)
+        let keyset = nts_key_provider::spawn(config.keyset).await;
 
-    #[cfg(not(feature = "hardware-timestamping"))]
-    let clock_config = config::ClockConfig::default();
+        #[cfg(feature = "hardware-timestamping")]
+        let clock_config = config.clock;
 
-    ::tracing::debug!("Configuration loaded, spawning daemon jobs");
-    let (main_loop_handle, channels) = spawn::<KalmanClockController<_, _>>(
-        config.synchronization.synchronization_base,
-        config.synchronization.algorithm,
-        config.source_defaults,
-        clock_config,
-        &config.sources,
-        &config.servers,
-        keyset.clone(),
-    )
-    .await?;
+        #[cfg(not(feature = "hardware-timestamping"))]
+        let clock_config = config::ClockConfig::default();
 
-    for nts_ke_config in config.nts_ke {
-        let _join_handle = keyexchange::spawn(nts_ke_config, keyset.clone());
-    }
+        ::tracing::debug!("Configuration loaded, spawning daemon jobs");
+        let (main_loop_handle, channels) = spawn::<KalmanClockController<_, _>>(
+            config.synchronization.synchronization_base,
+            config.synchronization.algorithm,
+            config.source_defaults,
+            clock_config,
+            &config.sources,
+            &config.servers,
+            keyset.clone(),
+        )
+        .await?;
 
-    observer::spawn(
-        &config.observability,
-        channels.source_snapshots,
-        channels.server_data_receiver,
-        channels.system_snapshot_receiver,
-    );
+        for nts_ke_config in config.nts_ke {
+            let _join_handle = keyexchange::spawn(nts_ke_config, keyset.clone());
+        }
 
-    Ok(main_loop_handle.await??)
+        observer::spawn(
+            &config.observability,
+            channels.source_snapshots,
+            channels.server_data_receiver,
+            channels.system_snapshot_receiver,
+        );
+
+        Ok(main_loop_handle.await??)
+    })
 }
 
 pub(crate) mod exitcode {
