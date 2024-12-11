@@ -9,6 +9,7 @@ use std::{
 use ntp_proto::tls_utils::Certificate;
 #[cfg(feature = "unstable_ntpv5")]
 use ntp_proto::NtpVersion;
+use ntp_proto::{PollInterval, PollIntervalLimits, SourceConfig};
 use serde::{de, Deserialize, Deserializer};
 
 use super::super::keyexchange::certificates_from_file;
@@ -116,6 +117,53 @@ pub struct SockSourceConfig {
     pub measurement_noise_estimate: f64,
 }
 
+#[derive(Deserialize, Debug, PartialEq, Eq, Clone, Default)]
+#[serde(deny_unknown_fields)]
+pub struct PartialPollIntervalLimits {
+    pub min: Option<PollInterval>,
+    pub max: Option<PollInterval>,
+}
+
+#[derive(Deserialize, Debug, PartialEq, Eq, Clone, Default)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct PartialSourceConfig {
+    /// Minima and maxima for the poll interval of clients
+    #[serde(default)]
+    pub poll_interval_limits: PartialPollIntervalLimits,
+
+    /// Initial poll interval of the system
+    pub initial_poll_interval: Option<PollInterval>,
+}
+
+impl PartialSourceConfig {
+    pub fn with_defaults(self, defaults: SourceConfig) -> SourceConfig {
+        SourceConfig {
+            poll_interval_limits: PollIntervalLimits {
+                min: self
+                    .poll_interval_limits
+                    .min
+                    .unwrap_or(defaults.poll_interval_limits.min),
+                max: self
+                    .poll_interval_limits
+                    .max
+                    .unwrap_or(defaults.poll_interval_limits.max),
+            },
+            initial_poll_interval: self
+                .initial_poll_interval
+                .unwrap_or(defaults.initial_poll_interval),
+        }
+    }
+}
+
+#[derive(Deserialize, Debug, PartialEq, Clone, Default)]
+#[serde(deny_unknown_fields)]
+pub struct FlattenedPair<T, U> {
+    #[serde(flatten)]
+    pub first: T,
+    #[serde(flatten)]
+    pub second: U,
+}
+
 #[derive(Deserialize, Debug, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct PpsSourceConfig {
@@ -133,14 +181,14 @@ fn default_period() -> f64 {
 #[serde(tag = "mode")]
 pub enum NtpSourceConfig {
     #[serde(rename = "server")]
-    Standard(StandardSource),
+    Standard(FlattenedPair<StandardSource, PartialSourceConfig>),
     #[serde(rename = "nts")]
-    Nts(NtsSourceConfig),
+    Nts(FlattenedPair<NtsSourceConfig, PartialSourceConfig>),
     #[serde(rename = "pool")]
-    Pool(PoolSourceConfig),
+    Pool(FlattenedPair<PoolSourceConfig, PartialSourceConfig>),
     #[cfg(feature = "unstable_nts-pool")]
     #[serde(rename = "nts-pool")]
-    NtsPool(NtsPoolSourceConfig),
+    NtsPool(FlattenedPair<NtsPoolSourceConfig, PartialSourceConfig>),
     #[serde(rename = "sock")]
     Sock(SockSourceConfig),
     #[serde(rename = "pps")]
@@ -373,7 +421,12 @@ impl<'a> TryFrom<&'a str> for NtpSourceConfig {
     type Error = std::io::Error;
 
     fn try_from(value: &'a str) -> Result<Self, Self::Error> {
-        StandardSource::try_from(value).map(Self::Standard)
+        StandardSource::try_from(value).map(|first| {
+            Self::Standard(FlattenedPair {
+                first,
+                second: Default::default(),
+            })
+        })
     }
 }
 
@@ -383,11 +436,11 @@ mod tests {
 
     fn source_addr(config: &NtpSourceConfig) -> String {
         match config {
-            NtpSourceConfig::Standard(c) => c.address.to_string(),
-            NtpSourceConfig::Nts(c) => c.address.to_string(),
-            NtpSourceConfig::Pool(c) => c.addr.to_string(),
+            NtpSourceConfig::Standard(c) => c.first.address.to_string(),
+            NtpSourceConfig::Nts(c) => c.first.address.to_string(),
+            NtpSourceConfig::Pool(c) => c.first.addr.to_string(),
             #[cfg(feature = "unstable_nts-pool")]
-            NtpSourceConfig::NtsPool(c) => c.addr.to_string(),
+            NtpSourceConfig::NtsPool(c) => c.first.addr.to_string(),
             NtpSourceConfig::Sock(_c) => "".to_string(),
             NtpSourceConfig::Pps(_c) => "".to_string(),
         }
@@ -444,7 +497,7 @@ mod tests {
         assert!(matches!(test.source, NtpSourceConfig::Pool(_)));
         assert_eq!(source_addr(&test.source), "example.com:123");
         if let NtpSourceConfig::Pool(config) = test.source {
-            assert_eq!(config.count, 4);
+            assert_eq!(config.first.count, 4);
         }
 
         let test: TestConfig = toml::from_str(
@@ -459,7 +512,7 @@ mod tests {
         assert!(matches!(test.source, NtpSourceConfig::Pool(_)));
         assert_eq!(source_addr(&test.source), "example.com:123");
         if let NtpSourceConfig::Pool(config) = test.source {
-            assert_eq!(config.count, 42);
+            assert_eq!(config.first.count, 42);
         }
 
         let test: TestConfig = toml::from_str(
@@ -522,6 +575,35 @@ mod tests {
         let source = NtpSourceConfig::try_from("example.com:5678").unwrap();
         assert_eq!(source_addr(&source), "example.com:5678");
         assert!(matches!(source, NtpSourceConfig::Standard(_)));
+    }
+
+    #[test]
+    fn test_source_config_parsing() {
+        #[derive(Deserialize, Debug)]
+        struct TestConfig {
+            #[allow(unused)]
+            source: NtpSourceConfig,
+        }
+
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+                [source]
+                mode = "server"
+                address = "example.com"
+                initial-poll-interval = 7
+            "#,
+        );
+        assert!(test.is_ok());
+
+        let test2: Result<TestConfig, _> = toml::from_str(
+            r#"
+                [source]
+                mode = "server"
+                address = "example.com"
+                does-not-exist = 7
+            "#,
+        );
+        assert!(test2.is_err());
     }
 
     #[test]

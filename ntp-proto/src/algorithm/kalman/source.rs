@@ -1458,7 +1458,7 @@ mod tests {
         }));
 
         source.update_self_using_raw_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::ZERO,
@@ -1496,7 +1496,7 @@ mod tests {
             .snapshot(0_usize, &AlgorithmConfig::default(), None)
             .is_none());
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::ZERO,
@@ -1521,7 +1521,7 @@ mod tests {
                 < 0.5001
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::ZERO,
@@ -1546,7 +1546,7 @@ mod tests {
                 < 0.5001
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::ZERO,
@@ -1571,7 +1571,7 @@ mod tests {
                 < 0.5001
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::ZERO,
@@ -1596,7 +1596,7 @@ mod tests {
                 < 0.5001
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::ZERO,
@@ -1621,7 +1621,7 @@ mod tests {
                 < 0.5001
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::ZERO,
@@ -1646,7 +1646,7 @@ mod tests {
                 < 0.5001
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::ZERO,
@@ -1671,7 +1671,7 @@ mod tests {
                 < 0.5001
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::ZERO,

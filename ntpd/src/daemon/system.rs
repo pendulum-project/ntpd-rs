@@ -116,7 +116,10 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper, Sourc
         match source_config {
             NtpSourceConfig::Standard(cfg) => {
                 system
-                    .add_spawner(StandardSpawner::new(cfg.clone(), source_defaults_config))
+                    .add_spawner(StandardSpawner::new(
+                        cfg.first.clone(),
+                        cfg.second.clone().with_defaults(source_defaults_config),
+                    ))
                     .map_err(|e| {
                         tracing::error!("Could not spawn source: {}", e);
                         std::io::Error::new(std::io::ErrorKind::Other, e)
@@ -124,7 +127,10 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper, Sourc
             }
             NtpSourceConfig::Nts(cfg) => {
                 system
-                    .add_spawner(NtsSpawner::new(cfg.clone(), source_defaults_config))
+                    .add_spawner(NtsSpawner::new(
+                        cfg.first.clone(),
+                        cfg.second.clone().with_defaults(source_defaults_config),
+                    ))
                     .map_err(|e| {
                         tracing::error!("Could not spawn source: {}", e);
                         std::io::Error::new(std::io::ErrorKind::Other, e)
@@ -132,7 +138,10 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper, Sourc
             }
             NtpSourceConfig::Pool(cfg) => {
                 system
-                    .add_spawner(PoolSpawner::new(cfg.clone(), source_defaults_config))
+                    .add_spawner(PoolSpawner::new(
+                        cfg.first.clone(),
+                        cfg.second.clone().with_defaults(source_defaults_config),
+                    ))
                     .map_err(|e| {
                         tracing::error!("Could not spawn source: {}", e);
                         std::io::Error::new(std::io::ErrorKind::Other, e)
@@ -141,7 +150,10 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper, Sourc
             #[cfg(feature = "unstable_nts-pool")]
             NtpSourceConfig::NtsPool(cfg) => {
                 system
-                    .add_spawner(NtsPoolSpawner::new(cfg.clone(), source_defaults_config))
+                    .add_spawner(NtsPoolSpawner::new(
+                        cfg.first.clone(),
+                        cfg.second.clone().with_defaults(source_defaults_config),
+                    ))
                     .map_err(|e| {
                         tracing::error!("Could not spawn source: {}", e);
                         std::io::Error::new(std::io::ErrorKind::Other, e)
