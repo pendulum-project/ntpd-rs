@@ -45,8 +45,8 @@ with any of these options:
 # CONFIGURATION
 
 ## `[source-defaults]`
-Some values are shared between all sources in the daemon. You can configure
-these in the `[source-defaults]` section.
+Some of the behavior of a source is configurable. You can set defaults for those
+settings in the `[source-defaults]` section.
 
 `poll-interval-limits` = { `min` = *min*, `max` = *max* } (**{ min = 4, max = 10}**)
 :   Specifies the limit on how often a source is queried for a new time. For
@@ -100,6 +100,19 @@ sources.
 `ignore` = *ip addresses*
 :   `pool` mode only. Specifies a list of IP addresses of servers in the pool
     which should not be used. For example: `["127.0.0.1"]`. Empty by default.
+
+`poll-interval-limits` = { `min` = *min*, `max` = *max* } (defaults from `[source-defaults]`)
+:   Specifies the limit on how often a source is queried for a new time. For
+    most instances the defaults will be adequate. The min and max are given as
+    the log2 of the number of seconds (i.e. two to the power of the interval).
+    An interval of 4 equates to 32 seconds, 10 results in an interval of 1024
+    seconds. If only one of the two boundaries is specified, the other is
+    inherited from `[source-defaults]`
+
+`initial-poll-interval` = *interval* (defaults from `[source-defaults]`)
+:   Initial poll interval used on startup. The value is given as the log2 of
+    the number of seconds (i.e. two to the power of the interval). The default
+    value of 4 results in an interval of 32 seconds.
 
 ## `[[server]]`
 The NTP daemon can be configured to distribute time via any number of
