@@ -2,6 +2,7 @@ use libc::{ECONNABORTED, EMFILE, ENFILE, ENOBUFS, ENOMEM};
 use timestamped_socket::interface::ChangeDetector;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
+use tokio::runtime::Builder;
 use tracing::{debug, error, trace, warn};
 
 use std::{
@@ -109,7 +110,7 @@ impl NtpMetricsExporterOptions {
     }
 }
 
-pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
+pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let options = NtpMetricsExporterOptions::try_parse_from(std::env::args())?;
     match options.action {
         MetricsAction::Help => {
@@ -120,94 +121,97 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("ntp-metrics-exporter {VERSION}");
             Ok(())
         }
-        MetricsAction::Run => run(options).await,
+        MetricsAction::Run => run(options),
     }
 }
 
-async fn run(options: NtpMetricsExporterOptions) -> Result<(), Box<dyn std::error::Error>> {
-    let config = initialize_logging_parse_config(None, options.config).await;
-    let timeout = std::time::Duration::from_millis(1000);
+fn run(options: NtpMetricsExporterOptions) -> Result<(), Box<dyn std::error::Error>> {
+    let config = initialize_logging_parse_config(None, options.config);
 
-    let observation_socket_path = match config.observability.observation_path {
-        Some(path) => Arc::new(path),
-        None => {
-            eprintln!("An observation socket path must be configured using the observation-path option in the [observability] section of the configuration");
-            std::process::exit(1);
+    Builder::new_current_thread().enable_all().build()?.block_on(async {
+        let timeout = std::time::Duration::from_millis(1000);
+
+        let observation_socket_path = match config.observability.observation_path {
+            Some(path) => Arc::new(path),
+            None => {
+                eprintln!("An observation socket path must be configured using the observation-path option in the [observability] section of the configuration");
+                std::process::exit(1);
+            }
+        };
+
+        println!(
+            "starting ntp-metrics-exporter on {}",
+            &config.observability.metrics_exporter_listen
+        );
+
+        let listener = loop {
+            match TcpListener::bind(&config.observability.metrics_exporter_listen).await {
+                Err(e) if e.kind() == std::io::ErrorKind::AddrNotAvailable => {
+                    tracing::info!("Could not open listening socket, waiting for interface to come up");
+                    let _ = tokio::time::timeout(
+                        std::time::Duration::from_secs(60),
+                        ChangeDetector::new()?.wait_for_change(),
+                    )
+                    .await;
+                }
+                Err(e) => {
+                    tracing::warn!("Could not open listening socket: {}", e);
+                    let _ = tokio::time::timeout(
+                        std::time::Duration::from_secs(60),
+                        ChangeDetector::new()?.wait_for_change(),
+                    )
+                    .await;
+                }
+                Ok(listener) => break listener,
+            };
+        };
+
+        // this has a lot more permits than the daemon observer has, but we expect http transfers to
+        // take longer than how much time the daemon needs to return observability data
+        let permits = Arc::new(tokio::sync::Semaphore::new(100));
+
+        loop {
+            let permit = permits
+                .clone()
+                .acquire_owned()
+                .await
+                .expect("semaphore was unexpectedly closed");
+            let (mut tcp_stream, _) = match listener.accept().await {
+                Ok(a) => a,
+                Err(e) if matches!(e.raw_os_error(), Some(ECONNABORTED)) => {
+                    debug!("Client unexpectedly closed connection: {e}");
+                    continue;
+                }
+                Err(e)
+                    if matches!(
+                        e.raw_os_error(),
+                        Some(ENFILE) | Some(EMFILE) | Some(ENOMEM) | Some(ENOBUFS)
+                    ) =>
+                {
+                    error!("Not enough resources available to accept incoming connection: {e}");
+                    tokio::time::sleep(timeout).await;
+                    continue;
+                }
+                Err(e) => {
+                    error!("Could not accept incoming connection: {e}");
+                    return Err(e.into());
+                }
+            };
+            let path = observation_socket_path.clone();
+
+            // handle each connection on a separate task
+            let fut = async move { handle_connection(&mut tcp_stream, &path).await };
+
+            tokio::spawn(async move {
+                match tokio::time::timeout(timeout, fut).await {
+                    Err(_) => debug!("connection timed out"),
+                    Ok(Err(e)) => warn!("error handling connection: {e}"),
+                    Ok(_) => trace!("connection handled successfully"),
+                }
+                drop(permit);
+            });
         }
-    };
-
-    println!(
-        "starting ntp-metrics-exporter on {}",
-        &config.observability.metrics_exporter_listen
-    );
-
-    let listener = loop {
-        match TcpListener::bind(&config.observability.metrics_exporter_listen).await {
-            Err(e) if e.kind() == std::io::ErrorKind::AddrNotAvailable => {
-                tracing::info!("Could not open listening socket, waiting for interface to come up");
-                let _ = tokio::time::timeout(
-                    std::time::Duration::from_secs(60),
-                    ChangeDetector::new()?.wait_for_change(),
-                )
-                .await;
-            }
-            Err(e) => {
-                tracing::warn!("Could not open listening socket: {}", e);
-                let _ = tokio::time::timeout(
-                    std::time::Duration::from_secs(60),
-                    ChangeDetector::new()?.wait_for_change(),
-                )
-                .await;
-            }
-            Ok(listener) => break listener,
-        };
-    };
-
-    // this has a lot more permits than the daemon observer has, but we expect http transfers to
-    // take longer than how much time the daemon needs to return observability data
-    let permits = Arc::new(tokio::sync::Semaphore::new(100));
-
-    loop {
-        let permit = permits
-            .clone()
-            .acquire_owned()
-            .await
-            .expect("semaphore was unexpectedly closed");
-        let (mut tcp_stream, _) = match listener.accept().await {
-            Ok(a) => a,
-            Err(e) if matches!(e.raw_os_error(), Some(ECONNABORTED)) => {
-                debug!("Client unexpectedly closed connection: {e}");
-                continue;
-            }
-            Err(e)
-                if matches!(
-                    e.raw_os_error(),
-                    Some(ENFILE) | Some(EMFILE) | Some(ENOMEM) | Some(ENOBUFS)
-                ) =>
-            {
-                error!("Not enough resources available to accept incoming connection: {e}");
-                tokio::time::sleep(timeout).await;
-                continue;
-            }
-            Err(e) => {
-                error!("Could not accept incoming connection: {e}");
-                return Err(e.into());
-            }
-        };
-        let path = observation_socket_path.clone();
-
-        // handle each connection on a separate task
-        let fut = async move { handle_connection(&mut tcp_stream, &path).await };
-
-        tokio::spawn(async move {
-            match tokio::time::timeout(timeout, fut).await {
-                Err(_) => debug!("connection timed out"),
-                Ok(Err(e)) => warn!("error handling connection: {e}"),
-                Ok(_) => trace!("connection handled successfully"),
-            }
-            drop(permit);
-        });
-    }
+    })
 }
 
 async fn handle_connection(

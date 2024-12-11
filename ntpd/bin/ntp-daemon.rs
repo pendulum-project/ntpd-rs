@@ -2,8 +2,7 @@
 
 use std::process;
 
-#[tokio::main]
-async fn main() {
-    let result = ntpd::daemon_main().await;
+fn main() {
+    let result = ntpd::daemon_main();
     process::exit(if result.is_ok() { 0 } else { 1 });
 }
