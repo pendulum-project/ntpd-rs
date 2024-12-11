@@ -8,12 +8,8 @@ use std::{
 use algorithm::{SingleShotController, SingleShotControllerConfig};
 use ntp_proto::{NtpClock, NtpDuration};
 
-#[cfg(feature = "unstable_nts-pool")]
-use crate::daemon::config::NtsPoolSourceConfig;
 use crate::daemon::{
-    config::{self, PoolSourceConfig},
-    initialize_logging_parse_config, nts_key_provider, spawn,
-    tracing::LogLevel,
+    config, initialize_logging_parse_config, nts_key_provider, spawn, tracing::LogLevel,
 };
 
 mod algorithm;
@@ -129,11 +125,9 @@ pub(crate) async fn force_sync(config: Option<PathBuf>) -> std::io::Result<ExitC
             config::NtpSourceConfig::Standard(_)
             | config::NtpSourceConfig::Nts(_)
             | config::NtpSourceConfig::Sock(_) => total_sources += 1,
-            config::NtpSourceConfig::Pool(PoolSourceConfig { count, .. }) => total_sources += count,
+            config::NtpSourceConfig::Pool(ref cfg) => total_sources += cfg.first.count,
             #[cfg(feature = "unstable_nts-pool")]
-            config::NtpSourceConfig::NtsPool(NtsPoolSourceConfig { count, .. }) => {
-                total_sources += count
-            }
+            config::NtpSourceConfig::NtsPool(cfg) => total_sources += cfg.first.count,
         }
     }
 
