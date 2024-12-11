@@ -786,7 +786,6 @@ mod tests {
         assert_eq!(len, 16);
     }
 
-    #[cfg(not(target_os = "macos"))]
     #[tokio::test]
     async fn key_exchange_connection_limiter() {
         let port = alloc_port();
@@ -829,7 +828,7 @@ mod tests {
         let ca = include_bytes!("../../test-keys/testca.pem");
 
         assert!(tokio::time::timeout(
-            std::time::Duration::from_millis(200),
+            std::time::Duration::from_millis(750),
             key_exchange_client(
                 "localhost".to_string(),
                 port,
@@ -846,7 +845,7 @@ mod tests {
         drop(blocker);
 
         let result = tokio::time::timeout(
-            std::time::Duration::from_millis(200),
+            std::time::Duration::from_millis(750), // large timeout is needed to ensure test succeeds consistently on MacOS M2 E-cores
             key_exchange_client(
                 "localhost".to_string(),
                 port,
