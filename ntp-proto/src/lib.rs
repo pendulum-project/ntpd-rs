@@ -42,7 +42,7 @@ mod exports {
         TimeSyncController, TwoWayKalmanSourceController,
     };
     pub use super::clock::NtpClock;
-    pub use super::config::{SourceDefaultsConfig, StepThreshold, SynchronizationConfig};
+    pub use super::config::{SourceConfig, StepThreshold, SynchronizationConfig};
     pub use super::identifiers::ReferenceId;
     #[cfg(feature = "__internal-fuzz")]
     pub use super::ipfilter::fuzz::fuzz_ipfilter;

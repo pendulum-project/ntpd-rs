@@ -3,7 +3,7 @@ use std::{net::SocketAddr, ops::Deref};
 
 #[cfg(feature = "unstable_ntpv5")]
 use ntp_proto::NtpVersion;
-use ntp_proto::ProtocolVersion;
+use ntp_proto::{ProtocolVersion, SourceConfig};
 use tokio::sync::mpsc;
 use tracing::warn;
 
@@ -16,6 +16,7 @@ use super::{
 pub struct StandardSpawner {
     id: SpawnerId,
     config: StandardSource,
+    source_config: SourceConfig,
     resolved: Option<SocketAddr>,
     has_spawned: bool,
 }
@@ -42,10 +43,11 @@ impl From<mpsc::error::SendError<SpawnEvent>> for StandardSpawnError {
 impl std::error::Error for StandardSpawnError {}
 
 impl StandardSpawner {
-    pub fn new(config: StandardSource) -> StandardSpawner {
+    pub fn new(config: StandardSource, source_config: SourceConfig) -> StandardSpawner {
         StandardSpawner {
             id: Default::default(),
             config,
+            source_config,
             resolved: None,
             has_spawned: false,
         }
@@ -101,6 +103,7 @@ impl Spawner for StandardSpawner {
                         Some(NtpVersion::V5) => ProtocolVersion::V5,
                         None => ProtocolVersion::default(),
                     },
+                    self.source_config,
                     None,
                 ),
             ))
@@ -145,6 +148,7 @@ mod tests {
     #[cfg(feature = "unstable_ntpv5")]
     use ntp_proto::ProtocolVersion;
 
+    use ntp_proto::SourceConfig;
     use tokio::sync::mpsc::{self, error::TryRecvError};
 
     use crate::daemon::{
@@ -158,16 +162,19 @@ mod tests {
 
     #[tokio::test]
     async fn creates_a_source() {
-        let mut spawner = StandardSpawner::new(StandardSource {
-            address: NormalizedAddress::with_hardcoded_dns(
-                "example.com",
-                123,
-                vec!["127.0.0.1:123".parse().unwrap()],
-            )
-            .into(),
-            #[cfg(feature = "unstable_ntpv5")]
-            ntp_version: None,
-        });
+        let mut spawner = StandardSpawner::new(
+            StandardSource {
+                address: NormalizedAddress::with_hardcoded_dns(
+                    "example.com",
+                    123,
+                    vec!["127.0.0.1:123".parse().unwrap()],
+                )
+                .into(),
+                #[cfg(feature = "unstable_ntpv5")]
+                ntp_version: None,
+            },
+            SourceConfig::default(),
+        );
         let spawner_id = spawner.get_id();
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
@@ -192,15 +199,18 @@ mod tests {
     #[cfg(feature = "unstable_ntpv5")]
     #[tokio::test]
     async fn respects_ntp_version_force_v5() {
-        let mut spawner = StandardSpawner::new(StandardSource {
-            address: NormalizedAddress::with_hardcoded_dns(
-                "example.com",
-                123,
-                vec!["127.0.0.1:123".parse().unwrap()],
-            )
-            .into(),
-            ntp_version: Some(ntp_proto::NtpVersion::V5),
-        });
+        let mut spawner = StandardSpawner::new(
+            StandardSource {
+                address: NormalizedAddress::with_hardcoded_dns(
+                    "example.com",
+                    123,
+                    vec!["127.0.0.1:123".parse().unwrap()],
+                )
+                .into(),
+                ntp_version: Some(ntp_proto::NtpVersion::V5),
+            },
+            SourceConfig::default(),
+        );
         let spawner_id = spawner.get_id();
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
@@ -219,15 +229,18 @@ mod tests {
     #[cfg(feature = "unstable_ntpv5")]
     #[tokio::test]
     async fn respects_ntp_version_force_v4() {
-        let mut spawner = StandardSpawner::new(StandardSource {
-            address: NormalizedAddress::with_hardcoded_dns(
-                "example.com",
-                123,
-                vec!["127.0.0.1:123".parse().unwrap()],
-            )
-            .into(),
-            ntp_version: Some(ntp_proto::NtpVersion::V4),
-        });
+        let mut spawner = StandardSpawner::new(
+            StandardSource {
+                address: NormalizedAddress::with_hardcoded_dns(
+                    "example.com",
+                    123,
+                    vec!["127.0.0.1:123".parse().unwrap()],
+                )
+                .into(),
+                ntp_version: Some(ntp_proto::NtpVersion::V4),
+            },
+            SourceConfig::default(),
+        );
         let spawner_id = spawner.get_id();
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
@@ -245,16 +258,19 @@ mod tests {
 
     #[tokio::test]
     async fn recreates_a_source() {
-        let mut spawner = StandardSpawner::new(StandardSource {
-            address: NormalizedAddress::with_hardcoded_dns(
-                "example.com",
-                123,
-                vec!["127.0.0.1:123".parse().unwrap()],
-            )
-            .into(),
-            #[cfg(feature = "unstable_ntpv5")]
-            ntp_version: None,
-        });
+        let mut spawner = StandardSpawner::new(
+            StandardSource {
+                address: NormalizedAddress::with_hardcoded_dns(
+                    "example.com",
+                    123,
+                    vec!["127.0.0.1:123".parse().unwrap()],
+                )
+                .into(),
+                #[cfg(feature = "unstable_ntpv5")]
+                ntp_version: None,
+            },
+            SourceConfig::default(),
+        );
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
         assert!(!spawner.is_complete());
@@ -284,16 +300,19 @@ mod tests {
         let address_strings = ["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
         let addresses = address_strings.map(|addr| addr.parse().unwrap());
 
-        let mut spawner = StandardSpawner::new(StandardSource {
-            address: NormalizedAddress::with_hardcoded_dns(
-                "europe.pool.ntp.org",
-                123,
-                addresses.to_vec(),
-            )
-            .into(),
-            #[cfg(feature = "unstable_ntpv5")]
-            ntp_version: None,
-        });
+        let mut spawner = StandardSpawner::new(
+            StandardSource {
+                address: NormalizedAddress::with_hardcoded_dns(
+                    "europe.pool.ntp.org",
+                    123,
+                    addresses.to_vec(),
+                )
+                .into(),
+                #[cfg(feature = "unstable_ntpv5")]
+                ntp_version: None,
+            },
+            SourceConfig::default(),
+        );
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
         assert!(!spawner.is_complete());
@@ -343,11 +362,15 @@ mod tests {
 
     #[tokio::test]
     async fn works_if_address_does_not_resolve() {
-        let mut spawner = StandardSpawner::new(StandardSource {
-            address: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![]).into(),
-            #[cfg(feature = "unstable_ntpv5")]
-            ntp_version: None,
-        });
+        let mut spawner = StandardSpawner::new(
+            StandardSource {
+                address: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![])
+                    .into(),
+                #[cfg(feature = "unstable_ntpv5")]
+                ntp_version: None,
+            },
+            SourceConfig::default(),
+        );
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
         spawner.try_spawn(&action_tx).await.unwrap();

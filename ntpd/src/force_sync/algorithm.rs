@@ -2,7 +2,8 @@ use std::fmt::Debug;
 use std::{collections::HashMap, marker::PhantomData};
 
 use ntp_proto::{
-    Measurement, NtpClock, NtpDuration, PollInterval, SourceController, TimeSyncController,
+    Measurement, NtpClock, NtpDuration, PollInterval, SourceConfig, SourceController,
+    TimeSyncController,
 };
 use serde::Deserialize;
 
@@ -42,7 +43,6 @@ impl WrapMeasurements<()> for Measurement<()> {
 pub(crate) struct SingleShotController<C> {
     pub(super) clock: C,
     sources: HashMap<SourceId, Measurements>,
-    min_poll_interval: PollInterval,
     min_agreeing: usize,
 }
 
@@ -133,13 +133,11 @@ impl<C: NtpClock> TimeSyncController for SingleShotController<C> {
     fn new(
         clock: Self::Clock,
         synchronization_config: ntp_proto::SynchronizationConfig,
-        source_defaults_config: ntp_proto::SourceDefaultsConfig,
         algorithm_config: Self::AlgorithmConfig,
     ) -> Result<Self, <Self::Clock as ntp_proto::NtpClock>::Error> {
         Ok(SingleShotController {
             clock,
             sources: HashMap::new(),
-            min_poll_interval: source_defaults_config.poll_interval_limits.min,
             min_agreeing: synchronization_config
                 .minimum_agreeing_sources
                 .max(algorithm_config.expected_sources / 2),
@@ -151,10 +149,14 @@ impl<C: NtpClock> TimeSyncController for SingleShotController<C> {
         Ok(())
     }
 
-    fn add_source(&mut self, _id: Self::SourceId) -> Self::NtpSourceController {
+    fn add_source(
+        &mut self,
+        _id: Self::SourceId,
+        config: SourceConfig,
+    ) -> Self::NtpSourceController {
         SingleShotSourceController::<NtpDuration> {
             delay_type: PhantomData,
-            min_poll_interval: self.min_poll_interval,
+            min_poll_interval: config.poll_interval_limits.min,
             done: false,
             ignore: false,
         }
@@ -163,12 +165,13 @@ impl<C: NtpClock> TimeSyncController for SingleShotController<C> {
     fn add_one_way_source(
         &mut self,
         _id: Self::SourceId,
+        config: SourceConfig,
         _measurement_noise_estimate: f64,
         period: Option<f64>,
     ) -> Self::OneWaySourceController {
         SingleShotSourceController::<()> {
             delay_type: PhantomData,
-            min_poll_interval: self.min_poll_interval,
+            min_poll_interval: config.poll_interval_limits.min,
             done: false,
             ignore: period.is_some(),
         }

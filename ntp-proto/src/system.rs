@@ -11,7 +11,7 @@ use crate::source::{NtpSourceUpdate, SourceSnapshot};
 use crate::{
     algorithm::{StateUpdate, TimeSyncController},
     clock::NtpClock,
-    config::{SourceDefaultsConfig, SynchronizationConfig},
+    config::{SourceConfig, SynchronizationConfig},
     identifiers::ReferenceId,
     packet::NtpLeapIndicator,
     source::{NtpSource, NtpSourceActionIterator, ProtocolVersion, SourceNtsData},
@@ -185,7 +185,6 @@ macro_rules! actions {
 
 pub struct System<SourceId, Controller> {
     synchronization_config: SynchronizationConfig,
-    source_defaults_config: SourceDefaultsConfig,
     system: SystemSnapshot,
     ip_list: Arc<[IpAddr]>,
 
@@ -201,7 +200,6 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
     pub fn new(
         clock: Controller::Clock,
         synchronization_config: SynchronizationConfig,
-        source_defaults_config: SourceDefaultsConfig,
         algorithm_config: Controller::AlgorithmConfig,
         ip_list: Arc<[IpAddr]>,
     ) -> Result<Self, <Controller::Clock as NtpClock>::Error> {
@@ -218,16 +216,10 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
 
         Ok(System {
             synchronization_config,
-            source_defaults_config,
             system,
             ip_list,
             sources: Default::default(),
-            controller: Controller::new(
-                clock,
-                synchronization_config,
-                source_defaults_config,
-                algorithm_config,
-            )?,
+            controller: Controller::new(clock, synchronization_config, algorithm_config)?,
             controller_took_control: false,
         })
     }
@@ -251,24 +243,8 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
     pub fn create_sock_source(
         &mut self,
         id: SourceId,
+        source_config: SourceConfig,
         measurement_noise_estimate: f64,
-    ) -> Result<
-        OneWaySource<Controller::OneWaySourceController>,
-        <Controller::Clock as NtpClock>::Error,
-    > {
-        self.ensure_controller_control()?;
-        let controller = self
-            .controller
-            .add_one_way_source(id, measurement_noise_estimate, None);
-        self.sources.insert(id, None);
-        Ok(OneWaySource::new(controller))
-    }
-
-    pub fn create_pps_source(
-        &mut self,
-        id: SourceId,
-        measurement_noise_estimate: f64,
-        period: f64,
     ) -> Result<
         OneWaySource<Controller::OneWaySourceController>,
         <Controller::Clock as NtpClock>::Error,
@@ -276,7 +252,28 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         self.ensure_controller_control()?;
         let controller =
             self.controller
-                .add_one_way_source(id, measurement_noise_estimate, Some(period));
+                .add_one_way_source(id, source_config, measurement_noise_estimate, None);
+        self.sources.insert(id, None);
+        Ok(OneWaySource::new(controller))
+    }
+
+    pub fn create_pps_source(
+        &mut self,
+        id: SourceId,
+        source_config: SourceConfig,
+        measurement_noise_estimate: f64,
+        period: f64,
+    ) -> Result<
+        OneWaySource<Controller::OneWaySourceController>,
+        <Controller::Clock as NtpClock>::Error,
+    > {
+        self.ensure_controller_control()?;
+        let controller = self.controller.add_one_way_source(
+            id,
+            source_config,
+            measurement_noise_estimate,
+            Some(period),
+        );
         self.sources.insert(id, None);
         Ok(OneWaySource::new(controller))
     }
@@ -285,6 +282,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
     pub fn create_ntp_source(
         &mut self,
         id: SourceId,
+        source_config: SourceConfig,
         source_addr: SocketAddr,
         protocol_version: ProtocolVersion,
         nts: Option<Box<SourceNtsData>>,
@@ -296,11 +294,11 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         <Controller::Clock as NtpClock>::Error,
     > {
         self.ensure_controller_control()?;
-        let controller = self.controller.add_source(id);
+        let controller = self.controller.add_source(id, source_config);
         self.sources.insert(id, None);
         Ok(NtpSource::new(
             source_addr,
-            self.source_defaults_config,
+            source_config,
             protocol_version,
             controller,
             nts,
