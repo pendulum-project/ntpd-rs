@@ -1,6 +1,6 @@
 use std::{net::SocketAddr, path::PathBuf, sync::atomic::AtomicU64};
 
-use ntp_proto::{ProtocolVersion, SourceNtsData};
+use ntp_proto::{ProtocolVersion, SourceConfig, SourceNtsData};
 use serde::{Deserialize, Serialize};
 use tokio::{
     sync::mpsc,
@@ -118,6 +118,7 @@ impl SpawnAction {
         addr: SocketAddr,
         normalized_addr: NormalizedAddress,
         protocol_version: ProtocolVersion,
+        config: SourceConfig,
         nts: Option<Box<SourceNtsData>>,
     ) -> SpawnAction {
         SpawnAction::Create(SourceCreateParameters::Ntp(NtpSourceCreateParameters {
@@ -125,6 +126,7 @@ impl SpawnAction {
             addr,
             normalized_addr,
             protocol_version,
+            config,
             nts,
         }))
     }
@@ -158,6 +160,7 @@ pub struct NtpSourceCreateParameters {
     pub addr: SocketAddr,
     pub normalized_addr: NormalizedAddress,
     pub protocol_version: ProtocolVersion,
+    pub config: SourceConfig,
     pub nts: Option<Box<SourceNtsData>>,
 }
 
@@ -165,6 +168,7 @@ pub struct NtpSourceCreateParameters {
 pub struct SockSourceCreateParameters {
     pub id: SourceId,
     pub path: PathBuf,
+    pub config: SourceConfig,
     pub noise_estimate: f64,
 }
 

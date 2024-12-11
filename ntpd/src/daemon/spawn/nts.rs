@@ -2,6 +2,7 @@ use std::fmt::Display;
 use std::net::SocketAddr;
 use std::ops::Deref;
 
+use ntp_proto::SourceConfig;
 use tokio::sync::mpsc;
 use tracing::warn;
 
@@ -11,6 +12,7 @@ use super::{SourceId, SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, Spaw
 
 pub struct NtsSpawner {
     config: NtsSourceConfig,
+    source_config: SourceConfig,
     id: SpawnerId,
     has_spawned: bool,
 }
@@ -53,9 +55,10 @@ pub(super) async fn resolve_addr(address: (&str, u16)) -> Option<SocketAddr> {
 }
 
 impl NtsSpawner {
-    pub fn new(config: NtsSourceConfig) -> NtsSpawner {
+    pub fn new(config: NtsSourceConfig, source_config: SourceConfig) -> NtsSpawner {
         NtsSpawner {
             config,
+            source_config,
             id: Default::default(),
             has_spawned: false,
         }
@@ -91,6 +94,7 @@ impl Spawner for NtsSpawner {
                                 address,
                                 self.config.address.deref().clone(),
                                 ke.protocol_version,
+                                self.source_config,
                                 Some(ke.nts),
                             ),
                         ))
