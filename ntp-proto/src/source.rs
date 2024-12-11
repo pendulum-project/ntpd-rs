@@ -5,7 +5,7 @@ use crate::packet::{
 };
 use crate::{
     algorithm::{ObservableSourceTimedata, SourceController},
-    config::SourceDefaultsConfig,
+    config::SourceConfig,
     cookiestash::CookieStash,
     identifiers::ReferenceId,
     packet::{Cipher, NtpAssociationMode, NtpLeapIndicator, NtpPacket, RequestIdentifier},
@@ -81,7 +81,7 @@ pub struct NtpSource<Controller: SourceController<MeasurementDelay = NtpDuration
 
     controller: Controller,
 
-    source_defaults_config: SourceDefaultsConfig,
+    source_config: SourceConfig,
 
     buffer: [u8; 1024],
 
@@ -487,7 +487,7 @@ pub struct ObservableSourceState<SourceId> {
 impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Controller> {
     pub(crate) fn new(
         source_addr: SocketAddr,
-        source_defaults_config: SourceDefaultsConfig,
+        source_config: SourceConfig,
         protocol_version: ProtocolVersion,
         controller: Controller,
         nts: Option<Box<SourceNtsData>>,
@@ -496,8 +496,8 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
             Self {
                 nts,
 
-                last_poll_interval: source_defaults_config.poll_interval_limits.min,
-                remote_min_poll_interval: source_defaults_config.poll_interval_limits.min,
+                last_poll_interval: source_config.poll_interval_limits.min,
+                remote_min_poll_interval: source_config.poll_interval_limits.min,
 
                 current_request_identifier: None,
                 source_id: ReferenceId::from_ip(source_addr.ip()),
@@ -508,7 +508,7 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
                 stratum: 16,
                 reference_id: ReferenceId::NONE,
 
-                source_defaults_config,
+                source_config,
                 controller,
 
                 buffer: [0; 1024],
@@ -713,7 +713,7 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
             // KISS packets may not have correct timestamps at all, handle them anyway
             self.remote_min_poll_interval = Ord::max(
                 self.remote_min_poll_interval
-                    .inc(self.source_defaults_config.poll_interval_limits),
+                    .inc(self.source_config.poll_interval_limits),
                 self.last_poll_interval,
             );
             warn!(?self.remote_min_poll_interval, "Source requested rate limit");
@@ -846,7 +846,7 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
             stratum: 0,
             reference_id: ReferenceId::from_int(0),
 
-            source_defaults_config: SourceDefaultsConfig::default(),
+            source_config: SourceConfig::default(),
             controller,
 
             buffer: [0; 1024],

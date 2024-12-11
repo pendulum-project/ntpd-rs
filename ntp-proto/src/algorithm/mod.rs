@@ -4,7 +4,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::{
     clock::NtpClock,
-    config::{SourceDefaultsConfig, SynchronizationConfig},
+    config::{SourceConfig, SynchronizationConfig},
     source::Measurement,
     system::TimeSnapshot,
     time_types::{NtpDuration, NtpTimestamp},
@@ -70,7 +70,6 @@ pub trait TimeSyncController: Sized + Send + 'static {
     fn new(
         clock: Self::Clock,
         synchronization_config: SynchronizationConfig,
-        source_defaults_config: SourceDefaultsConfig,
         algorithm_config: Self::AlgorithmConfig,
     ) -> Result<Self, <Self::Clock as NtpClock>::Error>;
 
@@ -78,11 +77,16 @@ pub trait TimeSyncController: Sized + Send + 'static {
     fn take_control(&mut self) -> Result<(), <Self::Clock as NtpClock>::Error>;
 
     /// Create a new source with given identity
-    fn add_source(&mut self, id: Self::SourceId) -> Self::NtpSourceController;
+    fn add_source(
+        &mut self,
+        id: Self::SourceId,
+        source_config: SourceConfig,
+    ) -> Self::NtpSourceController;
     /// Create a new one way source with given identity (used e.g. with GPS sock sources)
     fn add_one_way_source(
         &mut self,
         id: Self::SourceId,
+        source_config: SourceConfig,
         measurement_noise_estimate: f64,
         period: Option<f64>,
     ) -> Self::OneWaySourceController;

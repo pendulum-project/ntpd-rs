@@ -452,7 +452,7 @@ mod tests {
 
     use ntp_proto::{
         AlgorithmConfig, KalmanClockController, KalmanControllerMessage, KalmanSourceMessage,
-        NoCipher, NtpDuration, NtpLeapIndicator, NtpPacket, ProtocolVersion, SourceDefaultsConfig,
+        NoCipher, NtpDuration, NtpLeapIndicator, NtpPacket, ProtocolVersion, SourceConfig,
         SynchronizationConfig, SystemSnapshot, TimeSnapshot, TwoWayKalmanSourceController,
     };
     use timestamped_socket::socket::{open_ip, GeneralTimestampMode, Open};
@@ -599,7 +599,6 @@ mod tests {
         let mut system: ntp_proto::System<_, KalmanClockController<_, _>> = ntp_proto::System::new(
             TestClock {},
             SynchronizationConfig::default(),
-            SourceDefaultsConfig::default(),
             AlgorithmConfig::default(),
             Arc::new([]),
         )
@@ -607,6 +606,7 @@ mod tests {
 
         let Ok((source, _)) = system.create_ntp_source(
             index,
+            SourceConfig::default(),
             SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
             ProtocolVersion::default(),
             None,

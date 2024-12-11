@@ -1,3 +1,4 @@
+use ntp_proto::SourceConfig;
 use tokio::sync::mpsc;
 
 use crate::daemon::config::PpsSourceConfig;
@@ -9,14 +10,16 @@ use super::{
 
 pub struct PpsSpawner {
     config: PpsSourceConfig,
+    source_config: SourceConfig,
     id: SpawnerId,
     has_spawned: bool,
 }
 
 impl PpsSpawner {
-    pub fn new(config: PpsSourceConfig) -> PpsSpawner {
+    pub fn new(config: PpsSourceConfig, source_config: SourceConfig) -> PpsSpawner {
         PpsSpawner {
             config,
+            source_config,
             id: Default::default(),
             has_spawned: false,
         }
@@ -37,6 +40,7 @@ impl Spawner for PpsSpawner {
                 SpawnAction::Create(SourceCreateParameters::Pps(PpsSourceCreateParameters {
                     id: SourceId::new(),
                     path: self.config.path.clone(),
+                    config: self.source_config,
                     noise_estimate: self.config.measurement_noise_estimate,
                     period: self.config.period,
                 })),
@@ -75,6 +79,7 @@ impl Spawner for PpsSpawner {
 
 #[cfg(test)]
 mod tests {
+    use ntp_proto::SourceConfig;
     use tokio::sync::mpsc;
 
     use crate::{
@@ -90,11 +95,14 @@ mod tests {
     async fn creates_a_source() {
         let socket_path = std::env::temp_dir().join(format!("ntp-test-stream-{}", alloc_port()));
         let noise_estimate = 1e-6;
-        let mut spawner = PpsSpawner::new(PpsSourceConfig {
-            path: socket_path.clone(),
-            measurement_noise_estimate: noise_estimate,
-            period: 1.,
-        });
+        let mut spawner = PpsSpawner::new(
+            PpsSourceConfig {
+                path: socket_path.clone(),
+                measurement_noise_estimate: noise_estimate,
+                period: 1.,
+            },
+            SourceConfig::default(),
+        );
         let spawner_id = spawner.get_id();
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 

@@ -77,7 +77,7 @@ use tracing::{debug, trace};
 
 use crate::{
     algorithm::{KalmanControllerMessage, KalmanSourceMessage, SourceController},
-    config::SourceDefaultsConfig,
+    config::SourceConfig,
     source::Measurement,
     time_types::{NtpDuration, NtpTimestamp, PollInterval, PollIntervalLimits},
     ObservableSourceTimedata,
@@ -533,7 +533,7 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
     /// not so much that each individual poll message gives us very little new information.
     fn update_desired_poll(
         &mut self,
-        source_defaults_config: &SourceDefaultsConfig,
+        source_config: &SourceConfig,
         algo_config: &AlgorithmConfig,
         p: f64,
         weight: f64,
@@ -554,18 +554,18 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
         }
         trace!(poll_score = self.poll_score, ?weight, "Poll desire update");
         if p <= algo_config.poll_interval_step_threshold {
-            self.desired_poll_interval = source_defaults_config.poll_interval_limits.min;
+            self.desired_poll_interval = source_config.poll_interval_limits.min;
             self.poll_score = 0;
         } else if self.poll_score <= -algo_config.poll_interval_hysteresis {
             self.desired_poll_interval = self
                 .desired_poll_interval
-                .inc(source_defaults_config.poll_interval_limits);
+                .inc(source_config.poll_interval_limits);
             self.poll_score = 0;
             debug!(interval = ?self.desired_poll_interval, "Increased poll interval");
         } else if self.poll_score >= algo_config.poll_interval_hysteresis {
             self.desired_poll_interval = self
                 .desired_poll_interval
-                .dec(source_defaults_config.poll_interval_limits);
+                .dec(source_config.poll_interval_limits);
             self.poll_score = 0;
             debug!(interval = ?self.desired_poll_interval, "Decreased poll interval");
         }
@@ -611,7 +611,7 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
     /// Update our estimates based on a new measurement.
     fn update(
         &mut self,
-        source_defaults_config: &SourceDefaultsConfig,
+        source_config: &SourceConfig,
         algo_config: &AlgorithmConfig,
         measurement: Measurement<D>,
         period: Option<f64>,
@@ -648,13 +648,7 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
         let (p, weight, measurement_period) = self.absorb_measurement(measurement, period);
 
         self.update_wander_estimate(algo_config, p, weight);
-        self.update_desired_poll(
-            source_defaults_config,
-            algo_config,
-            p,
-            weight,
-            measurement_period,
-        );
+        self.update_desired_poll(source_config, algo_config, p, weight, measurement_period);
 
         debug!(
             "source offset {}±{}ms, freq {}±{}ppm",
@@ -719,7 +713,7 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
     // Returns whether the clock may need adjusting.
     pub fn update_self_using_measurement(
         &mut self,
-        source_defaults_config: &SourceDefaultsConfig,
+        source_config: &SourceConfig,
         algo_config: &AlgorithmConfig,
         mut measurement: Measurement<D>,
         period: Option<f64>,
@@ -731,17 +725,12 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
         };
         measurement.delay = noise_estimator.preprocess(measurement.delay);
 
-        self.update_self_using_raw_measurement(
-            source_defaults_config,
-            algo_config,
-            measurement,
-            period,
-        )
+        self.update_self_using_raw_measurement(source_config, algo_config, measurement, period)
     }
 
     fn update_self_using_raw_measurement(
         &mut self,
-        source_defaults_config: &SourceDefaultsConfig,
+        source_config: &SourceConfig,
         algo_config: &AlgorithmConfig,
         measurement: Measurement<D>,
         period: Option<f64>,
@@ -764,7 +753,7 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
                         noise_estimator: filter.noise_estimator.clone(),
                         precision_score: 0,
                         poll_score: 0,
-                        desired_poll_interval: source_defaults_config.initial_poll_interval,
+                        desired_poll_interval: source_config.initial_poll_interval,
                         last_measurement: measurement,
                         prev_was_outlier: false,
                         last_iter: measurement.localtime,
@@ -799,7 +788,7 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
 
                     false
                 } else {
-                    filter.update(source_defaults_config, algo_config, measurement, period)
+                    filter.update(source_config, algo_config, measurement, period)
                 }
             }
         }
@@ -903,7 +892,7 @@ pub struct KalmanSourceController<
     state: SourceState<D, N>,
     period: Option<f64>,
     algo_config: AlgorithmConfig,
-    source_defaults_config: SourceDefaultsConfig,
+    source_config: SourceConfig,
 }
 
 pub type TwoWayKalmanSourceController<SourceId> =
@@ -921,7 +910,7 @@ impl<
         index: SourceId,
         algo_config: AlgorithmConfig,
         period: Option<f64>,
-        source_defaults_config: SourceDefaultsConfig,
+        source_config: SourceConfig,
         noise_estimator: N,
     ) -> Self {
         KalmanSourceController {
@@ -929,7 +918,7 @@ impl<
             state: SourceState::new(noise_estimator),
             period,
             algo_config,
-            source_defaults_config,
+            source_config,
         }
     }
 }
@@ -960,7 +949,7 @@ impl<
         measurement: Measurement<Self::MeasurementDelay>,
     ) -> Option<Self::SourceMessage> {
         if self.state.update_self_using_measurement(
-            &self.source_defaults_config,
+            &self.source_config,
             &self.algo_config,
             measurement,
             self.period,
@@ -975,7 +964,7 @@ impl<
 
     fn desired_poll_interval(&self) -> PollInterval {
         self.state
-            .get_desired_poll(&self.source_defaults_config.poll_interval_limits)
+            .get_desired_poll(&self.source_config.poll_interval_limits)
     }
 
     fn observe(&self) -> super::super::ObservableSourceTimedata {
@@ -1034,7 +1023,7 @@ mod tests {
             last_iter: base,
         }));
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -1083,7 +1072,7 @@ mod tests {
         }));
         source.process_offset_steering(-1800.0, None);
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -1132,7 +1121,7 @@ mod tests {
         }));
         source.process_offset_steering(1800.0, None);
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -1237,7 +1226,7 @@ mod tests {
         );
 
         source.update_self_using_raw_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay,
@@ -1314,7 +1303,7 @@ mod tests {
         );
 
         source.update_self_using_raw_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay,
@@ -1844,7 +1833,7 @@ mod tests {
             .snapshot(0_usize, &AlgorithmConfig::default(), None)
             .is_none());
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay,
@@ -1869,7 +1858,7 @@ mod tests {
                 > 1.0
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay,
@@ -1894,7 +1883,7 @@ mod tests {
                 > 1.0
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay,
@@ -1919,7 +1908,7 @@ mod tests {
                 > 1.0
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay,
@@ -1944,7 +1933,7 @@ mod tests {
                 > 1.0
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay,
@@ -1969,7 +1958,7 @@ mod tests {
                 > 1.0
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay,
@@ -1994,7 +1983,7 @@ mod tests {
                 > 1.0
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay,
@@ -2019,7 +2008,7 @@ mod tests {
                 > 1.0
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay,
@@ -2081,7 +2070,7 @@ mod tests {
             .snapshot(0_usize, &AlgorithmConfig::default(), None)
             .is_none());
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -2106,7 +2095,7 @@ mod tests {
                 > 1.0
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -2131,7 +2120,7 @@ mod tests {
                 > 1.0
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -2156,7 +2145,7 @@ mod tests {
                 > 1.0
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -2182,7 +2171,7 @@ mod tests {
                 > 1.0
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -2207,7 +2196,7 @@ mod tests {
                 > 1.0
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -2232,7 +2221,7 @@ mod tests {
                 > 1.0
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -2257,7 +2246,7 @@ mod tests {
                 > 1.0
         );
         source.update_self_using_measurement(
-            &SourceDefaultsConfig::default(),
+            &SourceConfig::default(),
             &AlgorithmConfig::default(),
             Measurement {
                 delay: NtpDuration::from_seconds(0.0),
@@ -2296,7 +2285,7 @@ mod tests {
 
     #[test]
     fn test_poll_duration_variation() {
-        let config = SourceDefaultsConfig::default();
+        let config = SourceConfig::default();
         let algo_config = AlgorithmConfig {
             poll_interval_hysteresis: 2,
             ..Default::default()

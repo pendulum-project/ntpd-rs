@@ -244,7 +244,7 @@ mod tests {
 
     use ntp_proto::{
         AlgorithmConfig, KalmanClockController, NtpClock, NtpDuration, NtpLeapIndicator,
-        NtpTimestamp, ReferenceId, SourceDefaultsConfig, SynchronizationConfig,
+        NtpTimestamp, ReferenceId, SourceConfig, SynchronizationConfig,
     };
     use tokio::sync::mpsc;
 
@@ -318,7 +318,6 @@ mod tests {
         let mut system: ntp_proto::System<_, KalmanClockController<_, _>> = ntp_proto::System::new(
             clock.clone(),
             SynchronizationConfig::default(),
-            SourceDefaultsConfig::default(),
             AlgorithmConfig::default(),
             Arc::new([]),
         )
@@ -336,7 +335,9 @@ mod tests {
                 system_update_receiver,
                 source_snapshots: Arc::new(RwLock::new(HashMap::new())),
             },
-            system.create_sock_source(index, 0.001).unwrap(),
+            system
+                .create_sock_source(index, SourceConfig::default(), 0.001)
+                .unwrap(),
         );
 
         // Send example data to socket
