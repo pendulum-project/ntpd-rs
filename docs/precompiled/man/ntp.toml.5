@@ -76,15 +76,16 @@ As these devices only provide periodic data, they do not count towards
 .SH CONFIGURATION
 .SS \f[V][source-defaults]\f[R]
 .PP
-Some values are shared between all sources in the daemon.
-You can configure these in the \f[V][source-defaults]\f[R] section.
+Some of the behavior of a source is configurable.
+You can set defaults for those settings in the
+\f[V][source-defaults]\f[R] section.
 .TP
 \f[V]poll-interval-limits\f[R] = { \f[V]min\f[R] = \f[I]min\f[R], \f[V]max\f[R] = \f[I]max\f[R] } (\f[B]{ min = 4, max = 10}\f[R])
 Specifies the limit on how often a source is queried for a new time.
 For most instances the defaults will be adequate.
 The min and max are given as the log2 of the number of seconds
 (i.e.\ two to the power of the interval).
-An interval of 4 equates to 32 seconds, 10 results in an interval of
+An interval of 4 equates to 16 seconds, 10 results in an interval of
 1024 seconds.
 If specified, both min and max must be specified.
 .TP
@@ -92,7 +93,7 @@ If specified, both min and max must be specified.
 Initial poll interval used on startup.
 The value is given as the log2 of the number of seconds (i.e.\ two to
 the power of the interval).
-The default value of 4 results in an interval of 32 seconds.
+The default value of 4 results in an interval of 16 seconds.
 .SS \f[V][[source]]\f[R]
 .PP
 Each \f[V][[source]]\f[R] is a set of one or more time sources for the
@@ -144,6 +145,22 @@ Specifies a list of IP addresses of servers in the pool which should not
 be used.
 For example: \f[V][\[dq]127.0.0.1\[dq]]\f[R].
 Empty by default.
+.TP
+\f[V]poll-interval-limits\f[R] = { \f[V]min\f[R] = \f[I]min\f[R], \f[V]max\f[R] = \f[I]max\f[R] } (defaults from \f[V][source-defaults]\f[R])
+Specifies the limit on how often a source is queried for a new time.
+For most instances the defaults will be adequate.
+The min and max are given as the log2 of the number of seconds
+(i.e.\ two to the power of the interval).
+An interval of 4 equates to 16 seconds, 10 results in an interval of
+1024 seconds.
+If only one of the two boundaries is specified, the other is inherited
+from \f[V][source-defaults]\f[R]
+.TP
+\f[V]initial-poll-interval\f[R] = \f[I]interval\f[R] (defaults from \f[V][source-defaults]\f[R])
+Initial poll interval used on startup.
+The value is given as the log2 of the number of seconds (i.e.\ two to
+the power of the interval).
+The default value of 4 results in an interval of 16 seconds.
 .SS \f[V][[server]]\f[R]
 .PP
 The NTP daemon can be configured to distribute time via any number of
