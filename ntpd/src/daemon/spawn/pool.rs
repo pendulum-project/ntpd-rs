@@ -3,7 +3,7 @@ use std::{net::SocketAddr, ops::Deref};
 
 #[cfg(feature = "unstable_ntpv5")]
 use ntp_proto::NtpVersion;
-use ntp_proto::ProtocolVersion;
+use ntp_proto::{ProtocolVersion, SourceConfig};
 use tokio::sync::mpsc;
 use tracing::warn;
 
@@ -18,6 +18,7 @@ struct PoolSource {
 
 pub struct PoolSpawner {
     config: PoolSourceConfig,
+    source_config: SourceConfig,
     id: SpawnerId,
     current_sources: Vec<PoolSource>,
     known_ips: Vec<SocketAddr>,
@@ -35,9 +36,10 @@ impl Display for PoolSpawnError {
 impl std::error::Error for PoolSpawnError {}
 
 impl PoolSpawner {
-    pub fn new(config: PoolSourceConfig) -> PoolSpawner {
+    pub fn new(config: PoolSourceConfig, source_config: SourceConfig) -> PoolSpawner {
         PoolSpawner {
             config,
+            source_config,
             id: Default::default(),
             current_sources: Default::default(),
             known_ips: Default::default(),
@@ -93,6 +95,7 @@ impl Spawner for PoolSpawner {
                         Some(NtpVersion::V5) => ProtocolVersion::V5,
                         None => ProtocolVersion::default(),
                     },
+                    self.source_config,
                     None,
                 );
                 tracing::debug!(?action, "intending to spawn new pool source at");
@@ -139,6 +142,7 @@ mod tests {
     #[cfg(feature = "unstable_ntpv5")]
     use ntp_proto::ProtocolVersion;
 
+    use ntp_proto::SourceConfig;
     use tokio::sync::mpsc::{self, error::TryRecvError};
 
     use crate::daemon::{
@@ -155,14 +159,17 @@ mod tests {
         let address_strings = ["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
         let addresses = address_strings.map(|addr| addr.parse().unwrap());
 
-        let mut pool = PoolSpawner::new(PoolSourceConfig {
-            addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
-                .into(),
-            count: 2,
-            ignore: vec![],
-            #[cfg(feature = "unstable_ntpv5")]
-            ntp_version: None,
-        });
+        let mut pool = PoolSpawner::new(
+            PoolSourceConfig {
+                addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
+                    .into(),
+                count: 2,
+                ignore: vec![],
+                #[cfg(feature = "unstable_ntpv5")]
+                ntp_version: None,
+            },
+            SourceConfig::default(),
+        );
         let spawner_id = pool.get_id();
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
@@ -203,14 +210,17 @@ mod tests {
         let address_strings = ["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
         let addresses = address_strings.map(|addr| addr.parse().unwrap());
 
-        let mut pool = PoolSpawner::new(PoolSourceConfig {
-            addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
-                .into(),
-            count: 2,
-            ignore: vec![],
-            #[cfg(feature = "unstable_ntpv5")]
-            ntp_version: Some(ntp_proto::NtpVersion::V5),
-        });
+        let mut pool = PoolSpawner::new(
+            PoolSourceConfig {
+                addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
+                    .into(),
+                count: 2,
+                ignore: vec![],
+                #[cfg(feature = "unstable_ntpv5")]
+                ntp_version: Some(ntp_proto::NtpVersion::V5),
+            },
+            SourceConfig::default(),
+        );
         let spawner_id = pool.get_id();
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
@@ -245,14 +255,17 @@ mod tests {
         let address_strings = ["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
         let addresses = address_strings.map(|addr| addr.parse().unwrap());
 
-        let mut pool = PoolSpawner::new(PoolSourceConfig {
-            addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
-                .into(),
-            count: 2,
-            ignore: vec![],
-            #[cfg(feature = "unstable_ntpv5")]
-            ntp_version: Some(ntp_proto::NtpVersion::V4),
-        });
+        let mut pool = PoolSpawner::new(
+            PoolSourceConfig {
+                addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
+                    .into(),
+                count: 2,
+                ignore: vec![],
+                #[cfg(feature = "unstable_ntpv5")]
+                ntp_version: Some(ntp_proto::NtpVersion::V4),
+            },
+            SourceConfig::default(),
+        );
         let spawner_id = pool.get_id();
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
@@ -287,14 +300,17 @@ mod tests {
         let addresses = address_strings.map(|addr| addr.parse().unwrap());
         let ignores = vec!["127.0.0.1".parse().unwrap()];
 
-        let mut pool = PoolSpawner::new(PoolSourceConfig {
-            addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
-                .into(),
-            count: 2,
-            ignore: ignores.clone(),
-            #[cfg(feature = "unstable_ntpv5")]
-            ntp_version: None,
-        });
+        let mut pool = PoolSpawner::new(
+            PoolSourceConfig {
+                addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
+                    .into(),
+                count: 2,
+                ignore: ignores.clone(),
+                #[cfg(feature = "unstable_ntpv5")]
+                ntp_version: None,
+            },
+            SourceConfig::default(),
+        );
         let spawner_id = pool.get_id();
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
@@ -326,14 +342,17 @@ mod tests {
         let address_strings = ["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
         let addresses = address_strings.map(|addr| addr.parse().unwrap());
 
-        let mut pool = PoolSpawner::new(PoolSourceConfig {
-            addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
-                .into(),
-            count: 2,
-            ignore: vec![],
-            #[cfg(feature = "unstable_ntpv5")]
-            ntp_version: None,
-        });
+        let mut pool = PoolSpawner::new(
+            PoolSourceConfig {
+                addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
+                    .into(),
+                count: 2,
+                ignore: vec![],
+                #[cfg(feature = "unstable_ntpv5")]
+                ntp_version: None,
+            },
+            SourceConfig::default(),
+        );
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
         assert!(!pool.is_complete());
@@ -370,13 +389,16 @@ mod tests {
 
     #[tokio::test]
     async fn works_if_address_does_not_resolve() {
-        let mut pool = PoolSpawner::new(PoolSourceConfig {
-            addr: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![]).into(),
-            count: 2,
-            ignore: vec![],
-            #[cfg(feature = "unstable_ntpv5")]
-            ntp_version: None,
-        });
+        let mut pool = PoolSpawner::new(
+            PoolSourceConfig {
+                addr: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![]).into(),
+                count: 2,
+                ignore: vec![],
+                #[cfg(feature = "unstable_ntpv5")]
+                ntp_version: None,
+            },
+            SourceConfig::default(),
+        );
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
         assert!(!pool.is_complete());
         pool.try_spawn(&action_tx).await.unwrap();

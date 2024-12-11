@@ -5,7 +5,7 @@ pub mod subnet;
 use clock_steering::unix::UnixClock;
 #[cfg(feature = "unstable_ntpv5")]
 use ntp_proto::NtpVersion;
-use ntp_proto::{AlgorithmConfig, SourceDefaultsConfig, SynchronizationConfig};
+use ntp_proto::{AlgorithmConfig, SourceConfig, SynchronizationConfig};
 pub use ntp_source::*;
 use serde::{Deserialize, Deserializer};
 pub use server::*;
@@ -362,7 +362,7 @@ pub struct Config {
     #[serde(default)]
     pub synchronization: DaemonSynchronizationConfig,
     #[serde(default)]
-    pub source_defaults: SourceDefaultsConfig,
+    pub source_defaults: SourceConfig,
     #[serde(default)]
     pub observability: ObservabilityConfig,
     #[serde(default)]
