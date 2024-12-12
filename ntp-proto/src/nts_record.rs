@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use rustls::pki_types::ServerName;
+use crate::tls_utils::{self, ServerName};
 
 use crate::{
     cookiestash::CookieStash,
@@ -676,9 +676,9 @@ pub enum KeyExchangeError {
     InvalidFixedKeyLength,
     NoCookies,
     Io(std::io::Error),
-    Tls(rustls::Error),
-    Certificate(rustls::Error),
-    DnsName(rustls::pki_types::InvalidDnsNameError),
+    Tls(tls_utils::Error),
+    Certificate(tls_utils::Error),
+    DnsName(tls_utils::InvalidDnsNameError),
     IncompleteResponse,
 }
 
@@ -719,14 +719,14 @@ impl From<std::io::Error> for KeyExchangeError {
     }
 }
 
-impl From<rustls::Error> for KeyExchangeError {
-    fn from(value: rustls::Error) -> Self {
+impl From<tls_utils::Error> for KeyExchangeError {
+    fn from(value: crate::tls_utils::Error) -> Self {
         Self::Tls(value)
     }
 }
 
-impl From<rustls::pki_types::InvalidDnsNameError> for KeyExchangeError {
-    fn from(value: rustls::pki_types::InvalidDnsNameError) -> Self {
+impl From<tls_utils::InvalidDnsNameError> for KeyExchangeError {
+    fn from(value: tls_utils::InvalidDnsNameError) -> Self {
         Self::DnsName(value)
     }
 }
@@ -847,8 +847,8 @@ impl AeadAlgorithm {
     pub(crate) fn extract_nts_keys<ConnectionData>(
         &self,
         protocol: ProtocolId,
-        tls_connection: &rustls::ConnectionCommon<ConnectionData>,
-    ) -> Result<NtsKeys, rustls::Error> {
+        tls_connection: &tls_utils::ConnectionCommon<ConnectionData>,
+    ) -> Result<NtsKeys, tls_utils::Error> {
         match self {
             AeadAlgorithm::AeadAesSivCmac256 => {
                 let c2s = extract_nts_key(tls_connection, self.c2s_context(protocol))?;
@@ -923,9 +923,9 @@ impl std::fmt::Debug for NtsKeys {
 }
 
 fn extract_nts_key<T: Default + AsMut<[u8]>, ConnectionData>(
-    tls_connection: &rustls::ConnectionCommon<ConnectionData>,
+    tls_connection: &tls_utils::ConnectionCommon<ConnectionData>,
     context: [u8; 5],
-) -> Result<T, rustls::Error> {
+) -> Result<T, tls_utils::Error> {
     let mut key = T::default();
     tls_connection.export_keying_material(
         &mut key,
@@ -1156,7 +1156,7 @@ pub struct KeyExchangeResult {
 }
 
 pub struct KeyExchangeClient {
-    tls_connection: rustls::ClientConnection,
+    tls_connection: tls_utils::ClientConnection,
     decoder: KeyExchangeResultDecoder,
     server_name: String,
 }
@@ -1239,14 +1239,14 @@ impl KeyExchangeClient {
     // should only be used in tests!
     fn new_without_tls_write(
         server_name: String,
-        mut tls_config: rustls::ClientConfig,
+        mut tls_config: tls_utils::ClientConfig,
     ) -> Result<Self, KeyExchangeError> {
         // Ensure we send only ntske/1 as alpn
         tls_config.alpn_protocols.clear();
         tls_config.alpn_protocols.push(b"ntske/1".to_vec());
 
         // TLS only works when the server name is a DNS name; an IP address does not work
-        let tls_connection = rustls::ClientConnection::new(
+        let tls_connection = tls_utils::ClientConnection::new(
             Arc::new(tls_config),
             ServerName::try_from(&server_name as &str)?.to_owned(),
         )?;
@@ -1260,7 +1260,7 @@ impl KeyExchangeClient {
 
     pub fn new(
         server_name: String,
-        tls_config: rustls::ClientConfig,
+        tls_config: tls_utils::ClientConfig,
         ntp_version: Option<NtpVersion>,
         denied_servers: impl IntoIterator<Item = String>,
     ) -> Result<Self, KeyExchangeError> {
@@ -1539,13 +1539,13 @@ impl KeyExchangeServerDecoder {
 
 #[derive(Debug)]
 pub struct KeyExchangeServer {
-    tls_connection: rustls::ServerConnection,
+    tls_connection: tls_utils::ServerConnection,
     state: State,
     keyset: Arc<KeySet>,
     ntp_port: Option<u16>,
     ntp_server: Option<String>,
     #[cfg(feature = "nts-pool")]
-    pool_certificates: Arc<[rustls::pki_types::CertificateDer<'static>]>,
+    pool_certificates: Arc<[tls_utils::Certificate]>,
 }
 
 #[derive(Debug)]
@@ -1573,7 +1573,7 @@ impl KeyExchangeServer {
     }
 
     fn send_records(
-        tls_connection: &mut rustls::ServerConnection,
+        tls_connection: &mut tls_utils::ServerConnection,
         records: &[NtsRecord],
     ) -> std::io::Result<()> {
         let mut buffer = Vec::with_capacity(1024);
@@ -1587,7 +1587,10 @@ impl KeyExchangeServer {
         Ok(())
     }
 
-    fn send_error_record(tls_connection: &mut rustls::ServerConnection, error: &KeyExchangeError) {
+    fn send_error_record(
+        tls_connection: &mut tls_utils::ServerConnection,
+        error: &KeyExchangeError,
+    ) {
         let error_records = [
             NtsRecord::Error {
                 errorcode: error.to_error_code(),
@@ -1605,7 +1608,7 @@ impl KeyExchangeServer {
 
     pub fn progress(
         mut self,
-    ) -> ControlFlow<Result<rustls::ServerConnection, KeyExchangeError>, Self> {
+    ) -> ControlFlow<Result<tls_utils::ServerConnection, KeyExchangeError>, Self> {
         // Move any received data from tls to decoder
         if let Err(e) = self.tls_connection.process_new_packets() {
             return ControlFlow::Break(Err(e.into()));
@@ -1674,7 +1677,7 @@ impl KeyExchangeServer {
         }
     }
 
-    fn end_of_file(self) -> Result<rustls::ServerConnection, KeyExchangeError> {
+    fn end_of_file(self) -> Result<tls_utils::ServerConnection, KeyExchangeError> {
         match self.state {
             State::Active { .. } => {
                 // there are no more client bytes, but decoding was not finished yet
@@ -1736,7 +1739,7 @@ impl KeyExchangeServer {
     fn decoder_done(
         mut self,
         data: ServerKeyExchangeData,
-    ) -> ControlFlow<Result<rustls::ServerConnection, KeyExchangeError>, Self> {
+    ) -> ControlFlow<Result<tls_utils::ServerConnection, KeyExchangeError>, Self> {
         let algorithm = data.algorithm;
         let protocol = data.protocol;
         //TODO: see comment in fn server_key_exchange_records()
@@ -1774,17 +1777,17 @@ impl KeyExchangeServer {
     }
 
     pub fn new(
-        tls_config: Arc<rustls::ServerConfig>,
+        tls_config: Arc<tls_utils::ServerConfig>,
         keyset: Arc<KeySet>,
         ntp_port: Option<u16>,
         ntp_server: Option<String>,
-        pool_certificates: Arc<[rustls::pki_types::CertificateDer<'static>]>,
+        pool_certificates: Arc<[tls_utils::Certificate]>,
     ) -> Result<Self, KeyExchangeError> {
         // Ensure we send only ntske/1 as alpn
         debug_assert_eq!(tls_config.alpn_protocols, &[b"ntske/1".to_vec()]);
 
         // TLS only works when the server name is a DNS name; an IP address does not work
-        let tls_connection = rustls::ServerConnection::new(tls_config)?;
+        let tls_connection = tls_utils::ServerConnection::new(tls_config)?;
 
         #[cfg(not(feature = "nts-pool"))]
         let _ = pool_certificates;
@@ -2836,34 +2839,46 @@ mod test {
 
     #[test]
     fn test_keyexchange_client() {
-        let cert_chain: Vec<rustls::pki_types::CertificateDer> = rustls_pemfile::certs(
+        let cert_chain: Vec<tls_utils::Certificate> = tls_utils::pemfile::certs(
             &mut std::io::BufReader::new(include_bytes!("../test-keys/end.fullchain.pem") as &[u8]),
         )
         .map(|res| res.unwrap())
         .collect();
-        let key_der = rustls_pemfile::pkcs8_private_keys(&mut std::io::BufReader::new(
+
+        let key_der = tls_utils::pemfile::pkcs8_private_keys(&mut std::io::BufReader::new(
             include_bytes!("../test-keys/end.key") as &[u8],
         ))
         .map(|res| res.unwrap())
         .next()
         .unwrap();
-        let serverconfig = rustls::ServerConfig::builder()
+
+        let serverconfig = tls_utils::server_config_builder()
             .with_no_client_auth()
             .with_single_cert(cert_chain, key_der.into())
             .unwrap();
-        let mut root_store = rustls::RootCertStore::empty();
+
+        let mut root_store = tls_utils::RootCertStore::empty();
+        #[cfg(any(feature = "rustls22", feature = "rustls23"))]
         root_store.add_parsable_certificates(
-            rustls_pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
+            tls_utils::pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
                 "../test-keys/testca.pem"
             ) as &[u8]))
             .map(|res| res.unwrap()),
         );
+        #[cfg(not(any(feature = "rustls22", feature = "rustls23")))]
+        root_store.add_parsable_certificates(
+            &tls_utils::pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
+                "../test-keys/testca.pem"
+            ) as &[u8]))
+            .map(|res| res.unwrap())
+            .collect::<Vec<_>>(),
+        );
 
-        let clientconfig = rustls::ClientConfig::builder()
+        let clientconfig = tls_utils::client_config_builder()
             .with_root_certificates(root_store)
             .with_no_client_auth();
 
-        let mut server = rustls::ServerConnection::new(Arc::new(serverconfig)).unwrap();
+        let mut server = tls_utils::ServerConnection::new(Arc::new(serverconfig)).unwrap();
         let mut client =
             KeyExchangeClient::new("localhost".into(), clientconfig, None, vec![]).unwrap();
 
@@ -2907,34 +2922,46 @@ mod test {
     }
 
     fn client_server_pair(client_type: ClientType) -> (KeyExchangeClient, KeyExchangeServer) {
-        let cert_chain: Vec<rustls::pki_types::CertificateDer> = rustls_pemfile::certs(
+        #[allow(unused)]
+        use tls_utils::CloneKeyShim;
+
+        let cert_chain: Vec<tls_utils::Certificate> = tls_utils::pemfile::certs(
             &mut std::io::BufReader::new(include_bytes!("../test-keys/end.fullchain.pem") as &[u8]),
         )
         .map(|res| res.unwrap())
         .collect();
-        let key_der = rustls_pemfile::pkcs8_private_keys(&mut std::io::BufReader::new(
+        let key_der = tls_utils::pemfile::pkcs8_private_keys(&mut std::io::BufReader::new(
             include_bytes!("../test-keys/end.key") as &[u8],
         ))
         .map(|res| res.unwrap())
         .next()
         .unwrap();
-        let mut root_store = rustls::RootCertStore::empty();
+        let mut root_store = tls_utils::RootCertStore::empty();
+        #[cfg(any(feature = "rustls22", feature = "rustls23"))]
         root_store.add_parsable_certificates(
-            rustls_pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
+            tls_utils::pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
                 "../test-keys/testca.pem"
             ) as &[u8]))
             .map(|res| res.unwrap()),
         );
+        #[cfg(not(any(feature = "rustls22", feature = "rustls23")))]
+        root_store.add_parsable_certificates(
+            &tls_utils::pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
+                "../test-keys/testca.pem"
+            ) as &[u8]))
+            .map(|res| res.unwrap())
+            .collect::<Vec<_>>(),
+        );
 
-        let mut serverconfig = rustls::ServerConfig::builder()
+        let mut serverconfig = tls_utils::server_config_builder()
             .with_client_cert_verifier(Arc::new(
                 #[cfg(not(feature = "nts-pool"))]
-                rustls::server::NoClientAuth,
+                tls_utils::NoClientAuth,
                 #[cfg(feature = "nts-pool")]
                 crate::tls_utils::AllowAnyAnonymousOrCertificateBearingClient::new(
                     // We know that our previous call to ServerConfig::builder already
                     // installed a default provider, but this is undocumented
-                    rustls::crypto::CryptoProvider::get_default().unwrap(),
+                    rustls23::crypto::CryptoProvider::get_default().unwrap(),
                 ),
             ))
             .with_single_cert(cert_chain.clone(), key_der.clone_key().into())
@@ -2944,10 +2971,10 @@ mod test {
         serverconfig.alpn_protocols.push(b"ntske/1".to_vec());
 
         let clientconfig = match client_type {
-            ClientType::Uncertified => rustls::ClientConfig::builder()
+            ClientType::Uncertified => tls_utils::client_config_builder()
                 .with_root_certificates(root_store)
                 .with_no_client_auth(),
-            ClientType::Certified => rustls::ClientConfig::builder()
+            ClientType::Certified => tls_utils::client_config_builder()
                 .with_root_certificates(root_store)
                 .with_client_auth_cert(cert_chain, key_der.into())
                 .unwrap(),
@@ -2955,7 +2982,7 @@ mod test {
 
         let keyset = KeySetProvider::new(8).get();
 
-        let pool_cert: Vec<rustls::pki_types::CertificateDer> = rustls_pemfile::certs(
+        let pool_cert: Vec<tls_utils::Certificate> = tls_utils::pemfile::certs(
             &mut std::io::BufReader::new(include_bytes!("../test-keys/end.pem") as &[u8]),
         )
         .map(|res| res.unwrap())

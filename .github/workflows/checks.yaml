@@ -25,23 +25,23 @@ jobs:
         include:
           - rust: stable
             os: ubuntu-latest
-            features: ""
+            features: "--features run_tokio_rustls_tests"
             target: "x86_64-unknown-linux-gnu"
           - rust: beta
             os: ubuntu-latest
-            features: ""
+            features: "--features run_tokio_rustls_tests"
             target: "x86_64-unknown-linux-gnu"
           - rust: "msrv"
             os: ubuntu-latest
-            features: ""
+            features: "--features run_tokio_rustls_tests"
             target: "x86_64-unknown-linux-gnu"
           - rust: "stable"
             os: ubuntu-latest
-            features: ""
+            features: "--features run_tokio_rustls_tests"
             target: "x86_64-unknown-linux-musl"
           - rust: "stable"
             os: macos-latest
-            features: ""
+            features: "--features run_tokio_rustls_tests"
             target: "x86_64-apple-darwin"
           - rust: "stable"
             os: ubuntu-latest
@@ -59,6 +59,18 @@ jobs:
             os: macos-latest
             features: "--all-features"
             target: "x86_64-apple-darwin"
+          - rust: "stable"
+            os: ubuntu-latest
+            features: "--no-default-features --features rustls21"
+            target: "x86_64-unknown-linux-gnu"
+          - rust: "stable"
+            os: ubuntu-latest
+            features: "--no-default-features --features rustls22"
+            target: "x86_64-unknown-linux-gnu"
+          - rust: "stable"
+            os: ubuntu-latest
+            features: "--no-default-features --features rustls23"
+            target: "x86_64-unknown-linux-gnu"
     steps:
       - name: Checkout sources
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -237,7 +249,7 @@ jobs:
             shared-key: "stable-${{matrix.target}}"
 
       - name: Run clippy
-        run: cargo clippy --target ${{matrix.target}} --workspace --all-targets --all-features -- -D warnings
+        run: cargo clippy --target ${{matrix.target}} --workspace --all-targets --features hardware-timestamping,unstable_ntpv5,unstable_nts-pool,__internal-fuzz,__internal-test,__internal-api,ntpv5,nts-pool  -- -D warnings
       - name: Run clippy (fuzzers)
         run: cargo clippy --target ${{matrix.target}} --manifest-path ./fuzz/Cargo.toml --all-targets -- -D warnings
         if: ${{matrix.fuzzer}}

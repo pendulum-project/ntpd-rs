@@ -77,7 +77,7 @@ impl Config {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ObservabilityConfig {
     #[serde(default)]
-    pub log_level: Option<crate::daemon_tracing::LogLevel>,
+    pub log_level: Option<super::daemon_tracing::LogLevel>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Deserialize)]

@@ -9,12 +9,9 @@ use std::{
 };
 
 use libc::{ECONNABORTED, EMFILE, ENFILE, ENOBUFS, ENOMEM};
+use ntp_proto::tls_utils::{self, Certificate, PrivateKey, TLS13};
 use ntp_proto::{
     KeyExchangeClient, KeyExchangeError, KeyExchangeResult, KeyExchangeServer, KeySet, NtpVersion,
-};
-use rustls::{
-    pki_types::{CertificateDer, PrivateKeyDer},
-    version::TLS13,
 };
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
@@ -27,12 +24,14 @@ use super::config::NtsKeConfig;
 use super::exitcode;
 
 async fn build_client_config(
-    extra_certificates: &[CertificateDer<'_>],
-) -> Result<rustls::ClientConfig, KeyExchangeError> {
+    extra_certificates: &[Certificate],
+) -> Result<tls_utils::ClientConfig, KeyExchangeError> {
     let mut roots = tokio::task::spawn_blocking(move || {
-        let mut roots = rustls::RootCertStore::empty();
-        for cert in rustls_native_certs::load_native_certs()? {
-            roots.add(cert).map_err(KeyExchangeError::Certificate)?;
+        let mut roots = tls_utils::RootCertStore::empty();
+        for cert in tls_utils::pemfile::load_native_certs()? {
+            roots
+                .add(tls_utils::pemfile::rootstore_ref_shim(&cert))
+                .map_err(KeyExchangeError::Certificate)?;
         }
         Ok::<_, KeyExchangeError>(roots)
     })
@@ -41,12 +40,12 @@ async fn build_client_config(
 
     for cert in extra_certificates {
         roots
-            .add(cert.clone())
+            .add(tls_utils::pemfile::rootstore_ref_shim(cert))
             .map_err(KeyExchangeError::Certificate)?;
     }
 
     Ok(
-        rustls::ClientConfig::builder_with_protocol_versions(&[&TLS13])
+        tls_utils::client_config_builder_with_protocol_versions(&[&TLS13])
             .with_root_certificates(roots)
             .with_no_client_auth(),
     )
@@ -55,7 +54,7 @@ async fn build_client_config(
 pub(crate) async fn key_exchange_client(
     server_name: String,
     port: u16,
-    extra_certificates: &[CertificateDer<'_>],
+    extra_certificates: &[Certificate],
     ntp_version: Option<NtpVersion>,
 ) -> Result<KeyExchangeResult, KeyExchangeError> {
     let socket = tokio::net::TcpStream::connect((server_name.as_str(), port)).await?;
@@ -68,7 +67,7 @@ pub(crate) async fn key_exchange_client(
 pub(crate) async fn key_exchange_client_with_denied_servers(
     server_name: String,
     port: u16,
-    extra_certificates: &[CertificateDer<'_>],
+    extra_certificates: &[Certificate],
     ntp_version: Option<NtpVersion>,
     denied_servers: impl IntoIterator<Item = String>,
 ) -> Result<KeyExchangeResult, KeyExchangeError> {
@@ -122,12 +121,12 @@ async fn run_nts_ke(
         ))
     })?;
 
-    let cert_chain: Vec<rustls::pki_types::CertificateDer> =
-        rustls_pemfile::certs(&mut std::io::BufReader::new(certificate_chain_file))
-            .collect::<std::io::Result<Vec<rustls::pki_types::CertificateDer>>>()?;
+    let cert_chain: Vec<Certificate> =
+        ntp_proto::tls_utils::pemfile::certs(&mut std::io::BufReader::new(certificate_chain_file))
+            .collect::<std::io::Result<Vec<Certificate>>>()?;
 
     #[cfg_attr(not(feature = "unstable_nts-pool"), allow(unused_mut))]
-    let mut pool_certs: Vec<rustls::pki_types::CertificateDer> = Vec::new();
+    let mut pool_certs: Vec<Certificate> = Vec::new();
     #[cfg(feature = "unstable_nts-pool")]
     for client_cert in &nts_ke_config.authorized_pool_server_certificates {
         let pool_certificate_file = std::fs::File::open(client_cert).map_err(|e| {
@@ -136,9 +135,10 @@ async fn run_nts_ke(
                 client_cert, e
             ))
         })?;
-        let mut certs: Vec<_> =
-            rustls_pemfile::certs(&mut std::io::BufReader::new(pool_certificate_file))
-                .collect::<std::io::Result<Vec<_>>>()?;
+        let mut certs: Vec<_> = ntp_proto::tls_utils::pemfile::certs(&mut std::io::BufReader::new(
+            pool_certificate_file,
+        ))
+        .collect::<std::io::Result<Vec<_>>>()?;
         // forbid certificate chains at this point
         if certs.len() == 1 {
             pool_certs.push(certs.pop().unwrap())
@@ -150,25 +150,26 @@ async fn run_nts_ke(
         }
     }
 
-    let private_key = rustls_pemfile::private_key(&mut std::io::BufReader::new(private_key_file))?
-        .ok_or(io_error("could not parse private key"))?;
+    let private_key =
+        ntp_proto::tls_utils::pemfile::private_key(&mut std::io::BufReader::new(private_key_file))?
+            .ok_or(io_error("could not parse private key"))?;
 
     key_exchange_server(keyset, nts_ke_config, cert_chain, pool_certs, private_key).await
 }
 
 fn build_server_config(
-    certificate_chain: Vec<CertificateDer<'static>>,
-    private_key: PrivateKeyDer<'static>,
-) -> std::io::Result<Arc<rustls::ServerConfig>> {
-    let mut config = rustls::ServerConfig::builder_with_protocol_versions(&[&TLS13])
+    certificate_chain: Vec<Certificate>,
+    private_key: PrivateKey,
+) -> std::io::Result<Arc<tls_utils::ServerConfig>> {
+    let mut config = tls_utils::server_config_builder_with_protocol_versions(&[&TLS13])
         .with_client_cert_verifier(Arc::new(
             #[cfg(not(feature = "unstable_nts-pool"))]
-            rustls::server::NoClientAuth,
+            tls_utils::NoClientAuth,
             #[cfg(feature = "unstable_nts-pool")]
             ntp_proto::tls_utils::AllowAnyAnonymousOrCertificateBearingClient::new(
                 // We know that our previous call to ServerConfig::builder already
                 // installed a default provider, but this is undocumented
-                rustls::crypto::CryptoProvider::get_default().unwrap(),
+                rustls23::crypto::CryptoProvider::get_default().unwrap(),
             ),
         ))
         .with_single_cert(certificate_chain, private_key)
@@ -183,9 +184,9 @@ fn build_server_config(
 async fn key_exchange_server(
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
     ke_config: NtsKeConfig,
-    certificate_chain: Vec<CertificateDer<'static>>,
-    pool_certs: Vec<CertificateDer<'static>>,
-    private_key: PrivateKeyDer<'static>,
+    certificate_chain: Vec<Certificate>,
+    pool_certs: Vec<Certificate>,
+    private_key: PrivateKey,
 ) -> std::io::Result<()> {
     let config = build_server_config(certificate_chain, private_key)?;
     let pool_certs = Arc::<[_]>::from(pool_certs);
@@ -284,7 +285,7 @@ where
     pub fn new(
         io: IO,
         server_name: String,
-        config: rustls::ClientConfig,
+        config: tls_utils::ClientConfig,
         ntp_version: Option<NtpVersion>,
         denied_servers: impl IntoIterator<Item = String>,
     ) -> Result<Self, KeyExchangeError> {
@@ -414,11 +415,11 @@ where
 {
     pub fn new(
         io: IO,
-        config: Arc<rustls::ServerConfig>,
+        config: Arc<tls_utils::ServerConfig>,
         keyset: Arc<KeySet>,
         ntp_port: Option<u16>,
         ntp_server: Option<String>,
-        pool_certs: Arc<[rustls::pki_types::CertificateDer<'static>]>,
+        pool_certs: Arc<[Certificate]>,
     ) -> Result<Self, KeyExchangeError> {
         let data = BoundKeyExchangeServerData {
             io,
@@ -431,11 +432,11 @@ where
 
     pub async fn run(
         io: IO,
-        config: Arc<rustls::ServerConfig>,
+        config: Arc<tls_utils::ServerConfig>,
         keyset: Arc<KeySet>,
         ntp_port: Option<u16>,
         ntp_server: Option<String>,
-        pool_certs: Arc<[rustls::pki_types::CertificateDer<'static>]>,
+        pool_certs: Arc<[Certificate]>,
     ) -> Result<(), KeyExchangeError> {
         let this = Self::new(io, config, keyset, ntp_port, ntp_server, pool_certs)?;
 
@@ -601,24 +602,24 @@ impl<T: AsyncRead + Unpin> Read for ReaderAdapter<'_, '_, T> {
     }
 }
 
-pub(crate) fn certificates_from_file(path: &Path) -> std::io::Result<Vec<CertificateDer<'static>>> {
+pub(crate) fn certificates_from_file(path: &Path) -> std::io::Result<Vec<Certificate>> {
     let file = std::fs::File::open(path)?;
     let reader = BufReader::new(file);
 
     certificates_from_bufread(reader)
 }
 
-fn certificates_from_bufread(
-    mut reader: impl BufRead,
-) -> std::io::Result<Vec<CertificateDer<'static>>> {
-    rustls_pemfile::certs(&mut reader).collect()
+fn certificates_from_bufread(mut reader: impl BufRead) -> std::io::Result<Vec<Certificate>> {
+    ntp_proto::tls_utils::pemfile::certs(&mut reader).collect()
 }
 
 #[cfg(test)]
 mod tests {
     use std::{io::Cursor, net::SocketAddr, path::PathBuf};
 
+    #[allow(unused)]
     use ntp_proto::{KeySetProvider, NtsRecord};
+    #[allow(unused)]
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     use crate::test::alloc_port;
@@ -644,31 +645,31 @@ mod tests {
     #[test]
     fn parse_private_keys() {
         let input = include_bytes!("../../test-keys/end.key");
-        let _ = rustls_pemfile::private_key(&mut input.as_slice())
+        let _ = ntp_proto::tls_utils::pemfile::private_key(&mut input.as_slice())
             .unwrap()
             .unwrap();
 
         let input = include_bytes!("../../test-keys/testca.key");
-        let _ = rustls_pemfile::private_key(&mut input.as_slice())
+        let _ = ntp_proto::tls_utils::pemfile::private_key(&mut input.as_slice())
             .unwrap()
             .unwrap();
 
         // openssl does no longer seem to want to generate this format
         // so we use https://github.com/rustls/pemfile/blob/main/tests/data/rsa1024.pkcs1.pem
         let input = include_bytes!("../../test-keys/rsa_key.pem");
-        let _ = rustls_pemfile::private_key(&mut input.as_slice())
+        let _ = ntp_proto::tls_utils::pemfile::private_key(&mut input.as_slice())
             .unwrap()
             .unwrap();
 
         // openssl ecparam -name prime256v1 -genkey -noout -out ec_key.pem
         let input = include_bytes!("../../test-keys/ec_key.pem");
-        let _ = rustls_pemfile::private_key(&mut input.as_slice())
+        let _ = ntp_proto::tls_utils::pemfile::private_key(&mut input.as_slice())
             .unwrap()
             .unwrap();
 
         // openssl genpkey -algorithm EC -out pkcs8_key.pem -pkeyopt ec_paramgen_curve:prime256v1
         let input = include_bytes!("../../test-keys/pkcs8_key.pem");
-        let _ = rustls_pemfile::private_key(&mut input.as_slice())
+        let _ = ntp_proto::tls_utils::pemfile::private_key(&mut input.as_slice())
             .unwrap()
             .unwrap();
     }
@@ -712,6 +713,7 @@ mod tests {
         assert_eq!(result.port, 123);
     }
 
+    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn key_exchange_weird_packet() {
         let port = alloc_port();
@@ -749,6 +751,7 @@ mod tests {
         assert_eq!(len, 880);
     }
 
+    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn key_exchange_bad_request() {
         let port = alloc_port();
@@ -950,6 +953,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "run_tokio_rustls_tests")]
     fn client_key_exchange_message_length() -> usize {
         let mut buffer = Vec::with_capacity(1024);
         for record in ntp_proto::NtsRecord::client_key_exchange_records(None, vec![]).iter() {
@@ -959,6 +963,7 @@ mod tests {
         buffer.len()
     }
 
+    #[cfg(feature = "run_tokio_rustls_tests")]
     async fn send_records_to_client(
         records: Vec<NtsRecord>,
     ) -> Result<KeyExchangeResult, KeyExchangeError> {
@@ -973,7 +978,7 @@ mod tests {
                 certificates_from_bufread(BufReader::new(Cursor::new(cc))).unwrap();
 
             let pk = include_bytes!("../../test-keys/end.key");
-            let private_key = rustls_pemfile::private_key(&mut pk.as_slice())
+            let private_key = ntp_proto::tls_utils::pemfile::private_key(&mut pk.as_slice())
                 .unwrap()
                 .unwrap();
 
@@ -1003,12 +1008,13 @@ mod tests {
         key_exchange_client("localhost".to_string(), port, extra_certificates, None).await
     }
 
+    #[cfg(feature = "run_tokio_rustls_tests")]
     async fn run_server(listener: tokio::net::TcpListener) -> Result<(), KeyExchangeError> {
         let cc = include_bytes!("../../test-keys/end.fullchain.pem");
         let certificate_chain = certificates_from_bufread(BufReader::new(Cursor::new(cc)))?;
 
         let pk = include_bytes!("../../test-keys/end.key");
-        let private_key = rustls_pemfile::private_key(&mut pk.as_slice())
+        let private_key = ntp_proto::tls_utils::pemfile::private_key(&mut pk.as_slice())
             .unwrap()
             .unwrap();
 
@@ -1023,6 +1029,7 @@ mod tests {
         BoundKeyExchangeServer::run(stream, config, keyset, None, None, pool_certs).await
     }
 
+    #[cfg(feature = "run_tokio_rustls_tests")]
     async fn client_tls_stream(
         server_name: &str,
         port: u16,
@@ -1037,7 +1044,7 @@ mod tests {
 
         let config = build_client_config(extra_certificates).await.unwrap();
 
-        let domain = rustls::pki_types::ServerName::try_from(server_name)
+        let domain = tls_utils::ServerName::try_from(server_name)
             .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid dnsname"))
             .unwrap()
             .to_owned();
@@ -1046,6 +1053,7 @@ mod tests {
         connector.connect(domain, stream).await.unwrap()
     }
 
+    #[cfg(feature = "run_tokio_rustls_tests")]
     async fn send_records_to_server(records: Vec<NtsRecord>) -> Result<(), KeyExchangeError> {
         let port = alloc_port();
         let listener = TcpListener::bind(&("localhost", port)).await?;
@@ -1072,6 +1080,7 @@ mod tests {
         run_server(listener).await
     }
 
+    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn receive_cookies() {
         let result = send_records_to_client(vec![
@@ -1092,6 +1101,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn records_after_end_are_ignored() {
         let result = send_records_to_client(vec![
@@ -1115,6 +1125,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn no_cookies() {
         let result = send_records_to_client(vec![
@@ -1134,6 +1145,7 @@ mod tests {
         assert!(matches!(error, KeyExchangeError::NoCookies));
     }
 
+    #[cfg(feature = "run_tokio_rustls_tests")]
     async fn client_error_record(errorcode: u16) -> KeyExchangeError {
         let result = send_records_to_client(vec![
             NtsRecord::Error { errorcode },
@@ -1144,6 +1156,7 @@ mod tests {
         result.unwrap_err()
     }
 
+    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn client_receives_error_record() {
         use KeyExchangeError as KEE;
@@ -1158,6 +1171,7 @@ mod tests {
         assert!(matches!(error, KEE::InternalServerError));
     }
 
+    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn server_expected_client_records() {
         let records = NtsRecord::client_key_exchange_records(None, vec![]).to_vec();
@@ -1166,6 +1180,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn immediate_end_of_message() {
         let records = vec![NtsRecord::EndOfMessage];
@@ -1174,6 +1189,7 @@ mod tests {
         assert!(matches!(result, Err(KeyExchangeError::NoValidProtocol)));
     }
 
+    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn double_next_protocol() {
         let records = vec![
@@ -1190,6 +1206,7 @@ mod tests {
         assert!(matches!(result, Err(KeyExchangeError::BadRequest)));
     }
 
+    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn records_after_end_of_message() {
         let records = vec![
@@ -1210,6 +1227,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn client_no_valid_algorithm() {
         let records = vec![
@@ -1227,6 +1245,7 @@ mod tests {
         assert!(matches!(result, Err(KeyExchangeError::NoValidAlgorithm)));
     }
 
+    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn client_no_valid_protocol() {
         let records = vec![
@@ -1244,6 +1263,7 @@ mod tests {
         assert!(matches!(result, Err(KeyExchangeError::NoValidProtocol)));
     }
 
+    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn unrecognized_critical_record() {
         let records = vec![
@@ -1262,6 +1282,7 @@ mod tests {
         ));
     }
 
+    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn client_sends_no_records_clean_shutdown() {
         let port = alloc_port();
@@ -1280,6 +1301,7 @@ mod tests {
         assert!(matches!(result, Err(KeyExchangeError::IncompleteResponse)));
     }
 
+    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     #[ignore = "Flaky on macos and not that interesting"]
     async fn client_sends_no_records_dirty_shutdown() {
@@ -1299,6 +1321,7 @@ mod tests {
         assert!(matches!(result, Err(KeyExchangeError::IncompleteResponse)));
     }
 
+    #[cfg(feature = "run_tokio_rustls_tests")]
     async fn server_error_record(errorcode: u16) -> KeyExchangeError {
         let result = send_records_to_server(vec![
             NtsRecord::Error { errorcode },
@@ -1309,6 +1332,7 @@ mod tests {
         result.unwrap_err()
     }
 
+    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn server_receives_error_record() {
         use KeyExchangeError as KEE;
