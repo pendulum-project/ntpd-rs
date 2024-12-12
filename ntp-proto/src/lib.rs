@@ -25,7 +25,6 @@ mod time_types;
 
 #[cfg(feature = "nts-pool")]
 mod nts_pool_ke;
-#[cfg(feature = "nts-pool")]
 pub mod tls_utils;
 
 pub(crate) mod exitcode {

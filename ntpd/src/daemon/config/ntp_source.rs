@@ -6,10 +6,10 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use ntp_proto::tls_utils::Certificate;
 use ntp_proto::NtpDuration;
 #[cfg(feature = "unstable_ntpv5")]
 use ntp_proto::NtpVersion;
-use rustls::pki_types::CertificateDer;
 use serde::{de, Deserialize, Deserializer};
 
 use super::super::keyexchange::certificates_from_file;
@@ -46,7 +46,7 @@ pub struct NtsSourceConfig {
         default = "default_certificate_authorities",
         rename = "certificate-authority"
     )]
-    pub certificate_authorities: Arc<[CertificateDer<'static>]>,
+    pub certificate_authorities: Arc<[Certificate]>,
     #[cfg(feature = "unstable_ntpv5")]
     #[serde(default, deserialize_with = "deserialize_ntp_version")]
     pub ntp_version: Option<NtpVersion>,
@@ -54,7 +54,7 @@ pub struct NtsSourceConfig {
 
 fn deserialize_certificate_authorities<'de, D>(
     deserializer: D,
-) -> Result<Arc<[CertificateDer<'static>]>, D::Error>
+) -> Result<Arc<[Certificate]>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -69,7 +69,7 @@ where
     }
 }
 
-fn default_certificate_authorities() -> Arc<[CertificateDer<'static>]> {
+fn default_certificate_authorities() -> Arc<[Certificate]> {
     Arc::from([])
 }
 
@@ -102,7 +102,7 @@ pub struct NtsPoolSourceConfig {
         default = "default_certificate_authorities",
         rename = "certificate-authority"
     )]
-    pub certificate_authorities: Arc<[CertificateDer<'static>]>,
+    pub certificate_authorities: Arc<[Certificate]>,
     #[serde(default = "max_sources_default")]
     pub count: usize,
     #[cfg(feature = "unstable_ntpv5")]

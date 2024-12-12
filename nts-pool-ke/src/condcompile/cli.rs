@@ -1,4 +1,4 @@
-use crate::daemon_tracing::LogLevel;
+use super::daemon_tracing::LogLevel;
 use std::path::PathBuf;
 use std::str::FromStr;
 
