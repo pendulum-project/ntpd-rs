@@ -4,6 +4,8 @@ use std::ops::Deref;
 use tokio::sync::mpsc;
 use tracing::warn;
 
+use ntp_proto::SourceConfig;
+
 use super::super::{
     config::NtsPoolSourceConfig, keyexchange::key_exchange_client_with_denied_servers,
 };
@@ -19,6 +21,7 @@ struct PoolSource {
 
 pub struct NtsPoolSpawner {
     config: NtsPoolSourceConfig,
+    source_config: SourceConfig,
     id: SpawnerId,
     current_sources: Vec<PoolSource>,
 }
@@ -45,12 +48,12 @@ impl From<mpsc::error::SendError<SpawnEvent>> for NtsPoolSpawnError {
 }
 
 impl NtsPoolSpawner {
-    pub fn new(config: NtsPoolSourceConfig) -> NtsPoolSpawner {
+    pub fn new(config: NtsPoolSourceConfig, source_config: SourceConfig) -> NtsPoolSpawner {
         NtsPoolSpawner {
             config,
+            source_config,
             id: Default::default(),
             current_sources: Default::default(),
-            //known_ips: Default::default(),
         }
     }
 
@@ -99,6 +102,7 @@ impl Spawner for NtsPoolSpawner {
                                     address,
                                     self.config.addr.deref().clone(),
                                     ke.protocol_version,
+                                    self.source_config,
                                     Some(ke.nts),
                                 ),
                             ))

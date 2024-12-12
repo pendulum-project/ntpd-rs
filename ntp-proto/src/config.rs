@@ -197,7 +197,7 @@ impl<'de> Deserialize<'de> for StepThreshold {
 
 #[derive(Deserialize, Debug, Clone, Copy)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct SourceDefaultsConfig {
+pub struct SourceConfig {
     /// Minima and maxima for the poll interval of clients
     #[serde(default)]
     pub poll_interval_limits: PollIntervalLimits,
@@ -207,7 +207,7 @@ pub struct SourceDefaultsConfig {
     pub initial_poll_interval: PollInterval,
 }
 
-impl Default for SourceDefaultsConfig {
+impl Default for SourceConfig {
     fn default() -> Self {
         Self {
             poll_interval_limits: Default::default(),
