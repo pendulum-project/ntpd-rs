@@ -84,6 +84,7 @@ pub trait TimeSyncController: Sized + Send + 'static {
         &mut self,
         id: Self::SourceId,
         measurement_noise_estimate: f64,
+        period: Option<f64>,
     ) -> Self::OneWaySourceController;
     /// Notify the controller that a previous source has gone
     fn remove_source(&mut self, id: Self::SourceId);

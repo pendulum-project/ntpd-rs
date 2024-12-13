@@ -55,6 +55,7 @@ pub(crate) struct SingleShotSourceController<D: Debug + Copy + Clone> {
     delay_type: PhantomData<D>,
     min_poll_interval: PollInterval,
     done: bool,
+    ignore: bool,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -155,6 +156,7 @@ impl<C: NtpClock> TimeSyncController for SingleShotController<C> {
             delay_type: PhantomData,
             min_poll_interval: self.min_poll_interval,
             done: false,
+            ignore: false,
         }
     }
 
@@ -162,11 +164,13 @@ impl<C: NtpClock> TimeSyncController for SingleShotController<C> {
         &mut self,
         _id: Self::SourceId,
         _measurement_noise_estimate: f64,
+        period: Option<f64>,
     ) -> Self::OneWaySourceController {
         SingleShotSourceController::<()> {
             delay_type: PhantomData,
             min_poll_interval: self.min_poll_interval,
             done: false,
+            ignore: period.is_some(),
         }
     }
 
@@ -214,7 +218,11 @@ where
         measurement: Measurement<Self::MeasurementDelay>,
     ) -> Option<Self::SourceMessage> {
         self.done = true;
-        Some(measurement.wrap())
+        if self.ignore {
+            None
+        } else {
+            Some(measurement.wrap())
+        }
     }
 
     fn desired_poll_interval(&self) -> ntp_proto::PollInterval {
