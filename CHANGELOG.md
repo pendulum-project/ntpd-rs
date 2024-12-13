@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.4.0] - 2024-12-13
+
+### Added
+- Support for GPS based sources via a GPSd socket
+- Added a setting to allow disabling of colors in our logs (`observability.ansi-colors`)
+
+### Changed
+- Fallback to V4 should V5 not work for some reason (if NTPv5 is enabled)
+- Make the NTP version of a source configurable
+- We now support rustls from 0.21 and up, to allow compilation on more targets
+
+### Fixed
+- Force sync did not work when a single source was configured
+- Fix incorrect indexing in decode of ReferenceIdRequest for NTPv5 messages
+
 ## [1.3.1] - 2024-11-28
 
 ### Changed
@@ -249,6 +264,7 @@ process.
 - Fixed a bug in peer dispersion calculation which resulted in overly
   pessimistic dispersion estimates.
 
+[1.4.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/pendulum-project/ntpd-rs/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.2.3...v1.3.0
 [1.2.3]: https://github.com/pendulum-project/ntpd-rs/compare/v1.2.2...v1.2.3
