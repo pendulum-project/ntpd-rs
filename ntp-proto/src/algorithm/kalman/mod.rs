@@ -34,6 +34,7 @@ struct SourceSnapshot<Index: Copy> {
     state: KalmanState,
     wander: f64,
     delay: f64,
+    period: Option<f64>,
 
     source_uncertainty: NtpDuration,
     source_delay: NtpDuration,
@@ -113,7 +114,10 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
         }
         for (_, (state, _)) in self.sources.iter_mut() {
             if let Some(ref mut snapshot) = state {
-                snapshot.state = snapshot.state.progress_time(time, snapshot.wander)
+                snapshot.state =
+                    snapshot
+                        .state
+                        .progress_time(time, snapshot.wander, snapshot.period)
             }
         }
 
@@ -262,7 +266,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 .expect("Cannot adjust clock");
             for (state, _) in self.sources.values_mut() {
                 if let Some(ref mut state) = state {
-                    state.state = state.state.process_offset_steering(change);
+                    state.state = state.state.process_offset_steering(change, state.period);
                 }
             }
             info!("Jumped offset by {}ms", change * 1e3);
@@ -315,10 +319,12 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
             .expect("Cannot adjust clock");
         for (state, _) in self.sources.values_mut() {
             if let Some(ref mut state) = state {
-                state.state =
-                    state
-                        .state
-                        .process_frequency_steering(freq_update, actual_change, state.wander)
+                state.state = state.state.process_frequency_steering(
+                    freq_update,
+                    actual_change,
+                    state.wander,
+                    state.period,
+                )
             }
         }
         debug!(
@@ -382,6 +388,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug + Send + 'static> TimeSyncC
         KalmanSourceController::new(
             id,
             self.algo_config,
+            None,
             self.source_defaults_config,
             AveragingBuffer::default(),
         )
@@ -391,11 +398,13 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug + Send + 'static> TimeSyncC
         &mut self,
         id: SourceId,
         measurement_noise_estimate: f64,
+        period: Option<f64>,
     ) -> Self::OneWaySourceController {
         self.sources.insert(id, (None, false));
         KalmanSourceController::new(
             id,
             self.algo_config,
+            period,
             self.source_defaults_config,
             measurement_noise_estimate,
         )
@@ -638,6 +647,29 @@ mod tests {
                     },
                     wander: 0.0,
                     delay: 0.0,
+                    period: None,
+                    source_uncertainty: NtpDuration::ZERO,
+                    source_delay: NtpDuration::ZERO,
+                    leap_indicator: NtpLeapIndicator::NoWarning,
+                    last_update: NtpTimestamp::from_fixed_int(0),
+                }),
+                true,
+            ),
+        );
+
+        algo.sources.insert(
+            1,
+            (
+                Some(SourceSnapshot {
+                    index: 0,
+                    state: KalmanState {
+                        state: Vector::new_vector([0.0, 0.0]),
+                        uncertainty: Matrix::new([[1e-18, 0.0], [0.0, 1e-18]]),
+                        time: NtpTimestamp::from_fixed_int(0),
+                    },
+                    wander: 0.0,
+                    delay: 0.0,
+                    period: Some(3.0),
                     source_uncertainty: NtpDuration::ZERO,
                     source_delay: NtpDuration::ZERO,
                     leap_indicator: NtpLeapIndicator::NoWarning,
@@ -651,6 +683,10 @@ mod tests {
         assert_eq!(
             algo.sources.get(&0).unwrap().0.unwrap().state.offset(),
             -100.0
+        );
+        assert_eq!(
+            algo.sources.get(&1).unwrap().0.unwrap().state.offset(),
+            -1.0
         );
         assert_eq!(
             algo.sources.get(&0).unwrap().0.unwrap().state.time,
@@ -686,6 +722,7 @@ mod tests {
                     },
                     wander: 0.0,
                     delay: 0.0,
+                    period: None,
                     source_uncertainty: NtpDuration::ZERO,
                     source_delay: NtpDuration::ZERO,
                     leap_indicator: NtpLeapIndicator::NoWarning,

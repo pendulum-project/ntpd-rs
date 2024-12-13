@@ -259,7 +259,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         self.ensure_controller_control()?;
         let controller = self
             .controller
-            .add_one_way_source(id, measurement_noise_estimate);
+            .add_one_way_source(id, measurement_noise_estimate, None);
         self.sources.insert(id, None);
         Ok(OneWaySource::new(controller))
     }
