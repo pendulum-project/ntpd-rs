@@ -3,7 +3,7 @@ members = [
     "ntp-proto",
     "nts-pool-ke",
     "ntpd"
-]
+, "roughtime"]
 exclude = [ ]
 
 # Without the `-p` flag, cargo ignores `--no-default-features` when you have a
