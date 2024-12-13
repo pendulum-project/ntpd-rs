@@ -6,7 +6,7 @@ use tracing::{debug, error, info};
 
 use crate::{
     clock::NtpClock,
-    config::{SourceDefaultsConfig, SynchronizationConfig},
+    config::{SourceConfig, SynchronizationConfig},
     packet::NtpLeapIndicator,
     system::TimeSnapshot,
     time_types::{NtpDuration, NtpTimestamp},
@@ -84,7 +84,6 @@ pub struct KalmanClockController<C: NtpClock, SourceId: Hash + Eq + Copy + Debug
     sources: HashMap<SourceId, (Option<SourceSnapshot<SourceId>>, bool)>,
     clock: C,
     synchronization_config: SynchronizationConfig,
-    source_defaults_config: SourceDefaultsConfig,
     algo_config: AlgorithmConfig,
     freq_offset: f64,
     timedata: TimeSnapshot,
@@ -352,7 +351,6 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug + Send + 'static> TimeSyncC
     fn new(
         clock: C,
         synchronization_config: SynchronizationConfig,
-        source_defaults_config: SourceDefaultsConfig,
         algo_config: Self::AlgorithmConfig,
     ) -> Result<Self, C::Error> {
         // Setup clock
@@ -362,7 +360,6 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug + Send + 'static> TimeSyncC
             sources: HashMap::new(),
             clock,
             synchronization_config,
-            source_defaults_config,
             algo_config,
             freq_offset,
             desired_freq: 0.0,
@@ -377,12 +374,16 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug + Send + 'static> TimeSyncC
         Ok(())
     }
 
-    fn add_source(&mut self, id: SourceId) -> Self::NtpSourceController {
+    fn add_source(
+        &mut self,
+        id: SourceId,
+        source_config: SourceConfig,
+    ) -> Self::NtpSourceController {
         self.sources.insert(id, (None, false));
         KalmanSourceController::new(
             id,
             self.algo_config,
-            self.source_defaults_config,
+            source_config,
             AveragingBuffer::default(),
         )
     }
@@ -390,13 +391,14 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug + Send + 'static> TimeSyncC
     fn add_one_way_source(
         &mut self,
         id: SourceId,
+        source_config: SourceConfig,
         measurement_noise_estimate: f64,
     ) -> Self::OneWaySourceController {
         self.sources.insert(id, (None, false));
         KalmanSourceController::new(
             id,
             self.algo_config,
-            self.source_defaults_config,
+            source_config,
             measurement_noise_estimate,
         )
     }
@@ -495,14 +497,13 @@ mod tests {
             ..SynchronizationConfig::default()
         };
         let algo_config = AlgorithmConfig::default();
-        let source_defaults_config = SourceDefaultsConfig::default();
+        let source_config = SourceConfig::default();
         let mut algo = KalmanClockController::new(
             TestClock {
                 has_steered: RefCell::new(false),
                 current_time: NtpTimestamp::from_fixed_int(0),
             },
             synchronization_config,
-            source_defaults_config,
             algo_config,
         )
         .unwrap();
@@ -511,7 +512,7 @@ mod tests {
         // ignore startup steer of frequency.
         *algo.clock.has_steered.borrow_mut() = false;
 
-        let mut source = algo.add_source(0);
+        let mut source = algo.add_source(0, source_config);
         algo.source_update(0, true);
 
         assert!(algo.in_startup);
@@ -563,14 +564,12 @@ mod tests {
             step_threshold: 1800.0,
             ..Default::default()
         };
-        let source_defaults_config = SourceDefaultsConfig::default();
         let mut algo = KalmanClockController::<_, u32>::new(
             TestClock {
                 has_steered: RefCell::new(false),
                 current_time: NtpTimestamp::from_fixed_int(0),
             },
             synchronization_config,
-            source_defaults_config,
             algo_config,
         )
         .unwrap();
@@ -593,14 +592,12 @@ mod tests {
             ..SynchronizationConfig::default()
         };
         let algo_config = AlgorithmConfig::default();
-        let source_defaults_config = SourceDefaultsConfig::default();
         let mut algo = KalmanClockController::<_, u32>::new(
             TestClock {
                 has_steered: RefCell::new(false),
                 current_time: NtpTimestamp::from_fixed_int(0),
             },
             synchronization_config,
-            source_defaults_config,
             algo_config,
         )
         .unwrap();
@@ -614,14 +611,12 @@ mod tests {
     fn test_jumps_update_state() {
         let synchronization_config = SynchronizationConfig::default();
         let algo_config = AlgorithmConfig::default();
-        let source_defaults_config = SourceDefaultsConfig::default();
         let mut algo = KalmanClockController::<_, u32>::new(
             TestClock {
                 has_steered: RefCell::new(false),
                 current_time: NtpTimestamp::from_fixed_int(0),
             },
             synchronization_config,
-            source_defaults_config,
             algo_config,
         )
         .unwrap();
@@ -662,14 +657,12 @@ mod tests {
     fn test_freqsteer_update_state() {
         let synchronization_config = SynchronizationConfig::default();
         let algo_config = AlgorithmConfig::default();
-        let source_defaults_config = SourceDefaultsConfig::default();
         let mut algo = KalmanClockController::<_, u32>::new(
             TestClock {
                 has_steered: RefCell::new(false),
                 current_time: NtpTimestamp::from_fixed_int(0),
             },
             synchronization_config,
-            source_defaults_config,
             algo_config,
         )
         .unwrap();
@@ -707,14 +700,13 @@ mod tests {
             ..SynchronizationConfig::default()
         };
         let algo_config = AlgorithmConfig::default();
-        let source_defaults_config = SourceDefaultsConfig::default();
+        let source_config = SourceConfig::default();
         let mut algo = KalmanClockController::new(
             TestClock {
                 has_steered: RefCell::new(false),
                 current_time: NtpTimestamp::from_fixed_int(0),
             },
             synchronization_config,
-            source_defaults_config,
             algo_config,
         )
         .unwrap();
@@ -723,7 +715,7 @@ mod tests {
         // ignore startup steer of frequency.
         *algo.clock.has_steered.borrow_mut() = false;
 
-        let mut source = algo.add_source(0);
+        let mut source = algo.add_source(0, source_config);
         algo.source_update(0, true);
 
         let mut noise = 1e-9;
@@ -766,14 +758,13 @@ mod tests {
             ..SynchronizationConfig::default()
         };
         let algo_config = AlgorithmConfig::default();
-        let source_defaults_config = SourceDefaultsConfig::default();
+        let source_config = SourceConfig::default();
         let mut algo = KalmanClockController::new(
             TestClock {
                 has_steered: RefCell::new(false),
                 current_time: NtpTimestamp::from_fixed_int(0),
             },
             synchronization_config,
-            source_defaults_config,
             algo_config,
         )
         .unwrap();
@@ -782,7 +773,7 @@ mod tests {
         // ignore startup steer of frequency.
         *algo.clock.has_steered.borrow_mut() = false;
 
-        let mut source = algo.add_source(0);
+        let mut source = algo.add_source(0, source_config);
         algo.source_update(0, true);
 
         let mut noise = 1e-9;
