@@ -10,3 +10,4 @@
 *[CIDR]: Classless Inter-Domain Routing
 *[GPS]: Global Positioning System
 *[PPS]: Pulse Per Second
+*[ioctl]: input/output control

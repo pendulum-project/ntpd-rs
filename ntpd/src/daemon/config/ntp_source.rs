@@ -112,7 +112,7 @@ pub struct NtsPoolSourceConfig {
 
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
 #[serde(deny_unknown_fields)]
-pub struct SockSourceConfig {
+pub struct LocalSourceConfig {
     pub path: PathBuf,
     pub measurement_noise_estimate: NtpDuration,
 }
@@ -130,7 +130,9 @@ pub enum NtpSourceConfig {
     #[serde(rename = "nts-pool")]
     NtsPool(NtsPoolSourceConfig),
     #[serde(rename = "sock")]
-    Sock(SockSourceConfig),
+    Sock(LocalSourceConfig),
+    #[serde(rename = "pps")]
+    Pps(LocalSourceConfig),
 }
 
 /// A normalized address has a host and a port part. However, the host may be
@@ -375,6 +377,7 @@ mod tests {
             #[cfg(feature = "unstable_nts-pool")]
             NtpSourceConfig::NtsPool(c) => c.addr.to_string(),
             NtpSourceConfig::Sock(_c) => "".to_string(),
+            NtpSourceConfig::Pps(_c) => "".to_string(),
         }
     }
 
