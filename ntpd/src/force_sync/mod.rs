@@ -133,8 +133,8 @@ pub(crate) fn force_sync(config: Option<PathBuf>) -> std::io::Result<ExitCode> {
                 match source {
                     config::NtpSourceConfig::Standard(_)
                     | config::NtpSourceConfig::Nts(_)
-                    | config::NtpSourceConfig::Pps(_)
                     | config::NtpSourceConfig::Sock(_) => total_sources += 1,
+                    config::NtpSourceConfig::Pps(_) => {} // PPS sources don't count
                     config::NtpSourceConfig::Pool(PoolSourceConfig { count, .. }) => {
                         total_sources += count
                     }
