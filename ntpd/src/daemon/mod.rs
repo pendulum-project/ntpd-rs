@@ -5,6 +5,7 @@ mod local_ip_provider;
 mod ntp_source;
 pub mod nts_key_provider;
 pub mod observer;
+mod pps_source;
 mod server;
 mod sock_source;
 pub mod sockets;

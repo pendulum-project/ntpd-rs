@@ -378,6 +378,7 @@ dependencies = [
  "clock-steering",
  "libc",
  "ntp-proto",
+ "pps-time",
  "rand",
  "rustls 0.23.20",
  "serde",
@@ -448,6 +449,15 @@ name = "pin-project-lite"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "915a1e146535de9163f3987b8944ed8cf49a18bb0056bcebcdcece385cece4ff"
+
+[[package]]
+name = "pps-time"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9fd83821771762e636175906edff628576d8ca0777787df9545a699187cc247b"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "ppv-lite86"
