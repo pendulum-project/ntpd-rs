@@ -445,7 +445,7 @@ impl Config {
                 #[cfg(feature = "unstable_nts-pool")]
                 NtpSourceConfig::NtsPool(config) => count += config.count,
                 NtpSourceConfig::Sock(_) => count += 1,
-                NtpSourceConfig::Pps(_) => count += 1,
+                NtpSourceConfig::Pps(_) => {} // PPS sources don't count
             }
         }
         count
