@@ -1,4 +1,5 @@
 use crate::daemon::{
+    pps_source::PpsSourceTask,
     sock_source::SockSourceTask,
     spawn::{spawner_task, SourceCreateParameters},
 };
@@ -11,8 +12,9 @@ use super::{
     ntp_source::{MsgForSystem, SourceChannels, SourceTask, Wait},
     server::{ServerStats, ServerTask},
     spawn::{
-        nts::NtsSpawner, pool::PoolSpawner, sock::SockSpawner, standard::StandardSpawner, SourceId,
-        SourceRemovalReason, SpawnAction, SpawnEvent, Spawner, SpawnerId, SystemEvent,
+        nts::NtsSpawner, pool::PoolSpawner, pps::PpsSpawner, sock::SockSpawner,
+        standard::StandardSpawner, SourceId, SourceRemovalReason, SpawnAction, SpawnEvent, Spawner,
+        SpawnerId, SystemEvent,
     },
 };
 
@@ -149,6 +151,14 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper, Sourc
             NtpSourceConfig::Sock(cfg) => {
                 system
                     .add_spawner(SockSpawner::new(cfg.clone()))
+                    .map_err(|e| {
+                        tracing::error!("Could not spawn source: {}", e);
+                        std::io::Error::new(std::io::ErrorKind::Other, e)
+                    })?;
+            }
+            NtpSourceConfig::Pps(cfg) => {
+                system
+                    .add_spawner(PpsSpawner::new(cfg.clone()))
                     .map_err(|e| {
                         tracing::error!("Could not spawn source: {}", e);
                         std::io::Error::new(std::io::ErrorKind::Other, e)
@@ -519,6 +529,22 @@ impl<
                     .system
                     .create_sock_source(source_id, params.noise_estimate)?;
                 SockSourceTask::spawn(
+                    source_id,
+                    params.path.clone(),
+                    self.clock.clone(),
+                    SourceChannels {
+                        msg_for_system_sender: self.msg_for_system_tx.clone(),
+                        system_update_receiver: self.system_update_sender.subscribe(),
+                        source_snapshots: self.source_snapshots.clone(),
+                    },
+                    source,
+                );
+            }
+            SourceCreateParameters::Pps(ref params) => {
+                let source = self
+                    .system
+                    .create_pps_source(source_id, params.noise_estimate)?;
+                PpsSourceTask::spawn(
                     source_id,
                     params.path.clone(),
                     self.clock.clone(),
