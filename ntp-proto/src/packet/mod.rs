@@ -1352,6 +1352,7 @@ fn check_uid_extensionfield<'a, I: IntoIterator<Item = &'a ExtensionField<'a>>>(
 
 #[cfg(any(test, feature = "__internal-fuzz", feature = "__internal-test"))]
 impl NtpPacket<'_> {
+    #[must_use]
     pub fn test() -> Self {
         Self::default()
     }

@@ -110,7 +110,7 @@ impl<Controller: SourceController<MeasurementDelay = ()>> OneWaySource<Controlle
     }
 
     pub fn handle_message(&mut self, message: Controller::ControllerMessage) {
-        self.controller.handle_message(message)
+        self.controller.handle_message(message);
     }
 }
 
@@ -875,7 +875,9 @@ mod test {
                 std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH)?;
 
             Ok(NtpTimestamp::from_seconds_nanos_since_ntp_era(
-                EPOCH_OFFSET.wrapping_add(cur.as_secs() as u32),
+                EPOCH_OFFSET.wrapping_add(
+                    u32::try_from(cur.as_secs()).expect("Couldn't fit unix epoch inside u32"),
+                ),
                 cur.subsec_nanos(),
             ))
         }

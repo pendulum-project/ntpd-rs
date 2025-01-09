@@ -112,7 +112,7 @@ impl<C: NtpClock> SingleShotController<C> {
     }
 }
 
-pub(crate) fn force_sync(config: Option<PathBuf>) -> std::io::Result<ExitCode> {
+pub(crate) fn force_sync(config: Option<&PathBuf>) -> std::io::Result<ExitCode> {
     let config = initialize_logging_parse_config(Some(LogLevel::Warn), config);
 
     // Warn/error if the config is unreasonable. We do this after finishing
@@ -138,11 +138,11 @@ pub(crate) fn force_sync(config: Option<PathBuf>) -> std::io::Result<ExitCode> {
                     | config::NtpSourceConfig::Nts(_)
                     | config::NtpSourceConfig::Sock(_) => total_sources += 1,
                     config::NtpSourceConfig::Pool(PoolSourceConfig { count, .. }) => {
-                        total_sources += count
+                        total_sources += count;
                     }
                     #[cfg(feature = "unstable_nts-pool")]
                     config::NtpSourceConfig::NtsPool(NtsPoolSourceConfig { count, .. }) => {
-                        total_sources += count
+                        total_sources += count;
                     }
                 }
             }

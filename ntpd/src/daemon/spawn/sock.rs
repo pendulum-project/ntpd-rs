@@ -17,7 +17,7 @@ impl SockSpawner {
     pub fn new(config: SockSourceConfig) -> SockSpawner {
         SockSpawner {
             config,
-            id: Default::default(),
+            id: SpawnerId::default(),
             has_spawned: false,
         }
     }

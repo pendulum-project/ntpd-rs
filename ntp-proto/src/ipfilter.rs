@@ -185,7 +185,7 @@ impl IpFilter {
         for subnet in subnets {
             match subnet.addr {
                 IpAddr::V4(addr) => ipv4list.push((
-                    (u32::from_be_bytes(addr.octets()) as u128) << 96,
+                    u128::from(u32::from_be_bytes(addr.octets())) << 96,
                     subnet.mask,
                 )),
                 IpAddr::V6(addr) => {
@@ -214,7 +214,7 @@ impl IpFilter {
     /// Panics if `addr` has invalid octets.
     fn is_in4(&self, addr: Ipv4Addr) -> bool {
         self.ipv4_filter
-            .lookup((u32::from_be_bytes(addr.octets()) as u128) << 96)
+            .lookup(u128::from(u32::from_be_bytes(addr.octets())) << 96)
     }
 
     fn is_in6(&self, addr: Ipv6Addr) -> bool {

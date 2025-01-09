@@ -323,9 +323,9 @@ pub struct ObservabilityConfig {
 impl Default for ObservabilityConfig {
     fn default() -> Self {
         Self {
-            log_level: Default::default(),
+            log_level: Option::default(),
             ansi_colors: default_ansi_colors(),
-            observation_path: Default::default(),
+            observation_path: Option::default(),
             observation_permissions: default_observation_permissions(),
             metrics_exporter_listen: default_metrics_exporter_listen(),
         }
@@ -416,7 +416,7 @@ impl Config {
     }
 
     pub fn from_args(
-        file: Option<impl AsRef<Path>>,
+        file: Option<&impl AsRef<Path>>,
         sources: Vec<NtpSourceConfig>,
         servers: Vec<ServerConfig>,
     ) -> Result<Config, ConfigError> {
@@ -532,6 +532,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn test_config() {
         let config: Config =
             toml::from_str("[[source]]\nmode = \"server\"\naddress = \"example.com\"").unwrap();

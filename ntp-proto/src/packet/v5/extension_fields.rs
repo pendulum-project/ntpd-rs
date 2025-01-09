@@ -1,7 +1,9 @@
 use crate::io::NonBlockingWrite;
+use crate::packet::error::ParsingError;
 use crate::packet::v5::server_reference_id::BloomFilter;
 use crate::packet::ExtensionField;
 use std::borrow::Cow;
+use std::convert::Infallible;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Type {
@@ -119,7 +121,7 @@ impl ReferenceIdRequest {
         Ok(())
     }
 
-    pub fn decode(msg: &[u8]) -> Self {
+    pub fn decode(msg: &[u8]) -> Result<Self, ParsingError<Infallible>> {
         let payload_len =
             u16::try_from(msg.len()).expect("NTP fields can not be longer than u16::MAX");
         let offset_bytes: [u8; 2] = msg
@@ -128,10 +130,10 @@ impl ReferenceIdRequest {
             .try_into()
             .unwrap();
 
-        Self {
+        Ok(Self {
             payload_len,
             offset: u16::from_be_bytes(offset_bytes),
-        }
+        })
     }
 
     pub const fn offset(self) -> u16 {

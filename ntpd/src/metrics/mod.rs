@@ -254,7 +254,7 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
         w,
         "ntp_source_nts_cookies_available",
         "Number of unused cookies available for nts-enabled ntp exchanges",
-        MetricType::Gauge,
+        &MetricType::Gauge,
         None,
         collect_some_sources!(state, |p| p.nts_cookies),
     )?;

@@ -1,13 +1,13 @@
 #[cfg(feature = "rustls23")]
 mod rustls23_shim {
-    /// The intent of this ClientCertVerifier is that it accepts any connections that are either
+    /// The intent of this `ClientCertVerifier` is that it accepts any connections that are either
     /// a.) not presenting a client certificate
     /// b.) are presenting a well-formed, but otherwise not checked (against a trust root) client certificate
     ///
-    /// This is because RusTLS apparently doesn't accept every kind of self-signed certificate.
+    /// This is because `RusTLS` apparently doesn't accept every kind of self-signed certificate.
     ///
-    /// The only goal of this ClientCertVerifier is to achieve that, if a client presents a TLS certificate,
-    /// this certificate shows up in the .peer_certificates() for that connection.
+    /// The only goal of this `ClientCertVerifier` is to achieve that, if a client presents a TLS certificate,
+    /// this certificate shows up in the `.peer_certificates()` for that connection.
     #[cfg(feature = "nts-pool")]
     #[derive(Debug)]
     pub struct AllowAnyAnonymousOrCertificateBearingClient {
@@ -23,6 +23,7 @@ mod rustls23_shim {
 
     #[cfg(feature = "nts-pool")]
     impl AllowAnyAnonymousOrCertificateBearingClient {
+        #[must_use]
         pub fn new(provider: &CryptoProvider) -> Self {
             AllowAnyAnonymousOrCertificateBearingClient {
                 supported_algs: provider.signature_verification_algorithms,
@@ -93,6 +94,7 @@ mod rustls23_shim {
         pub use rustls_pemfile2::pkcs8_private_keys;
         pub use rustls_pemfile2::private_key;
 
+        #[must_use]
         pub fn rootstore_ref_shim(cert: &super::Certificate) -> super::Certificate {
             cert.clone()
         }
@@ -100,22 +102,26 @@ mod rustls23_shim {
 
     pub trait CloneKeyShim {}
 
+    #[must_use]
     pub fn client_config_builder(
     ) -> rustls23::ConfigBuilder<rustls23::ClientConfig, rustls23::WantsVerifier> {
         ClientConfig::builder()
     }
 
+    #[must_use]
     pub fn client_config_builder_with_protocol_versions(
         versions: &[&'static rustls23::SupportedProtocolVersion],
     ) -> rustls23::ConfigBuilder<rustls23::ClientConfig, rustls23::WantsVerifier> {
         ClientConfig::builder_with_protocol_versions(versions)
     }
 
+    #[must_use]
     pub fn server_config_builder(
     ) -> rustls23::ConfigBuilder<rustls23::ServerConfig, rustls23::WantsVerifier> {
         ServerConfig::builder()
     }
 
+    #[must_use]
     pub fn server_config_builder_with_protocol_versions(
         versions: &[&'static rustls23::SupportedProtocolVersion],
     ) -> rustls23::ConfigBuilder<rustls23::ServerConfig, rustls23::WantsVerifier> {
@@ -276,11 +282,11 @@ mod rustls21_shim {
         ) -> Result<Option<super::PrivateKey>, std::io::Error> {
             for item in std::iter::from_fn(|| rustls_pemfile1::read_one(rd).transpose()) {
                 match item {
-                    Ok(rustls_pemfile1::Item::RSAKey(key))
-                    | Ok(rustls_pemfile1::Item::PKCS8Key(key))
-                    | Ok(rustls_pemfile1::Item::ECKey(key)) => {
-                        return Ok(Some(super::PrivateKey(key)))
-                    }
+                    Ok(
+                        rustls_pemfile1::Item::RSAKey(key)
+                        | rustls_pemfile1::Item::PKCS8Key(key)
+                        | rustls_pemfile1::Item::ECKey(key),
+                    ) => return Ok(Some(super::PrivateKey(key))),
                     Err(e) => return Err(e),
                     _ => {}
                 }

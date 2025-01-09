@@ -118,10 +118,11 @@ impl KeySetProvider {
         let mut buf = [0; 64];
         reader.read_exact(&mut buf[0..20])?;
 
-        let time = Self::convert_to_system_time(&buf[0..8])?;
-        let id_offset = Self::convert_to_u32(&buf[8..12])?;
-        let primary = Self::convert_to_u32(&buf[12..16])?;
-        let len = Self::convert_to_u32(&buf[16..20])?;
+        let time = std::time::SystemTime::UNIX_EPOCH
+            + std::time::Duration::from_secs(u64::from_be_bytes(buf[0..8].try_into().unwrap()));
+        let id_offset = u32::from_be_bytes(buf[8..12].try_into().unwrap());
+        let primary = u32::from_be_bytes(buf[12..16].try_into().unwrap());
+        let len = u32::from_be_bytes(buf[16..20].try_into().unwrap());
 
         if primary >= len {
             return Err(std::io::Error::new(
@@ -174,23 +175,6 @@ impl KeySetProvider {
     #[must_use]
     pub fn get(&self) -> Arc<KeySet> {
         self.current.clone()
-    }
-
-    fn convert_to_system_time(bytes: &[u8]) -> std::io::Result<std::time::SystemTime> {
-        let time = u64::from_be_bytes(bytes.try_into().map_err(|_| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Invalid buffer for SystemTime",
-            )
-        })?);
-        Ok(std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(time))
-    }
-
-    fn convert_to_u32(bytes: &[u8]) -> std::io::Result<u32> {
-        let value = u32::from_be_bytes(bytes.try_into().map_err(|_| {
-            std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid buffer for u32")
-        })?);
-        Ok(value)
     }
 }
 

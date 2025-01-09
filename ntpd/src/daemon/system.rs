@@ -127,17 +127,12 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper, Sourc
                 system.add_spawner(NtsPoolSpawner::new(cfg.clone()));
             }
             NtpSourceConfig::Sock(cfg) => {
-                system
-                    .add_spawner(SockSpawner::new(cfg.clone()))
-                    .map_err(|e| {
-                        tracing::error!("Could not spawn source: {}", e);
-                        std::io::Error::new(std::io::ErrorKind::Other, e)
-                    })?;
+                system.add_spawner(SockSpawner::new(cfg.clone()));
             }
         }
     }
 
-    for server_config in server_configs {
+    for server_config in server_configs.iter() {
         system.add_server(server_config.to_owned());
     }
 

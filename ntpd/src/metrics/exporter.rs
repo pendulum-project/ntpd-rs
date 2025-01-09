@@ -110,6 +110,9 @@ impl NtpMetricsExporterOptions {
     }
 }
 
+/// # Errors
+///
+/// Returns 'Error' if arguments to program are invalid.
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let options = NtpMetricsExporterOptions::try_parse_from(std::env::args())?;
     match options.action {
@@ -121,22 +124,21 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("ntp-metrics-exporter {VERSION}");
             Ok(())
         }
-        MetricsAction::Run => run(options),
+        MetricsAction::Run => run(&options),
     }
 }
 
-fn run(options: NtpMetricsExporterOptions) -> Result<(), Box<dyn std::error::Error>> {
-    let config = initialize_logging_parse_config(None, options.config);
+fn run(options: &NtpMetricsExporterOptions) -> Result<(), Box<dyn std::error::Error>> {
+    let config = initialize_logging_parse_config(None, options.config.as_ref());
 
     Builder::new_current_thread().enable_all().build()?.block_on(async {
         let timeout = std::time::Duration::from_millis(1000);
 
-        let observation_socket_path = match config.observability.observation_path {
-            Some(path) => Arc::new(path),
-            None => {
-                eprintln!("An observation socket path must be configured using the observation-path option in the [observability] section of the configuration");
-                std::process::exit(1);
-            }
+        let observation_socket_path = if let Some(path) = config.observability.observation_path {
+             Arc::new(path)
+        } else {
+            eprintln!("An observation socket path must be configured using the observation-path option in the [observability] section of the configuration");
+            std::process::exit(1);
         };
 
         println!(
@@ -185,7 +187,7 @@ fn run(options: NtpMetricsExporterOptions) -> Result<(), Box<dyn std::error::Err
                 Err(e)
                     if matches!(
                         e.raw_os_error(),
-                        Some(ENFILE) | Some(EMFILE) | Some(ENOMEM) | Some(ENOBUFS)
+                        Some(ENFILE | EMFILE | ENOMEM | ENOBUFS)
                     ) =>
                 {
                     error!("Not enough resources available to accept incoming connection: {e}");

@@ -29,6 +29,9 @@ use self::tracing::LogLevel;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// # Errors
+///
+/// Returns 'Error' if arguments to program are invalid.
 pub fn main() -> Result<(), Box<dyn Error>> {
     let options = NtpDaemonOptions::try_parse_from(std::env::args())?;
 
@@ -39,7 +42,7 @@ pub fn main() -> Result<(), Box<dyn Error>> {
         config::NtpDaemonAction::Version => {
             eprintln!("ntp-daemon {VERSION}");
         }
-        config::NtpDaemonAction::Run => run(options)?,
+        config::NtpDaemonAction::Run => run(&options)?,
     }
 
     Ok(())
@@ -49,13 +52,13 @@ pub fn main() -> Result<(), Box<dyn Error>> {
 // log level based on the config if required.
 pub(crate) fn initialize_logging_parse_config(
     initial_log_level: Option<LogLevel>,
-    config_path: Option<PathBuf>,
+    config_path: Option<&PathBuf>,
 ) -> Config {
     let mut log_level = initial_log_level.unwrap_or_default();
 
     let config_tracing = crate::daemon::tracing::tracing_init(log_level, true);
     let config = ::tracing::subscriber::with_default(config_tracing, || {
-        match Config::from_args(config_path, vec![], vec![]) {
+        match Config::from_args(config_path.as_ref(), vec![], vec![]) {
             Ok(c) => c,
             Err(e) => {
                 // print to stderr because tracing is not yet setup
@@ -78,8 +81,8 @@ pub(crate) fn initialize_logging_parse_config(
     config
 }
 
-fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
-    let config = initialize_logging_parse_config(options.log_level, options.config);
+fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
+    let config = initialize_logging_parse_config(options.log_level, options.config.as_ref());
 
     let runtime = if config.servers.is_empty() && config.nts_ke.is_empty() {
         Builder::new_current_thread().enable_all().build()?

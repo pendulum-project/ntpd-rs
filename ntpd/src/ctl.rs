@@ -124,27 +124,30 @@ impl NtpCtlOptions {
     }
 }
 
-fn validate(config: Option<PathBuf>) -> std::io::Result<ExitCode> {
+fn validate(config: Option<&PathBuf>) -> ExitCode {
     // Late completion not needed, so ignore result.
     crate::daemon::tracing::tracing_init(LogLevel::Info, true).init();
-    match Config::from_args(config, vec![], vec![]) {
+    match Config::from_args(config.as_ref(), vec![], vec![]) {
         Ok(config) => {
             if config.check() {
                 eprintln!("Config looks good");
-                Ok(ExitCode::SUCCESS)
+                ExitCode::SUCCESS
             } else {
-                Ok(ExitCode::FAILURE)
+                ExitCode::FAILURE
             }
         }
         Err(e) => {
             eprintln!("Error: Could not load configuration: {e}");
-            Ok(ExitCode::FAILURE)
+            ExitCode::FAILURE
         }
     }
 }
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// # Errors
+///
+/// Returns 'Error' if arguments to program are invalid.
 pub fn main() -> std::io::Result<ExitCode> {
     let options = match NtpCtlOptions::try_parse_from(std::env::args()) {
         Ok(options) => options,
@@ -160,10 +163,10 @@ pub fn main() -> std::io::Result<ExitCode> {
             eprintln!("ntp-ctl {VERSION}");
             Ok(ExitCode::SUCCESS)
         }
-        NtpCtlAction::Validate => validate(options.config),
-        NtpCtlAction::ForceSync => force_sync::force_sync(options.config),
+        NtpCtlAction::Validate => Ok(validate(options.config.as_ref())),
+        NtpCtlAction::ForceSync => force_sync::force_sync(options.config.as_ref()),
         NtpCtlAction::Status => {
-            let config = Config::from_args(options.config, vec![], vec![]);
+            let config = Config::from_args(options.config.as_ref(), vec![], vec![]);
 
             if let Err(ref e) = config {
                 println!("Warning: Unable to load configuration file: {e}");
@@ -292,9 +295,12 @@ mod tests {
     use std::os::unix::prelude::PermissionsExt;
     use std::path::Path;
 
+    use ntp_proto::SystemSnapshot;
+
     use crate::{
         daemon::{
             config::ObservabilityConfig,
+            observer::ProgramData,
             sockets::{create_unix_socket_with_permissions, write_json},
         },
         test::alloc_port,
@@ -333,8 +339,8 @@ mod tests {
     #[tokio::test]
     async fn test_control_socket_source() -> std::io::Result<()> {
         let value = ObservableState {
-            program: Default::default(),
-            system: Default::default(),
+            program: ProgramData::default(),
+            system: SystemSnapshot::default(),
             sources: vec![],
             servers: vec![],
         };
@@ -351,8 +357,8 @@ mod tests {
     #[tokio::test]
     async fn test_control_socket_prometheus() -> std::io::Result<()> {
         let value = ObservableState {
-            program: Default::default(),
-            system: Default::default(),
+            program: ProgramData::default(),
+            system: SystemSnapshot::default(),
             sources: vec![],
             servers: vec![],
         };

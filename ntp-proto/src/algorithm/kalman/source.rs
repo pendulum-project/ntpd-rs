@@ -285,7 +285,7 @@ pub trait MeasurementNoiseEstimator {
     fn reset(&mut self) -> Self;
 
     // for SourceSnapshot
-    fn get_max_roundtrip(&self, samples: &i32) -> Option<f64>;
+    fn get_max_roundtrip(&self, samples: i32) -> Option<f64>;
     fn get_delay_mean(&self) -> f64;
 }
 
@@ -293,7 +293,7 @@ impl MeasurementNoiseEstimator for AveragingBuffer {
     type MeasurementDelay = NtpDuration;
 
     fn update(&mut self, delay: Self::MeasurementDelay) {
-        self.update(delay.to_seconds())
+        self.update(delay.to_seconds());
     }
 
     fn get_noise_estimate(&self) -> f64 {
@@ -312,8 +312,9 @@ impl MeasurementNoiseEstimator for AveragingBuffer {
         AveragingBuffer::default()
     }
 
-    fn get_max_roundtrip(&self, samples: &i32) -> Option<f64> {
-        self.data[..*samples as usize]
+    #[allow(clippy::cast_sign_loss)]
+    fn get_max_roundtrip(&self, samples: i32) -> Option<f64> {
+        self.data[..samples as usize]
             .iter()
             .copied()
             .fold(None, |v1, v2| {
@@ -351,7 +352,7 @@ impl MeasurementNoiseEstimator for f64 {
         *self
     }
 
-    fn get_max_roundtrip(&self, _samples: &i32) -> Option<f64> {
+    fn get_max_roundtrip(&self, _samples: i32) -> Option<f64> {
         Some(1.)
     }
 
@@ -712,12 +713,12 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
         }
     }
 
-    #[allow(clippy::cast_sign_loss)]
     fn snapshot<Index: Copy>(
         &self,
         index: Index,
         config: &AlgorithmConfig,
     ) -> Option<SourceSnapshot<Index>> {
+        #[allow(clippy::cast_sign_loss)]
         match &self.0 {
             SourceStateInner::Initial(InitialSourceFilter {
                 noise_estimator,
@@ -725,7 +726,7 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
                 last_measurement: Some(last_measurement),
                 samples,
             }) if *samples > 0 => {
-                let max_roundtrip = noise_estimator.get_max_roundtrip(samples)?;
+                let max_roundtrip = noise_estimator.get_max_roundtrip(*samples)?;
                 Some(SourceSnapshot {
                     index,
                     source_uncertainty: last_measurement.root_dispersion,
@@ -1043,7 +1044,7 @@ mod tests {
         D: Debug + Clone + Copy,
         N: MeasurementNoiseEstimator<MeasurementDelay = D> + Clone,
     >(
-        noise_estimator: N,
+        noise_estimator: &N,
         delay: D,
     ) {
         let base = NtpTimestamp::from_fixed_int(0);
@@ -1242,7 +1243,7 @@ mod tests {
     #[test]
     fn test_offset_steering_and_measurements_normal() {
         test_offset_steering_and_measurements(
-            AveragingBuffer {
+            &AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
             },
@@ -1252,7 +1253,7 @@ mod tests {
 
     #[test]
     fn test_offset_steering_and_measurements_constant_noise_estimate() {
-        test_offset_steering_and_measurements(1e-9, ());
+        test_offset_steering_and_measurements(&1e-9, ());
     }
 
     #[test]

@@ -130,12 +130,13 @@ impl<'a> ExtensionField<'a> {
 
     #[must_use]
     pub fn into_owned(self) -> ExtensionField<'static> {
+        use ExtensionField::{
+            InvalidNtsEncryptedField, NtsCookie, NtsCookiePlaceholder, UniqueIdentifier, Unknown,
+        };
+
         #[cfg(feature = "ntpv5")]
         use ExtensionField::{
             DraftIdentification, Padding, ReferenceIdRequest, ReferenceIdResponse,
-        };
-        use ExtensionField::{
-            InvalidNtsEncryptedField, NtsCookie, NtsCookiePlaceholder, UniqueIdentifier, Unknown,
         };
 
         match self {
@@ -171,12 +172,13 @@ impl<'a> ExtensionField<'a> {
         minimum_size: u16,
         version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
+        use ExtensionField::{
+            InvalidNtsEncryptedField, NtsCookie, NtsCookiePlaceholder, UniqueIdentifier, Unknown,
+        };
+
         #[cfg(feature = "ntpv5")]
         use ExtensionField::{
             DraftIdentification, Padding, ReferenceIdRequest, ReferenceIdResponse,
-        };
-        use ExtensionField::{
-            InvalidNtsEncryptedField, NtsCookie, NtsCookiePlaceholder, UniqueIdentifier, Unknown,
         };
 
         match self {
@@ -204,7 +206,9 @@ impl<'a> ExtensionField<'a> {
         }
     }
 
-    #[allow(clippy::missing_errors_doc)]
+    /// # Errors
+    ///
+    /// Returns `io::Error` if serialization fails.
     #[cfg(feature = "__internal-fuzz")]
     pub fn serialize_pub(
         &self,
@@ -469,7 +473,7 @@ impl<'a> ExtensionField<'a> {
 
     /// # Errors
     ///
-    /// Returns error if writing to the sink fails.
+    /// Returns `io::Error` if encoding fails.
     #[cfg(feature = "ntpv5")]
     pub fn encode_padding_field(
         mut w: impl NonBlockingWrite,
@@ -552,7 +556,7 @@ impl<'a> ExtensionField<'a> {
         type EF<'a> = ExtensionField<'a>;
         type TypeId = ExtensionFieldTypeId;
 
-        let message = raw.message_bytes;
+        let message = &raw.message_bytes;
 
         match raw.type_id {
             TypeId::UniqueIdentifier => EF::decode_unique_identifier(message),
@@ -563,7 +567,7 @@ impl<'a> ExtensionField<'a> {
                 EF::decode_draft_identification(message, extension_header_version)
             }
             #[cfg(feature = "ntpv5")]
-            TypeId::ReferenceIdRequest => Ok(ReferenceIdRequest::decode(message).into()),
+            TypeId::ReferenceIdRequest => Ok(ReferenceIdRequest::decode(message)?.into()),
             #[cfg(feature = "ntpv5")]
             TypeId::ReferenceIdResponse => Ok(ReferenceIdResponse::decode(message).into()),
             type_id => Ok(EF::decode_unknown(type_id.to_type_id(), message)),
@@ -669,11 +673,11 @@ impl<'a> ExtensionFieldData<'a> {
             RawExtensionField::V4_UNENCRYPTED_MINIMUM_SIZE,
             version,
         ) {
-            let (offset, field) = field.map_err(super::error::ParsingError::generalize)?;
+            let (offset, field) = field.map_err(super::ParsingError::generalize)?;
             size = offset + field.wire_length(version);
             if field.type_id == ExtensionFieldTypeId::NtsEncryptedField {
                 let encrypted = RawEncryptedField::from_message_bytes(field.message_bytes)
-                    .map_err(super::error::ParsingError::generalize)?;
+                    .map_err(super::ParsingError::generalize)?;
 
                 let Some(cipher) = cipher.get(&efdata.untrusted) else {
                     efdata.untrusted.push(InvalidNtsEncryptedField);
@@ -711,7 +715,7 @@ impl<'a> ExtensionFieldData<'a> {
                 efdata.authenticated.append(&mut efdata.untrusted);
             } else {
                 let field = ExtensionField::decode(&field, version)
-                    .map_err(super::error::ParsingError::generalize)?;
+                    .map_err(super::ParsingError::generalize)?;
                 efdata.untrusted.push(field);
             }
         }
@@ -746,23 +750,23 @@ impl<'a> RawEncryptedField<'a> {
     fn from_message_bytes(
         message_bytes: &'a [u8],
     ) -> Result<Self, ParsingError<std::convert::Infallible>> {
-        use ParsingError::IncorrectLength;
-
         let [b0, b1, b2, b3, ref rest @ ..] = message_bytes[..] else {
-            return Err(IncorrectLength);
+            return Err(ParsingError::IncorrectLength);
         };
 
         let nonce_length = u16::from_be_bytes([b0, b1]) as usize;
         let ciphertext_length = u16::from_be_bytes([b2, b3]) as usize;
 
-        let nonce = rest.get(..nonce_length).ok_or(IncorrectLength)?;
+        let nonce = rest
+            .get(..nonce_length)
+            .ok_or(ParsingError::IncorrectLength)?;
 
         // skip the lengths and the nonce. pad to a multiple of 4
         let ciphertext_start = 4 + next_multiple_of_u16(nonce_length as u16, 4) as usize;
 
         let ciphertext = message_bytes
             .get(ciphertext_start..ciphertext_start + ciphertext_length)
-            .ok_or(IncorrectLength)?;
+            .ok_or(ParsingError::IncorrectLength)?;
 
         Ok(Self { nonce, ciphertext })
     }

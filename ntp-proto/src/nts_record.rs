@@ -1229,9 +1229,6 @@ impl KeyExchangeClient {
         self.tls_connection.read_tls(rd)
     }
 
-    /// # Errors
-    ///
-    /// Returns error if getting the TLS bool `wants_write` fails.
     #[must_use]
     pub fn wants_write(&self) -> bool {
         self.tls_connection.wants_write()
@@ -1843,7 +1840,7 @@ impl KeyExchangeServer {
 
     fn decoder_done(
         mut self,
-        data: ServerKeyExchangeData,
+        data: &ServerKeyExchangeData,
     ) -> ControlFlow<Result<tls_utils::ServerConnection, KeyExchangeError>, Self> {
         let algorithm = data.algorithm;
         let protocol = data.protocol;
@@ -3029,7 +3026,7 @@ mod test {
         Certified,
     }
 
-    fn client_server_pair(client_type: ClientType) -> (KeyExchangeClient, KeyExchangeServer) {
+    fn client_server_pair(client_type: &ClientType) -> (KeyExchangeClient, KeyExchangeServer) {
         #[allow(unused)]
         use tls_utils::CloneKeyShim;
 

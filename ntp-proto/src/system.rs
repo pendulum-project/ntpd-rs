@@ -257,6 +257,9 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// Returns `NtpClock::Error` if controlling the `Controller` fails.
     pub fn create_sock_source(
         &mut self,
         id: SourceId,
@@ -273,6 +276,9 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         Ok(OneWaySource::new(controller))
     }
 
+    /// # Errors
+    ///
+    /// Returns `NtpClock::Error` if controlling the `Controller` fails.
     #[allow(clippy::type_complexity)]
     pub fn create_ntp_source(
         &mut self,
@@ -344,6 +350,13 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if Source does not exist.
+    ///
+    /// # Errors
+    ///
+    /// Returns `NtpClock::Error` if update on clock fails.
     pub fn handle_one_way_source_update(
         &mut self,
         id: SourceId,
@@ -420,6 +433,7 @@ mod tests {
 
     #[test]
     fn test_source_update() {
+        use crate::Reach;
         let mut system = SystemSnapshot::default();
 
         system.update_used_sources(

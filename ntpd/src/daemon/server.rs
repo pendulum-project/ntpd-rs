@@ -147,32 +147,31 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
         let mut cur_socket = None;
         loop {
             // open socket if it is not already open
-            let socket = match &mut cur_socket {
-                Some(socket) => socket,
-                None => {
-                    let new_socket = loop {
-                        let socket_res = open_ip(
-                            self.config.listen,
-                            timestamped_socket::socket::GeneralTimestampMode::SoftwareRecv,
-                        );
+            let socket = if let Some(socket) = &mut cur_socket {
+                socket
+            } else {
+                let new_socket = loop {
+                    let socket_res = open_ip(
+                        self.config.listen,
+                        timestamped_socket::socket::GeneralTimestampMode::SoftwareRecv,
+                    );
 
-                        match socket_res {
-                            Ok(socket) => break socket,
-                            Err(error) => {
-                                warn!(?error, ?self.config.listen, "Could not open server socket");
-                                tokio::time::sleep(self.network_wait_period).await;
-                            }
+                    match socket_res {
+                        Ok(socket) => break socket,
+                        Err(error) => {
+                            warn!(?error, ?self.config.listen, "Could not open server socket");
+                            tokio::time::sleep(self.network_wait_period).await;
                         }
-                    };
+                    }
+                };
 
-                    // system and keyset may now be wildly out of date, ensure they are always updated.
-                    self.server
-                        .update_system(*self.system_receiver.borrow_and_update());
-                    self.server
-                        .update_keyset(self.keyset.borrow_and_update().clone());
+                // system and keyset may now be wildly out of date, ensure they are always updated.
+                self.server
+                    .update_system(*self.system_receiver.borrow_and_update());
+                self.server
+                    .update_keyset(self.keyset.borrow_and_update().clone());
 
-                    cur_socket.insert(new_socket)
-                }
+                cur_socket.insert(new_socket)
             };
 
             let mut buf = [0_u8; MAX_PACKET_SIZE];
