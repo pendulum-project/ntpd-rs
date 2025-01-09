@@ -131,26 +131,26 @@ mod rustls23_shim {
 
 #[cfg(feature = "rustls22")]
 mod rustls22_shim {
-    
-    
+    pub use rustls22::server::NoClientAuth;
+    pub use rustls22::version::TLS13;
     pub use rustls22::ClientConfig;
-    
-    
-    
-    
+    pub use rustls22::ClientConnection;
+    pub use rustls22::ConnectionCommon;
+    pub use rustls22::Error;
+    pub use rustls22::RootCertStore;
     pub use rustls22::ServerConfig;
-    
-    
-    
+    pub use rustls22::ServerConnection;
+    pub use rustls_pki_types::InvalidDnsNameError;
+    pub use rustls_pki_types::ServerName;
 
     pub type Certificate = rustls_pki_types::CertificateDer<'static>;
     pub type PrivateKey = rustls_pki_types::PrivateKeyDer<'static>;
 
     pub mod pemfile {
-        
-        
-        
-        
+        pub use rustls_native_certs7::load_native_certs;
+        pub use rustls_pemfile2::certs;
+        pub use rustls_pemfile2::pkcs8_private_keys;
+        pub use rustls_pemfile2::private_key;
 
         pub fn rootstore_ref_shim(cert: &super::Certificate) -> super::Certificate {
             cert.clone()
@@ -184,19 +184,19 @@ mod rustls22_shim {
 
 #[cfg(feature = "rustls21")]
 mod rustls21_shim {
-    
-    
-    
-    
+    pub use rustls21::client::InvalidDnsNameError;
+    pub use rustls21::client::ServerName;
+    pub use rustls21::server::NoClientAuth;
+    pub use rustls21::version::TLS13;
     pub use rustls21::Certificate;
     pub use rustls21::ClientConfig;
-    
-    
-    
+    pub use rustls21::ClientConnection;
+    pub use rustls21::ConnectionCommon;
+    pub use rustls21::Error;
     pub use rustls21::PrivateKey;
-    
+    pub use rustls21::RootCertStore;
     pub use rustls21::ServerConfig;
-    
+    pub use rustls21::ServerConnection;
 
     pub fn client_config_builder(
     ) -> rustls21::ConfigBuilder<rustls21::ClientConfig, rustls21::WantsVerifier> {
