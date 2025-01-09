@@ -61,6 +61,18 @@ The NTS protocol uses a TLS handshake to exchange secrets with a server
 to allow verifying that NTP messages have not been tampered with.
 Note that the TLS protocol requires that both the client and server have
 a rough idea of the current time.
+.TP
+\f[V]sock\f[R]
+A sock source connects to a GPSd socket to get timing data from GPS
+receivers.
+Note that GPSd must be (re-)started after starting ntpd-rs for GPSd to
+connect to the socket.
+.TP
+\f[V]pps\f[R]
+A PPS source connects to a Pulse Per Second device, which is by default
+assumed to send a pulse every rounded second.
+As these devices only provide periodic data, they do not count towards
+\f[V]minimum-agreeing-sources\f[R].
 .SH CONFIGURATION
 .SS \f[V][source-defaults]\f[R]
 .PP
@@ -96,7 +108,7 @@ Note that a pool counts as multiple time sources.
 .TP
 \f[V]mode\f[R] = \f[I]mode\f[R]
 Specify one of the source modes that ntpd-rs supports: \f[V]server\f[R],
-\f[V]pool\f[R] or \f[V]nts\f[R].
+\f[V]pool\f[R], \f[V]nts\f[R], \f[V]sock\f[R] or \f[V]pps\f[R].
 For a description of the different source modes, see the \f[I]SOURCE
 MODES\f[R] section.
 .TP
