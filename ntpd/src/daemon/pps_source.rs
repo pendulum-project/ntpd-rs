@@ -89,7 +89,7 @@ where
                             stratum: 0,
                             root_delay: NtpDuration::ZERO,
                             root_dispersion: NtpDuration::ZERO,
-                            leap: NtpLeapIndicator::Unknown,
+                            leap: NtpLeapIndicator::NoWarning,
                             precision: 0,
                         };
 
