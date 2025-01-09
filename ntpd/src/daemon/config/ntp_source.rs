@@ -28,7 +28,7 @@ where
     }
 }
 
-#[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
+#[derive(Deserialize, Debug, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct StandardSource {
     pub address: NtpAddress,
@@ -37,7 +37,7 @@ pub struct StandardSource {
     pub ntp_version: Option<NtpVersion>,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
+#[derive(Debug, Deserialize, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct NtsSourceConfig {
     pub address: NtsKeAddress,
@@ -73,7 +73,7 @@ fn default_certificate_authorities() -> Arc<[Certificate]> {
     Arc::from([])
 }
 
-#[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
+#[derive(Deserialize, Debug, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct PoolSourceConfig {
     #[serde(rename = "address")]
@@ -92,7 +92,7 @@ fn max_sources_default() -> usize {
 }
 
 #[cfg(feature = "unstable_nts-pool")]
-#[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
+#[derive(Deserialize, Debug, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct NtsPoolSourceConfig {
     #[serde(rename = "address")]
@@ -110,27 +110,27 @@ pub struct NtsPoolSourceConfig {
     pub ntp_version: Option<NtpVersion>,
 }
 
-#[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
+#[derive(Deserialize, Debug, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct SockSourceConfig {
     pub path: PathBuf,
     pub measurement_noise_estimate: NtpDuration,
 }
 
-#[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
+#[derive(Deserialize, Debug, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct PpsSourceConfig {
     pub path: PathBuf,
     pub measurement_noise_estimate: NtpDuration,
     #[serde(default = "default_period")]
-    pub period: NtpDuration,
+    pub period: f64,
 }
 
-fn default_period() -> NtpDuration {
-    NtpDuration::from_seconds(1.)
+fn default_period() -> f64 {
+    1.
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
+#[derive(Debug, Deserialize, PartialEq, Clone)]
 #[serde(tag = "mode")]
 pub enum NtpSourceConfig {
     #[serde(rename = "server")]
