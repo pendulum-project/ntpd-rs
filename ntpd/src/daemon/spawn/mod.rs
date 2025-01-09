@@ -134,8 +134,8 @@ impl SpawnAction {
 #[derive(Debug)]
 pub enum SourceCreateParameters {
     Ntp(NtpSourceCreateParameters),
-    Sock(LocalSourceCreateParameters),
-    Pps(LocalSourceCreateParameters),
+    Sock(SockSourceCreateParameters),
+    Pps(PpsSourceCreateParameters),
 }
 
 impl SourceCreateParameters {
@@ -166,10 +166,18 @@ pub struct NtpSourceCreateParameters {
 }
 
 #[derive(Debug)]
-pub struct LocalSourceCreateParameters {
+pub struct SockSourceCreateParameters {
     pub id: SourceId,
     pub path: PathBuf,
     pub noise_estimate: f64,
+}
+
+#[derive(Debug)]
+pub struct PpsSourceCreateParameters {
+    pub id: SourceId,
+    pub path: PathBuf,
+    pub noise_estimate: f64,
+    pub period: f64,
 }
 
 #[async_trait::async_trait]

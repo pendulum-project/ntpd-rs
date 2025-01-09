@@ -78,7 +78,6 @@ where
                         };
 
                         let offset = f64::from(-data.info.assert_tu.nsec) / 1_000_000_000.;
-                        let offset = if offset < -0.5 { offset + 1. } else { offset };
                         debug!("offset: {}", offset);
 
                         let measurement = Measurement {

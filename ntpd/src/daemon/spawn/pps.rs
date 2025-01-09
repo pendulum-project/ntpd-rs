@@ -1,20 +1,20 @@
 use tokio::sync::mpsc;
 
-use crate::daemon::config::LocalSourceConfig;
+use crate::daemon::config::PpsSourceConfig;
 
 use super::{
-    standard::StandardSpawnError, LocalSourceCreateParameters, SourceCreateParameters, SourceId,
+    standard::StandardSpawnError, PpsSourceCreateParameters, SourceCreateParameters, SourceId,
     SourceRemovalReason, SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId,
 };
 
 pub struct PpsSpawner {
-    config: LocalSourceConfig,
+    config: PpsSourceConfig,
     id: SpawnerId,
     has_spawned: bool,
 }
 
 impl PpsSpawner {
-    pub fn new(config: LocalSourceConfig) -> PpsSpawner {
+    pub fn new(config: PpsSourceConfig) -> PpsSpawner {
         PpsSpawner {
             config,
             id: Default::default(),
@@ -34,10 +34,11 @@ impl Spawner for PpsSpawner {
         action_tx
             .send(SpawnEvent::new(
                 self.id,
-                SpawnAction::Create(SourceCreateParameters::Pps(LocalSourceCreateParameters {
+                SpawnAction::Create(SourceCreateParameters::Pps(PpsSourceCreateParameters {
                     id: SourceId::new(),
                     path: self.config.path.clone(),
                     noise_estimate: self.config.measurement_noise_estimate.to_seconds(),
+                    period: self.config.period.to_seconds(),
                 })),
             ))
             .await?;
@@ -79,7 +80,7 @@ mod tests {
 
     use crate::{
         daemon::{
-            config::LocalSourceConfig,
+            config::PpsSourceConfig,
             spawn::{pps::PpsSpawner, SourceCreateParameters, SpawnAction, Spawner},
             system::MESSAGE_BUFFER_SIZE,
         },
@@ -90,9 +91,10 @@ mod tests {
     async fn creates_a_source() {
         let socket_path = std::env::temp_dir().join(format!("ntp-test-stream-{}", alloc_port()));
         let noise_estimate = 1e-6;
-        let mut spawner = PpsSpawner::new(LocalSourceConfig {
+        let mut spawner = PpsSpawner::new(PpsSourceConfig {
             path: socket_path.clone(),
             measurement_noise_estimate: NtpDuration::from_seconds(noise_estimate),
+            period: NtpDuration::from_seconds(1.),
         });
         let spawner_id = spawner.get_id();
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
