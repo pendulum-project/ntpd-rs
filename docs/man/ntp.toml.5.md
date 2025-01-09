@@ -42,6 +42,16 @@ with any of these options:
     requires that both the client and server have a rough idea of the current
     time.
 
+`sock`
+:   A sock source connects to a GPSd socket to get timing data from GPS
+    receivers. Note that GPSd must be (re-)started after starting ntpd-rs for
+    GPSd to connect to the socket.
+
+`pps`
+:   A PPS source connects to a Pulse Per Second device, which is by default
+    assumed to send a pulse every rounded second. As these devices only
+    provide periodic data, they do not count towards `minimum-agreeing-sources`.
+
 # CONFIGURATION
 
 ## `[source-defaults]`
@@ -71,9 +81,9 @@ synchronized to the local clock. Note that a pool counts as multiple time
 sources.
 
 `mode` = *mode*
-:   Specify one of the source modes that ntpd-rs supports: `server`, `pool` or
-    `nts`. For a description of the different source modes, see the
-    *SOURCE MODES* section.
+:   Specify one of the source modes that ntpd-rs supports: `server`, `pool`,
+    `nts`, `sock` or `pps`. For a description of the different source modes, see
+    the *SOURCE MODES* section.
 
 `address` = *address*
 :   Specify the remote address of the source. For server sources this will be
