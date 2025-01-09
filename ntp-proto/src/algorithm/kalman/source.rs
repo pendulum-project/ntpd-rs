@@ -128,8 +128,8 @@ impl KalmanState {
         wander: f64,
         period: Option<f64>,
     ) -> KalmanState {
-        debug_assert!(!time.is_before(self.time));
         if time.is_before(self.time) {
+            debug!("Time {:?} is before my time {:?}", time, self.time);
             return *self;
         }
 
