@@ -158,7 +158,7 @@ where
         match selected {
             SelectResult::Recv(result) => {
                 tracing::debug!("accept packet");
-                match accept_packet(result, &buf, &self.clock) {
+                match accept_packet(result, buf, &self.clock) {
                     AcceptResult::Accept(packet, recv_timestamp) => {
                         let Some(send_timestamp) = self.last_send_timestamp else {
                             debug!("we received a message without having sent one; discarding");
@@ -178,7 +178,7 @@ where
                                 self.index,
                                 self.source.observe(self.name.clone(), self.index),
                             );
-                        return Some(actions);
+                        Some(actions)
                     }
                     AcceptResult::NetworkGone => {
                         self.channels
@@ -191,11 +191,9 @@ where
                             .write()
                             .expect("Unexpected poisoned mutex")
                             .remove(&self.index);
-                        return None;
+                        None
                     }
-                    AcceptResult::Ignore => {
-                        return Some(NtpSourceActionIterator::default());
-                    }
+                    AcceptResult::Ignore => Some(NtpSourceActionIterator::default()),
                 }
             }
             SelectResult::Timer => {
@@ -209,7 +207,7 @@ where
                         self.index,
                         self.source.observe(self.name.clone(), self.index),
                     );
-                return Some(actions);
+                Some(actions)
             }
             SelectResult::SystemUpdate(result) => match result {
                 Ok(update) => {
@@ -222,11 +220,11 @@ where
                             self.index,
                             self.source.observe(self.name.clone(), self.index),
                         );
-                    return Some(actions);
+                    Some(actions)
                 }
-                Err(_) => return Some(NtpSourceActionIterator::default()),
+                Err(_) => Some(NtpSourceActionIterator::default()),
             },
-        };
+        }
     }
 
     async fn handle_actions(
@@ -268,26 +266,24 @@ where
                         Err(error) => {
                             warn!(?error, "poll message could not be sent");
 
-                            match error.raw_os_error() {
-                                Some(
-                                    libc::EHOSTDOWN
-                                    | libc::EHOSTUNREACH
-                                    | libc::ENETDOWN
-                                    | libc::ENETUNREACH,
-                                ) => {
-                                    self.channels
-                                        .msg_for_system_sender
-                                        .send(MsgForSystem::NetworkIssue(self.index))
-                                        .await
-                                        .ok();
-                                    self.channels
-                                        .source_snapshots
-                                        .write()
-                                        .expect("Unexpected poisoned mutex")
-                                        .remove(&self.index);
-                                    return;
-                                }
-                                _ => {}
+                            if let Some(
+                                libc::EHOSTDOWN
+                                | libc::EHOSTUNREACH
+                                | libc::ENETDOWN
+                                | libc::ENETUNREACH,
+                            ) = error.raw_os_error()
+                            {
+                                self.channels
+                                    .msg_for_system_sender
+                                    .send(MsgForSystem::NetworkIssue(self.index))
+                                    .await
+                                    .ok();
+                                self.channels
+                                    .source_snapshots
+                                    .write()
+                                    .expect("Unexpected poisoned mutex")
+                                    .remove(&self.index);
+                                return;
                             }
                         }
                         Ok(opt_send_timestamp) => {
@@ -598,6 +594,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::type_complexity)]
     fn test_startup<T: Wait>() -> (
         SourceTask<TestClock, TwoWayKalmanSourceController<SourceId>, T>,
         Socket<SocketAddr, Open>,

@@ -1656,9 +1656,6 @@ impl KeyExchangeServer {
         self.tls_connection.read_tls(rd)
     }
 
-    /// # Errors
-    ///
-    /// Returns error if getting the TLS bool `wants_write` fails.
     #[must_use]
     pub fn wants_write(&self) -> bool {
         self.tls_connection.wants_write()
