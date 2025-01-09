@@ -25,7 +25,8 @@ enum Unit {
 
 impl Unit {
     #[allow(clippy::unused_self)]
-    fn as_str(&self) -> &str {
+    #[allow(clippy::trivially_copy_pass_by_ref)]
+    fn as_str(&self) -> &'static str {
         "seconds"
     }
 }

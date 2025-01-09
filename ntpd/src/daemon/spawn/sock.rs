@@ -67,7 +67,7 @@ impl Spawner for SockSpawner {
         self.config.path.display().to_string()
     }
 
-    fn get_description(&self) -> &str {
+    fn get_description(&self) -> &'static str {
         "sock"
     }
 }

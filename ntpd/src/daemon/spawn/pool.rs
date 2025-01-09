@@ -129,7 +129,7 @@ impl Spawner for PoolSpawner {
         format!("{} ({})", &*self.config.addr, self.config.count)
     }
 
-    fn get_description(&self) -> &str {
+    fn get_description(&self) -> &'static str {
         "pool"
     }
 }
