@@ -38,7 +38,7 @@ impl Spawner for PpsSpawner {
                     id: SourceId::new(),
                     path: self.config.path.clone(),
                     noise_estimate: self.config.measurement_noise_estimate.to_seconds(),
-                    period: self.config.period.to_seconds(),
+                    period: self.config.period,
                 })),
             ))
             .await?;
@@ -94,7 +94,7 @@ mod tests {
         let mut spawner = PpsSpawner::new(PpsSourceConfig {
             path: socket_path.clone(),
             measurement_noise_estimate: NtpDuration::from_seconds(noise_estimate),
-            period: NtpDuration::from_seconds(1.),
+            period: 1.,
         });
         let spawner_id = spawner.get_id();
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
