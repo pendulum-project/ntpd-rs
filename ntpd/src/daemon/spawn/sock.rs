@@ -1,20 +1,20 @@
 use tokio::sync::mpsc;
 
-use crate::daemon::config::LocalSourceConfig;
+use crate::daemon::config::SockSourceConfig;
 
 use super::{
-    standard::StandardSpawnError, LocalSourceCreateParameters, SourceCreateParameters, SourceId,
+    standard::StandardSpawnError, SockSourceCreateParameters, SourceCreateParameters, SourceId,
     SourceRemovalReason, SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId,
 };
 
 pub struct SockSpawner {
-    config: LocalSourceConfig,
+    config: SockSourceConfig,
     id: SpawnerId,
     has_spawned: bool,
 }
 
 impl SockSpawner {
-    pub fn new(config: LocalSourceConfig) -> SockSpawner {
+    pub fn new(config: SockSourceConfig) -> SockSpawner {
         SockSpawner {
             config,
             id: Default::default(),
@@ -34,7 +34,7 @@ impl Spawner for SockSpawner {
         action_tx
             .send(SpawnEvent::new(
                 self.id,
-                SpawnAction::Create(SourceCreateParameters::Sock(LocalSourceCreateParameters {
+                SpawnAction::Create(SourceCreateParameters::Sock(SockSourceCreateParameters {
                     id: SourceId::new(),
                     path: self.config.path.clone(),
                     noise_estimate: self.config.measurement_noise_estimate.to_seconds(),
@@ -79,7 +79,7 @@ mod tests {
 
     use crate::{
         daemon::{
-            config::LocalSourceConfig,
+            config::SockSourceConfig,
             spawn::{sock::SockSpawner, SourceCreateParameters, SpawnAction, Spawner},
             system::MESSAGE_BUFFER_SIZE,
         },
@@ -90,7 +90,7 @@ mod tests {
     async fn creates_a_source() {
         let socket_path = std::env::temp_dir().join(format!("ntp-test-stream-{}", alloc_port()));
         let noise_estimate = 1e-6;
-        let mut spawner = SockSpawner::new(LocalSourceConfig {
+        let mut spawner = SockSpawner::new(SockSourceConfig {
             path: socket_path.clone(),
             measurement_noise_estimate: NtpDuration::from_seconds(noise_estimate),
         });

@@ -112,9 +112,22 @@ pub struct NtsPoolSourceConfig {
 
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
 #[serde(deny_unknown_fields)]
-pub struct LocalSourceConfig {
+pub struct SockSourceConfig {
     pub path: PathBuf,
     pub measurement_noise_estimate: NtpDuration,
+}
+
+#[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct PpsSourceConfig {
+    pub path: PathBuf,
+    pub measurement_noise_estimate: NtpDuration,
+    #[serde(default = "default_period")]
+    pub period: NtpDuration,
+}
+
+fn default_period() -> NtpDuration {
+    NtpDuration::from_seconds(1.)
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
@@ -130,9 +143,9 @@ pub enum NtpSourceConfig {
     #[serde(rename = "nts-pool")]
     NtsPool(NtsPoolSourceConfig),
     #[serde(rename = "sock")]
-    Sock(LocalSourceConfig),
+    Sock(SockSourceConfig),
     #[serde(rename = "pps")]
-    Pps(LocalSourceConfig),
+    Pps(PpsSourceConfig),
 }
 
 /// A normalized address has a host and a port part. However, the host may be

@@ -541,9 +541,11 @@ impl<
                 );
             }
             SourceCreateParameters::Pps(ref params) => {
-                let source = self
-                    .system
-                    .create_pps_source(source_id, params.noise_estimate)?;
+                let source = self.system.create_pps_source(
+                    source_id,
+                    params.noise_estimate,
+                    params.period,
+                )?;
                 PpsSourceTask::spawn(
                     source_id,
                     params.path.clone(),
