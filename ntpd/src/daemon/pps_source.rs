@@ -35,6 +35,7 @@ pub(crate) struct PpsSourceTask<
     index: SourceId,
     clock: C,
     channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
+    path: PathBuf,
     source: OneWaySource<Controller>,
     fetch_receiver: mpsc::Receiver<pps_time::pps::pps_fdata>,
 }
@@ -102,11 +103,25 @@ where
                             },
                             message: controller_message,
                         };
+
                         self.channels
                             .msg_for_system_sender
                             .send(MsgForSystem::OneWaySourceUpdate(self.index, update))
                             .await
                             .ok();
+
+                        self.channels
+                            .source_snapshots
+                            .write()
+                            .expect("Unexpected poisoned mutex")
+                            .insert(
+                                self.index,
+                                self.source.observe(
+                                    "PPS device".to_string(),
+                                    self.path.display().to_string(),
+                                    self.index,
+                                ),
+                            );
                     }
                     None => {
                         warn!("Did not receive any new PPS data");
@@ -134,7 +149,7 @@ where
         channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
         source: OneWaySource<Controller>,
     ) -> tokio::task::JoinHandle<()> {
-        let pps = PpsDevice::new(device_path).expect("Could not open PPS device");
+        let pps = PpsDevice::new(device_path.clone()).expect("Could not open PPS device");
         let cap = pps.get_cap().expect("Could not get PPS capabilities");
         if cap & pps_time::pps::PPS_CANWAIT == 0 {
             panic!("PPS device does not support blocking calls")
@@ -154,6 +169,7 @@ where
                     index,
                     clock,
                     channels,
+                    path: device_path,
                     source,
                     fetch_receiver,
                 };

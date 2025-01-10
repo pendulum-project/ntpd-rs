@@ -86,6 +86,7 @@ pub(crate) struct SockSourceTask<
     index: SourceId,
     socket: UnixDatagram,
     clock: C,
+    path: PathBuf,
     channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
     source: OneWaySource<Controller>,
 }
@@ -174,6 +175,19 @@ where
                             .send(MsgForSystem::OneWaySourceUpdate(self.index, update))
                             .await
                             .ok();
+
+                        self.channels
+                            .source_snapshots
+                            .write()
+                            .expect("Unexpected poisoned mutex")
+                            .insert(
+                                self.index,
+                                self.source.observe(
+                                    "GPSd socket".to_string(),
+                                    self.path.display().to_string(),
+                                    self.index,
+                                ),
+                            );
                     }
                     Err(e) => {
                         error!("Error deserializing sample: {}", e);
@@ -201,13 +215,14 @@ where
         channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
         source: OneWaySource<Controller>,
     ) -> tokio::task::JoinHandle<()> {
-        let socket = create_socket(socket_path).expect("Could not create socket");
+        let socket = create_socket(&socket_path).expect("Could not create socket");
         tokio::spawn(
             (async move {
                 let mut process = SockSourceTask {
                     index,
                     socket,
                     clock,
+                    path: socket_path,
                     channels,
                     source,
                 };
