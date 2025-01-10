@@ -452,9 +452,9 @@ checksum = "915a1e146535de9163f3987b8944ed8cf49a18bb0056bcebcdcece385cece4ff"
 
 [[package]]
 name = "pps-time"
-version = "0.2.1"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8917656f350694551f96436b0567dab4b61d3ed45fe541d434d8be1ff2f983d0"
+checksum = "793e7140c7d82abaf0f823aa041ccc01f537d125c671329227928a256797f71e"
 dependencies = [
  "libc",
 ]
