@@ -37,7 +37,7 @@ impl Spawner for PpsSpawner {
                 SpawnAction::Create(SourceCreateParameters::Pps(PpsSourceCreateParameters {
                     id: SourceId::new(),
                     path: self.config.path.clone(),
-                    noise_estimate: self.config.measurement_noise_estimate.to_seconds(),
+                    noise_estimate: self.config.measurement_noise_estimate,
                     period: self.config.period,
                 })),
             ))
@@ -75,7 +75,6 @@ impl Spawner for PpsSpawner {
 
 #[cfg(test)]
 mod tests {
-    use ntp_proto::NtpDuration;
     use tokio::sync::mpsc;
 
     use crate::{
@@ -93,7 +92,7 @@ mod tests {
         let noise_estimate = 1e-6;
         let mut spawner = PpsSpawner::new(PpsSourceConfig {
             path: socket_path.clone(),
-            measurement_noise_estimate: NtpDuration::from_seconds(noise_estimate),
+            measurement_noise_estimate: noise_estimate,
             period: 1.,
         });
         let spawner_id = spawner.get_id();
