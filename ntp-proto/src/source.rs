@@ -111,6 +111,23 @@ impl<Controller: SourceController<MeasurementDelay = ()>> OneWaySource<Controlle
     pub fn handle_message(&mut self, message: Controller::ControllerMessage) {
         self.controller.handle_message(message)
     }
+
+    pub fn observe<SourceId>(
+        &self,
+        name: String,
+        address: String,
+        id: SourceId,
+    ) -> ObservableSourceState<SourceId> {
+        ObservableSourceState {
+            timedata: self.controller.observe(),
+            unanswered_polls: 0,
+            poll_interval: crate::time_types::PollInterval::from_byte(0),
+            nts_cookies: None,
+            name,
+            address,
+            id,
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
