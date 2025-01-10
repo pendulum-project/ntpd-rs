@@ -7,7 +7,6 @@ use std::{
 };
 
 use ntp_proto::tls_utils::Certificate;
-use ntp_proto::NtpDuration;
 #[cfg(feature = "unstable_ntpv5")]
 use ntp_proto::NtpVersion;
 use serde::{de, Deserialize, Deserializer};
@@ -114,14 +113,14 @@ pub struct NtsPoolSourceConfig {
 #[serde(deny_unknown_fields)]
 pub struct SockSourceConfig {
     pub path: PathBuf,
-    pub measurement_noise_estimate: NtpDuration,
+    pub measurement_noise_estimate: f64,
 }
 
 #[derive(Deserialize, Debug, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct PpsSourceConfig {
     pub path: PathBuf,
-    pub measurement_noise_estimate: NtpDuration,
+    pub measurement_noise_estimate: f64,
     #[serde(default = "default_period")]
     pub period: f64,
 }

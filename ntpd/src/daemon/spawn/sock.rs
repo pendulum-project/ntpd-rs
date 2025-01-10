@@ -37,7 +37,7 @@ impl Spawner for SockSpawner {
                 SpawnAction::Create(SourceCreateParameters::Sock(SockSourceCreateParameters {
                     id: SourceId::new(),
                     path: self.config.path.clone(),
-                    noise_estimate: self.config.measurement_noise_estimate.to_seconds(),
+                    noise_estimate: self.config.measurement_noise_estimate,
                 })),
             ))
             .await?;
@@ -74,7 +74,6 @@ impl Spawner for SockSpawner {
 
 #[cfg(test)]
 mod tests {
-    use ntp_proto::NtpDuration;
     use tokio::sync::mpsc;
 
     use crate::{
@@ -92,7 +91,7 @@ mod tests {
         let noise_estimate = 1e-6;
         let mut spawner = SockSpawner::new(SockSourceConfig {
             path: socket_path.clone(),
-            measurement_noise_estimate: NtpDuration::from_seconds(noise_estimate),
+            measurement_noise_estimate: noise_estimate,
         });
         let spawner_id = spawner.get_id();
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
