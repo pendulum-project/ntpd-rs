@@ -117,7 +117,7 @@ impl NtsRecord {
                 }
             }
             NtsRecord::Server { name, .. } => {
-                if name.as_bytes().len() >= (u16::MAX as usize) {
+                if name.len() >= (u16::MAX as usize) {
                     return Err(WriteError::TooLong);
                 }
             }
