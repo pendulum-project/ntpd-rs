@@ -61,6 +61,7 @@ impl NtpLeapIndicator {
         }
     }
 
+    #[must_use]
     pub fn is_synchronized(&self) -> bool {
         !matches!(self, Self::Unknown)
     }
@@ -154,7 +155,7 @@ pub struct RequestIdentifier {
 impl NtpHeaderV3V4 {
     const WIRE_LENGTH: usize = 48;
 
-    /// A new, empty NtpHeader
+    /// A new, empty `NtpHeader`
     fn new() -> Self {
         Self {
             leap: NtpLeapIndicator::NoWarning,
@@ -172,6 +173,7 @@ impl NtpHeaderV3V4 {
         }
     }
 
+    #[allow(clippy::cast_possible_wrap)]
     fn deserialize(data: &[u8]) -> Result<(Self, usize), ParsingError<std::convert::Infallible>> {
         if data.len() < Self::WIRE_LENGTH {
             return Err(ParsingError::IncorrectLength);
@@ -196,6 +198,7 @@ impl NtpHeaderV3V4 {
         ))
     }
 
+    #[allow(clippy::cast_sign_loss)]
     fn serialize(&self, mut w: impl NonBlockingWrite, version: u8) -> std::io::Result<()> {
         w.write_all(&[(self.leap.to_bits() << 6) | (version << 3) | self.mode.to_bits()])?;
         w.write_all(&[self.stratum, self.poll.as_byte(), self.precision as u8])?;
@@ -249,7 +252,7 @@ impl NtpHeaderV3V4 {
             // Timestamp must be last to make it as accurate as possible.
             transmit_timestamp: clock.now().expect("Failed to read time"),
             leap: system.time_snapshot.leap_indicator,
-            reference_timestamp: Default::default(),
+            reference_timestamp: NtpTimestamp::default(),
         }
     }
 
@@ -285,14 +288,19 @@ impl NtpHeaderV3V4 {
 }
 
 impl<'a> NtpPacket<'a> {
+    #[must_use]
     pub fn into_owned(self) -> NtpPacket<'static> {
         NtpPacket::<'static> {
             header: self.header,
             efdata: self.efdata.into_owned(),
-            mac: self.mac.map(|v| v.into_owned()),
+            mac: self.mac.map(mac::Mac::into_owned),
         }
     }
 
+    /// # Errors
+    ///
+    /// Returns error if `data` has incorrect length.
+    /// Returns error if the parsing fails.
     #[allow(clippy::result_large_err)]
     pub fn deserialize(
         data: &'a [u8],
@@ -305,129 +313,136 @@ impl<'a> NtpPacket<'a> {
         let version = (data[0] & 0b0011_1000) >> 3;
 
         match version {
-            3 => {
-                let (header, header_size) =
-                    NtpHeaderV3V4::deserialize(data).map_err(|e| e.generalize())?;
-                let mac = if header_size != data.len() {
-                    Some(Mac::deserialize(&data[header_size..]).map_err(|e| e.generalize())?)
-                } else {
-                    None
-                };
-                Ok((
-                    NtpPacket {
-                        header: NtpHeader::V3(header),
-                        efdata: ExtensionFieldData::default(),
-                        mac,
-                    },
-                    None,
-                ))
-            }
-            4 => {
-                let (header, header_size) =
-                    NtpHeaderV3V4::deserialize(data).map_err(|e| e.generalize())?;
-
-                let construct_packet = |remaining_bytes: &'a [u8], efdata| {
-                    let mac = if !remaining_bytes.is_empty() {
-                        Some(Mac::deserialize(remaining_bytes)?)
-                    } else {
-                        None
-                    };
-
-                    let packet = NtpPacket {
-                        header: NtpHeader::V4(header),
-                        efdata,
-                        mac,
-                    };
-
-                    Ok::<_, ParsingError<std::convert::Infallible>>(packet)
-                };
-
-                match ExtensionFieldData::deserialize(
-                    data,
-                    header_size,
-                    cipher,
-                    ExtensionHeaderVersion::V4,
-                ) {
-                    Ok(decoded) => {
-                        let packet = construct_packet(decoded.remaining_bytes, decoded.efdata)
-                            .map_err(|e| e.generalize())?;
-
-                        Ok((packet, decoded.cookie))
-                    }
-                    Err(e) => {
-                        // return early if it is anything but a decrypt error
-                        let invalid = e.get_decrypt_error()?;
-
-                        let packet = construct_packet(invalid.remaining_bytes, invalid.efdata)
-                            .map_err(|e| e.generalize())?;
-
-                        Err(ParsingError::DecryptError(packet))
-                    }
-                }
-            }
+            3 => Self::deserialize_v3(data),
+            4 => Self::deserialize_v4(data, cipher),
             #[cfg(feature = "ntpv5")]
-            5 => {
-                let (header, header_size) =
-                    v5::NtpHeaderV5::deserialize(data).map_err(|e| e.generalize())?;
-
-                let construct_packet = |remaining_bytes: &'a [u8], efdata| {
-                    let mac = if !remaining_bytes.is_empty() {
-                        Some(Mac::deserialize(remaining_bytes)?)
-                    } else {
-                        None
-                    };
-
-                    let packet = NtpPacket {
-                        header: NtpHeader::V5(header),
-                        efdata,
-                        mac,
-                    };
-
-                    Ok::<_, ParsingError<std::convert::Infallible>>(packet)
-                };
-
-                // TODO: Check extension field handling in V5
-                let res_packet = match ExtensionFieldData::deserialize(
-                    data,
-                    header_size,
-                    cipher,
-                    ExtensionHeaderVersion::V5,
-                ) {
-                    Ok(decoded) => {
-                        let packet = construct_packet(decoded.remaining_bytes, decoded.efdata)
-                            .map_err(|e| e.generalize())?;
-
-                        Ok((packet, decoded.cookie))
-                    }
-                    Err(e) => {
-                        // return early if it is anything but a decrypt error
-                        let invalid = e.get_decrypt_error()?;
-
-                        let packet = construct_packet(invalid.remaining_bytes, invalid.efdata)
-                            .map_err(|e| e.generalize())?;
-
-                        Err(ParsingError::DecryptError(packet))
-                    }
-                };
-
-                let (packet, cookie) = res_packet?;
-
-                match packet.draft_id() {
-                    Some(id) if id == v5::DRAFT_VERSION => Ok((packet, cookie)),
-                    received @ (Some(_) | None) => {
-                        tracing::error!(
-                            expected = v5::DRAFT_VERSION,
-                            received,
-                            "Mismatched draft ID ignoring packet!"
-                        );
-                        Err(ParsingError::V5(v5::V5Error::InvalidDraftIdentification))
-                    }
-                }
-            }
+            5 => Self::deserialize_v5(data, cipher),
             _ => Err(PacketParsingError::InvalidVersion(version)),
         }
     }
 
+    #[allow(clippy::result_large_err)]
+    fn deserialize_v3(
+        data: &'a [u8],
+    ) -> Result<(Self, Option<DecodedServerCookie>), PacketParsingError<'a>> {
+        let (header, header_size) =
+            NtpHeaderV3V4::deserialize(data).map_err(error::ParsingError::generalize)?;
+        let mac = if header_size == data.len() {
+            None
+        } else {
+            Some(Mac::deserialize(&data[header_size..]).map_err(error::ParsingError::generalize)?)
+        };
+        Ok((
+            NtpPacket {
+                header: NtpHeader::V3(header),
+                efdata: ExtensionFieldData::default(),
+                mac,
+            },
+            None,
+        ))
+    }
+
+    #[allow(clippy::result_large_err)]
+    fn deserialize_v4(
+        data: &'a [u8],
+        cipher: &(impl CipherProvider + ?Sized),
+    ) -> Result<(Self, Option<DecodedServerCookie>), PacketParsingError<'a>> {
+        let (header, header_size) =
+            NtpHeaderV3V4::deserialize(data).map_err(error::ParsingError::generalize)?;
+
+        Self::deserialize_with_extension_fields(
+            data,
+            header_size,
+            cipher,
+            ExtensionHeaderVersion::V4,
+            NtpHeader::V4,
+            header,
+        )
+    }
+
+    #[allow(clippy::result_large_err)]
+    #[cfg(feature = "ntpv5")]
+    fn deserialize_v5(
+        data: &'a [u8],
+        cipher: &(impl CipherProvider + ?Sized),
+    ) -> Result<(Self, Option<DecodedServerCookie>), PacketParsingError<'a>> {
+        let (header, header_size) =
+            v5::NtpHeaderV5::deserialize(data).map_err(error::ParsingError::generalize)?;
+
+        // TODO: Check extension field handling in V5
+        let (packet, cookie) = Self::deserialize_with_extension_fields(
+            data,
+            header_size,
+            cipher,
+            ExtensionHeaderVersion::V5,
+            NtpHeader::V5,
+            header,
+        )?;
+
+        match packet.draft_id() {
+            Some(id) if id == v5::DRAFT_VERSION => Ok((packet, cookie)),
+            received @ (Some(_) | None) => {
+                tracing::error!(
+                    expected = v5::DRAFT_VERSION,
+                    received,
+                    "Mismatched draft ID ignoring packet!"
+                );
+                Err(PacketParsingError::V5(
+                    v5::V5Error::InvalidDraftIdentification,
+                ))
+            }
+        }
+    }
+
+    #[allow(clippy::result_large_err)]
+    fn deserialize_with_extension_fields<H, F>(
+        data: &'a [u8],
+        header_size: usize,
+        cipher: &(impl CipherProvider + ?Sized),
+        extension_header_version: ExtensionHeaderVersion,
+        header_constructor: F,
+        header: H,
+    ) -> Result<(Self, Option<DecodedServerCookie>), PacketParsingError<'a>>
+    where
+        F: Fn(H) -> NtpHeader,
+    {
+        let construct_packet = |remaining_bytes: &'a [u8], efdata| {
+            let mac = if remaining_bytes.is_empty() {
+                None
+            } else {
+                Some(Mac::deserialize(remaining_bytes)?)
+            };
+
+            let packet = NtpPacket {
+                header: header_constructor(header),
+                efdata,
+                mac,
+            };
+
+            Ok::<_, ParsingError<std::convert::Infallible>>(packet)
+        };
+
+        match ExtensionFieldData::deserialize(data, header_size, cipher, extension_header_version) {
+            Ok(decoded) => {
+                let packet = construct_packet(decoded.remaining_bytes, decoded.efdata)
+                    .map_err(error::ParsingError::generalize)?;
+
+                Ok((packet, decoded.cookie))
+            }
+            Err(e) => {
+                // return early if it is anything but a decrypt error
+                let invalid = e.get_decrypt_error()?;
+
+                let packet = construct_packet(invalid.remaining_bytes, invalid.efdata)
+                    .map_err(error::ParsingError::generalize)?;
+
+                Err(ParsingError::DecryptError(packet))
+            }
+        }
+    }
+
+    #[allow(clippy::missing_errors_doc)]
+    #[allow(clippy::cast_possible_truncation)]
     #[cfg(test)]
     pub fn serialize_without_encryption_vec(
         &self,
@@ -444,6 +459,10 @@ impl<'a> NtpPacket<'a> {
         Ok(buffer)
     }
 
+    /// # Errors
+    ///
+    /// Returns error if the serialization fails.
+    #[allow(clippy::cast_possible_truncation)]
     pub fn serialize(
         &self,
         w: &mut Cursor<&mut [u8]>,
@@ -464,12 +483,12 @@ impl<'a> NtpPacket<'a> {
             NtpHeader::V3(_) => { /* No extension fields in V3 */ }
             NtpHeader::V4(_) => {
                 self.efdata
-                    .serialize(&mut *w, cipher, ExtensionHeaderVersion::V4)?
+                    .serialize(&mut *w, cipher, ExtensionHeaderVersion::V4)?;
             }
             #[cfg(feature = "ntpv5")]
             NtpHeader::V5(_) => {
                 self.efdata
-                    .serialize(&mut *w, cipher, ExtensionHeaderVersion::V5)?
+                    .serialize(&mut *w, cipher, ExtensionHeaderVersion::V5)?;
             }
         }
 
@@ -492,6 +511,8 @@ impl<'a> NtpPacket<'a> {
         Ok(())
     }
 
+    #[allow(clippy::cast_possible_truncation)]
+    #[must_use]
     pub fn nts_poll_message(
         cookie: &'a [u8],
         new_cookies: u8,
@@ -529,7 +550,9 @@ impl<'a> NtpPacket<'a> {
         )
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     #[cfg(feature = "ntpv5")]
+    #[must_use]
     pub fn nts_poll_message_v5(
         cookie: &'a [u8],
         new_cookies: u8,
@@ -570,12 +593,13 @@ impl<'a> NtpPacket<'a> {
         )
     }
 
+    #[must_use]
     pub fn poll_message(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
         let (header, id) = NtpHeaderV3V4::poll_message(poll_interval);
         (
             NtpPacket {
                 header: NtpHeader::V4(header),
-                efdata: Default::default(),
+                efdata: ExtensionFieldData::default(),
                 mac: None,
             },
             id,
@@ -583,6 +607,7 @@ impl<'a> NtpPacket<'a> {
     }
 
     #[cfg(feature = "ntpv5")]
+    #[must_use]
     pub fn poll_message_upgrade_request(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
         let (mut header, id) = NtpHeaderV3V4::poll_message(poll_interval);
 
@@ -603,6 +628,7 @@ impl<'a> NtpPacket<'a> {
     }
 
     #[cfg(feature = "ntpv5")]
+    #[must_use]
     pub fn poll_message_v5(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
         let (header, id) = v5::NtpHeaderV5::poll_message(poll_interval);
 
@@ -637,7 +663,7 @@ impl<'a> NtpPacket<'a> {
                     recv_timestamp,
                     clock,
                 )),
-                efdata: Default::default(),
+                efdata: ExtensionFieldData::default(),
                 mac: None,
             },
             NtpHeader::V4(header) => {
@@ -829,11 +855,12 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
+    #[must_use]
     pub fn rate_limit_response(packet_from_client: Self) -> Self {
         match packet_from_client.header {
             NtpHeader::V3(header) => NtpPacket {
                 header: NtpHeader::V3(NtpHeaderV3V4::rate_limit_response(header)),
-                efdata: Default::default(),
+                efdata: ExtensionFieldData::default(),
                 mac: None,
             },
             NtpHeader::V4(header) => NtpPacket {
@@ -875,6 +902,7 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
+    #[must_use]
     pub fn nts_rate_limit_response(packet_from_client: Self) -> Self {
         match packet_from_client.header {
             NtpHeader::V3(_) => unreachable!("NTS shouldn't work with NTPv3"),
@@ -913,11 +941,12 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
+    #[must_use]
     pub fn deny_response(packet_from_client: Self) -> Self {
         match packet_from_client.header {
             NtpHeader::V3(header) => NtpPacket {
                 header: NtpHeader::V3(NtpHeaderV3V4::deny_response(header)),
-                efdata: Default::default(),
+                efdata: ExtensionFieldData::default(),
                 mac: None,
             },
             NtpHeader::V4(header) => NtpPacket {
@@ -959,6 +988,7 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
+    #[must_use]
     pub fn nts_deny_response(packet_from_client: Self) -> Self {
         match packet_from_client.header {
             NtpHeader::V3(_) => unreachable!("NTS shouldn't work with NTPv3"),
@@ -997,6 +1027,7 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
+    #[must_use]
     pub fn nts_nak_response(packet_from_client: Self) -> Self {
         match packet_from_client.header {
             NtpHeader::V3(_) => unreachable!("NTS shouldn't work with NTPv3"),
@@ -1046,6 +1077,7 @@ impl<'a> NtpPacket<'a> {
         })
     }
 
+    #[must_use]
     pub fn version(&self) -> u8 {
         match self.header {
             NtpHeader::V3(_) => 3,
@@ -1055,10 +1087,12 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
+    #[must_use]
     pub fn header(&self) -> NtpHeader {
         self.header
     }
 
+    #[must_use]
     pub fn leap(&self) -> NtpLeapIndicator {
         match self.header {
             NtpHeader::V3(header) => header.leap,
@@ -1068,6 +1102,7 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
+    #[must_use]
     pub fn mode(&self) -> NtpAssociationMode {
         match self.header {
             NtpHeader::V3(header) => header.mode,
@@ -1082,6 +1117,7 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
+    #[must_use]
     pub fn poll(&self) -> PollInterval {
         match self.header {
             NtpHeader::V3(h) | NtpHeader::V4(h) => h.poll,
@@ -1090,6 +1126,7 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
+    #[must_use]
     pub fn stratum(&self) -> u8 {
         match self.header {
             NtpHeader::V3(header) => header.stratum,
@@ -1099,6 +1136,7 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
+    #[must_use]
     pub fn precision(&self) -> i8 {
         match self.header {
             NtpHeader::V3(header) => header.precision,
@@ -1108,6 +1146,7 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
+    #[must_use]
     pub fn root_delay(&self) -> NtpDuration {
         match self.header {
             NtpHeader::V3(header) => header.root_delay,
@@ -1117,6 +1156,7 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
+    #[must_use]
     pub fn root_dispersion(&self) -> NtpDuration {
         match self.header {
             NtpHeader::V3(header) => header.root_dispersion,
@@ -1126,6 +1166,7 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
+    #[must_use]
     pub fn receive_timestamp(&self) -> NtpTimestamp {
         match self.header {
             NtpHeader::V3(header) => header.receive_timestamp,
@@ -1135,6 +1176,7 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
+    #[must_use]
     pub fn transmit_timestamp(&self) -> NtpTimestamp {
         match self.header {
             NtpHeader::V3(header) => header.transmit_timestamp,
@@ -1144,6 +1186,7 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
+    #[must_use]
     pub fn reference_id(&self) -> ReferenceId {
         match self.header {
             NtpHeader::V3(header) => header.reference_id,
@@ -1166,6 +1209,7 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
+    #[must_use]
     pub fn is_kiss(&self) -> bool {
         match self.header {
             NtpHeader::V3(header) => header.stratum == 0,
@@ -1175,6 +1219,7 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
+    #[must_use]
     pub fn is_kiss_deny(&self) -> bool {
         self.is_kiss()
             && match self.header {
@@ -1184,6 +1229,7 @@ impl<'a> NtpPacket<'a> {
             }
     }
 
+    #[must_use]
     pub fn is_kiss_rate(
         &self,
         #[cfg_attr(not(feature = "ntpv5"), allow(unused))] own_interval: PollInterval,
@@ -1198,6 +1244,7 @@ impl<'a> NtpPacket<'a> {
             }
     }
 
+    #[must_use]
     pub fn is_kiss_rstr(&self) -> bool {
         self.is_kiss()
             && match self.header {
@@ -1207,6 +1254,7 @@ impl<'a> NtpPacket<'a> {
             }
     }
 
+    #[must_use]
     pub fn is_kiss_ntsn(&self) -> bool {
         self.is_kiss()
             && match self.header {
@@ -1217,6 +1265,7 @@ impl<'a> NtpPacket<'a> {
     }
 
     #[cfg(feature = "ntpv5")]
+    #[must_use]
     pub fn is_upgrade(&self) -> bool {
         matches!(
             self.header,
@@ -1227,6 +1276,7 @@ impl<'a> NtpPacket<'a> {
         )
     }
 
+    #[must_use]
     pub fn valid_server_response(&self, identifier: RequestIdentifier, nts_enabled: bool) -> bool {
         if let Some(uid) = identifier.uid {
             let auth = check_uid_extensionfield(self.efdata.authenticated.iter(), &uid);
@@ -1302,6 +1352,7 @@ fn check_uid_extensionfield<'a, I: IntoIterator<Item = &'a ExtensionField<'a>>>(
 
 #[cfg(any(test, feature = "__internal-fuzz", feature = "__internal-test"))]
 impl NtpPacket<'_> {
+    #[must_use]
     pub fn test() -> Self {
         Self::default()
     }
@@ -1328,7 +1379,7 @@ impl NtpPacket<'_> {
             #[cfg(feature = "ntpv5")]
             // TODO can we just reuse the cookie as the origin timestamp?
             NtpHeader::V5(ref mut header) => {
-                header.client_cookie = v5::NtpClientCookie::from_ntp_timestamp(timestamp)
+                header.client_cookie = v5::NtpClientCookie::from_ntp_timestamp(timestamp);
             }
         }
     }
@@ -1410,12 +1461,14 @@ impl Default for NtpPacket<'_> {
     fn default() -> Self {
         Self {
             header: NtpHeader::V4(NtpHeaderV3V4::new()),
-            efdata: Default::default(),
+            efdata: ExtensionFieldData::default(),
             mac: None,
         }
     }
 }
 
+#[allow(clippy::cast_possible_truncation)]
+#[allow(clippy::too_many_lines)]
 #[cfg(test)]
 mod tests {
     use crate::{
@@ -1500,13 +1553,13 @@ mod tests {
                 precision: -24,
                 root_delay: NtpDuration::from_fixed_int(1023 << 16),
                 root_dispersion: NtpDuration::from_fixed_int(893 << 16),
-                reference_id: ReferenceId::from_int(0x5ec69f0f),
-                reference_timestamp: NtpTimestamp::from_fixed_int(0xe5f662987b61b9af),
-                origin_timestamp: NtpTimestamp::from_fixed_int(0xe5f663667b64995d),
-                receive_timestamp: NtpTimestamp::from_fixed_int(0xe5f6636681405590),
-                transmit_timestamp: NtpTimestamp::from_fixed_int(0xe5f663a8761dde48),
+                reference_id: ReferenceId::from_int(0x5ec6_9f0f),
+                reference_timestamp: NtpTimestamp::from_fixed_int(0xe5f6_6298_7b61_b9af),
+                origin_timestamp: NtpTimestamp::from_fixed_int(0xe5f6_6366_7b64_995d),
+                receive_timestamp: NtpTimestamp::from_fixed_int(0xe5f6_6366_8140_5590),
+                transmit_timestamp: NtpTimestamp::from_fixed_int(0xe5f6_63a8_761d_de48),
             }),
-            efdata: Default::default(),
+            efdata: ExtensionFieldData::default(),
             mac: None,
         };
 
@@ -1529,13 +1582,13 @@ mod tests {
                 precision: -24,
                 root_delay: NtpDuration::from_fixed_int(1023 << 16),
                 root_dispersion: NtpDuration::from_fixed_int(893 << 16),
-                reference_id: ReferenceId::from_int(0x5ec69f0f),
-                reference_timestamp: NtpTimestamp::from_fixed_int(0xe5f662987b61b9af),
-                origin_timestamp: NtpTimestamp::from_fixed_int(0xe5f663667b64995d),
-                receive_timestamp: NtpTimestamp::from_fixed_int(0xe5f6636681405590),
-                transmit_timestamp: NtpTimestamp::from_fixed_int(0xe5f663a8761dde48),
+                reference_id: ReferenceId::from_int(0x5ec6_9f0f),
+                reference_timestamp: NtpTimestamp::from_fixed_int(0xe5f6_6298_7b61_b9af),
+                origin_timestamp: NtpTimestamp::from_fixed_int(0xe5f6_6366_7b64_995d),
+                receive_timestamp: NtpTimestamp::from_fixed_int(0xe5f6_6366_8140_5590),
+                transmit_timestamp: NtpTimestamp::from_fixed_int(0xe5f6_63a8_761d_de48),
             }),
-            efdata: Default::default(),
+            efdata: ExtensionFieldData::default(),
             mac: None,
         };
 
@@ -1561,13 +1614,13 @@ mod tests {
                 precision: -23,
                 root_delay: NtpDuration::from_fixed_int(566 << 16),
                 root_dispersion: NtpDuration::from_fixed_int(951 << 16),
-                reference_id: ReferenceId::from_int(0xc035676c),
-                reference_timestamp: NtpTimestamp::from_fixed_int(0xe5f661fd6f165f03),
-                origin_timestamp: NtpTimestamp::from_fixed_int(0xe5f663a87619ef40),
-                receive_timestamp: NtpTimestamp::from_fixed_int(0xe5f663a8798c6581),
-                transmit_timestamp: NtpTimestamp::from_fixed_int(0xe5f663a8798eae2b),
+                reference_id: ReferenceId::from_int(0xc035_676c),
+                reference_timestamp: NtpTimestamp::from_fixed_int(0xe5f6_61fd_6f16_5f03),
+                origin_timestamp: NtpTimestamp::from_fixed_int(0xe5f6_63a8_7619_ef40),
+                receive_timestamp: NtpTimestamp::from_fixed_int(0xe5f6_63a8_798c_6581),
+                transmit_timestamp: NtpTimestamp::from_fixed_int(0xe5f6_63a8_798e_ae2b),
             }),
-            efdata: Default::default(),
+            efdata: ExtensionFieldData::default(),
             mac: None,
         };
 
@@ -1824,7 +1877,7 @@ mod tests {
 
         assert_eq!(
             header.reference_timestamp,
-            NtpTimestamp::from_fixed_int(0x4E54503544524654)
+            NtpTimestamp::from_fixed_int(0x4E54_5035_4452_4654)
         );
     }
 

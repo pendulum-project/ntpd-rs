@@ -75,7 +75,7 @@ impl BitTree {
             *val = apply_mask(*val, *len);
         }
         // Ensure values are sorted by value and then by length
-        data.sort();
+        data.sort_unstable();
 
         let mut result = BitTree {
             nodes: vec![TreeNode::default()],
@@ -87,6 +87,8 @@ impl BitTree {
     /// Create the substructure for a node, recursively.
     /// Max recursion depth is maximum value of data[i].1/4
     /// for any i
+    #[allow(clippy::cast_possible_truncation)]
+    #[allow(clippy::cast_sign_loss)]
     fn fill_node(&mut self, mut data: &mut [(u128, u8)], node_index: usize) {
         // distribute the data into 16 4-bit buckets
         let mut counts = [0; 16];
@@ -183,7 +185,7 @@ impl IpFilter {
         for subnet in subnets {
             match subnet.addr {
                 IpAddr::V4(addr) => ipv4list.push((
-                    (u32::from_be_bytes(addr.octets()) as u128) << 96,
+                    u128::from(u32::from_be_bytes(addr.octets())) << 96,
                     subnet.mask,
                 )),
                 IpAddr::V6(addr) => {
@@ -202,40 +204,43 @@ impl IpFilter {
     /// Complexity: O(1)
     pub fn is_in(&self, addr: &IpAddr) -> bool {
         match addr {
-            IpAddr::V4(addr) => self.is_in4(addr),
-            IpAddr::V6(addr) => self.is_in6(addr),
+            IpAddr::V4(addr) => self.is_in4(*addr),
+            IpAddr::V6(addr) => self.is_in6(*addr),
         }
     }
 
-    fn is_in4(&self, addr: &Ipv4Addr) -> bool {
+    /// # Panics
+    ///
+    /// Panics if `addr` has invalid octets.
+    fn is_in4(&self, addr: Ipv4Addr) -> bool {
         self.ipv4_filter
-            .lookup((u32::from_be_bytes(addr.octets()) as u128) << 96)
+            .lookup(u128::from(u32::from_be_bytes(addr.octets())) << 96)
     }
 
-    fn is_in6(&self, addr: &Ipv6Addr) -> bool {
+    fn is_in6(&self, addr: Ipv6Addr) -> bool {
         self.ipv6_filter.lookup(u128::from_be_bytes(addr.octets()))
     }
 }
 
 #[cfg(feature = "__internal-fuzz")]
 pub mod fuzz {
-    use super::*;
+    use super::{IpAddr, IpFilter, IpSubnet};
 
     fn contains(subnet: &IpSubnet, addr: &IpAddr) -> bool {
         match (subnet.addr, addr) {
             (IpAddr::V4(net), IpAddr::V4(addr)) => {
                 let net = u32::from_be_bytes(net.octets());
                 let addr = u32::from_be_bytes(addr.octets());
-                let mask = 0xFFFFFFFF_u32
-                    .checked_shl((32 - subnet.mask) as u32)
+                let mask = 0xFFFF_FFFF_u32
+                    .checked_shl(u32::from(32 - subnet.mask))
                     .unwrap_or(0);
                 (net & mask) == (addr & mask)
             }
             (IpAddr::V6(net), IpAddr::V6(addr)) => {
                 let net = u128::from_be_bytes(net.octets());
                 let addr = u128::from_be_bytes(addr.octets());
-                let mask = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF_u128
-                    .checked_shl((128 - subnet.mask) as u32)
+                let mask = 0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_u128
+                    .checked_shl(u32::from(128 - subnet.mask))
                     .unwrap_or(0);
                 (net & mask) == (addr & mask)
             }
@@ -252,6 +257,7 @@ pub mod fuzz {
         false
     }
 
+    #[allow(clippy::missing_panics_doc)]
     pub fn fuzz_ipfilter(nets: &[IpSubnet], addr: &[IpAddr]) {
         let filter = IpFilter::new(nets);
 

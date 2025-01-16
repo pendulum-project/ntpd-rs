@@ -53,6 +53,7 @@ impl CookieStash {
     }
 
     /// Number of cookies missing from the stash
+    #[allow(clippy::cast_possible_truncation)]
     pub fn gap(&self) -> u8 {
         // This never overflows or underflows since cookies.len will
         // fit in a u8 and 0 <= self.valid <= self.cookies.len()

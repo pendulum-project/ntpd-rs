@@ -23,22 +23,22 @@ fn human_readable_duration(abs_offset: f64) -> String {
     let mut offset = abs_offset;
     let mut res = String::new();
     if offset >= 86400.0 {
-        let days = (offset / 86400.0).floor() as u64;
-        offset -= days as f64 * 86400.0;
-        res.push_str(&format!("{} day(s) ", days));
+        let days = (offset / 86400.0).floor();
+        offset -= days * 86400.0;
+        res.push_str(&format!("{days:.0} day(s) "));
     }
     if offset >= 3600.0 {
-        let hours = (offset / 3600.0).floor() as u64;
-        offset -= hours as f64 * 3600.0;
-        res.push_str(&format!("{} hour(s) ", hours));
+        let hours = (offset / 3600.0).floor();
+        offset -= hours * 3600.0;
+        res.push_str(&format!("{hours:.0} hour(s) "));
     }
     if offset >= 60.0 {
-        let minutes = (offset / 60.0).floor() as u64;
-        offset -= minutes as f64 * 60.0;
-        res.push_str(&format!("{} minute(s) ", minutes));
+        let minutes = (offset / 60.0).floor();
+        offset -= minutes * 60.0;
+        res.push_str(&format!("{minutes:.0} minute(s) "));
     }
     if offset >= 1.0 {
-        res.push_str(&format!("{:.0} second(s)", offset));
+        res.push_str(&format!("{offset:.0} second(s)"));
     }
     res
 }
@@ -49,11 +49,14 @@ fn try_date_display(offset: NtpDuration) -> Option<String> {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
+
+    #[allow(clippy::cast_possible_truncation)]
+    #[allow(clippy::cast_sign_loss)]
     let ts = since_epoch + (offset.to_seconds() as u64);
 
     std::process::Command::new("date")
         .arg("-d")
-        .arg(format!("@{}", ts))
+        .arg(format!("@{ts}"))
         .arg("+%c")
         .output()
         .ok()
@@ -109,7 +112,7 @@ impl<C: NtpClock> SingleShotController<C> {
     }
 }
 
-pub(crate) fn force_sync(config: Option<PathBuf>) -> std::io::Result<ExitCode> {
+pub(crate) fn force_sync(config: Option<&PathBuf>) -> std::io::Result<ExitCode> {
     let config = initialize_logging_parse_config(Some(LogLevel::Warn), config);
 
     // Warn/error if the config is unreasonable. We do this after finishing
@@ -135,11 +138,11 @@ pub(crate) fn force_sync(config: Option<PathBuf>) -> std::io::Result<ExitCode> {
                     | config::NtpSourceConfig::Nts(_)
                     | config::NtpSourceConfig::Sock(_) => total_sources += 1,
                     config::NtpSourceConfig::Pool(PoolSourceConfig { count, .. }) => {
-                        total_sources += count
+                        total_sources += count;
                     }
                     #[cfg(feature = "unstable_nts-pool")]
                     config::NtpSourceConfig::NtsPool(NtsPoolSourceConfig { count, .. }) => {
-                        total_sources += count
+                        total_sources += count;
                     }
                 }
             }

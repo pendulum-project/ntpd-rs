@@ -67,7 +67,7 @@ impl<T: Wait> Future for SingleshotSleep<T> {
                 this.enabled = false;
                 std::task::Poll::Ready(v)
             }
-            u => u,
+            u @ std::task::Poll::Pending => u,
         }
     }
 }
@@ -106,7 +106,7 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper, Sourc
         synchronization_config,
         algorithm_config,
         source_defaults_config,
-        keyset,
+        &keyset,
         ip_list,
         !source_configs.is_empty(),
     );
@@ -114,51 +114,26 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper, Sourc
     for source_config in source_configs {
         match source_config {
             NtpSourceConfig::Standard(cfg) => {
-                system
-                    .add_spawner(StandardSpawner::new(cfg.clone()))
-                    .map_err(|e| {
-                        tracing::error!("Could not spawn source: {}", e);
-                        std::io::Error::new(std::io::ErrorKind::Other, e)
-                    })?;
+                system.add_spawner(StandardSpawner::new(cfg.clone()));
             }
             NtpSourceConfig::Nts(cfg) => {
-                system
-                    .add_spawner(NtsSpawner::new(cfg.clone()))
-                    .map_err(|e| {
-                        tracing::error!("Could not spawn source: {}", e);
-                        std::io::Error::new(std::io::ErrorKind::Other, e)
-                    })?;
+                system.add_spawner(NtsSpawner::new(cfg.clone()));
             }
             NtpSourceConfig::Pool(cfg) => {
-                system
-                    .add_spawner(PoolSpawner::new(cfg.clone()))
-                    .map_err(|e| {
-                        tracing::error!("Could not spawn source: {}", e);
-                        std::io::Error::new(std::io::ErrorKind::Other, e)
-                    })?;
+                system.add_spawner(PoolSpawner::new(cfg.clone()));
             }
             #[cfg(feature = "unstable_nts-pool")]
             NtpSourceConfig::NtsPool(cfg) => {
-                system
-                    .add_spawner(NtsPoolSpawner::new(cfg.clone()))
-                    .map_err(|e| {
-                        tracing::error!("Could not spawn source: {}", e);
-                        std::io::Error::new(std::io::ErrorKind::Other, e)
-                    })?;
+                system.add_spawner(NtsPoolSpawner::new(cfg.clone()));
             }
             NtpSourceConfig::Sock(cfg) => {
-                system
-                    .add_spawner(SockSpawner::new(cfg.clone()))
-                    .map_err(|e| {
-                        tracing::error!("Could not spawn source: {}", e);
-                        std::io::Error::new(std::io::ErrorKind::Other, e)
-                    })?;
+                system.add_spawner(SockSpawner::new(cfg.clone()));
             }
         }
     }
 
     for server_config in server_configs.iter() {
-        system.add_server(server_config.to_owned()).await;
+        system.add_server(server_config.to_owned());
     }
 
     let handle = tokio::spawn(async move {
@@ -225,7 +200,7 @@ impl<
         synchronization_config: SynchronizationConfig,
         algorithm_config: Controller::AlgorithmConfig,
         source_defaults_config: SourceDefaultsConfig,
-        keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
+        keyset: &tokio::sync::watch::Receiver<Arc<KeySet>>,
         ip_list: tokio::sync::watch::Receiver<Arc<[IpAddr]>>,
         have_sources: bool,
     ) -> (Self, DaemonChannels) {
@@ -275,9 +250,9 @@ impl<
                 spawn_rx,
                 spawn_tx,
 
-                sources: Default::default(),
-                servers: Default::default(),
-                spawners: Default::default(),
+                sources: HashMap::default(),
+                servers: Vec::default(),
+                spawners: Vec::default(),
                 clock,
                 timestamp_mode,
                 interface,
@@ -290,10 +265,7 @@ impl<
         )
     }
 
-    fn add_spawner(
-        &mut self,
-        spawner: impl Spawner + Send + Sync + 'static,
-    ) -> Result<SpawnerId, C::Error> {
+    fn add_spawner(&mut self, spawner: impl Spawner + Send + Sync + 'static) -> SpawnerId {
         let (notify_tx, notify_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
         let id = spawner.get_id();
         let spawner_data = SystemSpawnerData { id, notify_tx };
@@ -302,7 +274,7 @@ impl<
         let spawn_tx = self.spawn_tx.clone();
         // tokio::spawn(async move { spawner.run(spawn_tx, notify_rx).await });
         tokio::spawn(spawner_task(spawner, spawn_tx, notify_rx));
-        Ok(id)
+        id
     }
 
     async fn run(&mut self, mut wait: Pin<&mut SingleshotSleep<T>>) -> std::io::Result<()> {
@@ -363,7 +335,7 @@ impl<
                     let _ = self.system_update_sender.send(update);
                 }
                 ntp_proto::SystemAction::SetTimer(duration) => {
-                    wait.as_mut().reset(tokio::time::Instant::now() + duration)
+                    wait.as_mut().reset(tokio::time::Instant::now() + duration);
                 }
             }
         }
@@ -484,8 +456,8 @@ impl<
         self.sources.insert(
             source_id,
             SourceState {
-                source_id,
                 spawner_id,
+                source_id,
             },
         );
 
@@ -554,7 +526,7 @@ impl<
         Ok(())
     }
 
-    async fn add_server(&mut self, config: ServerConfig) {
+    fn add_server(&mut self, config: ServerConfig) {
         let stats = ServerStats::default();
         self.servers.push(ServerData {
             stats: stats.clone(),

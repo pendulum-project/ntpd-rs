@@ -25,7 +25,7 @@ struct SockSample {
     magic: i32,
 }
 
-const SOCK_MAGIC: i32 = 0x534f434b;
+const SOCK_MAGIC: i32 = 0x534f_434b;
 const SOCK_SAMPLE_SIZE: usize = 40;
 
 #[derive(Debug)]
@@ -101,6 +101,16 @@ fn create_socket<T: AsRef<Path>>(path: T) -> std::io::Result<UnixDatagram> {
     Ok(socket)
 }
 
+enum SelectResult<Controller: SourceController> {
+    SockRecv(Result<usize, std::io::Error>),
+    SystemUpdate(
+        Result<
+            SystemSourceUpdate<Controller::ControllerMessage>,
+            tokio::sync::broadcast::error::RecvError,
+        >,
+    ),
+}
+
 impl<C, Controller: SourceController<MeasurementDelay = ()>> SockSourceTask<C, Controller>
 where
     C: 'static + NtpClock + Send + Sync,
@@ -108,16 +118,6 @@ where
     async fn run(&mut self) {
         loop {
             let mut buf = [0; SOCK_SAMPLE_SIZE];
-
-            enum SelectResult<Controller: SourceController> {
-                SockRecv(Result<usize, std::io::Error>),
-                SystemUpdate(
-                    Result<
-                        SystemSourceUpdate<Controller::ControllerMessage>,
-                        tokio::sync::broadcast::error::RecvError,
-                    >,
-                ),
-            }
 
             let selected: SelectResult<Controller> = tokio::select! {
                 result = self.socket.recv(&mut buf) => {
@@ -181,12 +181,8 @@ where
                     }
                 },
                 SelectResult::SystemUpdate(result) => match result {
-                    Ok(update) => {
-                        self.source.handle_message(update.message);
-                    }
-                    Err(e) => {
-                        error!("Error receiving system update: {:?}", e)
-                    }
+                    Ok(update) => self.source.handle_message(update.message),
+                    Err(e) => error!("Error receiving system update: {:?}", e),
                 },
             };
         }
@@ -256,7 +252,9 @@ mod tests {
                 std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH)?;
 
             Ok(NtpTimestamp::from_seconds_nanos_since_ntp_era(
-                EPOCH_OFFSET.wrapping_add(cur.as_secs() as u32),
+                EPOCH_OFFSET.wrapping_add(
+                    u32::try_from(cur.as_secs()).expect("Couldn't fit unix epoch inside u32"),
+                ),
                 cur.subsec_nanos(),
             ))
         }
@@ -350,6 +348,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::float_cmp)]
     fn test_deserialize_sample() {
         // Example sock sample
         let buf = [
@@ -357,7 +356,8 @@ mod tests {
             119, 19, 65, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 75, 67, 79, 83,
         ];
         let sample = deserialize_sample(Ok(buf.len()), buf).unwrap();
-        assert_eq!(sample.offset, 318975.704798661);
+
+        assert_eq!(sample.offset, 318_975.704_798_661);
         assert_eq!(sample.pulse, 0);
         assert_eq!(sample.leap, 0);
         assert_eq!(sample.magic, SOCK_MAGIC);

@@ -94,9 +94,8 @@ async fn observer(
     let start_time = Instant::now();
     let timeout = std::time::Duration::from_millis(500);
 
-    let path = match config.observation_path {
-        Some(path) => path,
-        None => return Ok(()),
+    let Some(path) = config.observation_path else {
+        return Ok(());
     };
 
     // this binary needs to run as root to be able to adjust the system clock.
@@ -120,12 +119,7 @@ async fn observer(
                 debug!("Unexpectedly closed unix socket: {e}");
                 continue;
             }
-            Err(e)
-                if matches!(
-                    e.raw_os_error(),
-                    Some(ENFILE) | Some(EMFILE) | Some(ENOMEM) | Some(ENOBUFS)
-                ) =>
-            {
+            Err(e) if matches!(e.raw_os_error(), Some(ENFILE | EMFILE | ENOMEM | ENOBUFS)) => {
                 error!(
                     "Not enough resources available to accept incoming observability socket: {e}"
                 );
@@ -179,7 +173,11 @@ async fn handle_connection(
             .cloned()
             .collect(),
         system: *system_reader.borrow(),
-        servers: server_reader.borrow().iter().map(|s| s.into()).collect(),
+        servers: server_reader
+            .borrow()
+            .iter()
+            .map(std::convert::Into::into)
+            .collect(),
     };
 
     super::sockets::write_json(stream, &observe).await?;
@@ -196,7 +194,8 @@ mod tests {
     #[cfg(feature = "unstable_ntpv5")]
     use ntp_proto::v5::{BloomFilter, ServerId};
     use ntp_proto::{
-        NtpDuration, NtpLeapIndicator, PollIntervalLimits, Reach, ReferenceId, TimeSnapshot,
+        NtpDuration, NtpLeapIndicator, ObservableSourceTimedata, PollIntervalLimits, Reach,
+        ReferenceId, TimeSnapshot,
     };
     use tokio::{io::AsyncReadExt, net::UnixStream};
 
@@ -220,7 +219,7 @@ mod tests {
         source_snapshots.insert(
             id,
             ObservableSourceState {
-                timedata: Default::default(),
+                timedata: ObservableSourceTimedata::default(),
                 unanswered_polls: Reach::default().unanswered_polls(),
                 poll_interval: PollIntervalLimits::default().min,
                 nts_cookies: None,
@@ -287,7 +286,7 @@ mod tests {
         source_snapshots.insert(
             id,
             ObservableSourceState {
-                timedata: Default::default(),
+                timedata: ObservableSourceTimedata::default(),
                 unanswered_polls: Reach::default().unanswered_polls(),
                 poll_interval: PollIntervalLimits::default().min,
                 nts_cookies: None,

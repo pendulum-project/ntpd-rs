@@ -46,11 +46,6 @@ pub enum NtpCtlAction {
 pub(crate) struct NtpCtlOptions {
     config: Option<PathBuf>,
     format: Format,
-    help: bool,
-    version: bool,
-    validate: bool,
-    status: bool,
-    force_sync: bool,
     action: NtpCtlAction,
 }
 
@@ -77,10 +72,10 @@ impl NtpCtlOptions {
             match arg {
                 CliArg::Flag(flag) => match flag.as_str() {
                     "-h" | "--help" => {
-                        options.help = true;
+                        options.action = NtpCtlAction::Help;
                     }
                     "-v" | "--version" => {
-                        options.version = true;
+                        options.action = NtpCtlAction::Version;
                     }
                     option => {
                         Err(format!("invalid option provided: {option}"))?;
@@ -101,18 +96,18 @@ impl NtpCtlOptions {
                 },
                 CliArg::Rest(rest) => {
                     if rest.len() > 1 {
-                        eprintln!("Warning: Too many commands provided.")
+                        eprintln!("Warning: Too many commands provided.");
                     }
                     for command in rest {
                         match command.as_str() {
                             "validate" => {
-                                options.validate = true;
+                                options.action = NtpCtlAction::Validate;
                             }
                             "status" => {
-                                options.status = true;
+                                options.action = NtpCtlAction::Status;
                             }
                             "force-sync" => {
-                                options.force_sync = true;
+                                options.action = NtpCtlAction::ForceSync;
                             }
                             unknown => {
                                 eprintln!("Warning: Unknown command {unknown}");
@@ -123,51 +118,36 @@ impl NtpCtlOptions {
             }
         }
 
-        options.resolve_action();
         // nothing to validate at the moment
 
         Ok(options)
     }
-
-    /// from the arguments resolve which action should be performed
-    fn resolve_action(&mut self) {
-        if self.help {
-            self.action = NtpCtlAction::Help;
-        } else if self.version {
-            self.action = NtpCtlAction::Version;
-        } else if self.validate {
-            self.action = NtpCtlAction::Validate;
-        } else if self.status {
-            self.action = NtpCtlAction::Status;
-        } else if self.force_sync {
-            self.action = NtpCtlAction::ForceSync;
-        } else {
-            self.action = NtpCtlAction::Help;
-        }
-    }
 }
 
-fn validate(config: Option<PathBuf>) -> std::io::Result<ExitCode> {
+fn validate(config: Option<&PathBuf>) -> ExitCode {
     // Late completion not needed, so ignore result.
     crate::daemon::tracing::tracing_init(LogLevel::Info, true).init();
-    match Config::from_args(config, vec![], vec![]) {
+    match Config::from_args(config.as_ref(), vec![], vec![]) {
         Ok(config) => {
             if config.check() {
                 eprintln!("Config looks good");
-                Ok(ExitCode::SUCCESS)
+                ExitCode::SUCCESS
             } else {
-                Ok(ExitCode::FAILURE)
+                ExitCode::FAILURE
             }
         }
         Err(e) => {
             eprintln!("Error: Could not load configuration: {e}");
-            Ok(ExitCode::FAILURE)
+            ExitCode::FAILURE
         }
     }
 }
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// # Errors
+///
+/// Returns 'Error' if arguments to program are invalid.
 pub fn main() -> std::io::Result<ExitCode> {
     let options = match NtpCtlOptions::try_parse_from(std::env::args()) {
         Ok(options) => options,
@@ -183,10 +163,10 @@ pub fn main() -> std::io::Result<ExitCode> {
             eprintln!("ntp-ctl {VERSION}");
             Ok(ExitCode::SUCCESS)
         }
-        NtpCtlAction::Validate => validate(options.config),
-        NtpCtlAction::ForceSync => force_sync::force_sync(options.config),
+        NtpCtlAction::Validate => Ok(validate(options.config.as_ref())),
+        NtpCtlAction::ForceSync => force_sync::force_sync(options.config.as_ref()),
         NtpCtlAction::Status => {
-            let config = Config::from_args(options.config, vec![], vec![]);
+            let config = Config::from_args(options.config.as_ref(), vec![], vec![]);
 
             if let Err(ref e) = config {
                 println!("Warning: Unable to load configuration file: {e}");
@@ -273,7 +253,7 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
                         "    NTS cookies: {}/{} available",
                         nts_cookies,
                         ntp_proto::MAX_COOKIES
-                    )
+                    );
                 }
             }
             println!();
@@ -315,9 +295,12 @@ mod tests {
     use std::os::unix::prelude::PermissionsExt;
     use std::path::Path;
 
+    use ntp_proto::SystemSnapshot;
+
     use crate::{
         daemon::{
             config::ObservabilityConfig,
+            observer::ProgramData,
             sockets::{create_unix_socket_with_permissions, write_json},
         },
         test::alloc_port,
@@ -329,7 +312,7 @@ mod tests {
         command: Format,
         value: T,
     ) -> std::io::Result<Result<ExitCode, std::io::Error>> {
-        let config: ObservabilityConfig = Default::default();
+        let config = ObservabilityConfig::default();
 
         // be careful with copying: tests run concurrently and should use a unique socket name!
         let path = std::env::temp_dir().join(format!("ntp-test-stream-{}", alloc_port()));
@@ -356,8 +339,8 @@ mod tests {
     #[tokio::test]
     async fn test_control_socket_source() -> std::io::Result<()> {
         let value = ObservableState {
-            program: Default::default(),
-            system: Default::default(),
+            program: ProgramData::default(),
+            system: SystemSnapshot::default(),
             sources: vec![],
             servers: vec![],
         };
@@ -374,8 +357,8 @@ mod tests {
     #[tokio::test]
     async fn test_control_socket_prometheus() -> std::io::Result<()> {
         let value = ObservableState {
-            program: Default::default(),
-            system: Default::default(),
+            program: ProgramData::default(),
+            system: SystemSnapshot::default(),
             sources: vec![],
             servers: vec![],
         };

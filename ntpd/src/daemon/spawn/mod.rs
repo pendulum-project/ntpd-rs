@@ -216,7 +216,7 @@ pub trait Spawner {
     fn get_addr_description(&self) -> String;
 
     /// Get a description of the type of spawner
-    fn get_description(&self) -> &str;
+    fn get_description(&self) -> &'static str;
 }
 
 pub async fn spawner_task<S: Spawner + Send + 'static>(

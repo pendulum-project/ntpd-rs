@@ -1,3 +1,4 @@
+#![allow(clippy::cast_possible_truncation)]
 use std::{
     borrow::Cow,
     io::{Cursor, Write},
@@ -127,8 +128,16 @@ impl std::fmt::Debug for ExtensionField<'_> {
 impl<'a> ExtensionField<'a> {
     const HEADER_LENGTH: usize = 4;
 
+    #[must_use]
     pub fn into_owned(self) -> ExtensionField<'static> {
-        use ExtensionField::*;
+        use ExtensionField::{
+            InvalidNtsEncryptedField, NtsCookie, NtsCookiePlaceholder, UniqueIdentifier, Unknown,
+        };
+
+        #[cfg(feature = "ntpv5")]
+        use ExtensionField::{
+            DraftIdentification, Padding, ReferenceIdRequest, ReferenceIdResponse,
+        };
 
         match self {
             Unknown {
@@ -163,7 +172,14 @@ impl<'a> ExtensionField<'a> {
         minimum_size: u16,
         version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
-        use ExtensionField::*;
+        use ExtensionField::{
+            InvalidNtsEncryptedField, NtsCookie, NtsCookiePlaceholder, UniqueIdentifier, Unknown,
+        };
+
+        #[cfg(feature = "ntpv5")]
+        use ExtensionField::{
+            DraftIdentification, Padding, ReferenceIdRequest, ReferenceIdResponse,
+        };
 
         match self {
             Unknown { type_id, data } => {
@@ -190,6 +206,9 @@ impl<'a> ExtensionField<'a> {
         }
     }
 
+    /// # Errors
+    ///
+    /// Returns `io::Error` if serialization fails.
     #[cfg(feature = "__internal-fuzz")]
     pub fn serialize_pub(
         &self,
@@ -219,7 +238,7 @@ impl<'a> ExtensionField<'a> {
             (data_length as u16 + ExtensionField::HEADER_LENGTH as u16).max(minimum_size);
 
         if version == ExtensionHeaderVersion::V4 {
-            actual_length = next_multiple_of_u16(actual_length, 4)
+            actual_length = next_multiple_of_u16(actual_length, 4);
         }
 
         w.write_all(&ef_id.to_type_id().to_be_bytes())?;
@@ -452,6 +471,9 @@ impl<'a> ExtensionField<'a> {
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// Returns `io::Error` if encoding fails.
     #[cfg(feature = "ntpv5")]
     pub fn encode_padding_field(
         mut w: impl NonBlockingWrite,
@@ -485,10 +507,8 @@ impl<'a> ExtensionField<'a> {
         Ok(ExtensionField::UniqueIdentifier(message[..].into()))
     }
 
-    fn decode_nts_cookie(
-        message: &'a [u8],
-    ) -> Result<Self, ParsingError<std::convert::Infallible>> {
-        Ok(ExtensionField::NtsCookie(message[..].into()))
+    fn decode_nts_cookie(message: &'a [u8]) -> Self {
+        ExtensionField::NtsCookie(message[..].into())
     }
 
     fn decode_nts_cookie_placeholder(
@@ -503,14 +523,11 @@ impl<'a> ExtensionField<'a> {
         }
     }
 
-    fn decode_unknown(
-        type_id: u16,
-        message: &'a [u8],
-    ) -> Result<Self, ParsingError<std::convert::Infallible>> {
-        Ok(ExtensionField::Unknown {
+    fn decode_unknown(type_id: u16, message: &'a [u8]) -> Self {
+        ExtensionField::Unknown {
             type_id,
             data: Cow::Borrowed(message),
-        })
+        }
     }
 
     #[cfg(feature = "ntpv5")]
@@ -532,7 +549,7 @@ impl<'a> ExtensionField<'a> {
     }
 
     fn decode(
-        raw: RawExtensionField<'a>,
+        raw: &RawExtensionField<'a>,
         #[cfg_attr(not(feature = "ntpv5"), allow(unused_variables))]
         extension_header_version: ExtensionHeaderVersion,
     ) -> Result<Self, ParsingError<std::convert::Infallible>> {
@@ -543,7 +560,7 @@ impl<'a> ExtensionField<'a> {
 
         match raw.type_id {
             TypeId::UniqueIdentifier => EF::decode_unique_identifier(message),
-            TypeId::NtsCookie => EF::decode_nts_cookie(message),
+            TypeId::NtsCookie => Ok(EF::decode_nts_cookie(message)),
             TypeId::NtsCookiePlaceholder => EF::decode_nts_cookie_placeholder(message),
             #[cfg(feature = "ntpv5")]
             TypeId::DraftIdentification => {
@@ -553,7 +570,7 @@ impl<'a> ExtensionField<'a> {
             TypeId::ReferenceIdRequest => Ok(ReferenceIdRequest::decode(message)?.into()),
             #[cfg(feature = "ntpv5")]
             TypeId::ReferenceIdResponse => Ok(ReferenceIdResponse::decode(message).into()),
-            type_id => EF::decode_unknown(type_id.to_type_id(), message),
+            type_id => Ok(EF::decode_unknown(type_id.to_type_id(), message)),
         }
     }
 }
@@ -597,9 +614,8 @@ impl<'a> ExtensionFieldData<'a> {
         version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
         if !self.authenticated.is_empty() || !self.encrypted.is_empty() {
-            let cipher = match cipher.get(&self.authenticated) {
-                Some(cipher) => cipher,
-                None => return Err(std::io::Error::new(std::io::ErrorKind::Other, "no cipher")),
+            let Some(cipher) = cipher.get(&self.authenticated) else {
+                return Err(std::io::Error::new(std::io::ErrorKind::Other, "no cipher"));
             };
 
             // the authenticated extension fields are always followed by the encrypted extension
@@ -657,56 +673,50 @@ impl<'a> ExtensionFieldData<'a> {
             RawExtensionField::V4_UNENCRYPTED_MINIMUM_SIZE,
             version,
         ) {
-            let (offset, field) = field.map_err(|e| e.generalize())?;
+            let (offset, field) = field.map_err(super::ParsingError::generalize)?;
             size = offset + field.wire_length(version);
-            match field.type_id {
-                ExtensionFieldTypeId::NtsEncryptedField => {
-                    let encrypted = RawEncryptedField::from_message_bytes(field.message_bytes)
-                        .map_err(|e| e.generalize())?;
+            if field.type_id == ExtensionFieldTypeId::NtsEncryptedField {
+                let encrypted = RawEncryptedField::from_message_bytes(field.message_bytes)
+                    .map_err(super::ParsingError::generalize)?;
 
-                    let cipher = match cipher.get(&efdata.untrusted) {
-                        Some(cipher) => cipher,
-                        None => {
-                            efdata.untrusted.push(InvalidNtsEncryptedField);
-                            is_valid_nts = false;
-                            continue;
-                        }
-                    };
+                let Some(cipher) = cipher.get(&efdata.untrusted) else {
+                    efdata.untrusted.push(InvalidNtsEncryptedField);
+                    is_valid_nts = false;
+                    continue;
+                };
 
-                    let encrypted_fields = match encrypted.decrypt(
-                        cipher.as_ref(),
-                        &data[..header_size + offset],
-                        version,
-                    ) {
-                        Ok(encrypted_fields) => encrypted_fields,
-                        Err(e) => {
-                            // early return if it's anything but a decrypt error
-                            e.get_decrypt_error()?;
+                let encrypted_fields = match encrypted.decrypt(
+                    cipher.as_ref(),
+                    &data[..header_size + offset],
+                    version,
+                ) {
+                    Ok(encrypted_fields) => encrypted_fields,
+                    Err(e) => {
+                        // early return if it's anything but a decrypt error
+                        e.get_decrypt_error()?;
 
-                            efdata.untrusted.push(InvalidNtsEncryptedField);
-                            is_valid_nts = false;
-                            continue;
-                        }
-                    };
+                        efdata.untrusted.push(InvalidNtsEncryptedField);
+                        is_valid_nts = false;
+                        continue;
+                    }
+                };
 
-                    // for the current ciphers we allow in non-test code,
-                    // the nonce should always be 16 bytes
-                    debug_assert_eq!(encrypted.nonce.len(), 16);
+                // for the current ciphers we allow in non-test code,
+                // the nonce should always be 16 bytes
+                debug_assert_eq!(encrypted.nonce.len(), 16);
 
-                    efdata.encrypted.extend(encrypted_fields);
-                    cookie = match cipher {
-                        super::crypto::CipherHolder::DecodedServerCookie(cookie) => Some(cookie),
-                        super::crypto::CipherHolder::Other(_) => None,
-                    };
+                efdata.encrypted.extend(encrypted_fields);
+                cookie = match cipher {
+                    super::crypto::CipherHolder::DecodedServerCookie(cookie) => Some(cookie),
+                    super::crypto::CipherHolder::Other(_) => None,
+                };
 
-                    // All previous untrusted fields are now validated
-                    efdata.authenticated.append(&mut efdata.untrusted);
-                }
-                _ => {
-                    let field =
-                        ExtensionField::decode(field, version).map_err(|e| e.generalize())?;
-                    efdata.untrusted.push(field);
-                }
+                // All previous untrusted fields are now validated
+                efdata.authenticated.append(&mut efdata.untrusted);
+            } else {
+                let field = ExtensionField::decode(&field, version)
+                    .map_err(super::ParsingError::generalize)?;
+                efdata.untrusted.push(field);
             }
         }
 
@@ -740,23 +750,23 @@ impl<'a> RawEncryptedField<'a> {
     fn from_message_bytes(
         message_bytes: &'a [u8],
     ) -> Result<Self, ParsingError<std::convert::Infallible>> {
-        use ParsingError::*;
-
         let [b0, b1, b2, b3, ref rest @ ..] = message_bytes[..] else {
-            return Err(IncorrectLength);
+            return Err(ParsingError::IncorrectLength);
         };
 
         let nonce_length = u16::from_be_bytes([b0, b1]) as usize;
         let ciphertext_length = u16::from_be_bytes([b2, b3]) as usize;
 
-        let nonce = rest.get(..nonce_length).ok_or(IncorrectLength)?;
+        let nonce = rest
+            .get(..nonce_length)
+            .ok_or(ParsingError::IncorrectLength)?;
 
         // skip the lengths and the nonce. pad to a multiple of 4
         let ciphertext_start = 4 + next_multiple_of_u16(nonce_length as u16, 4) as usize;
 
         let ciphertext = message_bytes
             .get(ciphertext_start..ciphertext_start + ciphertext_length)
-            .ok_or(IncorrectLength)?;
+            .ok_or(ParsingError::IncorrectLength)?;
 
         Ok(Self { nonce, ciphertext })
     }
@@ -767,13 +777,10 @@ impl<'a> RawEncryptedField<'a> {
         aad: &[u8],
         version: ExtensionHeaderVersion,
     ) -> Result<Vec<ExtensionField<'a>>, ParsingError<ExtensionField<'a>>> {
-        let plaintext = match cipher.decrypt(self.nonce, self.ciphertext, aad) {
-            Ok(plain) => plain,
-            Err(_) => {
-                return Err(ParsingError::DecryptError(
-                    ExtensionField::InvalidNtsEncryptedField,
-                ));
-            }
+        let Ok(plaintext) = cipher.decrypt(self.nonce, self.ciphertext, aad) else {
+            return Err(ParsingError::DecryptError(
+                ExtensionField::InvalidNtsEncryptedField,
+            ));
         };
 
         RawExtensionField::deserialize_sequence(
@@ -783,13 +790,15 @@ impl<'a> RawEncryptedField<'a> {
             version,
         )
         .map(|encrypted_field| {
-            let encrypted_field = encrypted_field.map_err(|e| e.generalize())?.1;
+            let encrypted_field = encrypted_field
+                .map_err(super::error::ParsingError::generalize)?
+                .1;
             if encrypted_field.type_id == ExtensionFieldTypeId::NtsEncryptedField {
                 // TODO: Discuss whether we want this check
                 Err(ParsingError::MalformedNtsExtensionFields)
             } else {
-                Ok(ExtensionField::decode(encrypted_field, version)
-                    .map_err(|e| e.generalize())?
+                Ok(ExtensionField::decode(&encrypted_field, version)
+                    .map_err(super::error::ParsingError::generalize)?
                     .into_owned())
             }
         })
@@ -1015,7 +1024,7 @@ mod tests {
             type_id: ExtensionFieldTypeId::NtsCookiePlaceholder,
             message_bytes: &[1; COOKIE_LENGTH],
         };
-        let output = ExtensionField::decode(raw, ExtensionHeaderVersion::V4).unwrap_err();
+        let output = ExtensionField::decode(&raw, ExtensionHeaderVersion::V4).unwrap_err();
 
         assert!(matches!(output, ParsingError::MalformedCookiePlaceholder));
 
@@ -1023,7 +1032,7 @@ mod tests {
             type_id: ExtensionFieldTypeId::NtsCookiePlaceholder,
             message_bytes: &[0; COOKIE_LENGTH],
         };
-        let output = ExtensionField::decode(raw, ExtensionHeaderVersion::V4).unwrap();
+        let output = ExtensionField::decode(&raw, ExtensionHeaderVersion::V4).unwrap();
 
         let ExtensionField::NtsCookiePlaceholder { cookie_length } = output else {
             panic!("incorrect variant");
@@ -1056,7 +1065,7 @@ mod tests {
         data.extend(&[0]); // Padding
 
         let raw = RawExtensionField::deserialize(&data, 4, ExtensionHeaderVersion::V5).unwrap();
-        let ef = ExtensionField::decode(raw, ExtensionHeaderVersion::V4).unwrap();
+        let ef = ExtensionField::decode(&raw, ExtensionHeaderVersion::V4).unwrap();
 
         let ExtensionField::DraftIdentification(ref parsed) = ef else {
             panic!("Unexpected extension field {ef:?}... expected DraftIdentification");

@@ -20,9 +20,13 @@ where
     T: serde::Deserialize<'a>,
 {
     buffer.clear();
+
+    #[allow(clippy::cast_possible_truncation)]
     let msg_size = stream.read_u64().await? as usize;
     buffer.resize(msg_size, 0);
+
     stream.read_exact(buffer).await?;
+
     serde_json::from_slice(buffer)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))
 }

@@ -38,9 +38,9 @@ impl PoolSpawner {
     pub fn new(config: PoolSourceConfig) -> PoolSpawner {
         PoolSpawner {
             config,
-            id: Default::default(),
-            current_sources: Default::default(),
-            known_ips: Default::default(),
+            id: SpawnerId::default(),
+            current_sources: Vec::default(),
+            known_ips: Vec::default(),
         }
     }
 }
@@ -126,10 +126,10 @@ impl Spawner for PoolSpawner {
     }
 
     fn get_addr_description(&self) -> String {
-        format!("{} ({})", self.config.addr.deref(), self.config.count)
+        format!("{} ({})", &*self.config.addr, self.config.count)
     }
 
-    fn get_description(&self) -> &str {
+    fn get_description(&self) -> &'static str {
         "pool"
     }
 }

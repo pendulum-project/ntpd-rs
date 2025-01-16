@@ -62,7 +62,7 @@ pub struct SystemSnapshot {
     #[serde(skip)]
     pub bloom_filter: BloomFilter,
     #[cfg(feature = "ntpv5")]
-    /// NTPv5 reference ID for this instance
+    /// `NTPv5` reference ID for this instance
     #[serde(skip)]
     pub server_id: ServerId,
 }
@@ -198,6 +198,9 @@ pub struct System<SourceId, Controller> {
 impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId = SourceId>>
     System<SourceId, Controller>
 {
+    /// # Errors
+    ///
+    /// Returns `NtpClock::Error` if the `Controller` can't be created.
     pub fn new(
         clock: Controller::Clock,
         synchronization_config: SynchronizationConfig,
@@ -221,7 +224,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
             source_defaults_config,
             system,
             ip_list,
-            sources: Default::default(),
+            sources: HashMap::default(),
             controller: Controller::new(
                 clock,
                 synchronization_config,
@@ -236,10 +239,16 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         self.system
     }
 
+    /// # Errors
+    ///
+    /// Returns `NtpClock::Error` if controlling the `Controller` fails.
     pub fn check_clock_access(&mut self) -> Result<(), <Controller::Clock as NtpClock>::Error> {
         self.ensure_controller_control()
     }
 
+    /// # Errors
+    ///
+    /// Returns `NtpClock::Error` if controlling the `Controller` fails.
     fn ensure_controller_control(&mut self) -> Result<(), <Controller::Clock as NtpClock>::Error> {
         if !self.controller_took_control {
             self.controller.take_control()?;
@@ -248,6 +257,9 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// Returns `NtpClock::Error` if controlling the `Controller` fails.
     pub fn create_sock_source(
         &mut self,
         id: SourceId,
@@ -264,6 +276,9 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         Ok(OneWaySource::new(controller))
     }
 
+    /// # Errors
+    ///
+    /// Returns `NtpClock::Error` if controlling the `Controller` fails.
     #[allow(clippy::type_complexity)]
     pub fn create_ntp_source(
         &mut self,
@@ -290,6 +305,9 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         ))
     }
 
+    /// # Errors
+    ///
+    /// Returns `NtpClock::Error` if removing the source fails.
     pub fn handle_source_remove(
         &mut self,
         id: SourceId,
@@ -299,6 +317,13 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// Returns `NtpClock::Error` if synchronization can't be updated.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the source does not exist.
     pub fn handle_source_update(
         &mut self,
         id: SourceId,
@@ -325,6 +350,13 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if Source does not exist.
+    ///
+    /// # Errors
+    ///
+    /// Returns `NtpClock::Error` if update on clock fails.
     pub fn handle_one_way_source_update(
         &mut self,
         id: SourceId,
@@ -364,7 +396,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
             actions.push(SystemAction::SetTimer(timeout));
         }
         if let Some(message) = update.source_message {
-            actions.push(SystemAction::UpdateSources(SystemSourceUpdate { message }))
+            actions.push(SystemAction::UpdateSources(SystemSourceUpdate { message }));
         }
         actions.into()
     }
@@ -401,6 +433,7 @@ mod tests {
 
     #[test]
     fn test_source_update() {
+        use crate::Reach;
         let mut system = SystemSnapshot::default();
 
         system.update_used_sources(
@@ -409,10 +442,10 @@ mod tests {
                     source_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
                     source_id: ReferenceId::KISS_DENY,
                     poll_interval: PollIntervalLimits::default().max,
-                    reach: Default::default(),
+                    reach: Reach::default(),
                     stratum: 2,
                     reference_id: ReferenceId::NONE,
-                    protocol_version: Default::default(),
+                    protocol_version: ProtocolVersion::default(),
                     #[cfg(feature = "ntpv5")]
                     bloom_filter: None,
                 }),
@@ -420,10 +453,10 @@ mod tests {
                     source_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
                     source_id: ReferenceId::KISS_RATE,
                     poll_interval: PollIntervalLimits::default().max,
-                    reach: Default::default(),
+                    reach: Reach::default(),
                     stratum: 3,
                     reference_id: ReferenceId::NONE,
-                    protocol_version: Default::default(),
+                    protocol_version: ProtocolVersion::default(),
                     #[cfg(feature = "ntpv5")]
                     bloom_filter: None,
                 }),

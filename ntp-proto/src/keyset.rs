@@ -36,7 +36,7 @@ impl std::fmt::Debug for DecodedServerCookie {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DecodedServerCookie")
             .field("algorithm", &self.algorithm)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -50,6 +50,7 @@ impl KeySetProvider {
     /// Create a new keysetprovider that keeps history old
     /// keys around (so in total, history+1 keys are valid
     /// at any time)
+    #[must_use]
     pub fn new(history: usize) -> Self {
         KeySetProvider {
             current: Arc::new(KeySet {
@@ -64,6 +65,8 @@ impl KeySetProvider {
     }
 
     #[cfg(feature = "__internal-fuzz")]
+    #[allow(clippy::cast_possible_truncation)]
+    #[must_use]
     pub fn dangerous_new_deterministic(history: usize) -> Self {
         KeySetProvider {
             current: Arc::new(KeySet {
@@ -78,12 +81,12 @@ impl KeySetProvider {
     }
 
     /// Rotate a new key in as primary, forgetting an old one if needed
+    #[allow(clippy::cast_possible_truncation)]
     pub fn rotate(&mut self) {
         let next_key = AesSivCmac512::new(aes_siv::Aes256SivAead::generate_key(rand::thread_rng()));
         let mut keys = Vec::with_capacity((self.history + 1).min(self.current.keys.len() + 1));
-        for key in self.current.keys
+        for key in &self.current.keys
             [self.current.keys.len().saturating_sub(self.history)..self.current.keys.len()]
-            .iter()
         {
             // This is the rare case where we do really want to make a copy.
             keys.push(AesSivCmac512::new(GenericArray::clone_from_slice(
@@ -101,20 +104,33 @@ impl KeySetProvider {
         });
     }
 
+    /// # Panics
+    ///
+    /// Panics if `buf` can't be converted to system time.
+    ///
+    /// # Errors
+    ///
+    /// Errors if `len` is bigger or equal to `primary`.
     pub fn load(
         reader: &mut impl Read,
         history: usize,
     ) -> std::io::Result<(Self, std::time::SystemTime)> {
         let mut buf = [0; 64];
         reader.read_exact(&mut buf[0..20])?;
+
         let time = std::time::SystemTime::UNIX_EPOCH
             + std::time::Duration::from_secs(u64::from_be_bytes(buf[0..8].try_into().unwrap()));
         let id_offset = u32::from_be_bytes(buf[8..12].try_into().unwrap());
         let primary = u32::from_be_bytes(buf[12..16].try_into().unwrap());
         let len = u32::from_be_bytes(buf[16..20].try_into().unwrap());
-        if primary > len {
-            return Err(std::io::ErrorKind::Other.into());
+
+        if primary >= len {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Primary key must be less than length",
+            ));
         }
+
         let mut keys = vec![];
         for _ in 0..len {
             reader.read_exact(&mut buf[0..64])?;
@@ -133,6 +149,14 @@ impl KeySetProvider {
         ))
     }
 
+    /// # Panics
+    ///
+    /// Panics if we can't get the current time.
+    ///
+    /// # Errors
+    ///
+    /// Errors if we can't write to the sink.
+    #[allow(clippy::cast_possible_truncation)]
     pub fn store(&self, writer: &mut impl Write) -> std::io::Result<()> {
         let time = std::time::SystemTime::now()
             .duration_since(std::time::SystemTime::UNIX_EPOCH)
@@ -141,13 +165,14 @@ impl KeySetProvider {
         writer.write_all(&self.current.id_offset.to_be_bytes())?;
         writer.write_all(&self.current.primary.to_be_bytes())?;
         writer.write_all(&(self.current.keys.len() as u32).to_be_bytes())?;
-        for key in self.current.keys.iter() {
+        for key in &self.current.keys {
             writer.write_all(key.key_bytes())?;
         }
         Ok(())
     }
 
-    /// Get the current KeySet
+    /// Get the current `KeySet`
+    #[must_use]
     pub fn get(&self) -> Arc<KeySet> {
         self.current.clone()
     }
@@ -161,10 +186,12 @@ pub struct KeySet {
 
 impl KeySet {
     #[cfg(feature = "__internal-fuzz")]
+    #[must_use]
     pub fn encode_cookie_pub(&self, cookie: &DecodedServerCookie) -> Vec<u8> {
         self.encode_cookie(cookie)
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     pub(crate) fn encode_cookie(&self, cookie: &DecodedServerCookie) -> Vec<u8> {
         let mut output = cookie.plaintext();
         let plaintext_length = output.as_slice().len();
@@ -192,6 +219,7 @@ impl KeySet {
     }
 
     #[cfg(feature = "__internal-fuzz")]
+    #[allow(clippy::missing_errors_doc)]
     pub fn decode_cookie_pub(&self, cookie: &[u8]) -> Result<DecodedServerCookie, DecryptError> {
         self.decode_cookie(cookie)
     }
@@ -292,6 +320,7 @@ impl std::fmt::Debug for KeySet {
 }
 
 #[cfg(any(test, feature = "__internal-fuzz"))]
+#[must_use]
 pub fn test_cookie() -> DecodedServerCookie {
     DecodedServerCookie {
         algorithm: AeadAlgorithm::AeadAesSivCmac256,

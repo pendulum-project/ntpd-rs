@@ -111,16 +111,17 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 next_update: None,
             };
         }
-        for (_, (state, _)) in self.sources.iter_mut() {
+        for (state, _) in self.sources.values_mut() {
             if let Some(ref mut snapshot) = state {
-                snapshot.state = snapshot.state.progress_time(time, snapshot.wander)
+                snapshot.state = snapshot.state.progress_time(time, snapshot.wander);
             }
         }
 
         let selection = select::select(
             &self.synchronization_config,
             &self.algo_config,
-            self.sources
+            &self
+                .sources
                 .iter()
                 .filter_map(
                     |(_, (state, usable))| {
@@ -131,8 +132,8 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                         }
                     },
                 )
-                .cloned()
-                .collect(),
+                .copied()
+                .collect::<Vec<SourceSnapshot<SourceId>>>(),
         );
 
         if let Some(combined) = combine(&selection, &self.algo_config) {
@@ -237,8 +238,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 || self
                     .synchronization_config
                     .accumulated_step_panic_threshold
-                    .map(|v| self.timedata.accumulated_steps > v)
-                    .unwrap_or(false)
+                    .is_some_and(|v| self.timedata.accumulated_steps > v)
             {
                 error!("Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate. If the clock is significantly wrong, you can use `ntp-ctl force-sync` to correct it.");
                 #[cfg(not(test))]
@@ -315,10 +315,11 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
             .expect("Cannot adjust clock");
         for (state, _) in self.sources.values_mut() {
             if let Some(ref mut state) = state {
-                state.state =
-                    state
-                        .state
-                        .process_frequency_steering(freq_update, actual_change, state.wander)
+                state.state = state.state.process_frequency_steering(
+                    freq_update,
+                    actual_change,
+                    state.wander,
+                );
             }
         }
         debug!(
@@ -581,7 +582,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "Threshold exceeded")]
     fn jumps_add_absolutely() {
         let synchronization_config = SynchronizationConfig {
             minimum_agreeing_sources: 1,
@@ -610,6 +611,7 @@ mod tests {
         algo.steer_offset(-1000.0, 0.0);
     }
 
+    #[allow(clippy::float_cmp)]
     #[test]
     fn test_jumps_update_state() {
         let synchronization_config = SynchronizationConfig::default();
@@ -700,7 +702,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "Threshold exceeded")]
     fn test_large_offset_eventually_panics() {
         let synchronization_config = SynchronizationConfig {
             minimum_agreeing_sources: 1,
@@ -755,7 +757,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "Threshold exceeded")]
     fn test_backward_step_panics_before_steer() {
         let synchronization_config = SynchronizationConfig {
             minimum_agreeing_sources: 1,

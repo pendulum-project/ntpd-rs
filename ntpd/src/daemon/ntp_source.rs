@@ -84,13 +84,25 @@ enum SocketResult {
     Abort,
 }
 
+#[allow(clippy::large_enum_variant)]
+enum SelectResult<Controller: SourceController> {
+    Timer,
+    Recv(Result<RecvResult<SocketAddr>, std::io::Error>),
+    SystemUpdate(
+        Result<
+            SystemSourceUpdate<Controller::ControllerMessage>,
+            tokio::sync::broadcast::error::RecvError,
+        >,
+    ),
+}
+
 impl<C, Controller: SourceController<MeasurementDelay = NtpDuration>, T>
     SourceTask<C, Controller, T>
 where
     C: 'static + NtpClock + Send + Sync,
     T: Wait,
 {
-    async fn setup_socket(&mut self) -> SocketResult {
+    fn setup_socket(&mut self) -> SocketResult {
         let socket_res = match self.interface {
             #[cfg(target_os = "linux")]
             Some(interface) => {
@@ -116,21 +128,10 @@ where
         SocketResult::Ok
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn run(&mut self, mut poll_wait: Pin<&mut T>) {
         loop {
             let mut buf = [0_u8; 1024];
-
-            #[allow(clippy::large_enum_variant)]
-            enum SelectResult<Controller: SourceController> {
-                Timer,
-                Recv(Result<RecvResult<SocketAddr>, std::io::Error>),
-                SystemUpdate(
-                    Result<
-                        SystemSourceUpdate<Controller::ControllerMessage>,
-                        tokio::sync::broadcast::error::RecvError,
-                    >,
-                ),
-            }
 
             let selected: SelectResult<Controller> = tokio::select! {
                 () = &mut poll_wait => {
@@ -149,14 +150,9 @@ where
                     tracing::debug!("accept packet");
                     match accept_packet(result, &buf, &self.clock) {
                         AcceptResult::Accept(packet, recv_timestamp) => {
-                            let send_timestamp = match self.last_send_timestamp {
-                                Some(ts) => ts,
-                                None => {
-                                    debug!(
-                                        "we received a message without having sent one; discarding"
-                                    );
-                                    continue;
-                                }
+                            let Some(send_timestamp) = self.last_send_timestamp else {
+                                debug!("we received a message without having sent one; discarding");
+                                continue;
                             };
                             let actions = self.source.handle_incoming(
                                 packet,
@@ -223,7 +219,7 @@ where
             for action in actions {
                 match action {
                     ntp_proto::NtpSourceAction::Send(packet) => {
-                        if matches!(self.setup_socket().await, SocketResult::Abort) {
+                        if matches!(self.setup_socket(), SocketResult::Abort) {
                             self.channels
                                 .msg_for_system_sender
                                 .send(MsgForSystem::NetworkIssue(self.index))
@@ -254,24 +250,24 @@ where
                             Err(error) => {
                                 warn!(?error, "poll message could not be sent");
 
-                                match error.raw_os_error() {
-                                    Some(libc::EHOSTDOWN)
-                                    | Some(libc::EHOSTUNREACH)
-                                    | Some(libc::ENETDOWN)
-                                    | Some(libc::ENETUNREACH) => {
-                                        self.channels
-                                            .msg_for_system_sender
-                                            .send(MsgForSystem::NetworkIssue(self.index))
-                                            .await
-                                            .ok();
-                                        self.channels
-                                            .source_snapshots
-                                            .write()
-                                            .expect("Unexpected poisoned mutex")
-                                            .remove(&self.index);
-                                        return;
-                                    }
-                                    _ => {}
+                                if let Some(
+                                    libc::EHOSTDOWN
+                                    | libc::EHOSTUNREACH
+                                    | libc::ENETDOWN
+                                    | libc::ENETUNREACH,
+                                ) = error.raw_os_error()
+                                {
+                                    self.channels
+                                        .msg_for_system_sender
+                                        .send(MsgForSystem::NetworkIssue(self.index))
+                                        .await
+                                        .ok();
+                                    self.channels
+                                        .source_snapshots
+                                        .write()
+                                        .expect("Unexpected poisoned mutex")
+                                        .remove(&self.index);
+                                    return;
                                 }
                             }
                             Ok(opt_send_timestamp) => {
@@ -290,7 +286,7 @@ where
                             .ok();
                     }
                     ntp_proto::NtpSourceAction::SetTimer(timeout) => {
-                        poll_wait.as_mut().reset(Instant::now() + timeout)
+                        poll_wait.as_mut().reset(Instant::now() + timeout);
                     }
                     ntp_proto::NtpSourceAction::Reset => {
                         self.channels
@@ -356,7 +352,7 @@ where
                             unreachable!("Should not be updating system from startup")
                         }
                         ntp_proto::NtpSourceAction::SetTimer(timeout) => {
-                            poll_wait.as_mut().reset(Instant::now() + timeout)
+                            poll_wait.as_mut().reset(Instant::now() + timeout);
                         }
                         ntp_proto::NtpSourceAction::Reset => {
                             unreachable!("Should not be resetting from startup")
@@ -406,14 +402,17 @@ fn accept_packet<'a, C: NtpClock>(
             timestamp,
             ..
         }) => {
-            let recv_timestamp = timestamp.map(convert_net_timestamp).unwrap_or_else(|| {
-                if let Ok(now) = clock.now() {
-                    debug!(?size, "received a packet without a timestamp, substituting");
-                    now
-                } else {
-                    panic!("Received packet without timestamp and couldn't substitute");
-                }
-            });
+            let recv_timestamp = timestamp.map_or_else(
+                || {
+                    if let Ok(now) = clock.now() {
+                        debug!(?size, "received a packet without a timestamp, substituting");
+                        now
+                    } else {
+                        panic!("Received packet without timestamp and couldn't substitute");
+                    }
+                },
+                convert_net_timestamp,
+            );
 
             // Note: packets are allowed to be bigger when including extensions.
             // we don't expect them, but the server may still send them. The
@@ -431,10 +430,9 @@ fn accept_packet<'a, C: NtpClock>(
             warn!(?receive_error, "could not receive packet");
 
             match receive_error.raw_os_error() {
-                Some(libc::EHOSTDOWN)
-                | Some(libc::EHOSTUNREACH)
-                | Some(libc::ENETDOWN)
-                | Some(libc::ENETUNREACH) => AcceptResult::NetworkGone,
+                Some(libc::EHOSTDOWN | libc::EHOSTUNREACH | libc::ENETDOWN | libc::ENETUNREACH) => {
+                    AcceptResult::NetworkGone
+                }
                 _ => AcceptResult::Ignore,
             }
         }
@@ -541,6 +539,7 @@ mod tests {
             let cur =
                 std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH)?;
 
+            #[allow(clippy::cast_possible_truncation)]
             Ok(NtpTimestamp::from_seconds_nanos_since_ntp_era(
                 EPOCH_OFFSET.wrapping_add(cur.as_secs() as u32),
                 cur.subsec_nanos(),
@@ -579,7 +578,8 @@ mod tests {
         }
     }
 
-    async fn test_startup<T: Wait>() -> (
+    #[allow(clippy::type_complexity)]
+    fn test_startup<T: Wait>() -> (
         SourceTask<TestClock, TwoWayKalmanSourceController<SourceId>, T>,
         Socket<SocketAddr, Open>,
         mpsc::Receiver<MsgForSystem<KalmanSourceMessage<SourceId>>>,
@@ -643,7 +643,7 @@ mod tests {
     #[tokio::test]
     async fn test_poll_sends_state_update_and_packet() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, socket, _, _system_update_sender) = test_startup().await;
+        let (mut process, socket, _, _system_update_sender) = test_startup();
 
         let (poll_wait, poll_send) = TestWait::new();
 
@@ -674,7 +674,7 @@ mod tests {
     #[tokio::test]
     async fn test_timeroundtrip() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, mut socket, mut msg_recv, _system_update_sender) = test_startup().await;
+        let (mut process, mut socket, mut msg_recv, _system_update_sender) = test_startup();
 
         let system = SystemSnapshot {
             time_snapshot: TimeSnapshot {
@@ -723,7 +723,7 @@ mod tests {
     #[tokio::test]
     async fn test_deny_stops_poll() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, mut socket, mut msg_recv, _system_update_sender) = test_startup().await;
+        let (mut process, mut socket, mut msg_recv, _system_update_sender) = test_startup();
 
         let (poll_wait, poll_send) = TestWait::new();
 
@@ -758,7 +758,7 @@ mod tests {
         poll_send.notify();
 
         tokio::select! {
-            _ = tokio::time::sleep(Duration::from_millis(10)) => {/*expected */},
+            () = tokio::time::sleep(Duration::from_millis(10)) => {/*expected */},
             _ = socket.recv(&mut buf) => { unreachable!("should not receive anything") }
         }
 

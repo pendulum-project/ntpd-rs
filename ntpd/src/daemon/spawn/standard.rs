@@ -44,7 +44,7 @@ impl std::error::Error for StandardSpawnError {}
 impl StandardSpawner {
     pub fn new(config: StandardSource) -> StandardSpawner {
         StandardSpawner {
-            id: Default::default(),
+            id: SpawnerId::default(),
             config,
             resolved: None,
             has_spawned: false,
@@ -135,7 +135,7 @@ impl Spawner for StandardSpawner {
         self.config.address.to_string()
     }
 
-    fn get_description(&self) -> &str {
+    fn get_description(&self) -> &'static str {
         "standard"
     }
 }
@@ -324,20 +324,16 @@ mod tests {
         }
         let seen_addresses = seen_addresses;
 
-        for addr in seen_addresses.iter() {
+        for addr in &seen_addresses {
             assert!(
                 addresses.contains(addr),
-                "{:?} should have been drawn from {:?}",
-                addr,
-                addresses
+                "{addr:?} should have been drawn from {addresses:?}"
             );
         }
 
         assert!(
             seen_addresses.iter().any(|seen| seen != &initial_addr),
-            "Re-resolved\n\n\t{:?}\n\n should contain at least one address that isn't the original\n\n\t{:?}",
-            seen_addresses,
-            initial_addr,
+            "Re-resolved\n\n\t{seen_addresses:?}\n\n should contain at least one address that isn't the original\n\n\t{initial_addr:?}",
         );
     }
 
