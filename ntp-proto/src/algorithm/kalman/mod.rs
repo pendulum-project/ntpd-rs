@@ -34,6 +34,10 @@ struct SourceSnapshot<Index: Copy> {
     state: KalmanState,
     wander: f64,
     delay: f64,
+    // The wraparound period of the source,
+    // that is, the smallest time duration where
+    // the source cant distinguish whether the offset
+    // is 0 or that time duration.
     period: Option<f64>,
 
     source_uncertainty: NtpDuration,

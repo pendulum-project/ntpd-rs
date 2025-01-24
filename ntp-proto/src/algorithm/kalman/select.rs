@@ -8,10 +8,11 @@ enum BoundType {
     End,
 }
 
-// Select a maximum overlapping set of candidates. Note that here we define
-// overlapping to mean that any part of their confidence intervals overlaps, instead
-// of the NTP convention that all centers need to be within each others confidence
-// intervals.
+// Select a maximum overlapping set of candidates. Note that we define overlapping
+// to mean that the intersection of the confidence intervals of the entire set of
+// candidates to be non-empty. This is different to the NTP reference implementation's
+// convention that all centers need to be within each others confidence intervals.
+//
 // The advantage of doing this is that the algorithm becomes a lot simpler, and it
 // is also statistically more sound. Any difference (larger set of accepted sources)
 // can be compensated for if desired by setting tighter bounds on the weights
@@ -43,6 +44,9 @@ pub(super) fn select<Index: Copy>(
 
     bounds.sort_by(|a, b| a.0.total_cmp(&b.0));
 
+    // Find the intersection of the confidence intervals of the maximum
+    // overlapping set. We need this entire interval to properly integrate
+    // periodic sources
     let mut maxlow: usize = 0;
     let mut maxhigh: usize = 0;
     let mut maxtlow: f64 = 0.0;
@@ -68,7 +72,9 @@ pub(super) fn select<Index: Copy>(
         }
     }
 
-    // Catch programming errors. If this ever fails there is high risk of missteering, better fail hard in that case
+    // Check that the lower and upper bound of the intersection agree on how many
+    // sources are part of the maximum set. If not, something has seriously gone
+    // wrong and we shouldn't steer the clock.
     assert_eq!(maxlow, maxhigh);
     let max = maxlow;
 
