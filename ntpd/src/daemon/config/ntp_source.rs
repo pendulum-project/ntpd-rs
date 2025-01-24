@@ -275,17 +275,12 @@ impl NormalizedAddress {
         if address.split(':').count() > 2 {
             // IPv6, try to parse it as such
             match address.parse::<SocketAddr>() {
-                Ok(socket_addr) => {
-                    // strip off the port
-                    let (server_name, _) = address.rsplit_once(':').unwrap();
-
-                    Ok((server_name.to_string(), socket_addr.port()))
-                }
+                Ok(socket_addr) => Ok((socket_addr.ip().to_string(), socket_addr.port())),
                 Err(e) => {
                     // Could be because of no port, add one and see
                     let address_with_port = format!("[{address}]:{default_port}");
-                    if address_with_port.parse::<SocketAddr>().is_ok() {
-                        Ok((format!("[{address}]"), default_port))
+                    if let Ok(socket_addr) = address_with_port.parse::<SocketAddr>() {
+                        Ok((socket_addr.ip().to_string(), socket_addr.port()))
                     } else {
                         Err(std::io::Error::new(std::io::ErrorKind::Other, e))
                     }
@@ -353,7 +348,11 @@ impl NormalizedAddress {
 
 impl std::fmt::Display for NormalizedAddress {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}:{}", self.server_name, self.port)
+        if self.server_name.contains(':') {
+            write!(f, "[{}]:{}", self.server_name, self.port)
+        } else {
+            write!(f, "{}:{}", self.server_name, self.port)
+        }
     }
 }
 
