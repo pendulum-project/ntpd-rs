@@ -45,7 +45,11 @@ fn try_date_display(offset: NtpDuration) -> Option<String> {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let ts = since_epoch + (offset.to_seconds() as u64);
+    let ts = if offset < NtpDuration::ZERO {
+        since_epoch - ((-offset.to_seconds()) as u64)
+    } else {
+        since_epoch + ((offset.to_seconds()) as u64)
+    };
 
     std::process::Command::new("date")
         .arg("-d")
