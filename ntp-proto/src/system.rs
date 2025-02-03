@@ -212,6 +212,8 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         if synchronization_config.local_stratum == 1 {
             // We are a stratum 1 server so mark our selves synchronized.
             system.time_snapshot.leap_indicator = NtpLeapIndicator::NoWarning;
+            // Set the reference id for the system
+            system.reference_id = synchronization_config.reference_id.to_reference_id();
         }
 
         Ok(System {
