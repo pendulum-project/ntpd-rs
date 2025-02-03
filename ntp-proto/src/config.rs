@@ -44,7 +44,7 @@ impl<'de> Deserialize<'de> for ReferenceIdConfig {
             type Value = ReferenceIdConfig;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("Up to 4-character string")
+                formatter.write_str("up to 4-character string")
             }
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
