@@ -337,6 +337,10 @@ time sources is gathered and applied to the system clock.
     time source. Can be used in servers to indicate that there are external
     mechanisms synchronizing the clock.
 
+`reference-id` = *reference-id* (**XNON**)
+:   Sets the reported NTP clock reference id when local-statum is set to `1`.
+    This is used to indicate the source of the time reference (`GPS` etc.).
+
 ## `[synchronization.algorithm]`
 Warning: the algorithm section contains mostly internal algorithm tweaks that
 generally do not need to be changed. However, they are offered here for specific

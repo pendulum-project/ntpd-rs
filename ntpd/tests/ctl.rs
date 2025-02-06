@@ -109,3 +109,49 @@ fn test_help() {
     assert!(contains_bytes(&result.stdout, b"usage"));
     assert_eq!(result.status.code(), Some(0));
 }
+
+#[test]
+fn test_bad_reference_id() {
+    // Reference ID is too long
+
+    let test_config_contents = r#"
+[[source]]
+mode = "pool"
+address = "ntpd-rs.pool.ntp.org"
+count = 4
+
+[synchronization]
+local-stratum = 1
+reference-id = "TOO_LONG"
+"#;
+
+    let test_config_path = format!("{CARGO_TARGET_TMPDIR}/reference_id_bad_test_config");
+    std::fs::write(&test_config_path, test_config_contents.as_bytes()).unwrap();
+
+    let result = test_ntp_ctl_output(&["validate", "-c", &test_config_path]);
+
+    assert!(contains_bytes(&result.stderr, b"up to 4-character string"));
+    assert_eq!(result.status.code(), Some(1));
+}
+
+#[test]
+fn test_good_reference_id() {
+    let test_config_contents = r#"
+[[source]]
+mode = "pool"
+address = "ntpd-rs.pool.ntp.org"
+count = 4
+
+[synchronization]
+local-stratum = 1
+reference-id = "GPS"
+"#;
+
+    let test_config_path = format!("{CARGO_TARGET_TMPDIR}/reference_id_good_test_config");
+    std::fs::write(&test_config_path, test_config_contents.as_bytes()).unwrap();
+
+    let result = test_ntp_ctl_output(&["validate", "-c", &test_config_path]);
+
+    assert!(contains_bytes(&result.stderr, b"good"));
+    assert_eq!(result.status.code(), Some(0));
+}

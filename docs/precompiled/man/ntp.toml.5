@@ -418,6 +418,12 @@ have been configured, or when the time has not yet been synchronized
 from an NTP time source.
 Can be used in servers to indicate that there are external mechanisms
 synchronizing the clock.
+.TP
+\f[V]reference-id\f[R] = \f[I]reference-id\f[R] (\f[B]XNON\f[R])
+Sets the reported NTP clock reference id when local-statum is set to
+\f[V]1\f[R].
+This is used to indicate the source of the time reference (\f[V]GPS\f[R]
+etc.).
 .SS \f[V][synchronization.algorithm]\f[R]
 .PP
 Warning: the algorithm section contains mostly internal algorithm tweaks

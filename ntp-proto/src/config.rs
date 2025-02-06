@@ -22,6 +22,56 @@ where
 }
 
 #[derive(Debug, Default, Copy, Clone)]
+pub struct ReferenceIdConfig {
+    id: u32,
+}
+
+impl ReferenceIdConfig {
+    pub(crate) fn to_reference_id(self) -> crate::ReferenceId {
+        crate::ReferenceId::from_int(self.id)
+    }
+}
+
+// Deserialize from the string type in config
+impl<'de> Deserialize<'de> for ReferenceIdConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ReferenceIdConfigVisitor;
+
+        impl Visitor<'_> for ReferenceIdConfigVisitor {
+            type Value = ReferenceIdConfig;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("up to 4-character string")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let mut chars: Vec<char> = v.chars().collect();
+                if chars.len() > 4 {
+                    return Err(E::invalid_length(chars.len(), &self));
+                }
+
+                // Pad with spaces
+                while chars.len() < 4 {
+                    chars.push(' ');
+                }
+
+                let encoded = chars.iter().fold(0u32, |acc, &c| (acc << 8) | (c as u32));
+
+                Ok(ReferenceIdConfig { id: encoded })
+            }
+        }
+
+        deserializer.deserialize_str(ReferenceIdConfigVisitor)
+    }
+}
+
+#[derive(Debug, Default, Copy, Clone)]
 pub struct StepThreshold {
     pub forward: Option<NtpDuration>,
     pub backward: Option<NtpDuration>,
@@ -263,6 +313,46 @@ pub struct SynchronizationConfig {
     /// synchronizing the clock
     #[serde(default = "default_local_stratum")]
     pub local_stratum: u8,
+
+    /// Reference ID for clock synchronization. When stratum is 1 this value
+    /// is used - the value is left justified, limited to four characters
+    /// and zero padded.
+    ///
+    /// From RFC 5905:
+    ///
+    ///  +------+----------------------------------------------------------+
+    ///  | ID   | Clock Source                                             |
+    ///  +------+----------------------------------------------------------+
+    ///  | GOES | Geosynchronous Orbit Environment Satellite               |
+    ///  | GPS  | Global Position System                                   |
+    ///  | GAL  | Galileo Positioning System                               |
+    ///  | PPS  | Generic pulse-per-second                                 |
+    ///  | IRIG | Inter-Range Instrumentation Group                        |
+    ///  | WWVB | LF Radio WWVB Ft. Collins, CO 60 kHz                     |
+    ///  | DCF  | LF Radio DCF77 Mainflingen, DE 77.5 kHz                  |
+    ///  | HBG  | LF Radio HBG Prangins, HB 75 kHz                         |
+    ///  | MSF  | LF Radio MSF Anthorn, UK 60 kHz                          |
+    ///  | JJY  | LF Radio JJY Fukushima, JP 40 kHz, Saga, JP 60 kHz       |
+    ///  | LORC | MF Radio LORAN C station, 100 kHz                        |
+    ///  | TDF  | MF Radio Allouis, FR 162 kHz                             |
+    ///  | CHU  | HF Radio CHU Ottawa, Ontario                             |
+    ///  | WWV  | HF Radio WWV Ft. Collins, CO                             |
+    ///  | WWVH | HF Radio WWVH Kauai, HI                                  |
+    ///  | NIST | NIST telephone modem                                     |
+    ///  | ACTS | NIST telephone modem                                     |
+    ///  | USNO | USNO telephone modem                                     |
+    ///  | PTB  | European telephone modem                                 |
+    ///  +------+----------------------------------------------------------+
+    ///
+    /// Any string beginning with the ASCII character "X" is can be used for
+    /// experimentation and development.
+    ///
+    /// The default value is "XNON" (i.e. NONE)
+    ///
+    /// When the local-stratum not 1 the reference-id is ignored.
+    ///
+    #[serde(default = "default_reference_id")]
+    pub reference_id: ReferenceIdConfig,
 }
 
 impl Default for SynchronizationConfig {
@@ -275,12 +365,21 @@ impl Default for SynchronizationConfig {
             accumulated_step_panic_threshold: None,
 
             local_stratum: default_local_stratum(),
+            reference_id: default_reference_id(),
         }
     }
 }
 
 fn default_minimum_agreeing_sources() -> usize {
     3
+}
+
+fn default_reference_id() -> ReferenceIdConfig {
+    ReferenceIdConfig {
+        id: ['X', 'N', 'O', 'N']
+            .iter()
+            .fold(0u32, |acc, &c| (acc << 8) | (c as u32)),
+    }
 }
 
 fn default_single_step_panic_threshold() -> StepThreshold {
