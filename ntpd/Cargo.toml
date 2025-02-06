@@ -90,6 +90,7 @@ assets = [
 conf-files = [
   "/etc/ntpd-rs/ntp.toml",
 ]
+provides = "time-daemon"
 
 [package.metadata.generate-rpm]
 name = "ntpd-rs"
