@@ -110,11 +110,90 @@ pub struct NtsPoolSourceConfig {
     pub ntp_version: Option<NtpVersion>,
 }
 
-#[derive(Deserialize, Debug, PartialEq, Clone)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct SockSourceConfig {
     pub path: PathBuf,
-    pub measurement_noise_estimate: f64,
+    pub precision: f64,
+}
+
+impl<'de> Deserialize<'de> for SockSourceConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(field_identifier, rename_all = "snake_case")]
+        enum Field {
+            Path,
+            Precision,
+            MeasurementNoiseEstimate,
+        }
+
+        struct SockSourceConfigVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for SockSourceConfigVisitor {
+            type Value = SockSourceConfig;
+
+            fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
+                formatter.write_str("struct SockSourceConfig")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<SockSourceConfig, V::Error>
+            where
+                V: serde::de::MapAccess<'de>,
+            {
+                let mut path = None;
+                let mut precision = None;
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        Field::Path => {
+                            if path.is_some() {
+                                return Err(de::Error::duplicate_field("path"));
+                            }
+                            path = Some(map.next_value()?);
+                        }
+                        Field::MeasurementNoiseEstimate => {
+                            tracing::warn!("The measurement_noise_estimate field is deprecated. Please switch to using the precision field");
+                            if precision.is_some() {
+                                return Err(de::Error::duplicate_field(
+                                    "measurement_noise_estimate",
+                                ));
+                            }
+                            let variance: f64 = map.next_value()?;
+                            if variance.partial_cmp(&0.0) != Some(core::cmp::Ordering::Greater) {
+                                return Err(de::Error::invalid_value(
+                                    serde::de::Unexpected::Float(variance),
+                                    &"measurement_noise_estimate should be positive",
+                                ));
+                            }
+                            precision = Some(variance.sqrt());
+                        }
+                        Field::Precision => {
+                            if precision.is_some() {
+                                return Err(de::Error::duplicate_field("precision"));
+                            }
+                            let precision_raw: f64 = map.next_value()?;
+                            if precision_raw.partial_cmp(&0.0) != Some(core::cmp::Ordering::Greater)
+                            {
+                                return Err(de::Error::invalid_value(
+                                    serde::de::Unexpected::Float(precision_raw),
+                                    &"measurement_noise_estimate should be positive",
+                                ));
+                            }
+                            precision = Some(precision_raw);
+                        }
+                    }
+                }
+                let path = path.ok_or_else(|| serde::de::Error::missing_field("path"))?;
+                let precision =
+                    precision.ok_or_else(|| serde::de::Error::missing_field("precision"))?;
+                Ok(SockSourceConfig { path, precision })
+            }
+        }
+
+        const FIELDS: &[&str] = &["path", "precision", "measurement_noise_estimate"];
+        deserializer.deserialize_struct("SockSourceConfig", FIELDS, SockSourceConfigVisitor)
+    }
 }
 
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone, Default)]
@@ -164,17 +243,111 @@ pub struct FlattenedPair<T, U> {
     pub second: U,
 }
 
-#[derive(Deserialize, Debug, PartialEq, Clone)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct PpsSourceConfig {
     pub path: PathBuf,
-    pub measurement_noise_estimate: f64,
-    #[serde(default = "default_period")]
+    pub precision: f64,
     pub period: f64,
 }
 
-fn default_period() -> f64 {
-    1.
+impl<'de> Deserialize<'de> for PpsSourceConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(field_identifier, rename_all = "snake_case")]
+        enum Field {
+            Path,
+            Precision,
+            MeasurementNoiseEstimate,
+            Period,
+        }
+
+        struct PpsSourceConfigVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for PpsSourceConfigVisitor {
+            type Value = PpsSourceConfig;
+
+            fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
+                formatter.write_str("struct PpsSourceConfig")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<PpsSourceConfig, V::Error>
+            where
+                V: serde::de::MapAccess<'de>,
+            {
+                let mut path = None;
+                let mut precision = None;
+                let mut period = None;
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        Field::Path => {
+                            if path.is_some() {
+                                return Err(de::Error::duplicate_field("path"));
+                            }
+                            path = Some(map.next_value()?);
+                        }
+                        Field::MeasurementNoiseEstimate => {
+                            tracing::warn!("The measurement_noise_estimate field is deprecated. Please switch to using the precision field");
+                            if precision.is_some() {
+                                return Err(de::Error::duplicate_field(
+                                    "measurement_noise_estimate",
+                                ));
+                            }
+                            let variance: f64 = map.next_value()?;
+                            if variance.partial_cmp(&0.0) != Some(core::cmp::Ordering::Greater) {
+                                return Err(de::Error::invalid_value(
+                                    serde::de::Unexpected::Float(variance),
+                                    &"measurement_noise_estimate should be positive",
+                                ));
+                            }
+                            precision = Some(variance.sqrt());
+                        }
+                        Field::Precision => {
+                            if precision.is_some() {
+                                return Err(de::Error::duplicate_field("precision"));
+                            }
+                            let precision_raw: f64 = map.next_value()?;
+                            if precision_raw.partial_cmp(&0.0) != Some(core::cmp::Ordering::Greater)
+                            {
+                                return Err(de::Error::invalid_value(
+                                    serde::de::Unexpected::Float(precision_raw),
+                                    &"measurement_noise_estimate should be positive",
+                                ));
+                            }
+                            precision = Some(precision_raw);
+                        }
+                        Field::Period => {
+                            if period.is_some() {
+                                return Err(de::Error::duplicate_field("period"));
+                            }
+                            let period_raw: f64 = map.next_value()?;
+                            if period_raw.partial_cmp(&0.0) != Some(core::cmp::Ordering::Greater) {
+                                return Err(de::Error::invalid_value(
+                                    serde::de::Unexpected::Float(period_raw),
+                                    &"period should be positive",
+                                ));
+                            }
+                            period = Some(period_raw);
+                        }
+                    }
+                }
+                let path = path.ok_or_else(|| serde::de::Error::missing_field("path"))?;
+                let precision =
+                    precision.ok_or_else(|| serde::de::Error::missing_field("precision"))?;
+                let period = period.unwrap_or(1.0);
+                Ok(PpsSourceConfig {
+                    path,
+                    precision,
+                    period,
+                })
+            }
+        }
+
+        const FIELDS: &[&str] = &["path", "precision", "measurement_noise_estimate"];
+        deserializer.deserialize_struct("PpsSourceConfig", FIELDS, PpsSourceConfigVisitor)
+    }
 }
 
 #[derive(Debug, Deserialize, PartialEq, Clone)]
@@ -603,6 +776,274 @@ mod tests {
             "#,
         );
         assert!(test2.is_err());
+    }
+
+    #[test]
+    fn test_sock_config_parsing() {
+        #[derive(Deserialize, Debug)]
+        struct TestConfig {
+            #[allow(unused)]
+            source: NtpSourceConfig,
+        }
+
+        let TestConfig {
+            source: NtpSourceConfig::Sock(test),
+        } = toml::from_str(
+            r#"
+                [source]
+                mode = "sock"
+                path = "/test/path"
+                measurement_noise_estimate = 0.0625
+            "#,
+        )
+        .unwrap()
+        else {
+            panic!("Unexpected source type");
+        };
+        assert_eq!(test.precision, 0.25);
+
+        let TestConfig {
+            source: NtpSourceConfig::Sock(test),
+        } = toml::from_str(
+            r#"
+                [source]
+                mode = "sock"
+                path = "/test/path"
+                precision = 0.25
+            "#,
+        )
+        .unwrap()
+        else {
+            panic!("Unexpected source type");
+        };
+        assert_eq!(test.precision, 0.25);
+
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+                [source]
+                mode = "sock"
+                path = "/test/path"
+                precision = 0.25
+                measurement_noise_estimate = 0.0625
+            "#,
+        );
+        assert!(test.is_err());
+
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+                [source]
+                mode = "sock"
+                path = "/test/path"
+            "#,
+        );
+        assert!(test.is_err());
+
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+                [source]
+                mode = "sock"
+                precision = 0.25
+            "#,
+        );
+        assert!(test.is_err());
+
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+                [source]
+                mode = "sock"
+                path = "/test/path"
+                precision = 0.25
+                unknown_field = 5
+            "#,
+        );
+        assert!(test.is_err());
+
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+                [source]
+                mode = "sock"
+                path = "/test/path"
+                precision = -0.25
+            "#,
+        );
+        assert!(test.is_err());
+
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+                [source]
+                mode = "sock"
+                path = "/test/path"
+                measurement_noise_estimate = -0.0625
+            "#,
+        );
+        assert!(test.is_err());
+
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+                [source]
+                mode = "sock"
+                path = "/test/path"
+                precision = 0.0
+            "#,
+        );
+        assert!(test.is_err());
+
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+                [source]
+                mode = "sock"
+                path = "/test/path"
+                measurement_noise_estimate = 0.0
+            "#,
+        );
+        assert!(test.is_err());
+    }
+
+    #[test]
+    fn test_pps_config_parsing() {
+        #[derive(Deserialize, Debug)]
+        struct TestConfig {
+            #[allow(unused)]
+            source: NtpSourceConfig,
+        }
+
+        let TestConfig {
+            source: NtpSourceConfig::Pps(test),
+        } = toml::from_str(
+            r#"
+            [source]
+            mode = "pps"
+            path = "/test/path"
+            precision = 0.25
+            period = 1.5
+            "#,
+        )
+        .unwrap()
+        else {
+            panic!("Unexpected source type");
+        };
+        assert_eq!(test.precision, 0.25);
+        assert_eq!(test.period, 1.5);
+
+        let TestConfig {
+            source: NtpSourceConfig::Pps(test),
+        } = toml::from_str(
+            r#"
+            [source]
+            mode = "pps"
+            path = "/test/path"
+            measurement_noise_estimate = 0.0625
+            "#,
+        )
+        .unwrap()
+        else {
+            panic!("Unexpected source type");
+        };
+        assert_eq!(test.precision, 0.25);
+        assert_eq!(test.period, 1.0);
+
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "pps"
+            path = "/test/path"
+            precision = 0.25
+            measurement_noise_estimate = 0.0625
+            "#,
+        );
+        assert!(test.is_err());
+
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "pps"
+            path = "/test/path"
+            "#,
+        );
+        assert!(test.is_err());
+
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "pps"
+            path = "/test/path"
+            precision = 0.25
+            unknown_field = 5
+            "#,
+        );
+        assert!(test.is_err());
+
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "pps"
+            path = "/test/path"
+            precision = -0.25
+            "#,
+        );
+        assert!(test.is_err());
+
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "pps"
+            path = "/test/path"
+            measurement_noise_estimate = -0.0625
+            "#,
+        );
+        assert!(test.is_err());
+
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "pps"
+            path = "/test/path"
+            precision = -0.25
+            "#,
+        );
+        assert!(test.is_err());
+
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "pps"
+            path = "/test/path"
+            precision = 0.25
+            period = -0.5
+            "#,
+        );
+        assert!(test.is_err());
+
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "pps"
+            path = "/test/path"
+            measurement_noise_estimate = 0.0
+            "#,
+        );
+        assert!(test.is_err());
+
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "pps"
+            path = "/test/path"
+            precision = 0.0
+            "#,
+        );
+        assert!(test.is_err());
+
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "pps"
+            path = "/test/path"
+            precision = 0.25
+            period = 0.0
+            "#,
+        );
+        assert!(test.is_err());
     }
 
     #[test]
