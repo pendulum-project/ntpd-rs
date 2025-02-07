@@ -111,6 +111,15 @@ sources.
 :   `pool` mode only. Specifies a list of IP addresses of servers in the pool
     which should not be used. For example: `["127.0.0.1"]`. Empty by default.
 
+`measurement_noise_estimate` = *Noise variance (seconds squared)*
+:   `pps` and `sock` mode only. Deprecated, use `precision` instead.
+
+`precision` = *Noise standard deviation (seconds)*
+:   `pps` and `sock` mode only. Precision of the source. This should be an estimate
+    of the size of the expected measurement noise. Technically defined as the
+    1-standard deviation bound on the measurement error. This is needed as
+    `sock` and `pps` sources don't have a good way to estimate their own error.
+
 `poll-interval-limits` = { `min` = *min*, `max` = *max* } (defaults from `[source-defaults]`)
 :   Specifies the limit on how often a source is queried for a new time. For
     most instances the defaults will be adequate. The min and max are given as
