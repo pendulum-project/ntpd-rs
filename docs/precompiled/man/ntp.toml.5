@@ -146,6 +146,20 @@ be used.
 For example: \f[V][\[dq]127.0.0.1\[dq]]\f[R].
 Empty by default.
 .TP
+\f[V]measurement_noise_estimate\f[R] = \f[I]Noise variance (seconds squared)\f[R]
+\f[V]pps\f[R] and \f[V]sock\f[R] mode only.
+Deprecated, use \f[V]precision\f[R] instead.
+.TP
+\f[V]precision\f[R] = \f[I]Noise standard deviation (seconds)\f[R]
+\f[V]pps\f[R] and \f[V]sock\f[R] mode only.
+Precision of the source.
+This should be an estimate of the size of the expected measurement
+noise.
+Technically defined as the 1-standard deviation bound on the measurement
+error.
+This is needed as \f[V]sock\f[R] and \f[V]pps\f[R] sources don\[cq]t
+have a good way to estimate their own error.
+.TP
 \f[V]poll-interval-limits\f[R] = { \f[V]min\f[R] = \f[I]min\f[R], \f[V]max\f[R] = \f[I]max\f[R] } (defaults from \f[V][source-defaults]\f[R])
 Specifies the limit on how often a source is queried for a new time.
 For most instances the defaults will be adequate.
