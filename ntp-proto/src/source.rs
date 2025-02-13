@@ -571,6 +571,11 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
                     .cookies
                     .gap()
                     .min(((self.buffer.len() - 300) / cookie.len()).min(u8::MAX as usize) as u8);
+                // Defence in depth, ensure we can get at least 1 new cookie.
+                if new_cookies == 0 {
+                    warn!("NTS Cookie too large, resetting source. This may be a problem with the source");
+                    return actions![NtpSourceAction::Reset];
+                }
                 match self.protocol_version {
                     ProtocolVersion::V4 => {
                         NtpPacket::nts_poll_message(&cookie, new_cookies, poll_interval)
@@ -861,7 +866,11 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
 
 #[cfg(test)]
 mod test {
-    use crate::{packet::NoCipher, time_types::PollIntervalLimits, NtpClock};
+    use crate::{
+        packet::{AesSivCmac256, NoCipher},
+        time_types::PollIntervalLimits,
+        NtpClock,
+    };
 
     use super::*;
     #[cfg(feature = "ntpv5")]
@@ -1087,6 +1096,23 @@ mod test {
 
         assert!(source.current_poll_interval() >= source.remote_min_poll_interval);
         assert!(source.current_poll_interval() >= source.controller.0);
+    }
+
+    #[test]
+    fn test_oversize_cookie_doesnt_crash() {
+        let mut source = NtpSource::test_ntp_source(NoopController);
+        let mut ntsdata = SourceNtsData {
+            cookies: CookieStash::default(),
+            c2s: Box::new(AesSivCmac256::new([0; 32].into())),
+            s2c: Box::new(AesSivCmac256::new([0; 32].into())),
+        };
+        ntsdata.cookies.store(vec![0; 2048]);
+        ntsdata.cookies.store(vec![0; 2048]);
+        source.nts = Some(Box::new(ntsdata));
+        let actions = source.handle_timer();
+        for action in actions {
+            assert!(matches!(action, NtpSourceAction::Reset))
+        }
     }
 
     #[test]
