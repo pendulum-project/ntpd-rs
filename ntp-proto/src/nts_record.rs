@@ -675,6 +675,7 @@ pub enum KeyExchangeError {
     NoValidAlgorithm,
     InvalidFixedKeyLength,
     NoCookies,
+    CookiesTooBig,
     Io(std::io::Error),
     Tls(tls_utils::Error),
     Certificate(tls_utils::Error),
@@ -704,6 +705,7 @@ impl Display for KeyExchangeError {
                 "The length of a fixed key does not match the algorithm used"
             ),
             Self::NoCookies => write!(f, "Missing cookies"),
+            Self::CookiesTooBig => write!(f, "Server returned cookies that are too large"),
             Self::Io(e) => write!(f, "{e}"),
             Self::Tls(e) => write!(f, "{e}"),
             Self::Certificate(e) => write!(f, "{e}"),
@@ -756,6 +758,7 @@ impl KeyExchangeError {
             | NoValidAlgorithm
             | InvalidFixedKeyLength
             | NoCookies
+            | CookiesTooBig
             | Tls(_)
             | Certificate(_)
             | DnsName(_)
@@ -964,6 +967,9 @@ pub struct KeyExchangeResultDecoder {
 }
 
 impl KeyExchangeResultDecoder {
+    // Chosen such that we can get new cookies if the need arises. In practice, the cookie should never be this big.
+    const MAX_COOKIE_SIZE: usize = 350;
+
     pub fn step_with_slice(
         mut self,
         bytes: &[u8],
@@ -1027,6 +1033,9 @@ impl KeyExchangeResultDecoder {
                 Continue(state)
             }
             NewCookie { cookie_data } => {
+                if cookie_data.len() > Self::MAX_COOKIE_SIZE {
+                    return ControlFlow::Break(Err(KeyExchangeError::CookiesTooBig));
+                }
                 state.cookies.store(cookie_data);
                 Continue(state)
             }
@@ -2507,6 +2516,22 @@ mod test {
         ]
     }
 
+    fn nts_oversized_cookie() -> [NtsRecord; 4] {
+        [
+            NtsRecord::NextProtocol {
+                protocol_ids: vec![0],
+            },
+            NtsRecord::AeadAlgorithm {
+                critical: false,
+                algorithm_ids: vec![15],
+            },
+            NtsRecord::NewCookie {
+                cookie_data: vec![0; 2048],
+            },
+            NtsRecord::EndOfMessage,
+        ]
+    }
+
     #[test]
     fn test_nts_time_nl_response() {
         let state = client_decode_records(nts_time_nl_records().as_slice()).unwrap();
@@ -2514,6 +2539,12 @@ mod test {
         assert_eq!(state.remote, None);
         assert_eq!(state.port, None);
         assert_eq!(state.cookies.gap(), 0);
+    }
+
+    #[test]
+    fn reject_oversized_cookie() {
+        let result = client_decode_records(nts_oversized_cookie().as_slice());
+        assert!(matches!(result, Err(KeyExchangeError::CookiesTooBig)));
     }
 
     #[test]
