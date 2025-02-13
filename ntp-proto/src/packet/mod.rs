@@ -249,7 +249,7 @@ impl NtpHeaderV3V4 {
             // Timestamp must be last to make it as accurate as possible.
             transmit_timestamp: clock.now().expect("Failed to read time"),
             leap: system.time_snapshot.leap_indicator,
-            reference_timestamp: Default::default(),
+            reference_timestamp: recv_timestamp.truncated_second_bits(7),
         }
     }
 

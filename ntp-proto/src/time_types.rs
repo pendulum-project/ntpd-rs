@@ -106,6 +106,18 @@ impl NtpTimestamp {
         self - other < NtpDuration::ZERO
     }
 
+    /// Create an NTP timestamp where the last x bits of the seconds part and
+    /// the entire nanosecond part is set to zero
+    pub fn truncated_second_bits(mut self, truncate_bits: u8) -> NtpTimestamp {
+        if truncate_bits >= 32 {
+            self.timestamp = 0;
+        } else {
+            let mask = !((1u64 << (truncate_bits + 32)) - 1);
+            self.timestamp &= mask;
+        }
+        self
+    }
+
     #[cfg(test)]
     pub(crate) const fn from_fixed_int(timestamp: u64) -> NtpTimestamp {
         NtpTimestamp { timestamp }
@@ -686,6 +698,14 @@ mod tests {
         assert_eq!(
             NtpTimestamp::from_seconds_nanos_since_ntp_era(1, 0),
             NtpTimestamp::from_fixed_int(1 << 32)
+        );
+    }
+
+    #[test]
+    fn test_timestamp_truncate_seconds() {
+        assert_eq!(
+            NtpTimestamp::from_fixed_int(u64::MAX).truncated_second_bits(8),
+            NtpTimestamp::from_fixed_int(0xFFFFFF0000000000),
         );
     }
 
