@@ -1376,7 +1376,7 @@ mod tests {
         assert_eq!(efdata.encrypted, &[]);
         assert_eq!(efdata.untrusted, &[invalid]);
 
-        assert_eq!(remaining_bytes, &[]);
+        assert_eq!(remaining_bytes, &[] as &[u8]);
     }
 
     #[test]
@@ -1420,7 +1420,7 @@ mod tests {
         assert_eq!(efdata.encrypted, &[]);
         assert_eq!(efdata.untrusted, &[invalid]);
 
-        assert_eq!(remaining_bytes, &[]);
+        assert_eq!(remaining_bytes, &[] as &[u8]);
     }
 
     #[test]
@@ -1459,7 +1459,7 @@ mod tests {
         assert_eq!(efdata.encrypted.len(), 1);
         assert_eq!(efdata.untrusted, &[]);
 
-        assert_eq!(remaining_bytes, &[]);
+        assert_eq!(remaining_bytes, &[] as &[u8]);
 
         assert!(cookie.is_some());
     }

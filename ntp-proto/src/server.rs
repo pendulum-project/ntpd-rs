@@ -411,8 +411,6 @@ impl<'de> Deserialize<'de> for IpSubnet {
 mod tests {
     use std::net::{Ipv4Addr, Ipv6Addr};
 
-    use serde_test::{assert_de_tokens, assert_de_tokens_error, Token};
-
     use crate::{
         nts_record::AeadAlgorithm, packet::AesSivCmac256, Cipher, DecodedServerCookie,
         KeySetProvider, NtpDuration, NtpLeapIndicator, PollIntervalLimits,
@@ -1376,9 +1374,16 @@ mod tests {
     fn test_ipv4_subnet_parse() {
         use std::str::FromStr;
 
-        assert!(IpSubnet::from_str("bla/5").is_err());
-        assert!(IpSubnet::from_str("0.0.0.0").is_err());
-        assert!(IpSubnet::from_str("0.0.0.0/33").is_err());
+        assert!(matches!(
+            IpSubnet::from_str("bla/5"),
+            Err(SubnetParseError::Ip(_))
+        ));
+        assert_eq!(IpSubnet::from_str("0.0.0.0"), Err(SubnetParseError::Subnet));
+        assert_eq!(
+            IpSubnet::from_str("0.0.0.0/33"),
+            Err(SubnetParseError::Mask)
+        );
+
         assert_eq!(
             IpSubnet::from_str("0.0.0.0/0"),
             Ok(IpSubnet {
@@ -1394,25 +1399,20 @@ mod tests {
             })
         );
 
-        assert_de_tokens_error::<IpSubnet>(
-            &[Token::Str("bla/5")],
-            "invalid IP address syntax in subnet",
-        );
-        assert_de_tokens_error::<IpSubnet>(&[Token::Str("0.0.0.0")], "Invalid subnet syntax");
-        assert_de_tokens_error::<IpSubnet>(&[Token::Str("0.0.0.0/33")], "Invalid subnet mask");
-        assert_de_tokens(
-            &IpSubnet {
+        assert_eq!(
+            serde_json::from_str::<IpSubnet>(r#""0.0.0.0/0""#).unwrap(),
+            IpSubnet {
                 addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
                 mask: 0,
-            },
-            &[Token::Str("0.0.0.0/0")],
+            }
         );
-        assert_de_tokens(
-            &IpSubnet {
+
+        assert_eq!(
+            serde_json::from_str::<IpSubnet>(r#""127.0.0.1/32""#).unwrap(),
+            IpSubnet {
                 addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
                 mask: 32,
-            },
-            &[Token::Str("127.0.0.1/32")],
+            }
         );
     }
 
@@ -1420,9 +1420,13 @@ mod tests {
     fn test_ipv6_subnet_parse() {
         use std::str::FromStr;
 
-        assert!(IpSubnet::from_str("bla/5").is_err());
-        assert!(IpSubnet::from_str("::").is_err());
-        assert!(IpSubnet::from_str("::/129").is_err());
+        assert!(matches!(
+            IpSubnet::from_str("bla/5"),
+            Err(SubnetParseError::Ip(_))
+        ));
+        assert_eq!(IpSubnet::from_str("::"), Err(SubnetParseError::Subnet));
+        assert_eq!(IpSubnet::from_str("::/129"), Err(SubnetParseError::Mask));
+
         assert_eq!(
             IpSubnet::from_str("::/0"),
             Ok(IpSubnet {
@@ -1438,25 +1442,20 @@ mod tests {
             })
         );
 
-        assert_de_tokens_error::<IpSubnet>(
-            &[Token::Str("bla/5")],
-            "invalid IP address syntax in subnet",
-        );
-        assert_de_tokens_error::<IpSubnet>(&[Token::Str("::")], "Invalid subnet syntax");
-        assert_de_tokens_error::<IpSubnet>(&[Token::Str("::/129")], "Invalid subnet mask");
-        assert_de_tokens(
-            &IpSubnet {
+        assert_eq!(
+            serde_json::from_str::<IpSubnet>(r#""::/0""#).unwrap(),
+            IpSubnet {
                 addr: IpAddr::V6(Ipv6Addr::UNSPECIFIED),
                 mask: 0,
-            },
-            &[Token::Str("::/0")],
+            }
         );
-        assert_de_tokens(
-            &IpSubnet {
+
+        assert_eq!(
+            serde_json::from_str::<IpSubnet>(r#""::1/128""#).unwrap(),
+            IpSubnet {
                 addr: IpAddr::V6(Ipv6Addr::LOCALHOST),
                 mask: 128,
-            },
-            &[Token::Str("::1/128")],
+            }
         );
     }
 }

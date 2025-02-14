@@ -43,4 +43,4 @@ aes-siv.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
-serde_test.workspace = true
+serde_json.workspace = true
