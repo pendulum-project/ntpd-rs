@@ -26,29 +26,15 @@ use super::exitcode;
 async fn build_client_config(
     extra_certificates: &[Certificate],
 ) -> Result<tls_utils::ClientConfig, KeyExchangeError> {
-    let mut roots = tokio::task::spawn_blocking(move || {
-        let mut roots = tls_utils::RootCertStore::empty();
-        for cert in tls_utils::pemfile::load_native_certs()? {
-            roots
-                .add(tls_utils::pemfile::rootstore_ref_shim(&cert))
-                .map_err(KeyExchangeError::Certificate)?;
-        }
-        Ok::<_, KeyExchangeError>(roots)
-    })
-    .await
-    .expect("Unexpected error while loading root certificates")?;
-
-    for cert in extra_certificates {
-        roots
-            .add(tls_utils::pemfile::rootstore_ref_shim(cert))
-            .map_err(KeyExchangeError::Certificate)?;
-    }
-
-    Ok(
-        tls_utils::client_config_builder_with_protocol_versions(&[&TLS13])
-            .with_root_certificates(roots)
-            .with_no_client_auth(),
-    )
+    let builder = tls_utils::client_config_builder_with_protocol_versions(&[&TLS13]);
+    let provider = builder.crypto_provider().clone();
+    let verifier =
+        tls_utils::PlatformVerifier::new_with_extra_roots(extra_certificates.iter().cloned())?
+            .with_provider(provider);
+    Ok(builder
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(verifier))
+        .with_no_client_auth())
 }
 
 pub(crate) async fn key_exchange_client(
