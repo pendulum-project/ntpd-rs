@@ -313,13 +313,9 @@ impl<T: std::hash::Hash + Eq> TimestampedCache<T> {
     }
 
     fn index(&self, item: &T) -> usize {
-        use std::hash::{BuildHasher, Hasher};
+        use std::hash::BuildHasher;
 
-        let mut hasher = self.randomstate.build_hasher();
-
-        item.hash(&mut hasher);
-
-        hasher.finish() as usize % self.elements.len()
+        self.randomstate.hash_one(item) as usize % self.elements.len()
     }
 
     fn is_allowed(&mut self, item: T, timestamp: Instant, cutoff: Duration) -> bool {
