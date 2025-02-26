@@ -2858,20 +2858,11 @@ mod test {
             .unwrap();
 
         let mut root_store = tls_utils::RootCertStore::empty();
-        #[cfg(any(feature = "rustls22", feature = "rustls23"))]
         root_store.add_parsable_certificates(
             tls_utils::pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
                 "../test-keys/testca.pem"
             ) as &[u8]))
             .map(|res| res.unwrap()),
-        );
-        #[cfg(not(any(feature = "rustls22", feature = "rustls23")))]
-        root_store.add_parsable_certificates(
-            &tls_utils::pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
-                "../test-keys/testca.pem"
-            ) as &[u8]))
-            .map(|res| res.unwrap())
-            .collect::<Vec<_>>(),
         );
 
         let clientconfig = tls_utils::client_config_builder()
@@ -2937,32 +2928,22 @@ mod test {
         .next()
         .unwrap();
         let mut root_store = tls_utils::RootCertStore::empty();
-        #[cfg(any(feature = "rustls22", feature = "rustls23"))]
         root_store.add_parsable_certificates(
             tls_utils::pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
                 "../test-keys/testca.pem"
             ) as &[u8]))
             .map(|res| res.unwrap()),
         );
-        #[cfg(not(any(feature = "rustls22", feature = "rustls23")))]
-        root_store.add_parsable_certificates(
-            &tls_utils::pemfile::certs(&mut std::io::BufReader::new(include_bytes!(
-                "../test-keys/testca.pem"
-            ) as &[u8]))
-            .map(|res| res.unwrap())
-            .collect::<Vec<_>>(),
-        );
 
-        let mut serverconfig = tls_utils::server_config_builder()
+        let builder = tls_utils::server_config_builder();
+        #[cfg(feature = "nts-pool")]
+        let provider = builder.crypto_provider().clone();
+        let mut serverconfig = builder
             .with_client_cert_verifier(Arc::new(
                 #[cfg(not(feature = "nts-pool"))]
                 tls_utils::NoClientAuth,
                 #[cfg(feature = "nts-pool")]
-                crate::tls_utils::AllowAnyAnonymousOrCertificateBearingClient::new(
-                    // We know that our previous call to ServerConfig::builder already
-                    // installed a default provider, but this is undocumented
-                    rustls23::crypto::CryptoProvider::get_default().unwrap(),
-                ),
+                crate::tls_utils::AllowAnyAnonymousOrCertificateBearingClient::new(&provider),
             ))
             .with_single_cert(cert_chain.clone(), key_der.clone_key().into())
             .unwrap();

@@ -13,15 +13,12 @@ rust-version.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["rustls23"]
+default = []
 __internal-fuzz = ["arbitrary", "__internal-api"]
 __internal-test = ["__internal-api"]
 __internal-api = []
 ntpv5 = []
-nts-pool = [ "rustls23" ]
-rustls23 = [ "dep:rustls23", "dep:rustls-pemfile2", "dep:rustls-native-certs7" ]
-rustls22 = [ "dep:rustls22", "dep:rustls-pemfile2", "dep:rustls-native-certs7", "dep:rustls-pki-types" ]
-rustls21 = [ "dep:rustls21", "dep:rustls-pemfile1", "dep:rustls-native-certs6" ]
+nts-pool = []
 
 [dependencies]
 # Note: md5 is needed to calculate ReferenceIDs for IPv6 addresses per RFC5905
@@ -29,15 +26,11 @@ md-5.workspace = true
 rand.workspace = true
 tracing.workspace = true
 serde.workspace = true
+rustls23.workspace = true
+rustls-pki-types.workspace = true
+rustls-pemfile2.workspace = true
+rustls-native-certs7.workspace = true
 arbitrary = { workspace = true, optional = true }
-rustls23 = { workspace = true, optional = true }
-rustls22 = { workspace = true, optional = true }
-rustls21 = { workspace = true, optional = true }
-rustls-pki-types = { workspace = true, optional = true }
-rustls-pemfile2 = { workspace = true, optional = true }
-rustls-pemfile1 = { workspace = true, optional = true }
-rustls-native-certs6 = { workspace = true, optional = true }
-rustls-native-certs7 = { workspace = true, optional = true }
 aead.workspace = true
 aes-siv.workspace = true
 zeroize.workspace = true

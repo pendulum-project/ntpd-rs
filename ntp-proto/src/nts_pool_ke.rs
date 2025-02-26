@@ -89,7 +89,7 @@ pub struct ClientToPoolData {
 impl ClientToPoolData {
     pub fn extract_nts_keys<ConnectionData>(
         &self,
-        stream: &rustls23::ConnectionCommon<ConnectionData>,
+        stream: &crate::tls_utils::ConnectionCommon<ConnectionData>,
     ) -> Result<NtsKeys, KeyExchangeError> {
         self.algorithm
             .extract_nts_keys(self.protocol, stream)
