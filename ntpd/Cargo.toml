@@ -28,21 +28,17 @@ pps-time = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 
-rustls23 = { workspace = true, optional = true }
-tokio-rustls = { workspace = true, optional = true }
+rustls23.workspace = true
 
 [dev-dependencies]
 ntp-proto = { workspace = true, features = ["__internal-test",] }
+tokio-rustls.workspace = true
 
 [features]
-default = [ "rustls23", "pps" ]
+default = [ "pps" ]
 hardware-timestamping = []
 unstable_ntpv5 = ["ntp-proto/ntpv5"]
-unstable_nts-pool = [ "ntp-proto/nts-pool", "dep:rustls23" ]
-rustls23 = [ "ntp-proto/rustls23" ]
-rustls22 = [ "ntp-proto/rustls22" ]
-rustls21 = [ "ntp-proto/rustls21" ]
-run_tokio_rustls_tests = [ "rustls23", "dep:tokio-rustls" ]
+unstable_nts-pool = ["ntp-proto/nts-pool"]
 pps = [ "dep:pps-time" ]
 
 [lib]

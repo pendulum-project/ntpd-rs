@@ -161,16 +161,15 @@ fn build_server_config(
     certificate_chain: Vec<Certificate>,
     private_key: PrivateKey,
 ) -> std::io::Result<Arc<tls_utils::ServerConfig>> {
-    let mut config = tls_utils::server_config_builder_with_protocol_versions(&[&TLS13])
+    let builder = tls_utils::server_config_builder_with_protocol_versions(&[&TLS13]);
+    #[cfg(feature = "unstable_nts-pool")]
+    let provider = builder.crypto_provider().clone();
+    let mut config = builder
         .with_client_cert_verifier(Arc::new(
             #[cfg(not(feature = "unstable_nts-pool"))]
             tls_utils::NoClientAuth,
             #[cfg(feature = "unstable_nts-pool")]
-            ntp_proto::tls_utils::AllowAnyAnonymousOrCertificateBearingClient::new(
-                // We know that our previous call to ServerConfig::builder already
-                // installed a default provider, but this is undocumented
-                rustls23::crypto::CryptoProvider::get_default().unwrap(),
-            ),
+            ntp_proto::tls_utils::AllowAnyAnonymousOrCertificateBearingClient::new(&provider),
         ))
         .with_single_cert(certificate_chain, private_key)
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
@@ -713,7 +712,6 @@ mod tests {
         assert_eq!(result.port, 123);
     }
 
-    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn key_exchange_weird_packet() {
         let port = alloc_port();
@@ -751,7 +749,6 @@ mod tests {
         assert_eq!(len, 880);
     }
 
-    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn key_exchange_bad_request() {
         let port = alloc_port();
@@ -952,7 +949,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "run_tokio_rustls_tests")]
     fn client_key_exchange_message_length() -> usize {
         let mut buffer = Vec::with_capacity(1024);
         for record in ntp_proto::NtsRecord::client_key_exchange_records(None, vec![]).iter() {
@@ -962,7 +958,6 @@ mod tests {
         buffer.len()
     }
 
-    #[cfg(feature = "run_tokio_rustls_tests")]
     async fn send_records_to_client(
         records: Vec<NtsRecord>,
     ) -> Result<KeyExchangeResult, KeyExchangeError> {
@@ -1007,7 +1002,6 @@ mod tests {
         key_exchange_client("localhost".to_string(), port, extra_certificates, None).await
     }
 
-    #[cfg(feature = "run_tokio_rustls_tests")]
     async fn run_server(listener: tokio::net::TcpListener) -> Result<(), KeyExchangeError> {
         let cc = include_bytes!("../../test-keys/end.fullchain.pem");
         let certificate_chain = certificates_from_bufread(BufReader::new(Cursor::new(cc)))?;
@@ -1028,7 +1022,6 @@ mod tests {
         BoundKeyExchangeServer::run(stream, config, keyset, None, None, pool_certs).await
     }
 
-    #[cfg(feature = "run_tokio_rustls_tests")]
     async fn client_tls_stream(
         server_name: &str,
         port: u16,
@@ -1052,7 +1045,6 @@ mod tests {
         connector.connect(domain, stream).await.unwrap()
     }
 
-    #[cfg(feature = "run_tokio_rustls_tests")]
     async fn send_records_to_server(records: Vec<NtsRecord>) -> Result<(), KeyExchangeError> {
         let port = alloc_port();
         let listener = TcpListener::bind(&("localhost", port)).await?;
@@ -1079,7 +1071,6 @@ mod tests {
         run_server(listener).await
     }
 
-    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn receive_cookies() {
         let result = send_records_to_client(vec![
@@ -1100,7 +1091,6 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn records_after_end_are_ignored() {
         let result = send_records_to_client(vec![
@@ -1124,7 +1114,6 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn no_cookies() {
         let result = send_records_to_client(vec![
@@ -1144,7 +1133,6 @@ mod tests {
         assert!(matches!(error, KeyExchangeError::NoCookies));
     }
 
-    #[cfg(feature = "run_tokio_rustls_tests")]
     async fn client_error_record(errorcode: u16) -> KeyExchangeError {
         let result = send_records_to_client(vec![
             NtsRecord::Error { errorcode },
@@ -1155,7 +1143,6 @@ mod tests {
         result.unwrap_err()
     }
 
-    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn client_receives_error_record() {
         use KeyExchangeError as KEE;
@@ -1170,7 +1157,6 @@ mod tests {
         assert!(matches!(error, KEE::InternalServerError));
     }
 
-    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn server_expected_client_records() {
         let records = NtsRecord::client_key_exchange_records(None, vec![]).to_vec();
@@ -1179,7 +1165,6 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn immediate_end_of_message() {
         let records = vec![NtsRecord::EndOfMessage];
@@ -1188,7 +1173,6 @@ mod tests {
         assert!(matches!(result, Err(KeyExchangeError::NoValidProtocol)));
     }
 
-    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn double_next_protocol() {
         let records = vec![
@@ -1205,7 +1189,6 @@ mod tests {
         assert!(matches!(result, Err(KeyExchangeError::BadRequest)));
     }
 
-    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn records_after_end_of_message() {
         let records = vec![
@@ -1226,7 +1209,6 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn client_no_valid_algorithm() {
         let records = vec![
@@ -1244,7 +1226,6 @@ mod tests {
         assert!(matches!(result, Err(KeyExchangeError::NoValidAlgorithm)));
     }
 
-    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn client_no_valid_protocol() {
         let records = vec![
@@ -1262,7 +1243,6 @@ mod tests {
         assert!(matches!(result, Err(KeyExchangeError::NoValidProtocol)));
     }
 
-    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn unrecognized_critical_record() {
         let records = vec![
@@ -1281,7 +1261,6 @@ mod tests {
         ));
     }
 
-    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn client_sends_no_records_clean_shutdown() {
         let port = alloc_port();
@@ -1300,7 +1279,6 @@ mod tests {
         assert!(matches!(result, Err(KeyExchangeError::IncompleteResponse)));
     }
 
-    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     #[ignore = "Flaky on macos and not that interesting"]
     async fn client_sends_no_records_dirty_shutdown() {
@@ -1320,7 +1298,6 @@ mod tests {
         assert!(matches!(result, Err(KeyExchangeError::IncompleteResponse)));
     }
 
-    #[cfg(feature = "run_tokio_rustls_tests")]
     async fn server_error_record(errorcode: u16) -> KeyExchangeError {
         let result = send_records_to_server(vec![
             NtsRecord::Error { errorcode },
@@ -1331,7 +1308,6 @@ mod tests {
         result.unwrap_err()
     }
 
-    #[cfg(feature = "run_tokio_rustls_tests")]
     #[tokio::test]
     async fn server_receives_error_record() {
         use KeyExchangeError as KEE;

@@ -23,7 +23,7 @@ jobs:
       - name: Setup packaging tools for cross compiled artifacts
         uses: awalsh128/cache-apt-pkgs-action@5902b33ae29014e6ca012c5d8025d4346556bd40 # v1.4.3
         with:
-          packages: qemu-user-static crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386
+          packages: musl-tools qemu-user-static crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386
           version: 1
 
       - name: Install toolchain
