@@ -86,15 +86,12 @@ mod rustls23_shim {
     pub type Certificate = rustls23::pki_types::CertificateDer<'static>;
     pub type PrivateKey = rustls23::pki_types::PrivateKeyDer<'static>;
 
+    pub use rustls_platform_verifier::Verifier as PlatformVerifier;
+
     pub mod pemfile {
-        pub use rustls_native_certs7::load_native_certs;
         pub use rustls_pemfile2::certs;
         pub use rustls_pemfile2::pkcs8_private_keys;
         pub use rustls_pemfile2::private_key;
-
-        pub fn rootstore_ref_shim(cert: &super::Certificate) -> super::Certificate {
-            cert.clone()
-        }
     }
 
     pub trait CloneKeyShim {}

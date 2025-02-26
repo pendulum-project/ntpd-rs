@@ -1,7 +1,6 @@
 #[cfg(feature = "unstable_nts-pool")]
 mod condcompile {
     extern crate rustls23 as rustls;
-    extern crate rustls_native_certs7 as rustls_native_certs;
     extern crate rustls_pemfile2 as rustls_pemfile;
 
     mod cli;
@@ -22,6 +21,7 @@ mod condcompile {
         pki_types::{CertificateDer, ServerName},
         version::TLS13,
     };
+    use rustls_platform_verifier::Verifier;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::{TcpListener, ToSocketAddrs},
@@ -458,19 +458,14 @@ mod condcompile {
         certificate_chain: Vec<rustls::pki_types::CertificateDer<'static>>,
         private_key: rustls::pki_types::PrivateKeyDer<'static>,
     ) -> Result<tokio_rustls::TlsConnector, KeyExchangeError> {
-        let mut roots = rustls::RootCertStore::empty();
-        for cert in rustls_native_certs::load_native_certs()? {
-            roots.add(cert).map_err(KeyExchangeError::Certificate)?;
-        }
+        let builder = rustls::ClientConfig::builder_with_protocol_versions(&[&TLS13]);
+        let provider = builder.crypto_provider().clone();
+        let verifier = Verifier::new_with_extra_roots(extra_certificates.iter().cloned())?
+            .with_provider(provider);
 
-        for cert in extra_certificates {
-            roots
-                .add(cert.clone())
-                .map_err(KeyExchangeError::Certificate)?;
-        }
-
-        let config = rustls::ClientConfig::builder_with_protocol_versions(&[&TLS13])
-            .with_root_certificates(roots)
+        let config = builder
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(verifier))
             .with_client_auth_cert(certificate_chain, private_key)
             .unwrap();
 
