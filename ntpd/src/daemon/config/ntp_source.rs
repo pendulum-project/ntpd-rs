@@ -364,6 +364,7 @@ pub enum NtpSourceConfig {
     NtsPool(FlattenedPair<NtsPoolSourceConfig, PartialSourceConfig>),
     #[serde(rename = "sock")]
     Sock(SockSourceConfig),
+    #[cfg(feature = "pps")]
     #[serde(rename = "pps")]
     Pps(PpsSourceConfig),
 }
@@ -614,6 +615,7 @@ mod tests {
             #[cfg(feature = "unstable_nts-pool")]
             NtpSourceConfig::NtsPool(c) => c.first.addr.to_string(),
             NtpSourceConfig::Sock(_c) => "".to_string(),
+            #[cfg(feature = "pps")]
             NtpSourceConfig::Pps(_c) => "".to_string(),
         }
     }
@@ -899,6 +901,7 @@ mod tests {
         assert!(test.is_err());
     }
 
+    #[cfg(feature = "pps")]
     #[test]
     fn test_pps_config_parsing() {
         #[derive(Deserialize, Debug)]

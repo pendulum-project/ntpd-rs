@@ -13,6 +13,7 @@ pub mod nts;
 #[cfg(feature = "unstable_nts-pool")]
 pub mod nts_pool;
 pub mod pool;
+#[cfg(feature = "pps")]
 pub mod pps;
 pub mod sock;
 pub mod standard;
@@ -137,6 +138,7 @@ impl SpawnAction {
 pub enum SourceCreateParameters {
     Ntp(NtpSourceCreateParameters),
     Sock(SockSourceCreateParameters),
+    #[cfg(feature = "pps")]
     Pps(PpsSourceCreateParameters),
 }
 
@@ -145,6 +147,7 @@ impl SourceCreateParameters {
         match self {
             Self::Ntp(params) => params.id,
             Self::Sock(params) => params.id,
+            #[cfg(feature = "pps")]
             Self::Pps(params) => params.id,
         }
     }
@@ -153,6 +156,7 @@ impl SourceCreateParameters {
         match self {
             Self::Ntp(params) => params.addr.to_string(),
             Self::Sock(params) => params.path.display().to_string(),
+            #[cfg(feature = "pps")]
             Self::Pps(params) => params.path.display().to_string(),
         }
     }
@@ -176,6 +180,7 @@ pub struct SockSourceCreateParameters {
     pub noise_estimate: f64,
 }
 
+#[cfg(feature = "pps")]
 #[derive(Debug)]
 pub struct PpsSourceCreateParameters {
     pub id: SourceId,

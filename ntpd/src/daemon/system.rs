@@ -1,5 +1,6 @@
+#[cfg(feature = "pps")]
+use crate::daemon::pps_source::PpsSourceTask;
 use crate::daemon::{
-    pps_source::PpsSourceTask,
     sock_source::SockSourceTask,
     spawn::{spawner_task, SourceCreateParameters},
 };
@@ -12,11 +13,13 @@ use super::{
     ntp_source::{MsgForSystem, SourceChannels, SourceTask, Wait},
     server::{ServerStats, ServerTask},
     spawn::{
-        nts::NtsSpawner, pool::PoolSpawner, pps::PpsSpawner, sock::SockSpawner,
-        standard::StandardSpawner, SourceId, SourceRemovalReason, SpawnAction, SpawnEvent, Spawner,
-        SpawnerId, SystemEvent,
+        nts::NtsSpawner, pool::PoolSpawner, sock::SockSpawner, standard::StandardSpawner, SourceId,
+        SourceRemovalReason, SpawnAction, SpawnEvent, Spawner, SpawnerId, SystemEvent,
     },
 };
+
+#[cfg(feature = "pps")]
+use super::spawn::pps::PpsSpawner;
 
 use std::{
     collections::HashMap,
@@ -167,6 +170,7 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper, Sourc
                         std::io::Error::new(std::io::ErrorKind::Other, e)
                     })?;
             }
+            #[cfg(feature = "pps")]
             NtpSourceConfig::Pps(cfg) => {
                 system
                     .add_spawner(PpsSpawner::new(cfg.clone(), source_defaults_config))
@@ -552,6 +556,7 @@ impl<
                     source,
                 );
             }
+            #[cfg(feature = "pps")]
             SourceCreateParameters::Pps(ref params) => {
                 let source = self.system.create_pps_source(
                     source_id,
