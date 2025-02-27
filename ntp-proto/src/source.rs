@@ -567,10 +567,9 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
                 // when requesting new cookies. We keep 350
                 // bytes of margin for header, ids, extension
                 // field headers and signature.
-                let new_cookies = nts
-                    .cookies
-                    .gap()
-                    .min(((self.buffer.len() - 300) / cookie.len()).min(u8::MAX as usize) as u8);
+                let new_cookies = nts.cookies.gap().min(
+                    ((self.buffer.len() - 300) / (cookie.len().max(1))).min(u8::MAX as usize) as u8,
+                );
                 // Defence in depth, ensure we can get at least 1 new cookie.
                 if new_cookies == 0 {
                     warn!("NTS Cookie too large, resetting source. This may be a problem with the source");
