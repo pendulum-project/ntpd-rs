@@ -89,9 +89,41 @@ mod rustls23_shim {
     pub use rustls_platform_verifier::Verifier as PlatformVerifier;
 
     pub mod pemfile {
-        pub use rustls_pemfile2::certs;
-        pub use rustls_pemfile2::pkcs8_private_keys;
-        pub use rustls_pemfile2::private_key;
+        use rustls23::pki_types::{
+            pem::PemObject, CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer,
+        };
+
+        pub fn certs(
+            rd: &mut dyn std::io::BufRead,
+        ) -> impl Iterator<Item = Result<CertificateDer<'static>, std::io::Error>> + '_ {
+            CertificateDer::pem_reader_iter(rd).map(|item| {
+                item.map_err(|err| match err {
+                    rustls23::pki_types::pem::Error::Io(error) => error,
+                    _ => std::io::Error::new(std::io::ErrorKind::InvalidInput, err.to_string()),
+                })
+            })
+        }
+
+        pub fn private_key(
+            rd: &mut dyn std::io::BufRead,
+        ) -> Result<PrivateKeyDer<'static>, std::io::Error> {
+            PrivateKeyDer::from_pem_reader(rd).map_err(|err| match err {
+                rustls23::pki_types::pem::Error::Io(error) => error,
+                _ => std::io::Error::new(std::io::ErrorKind::InvalidInput, err.to_string()),
+            })
+        }
+
+        pub fn pkcs8_private_keys(
+            rd: &mut dyn std::io::BufRead,
+        ) -> impl Iterator<Item = Result<PrivatePkcs8KeyDer<'static>, std::io::Error>> + '_
+        {
+            PrivatePkcs8KeyDer::pem_reader_iter(rd).map(|item| {
+                item.map_err(|err| match err {
+                    rustls23::pki_types::pem::Error::Io(error) => error,
+                    _ => std::io::Error::new(std::io::ErrorKind::InvalidInput, err.to_string()),
+                })
+            })
+        }
     }
 
     pub trait CloneKeyShim {}

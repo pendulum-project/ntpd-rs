@@ -137,8 +137,7 @@ async fn run_nts_ke(
     }
 
     let private_key =
-        ntp_proto::tls_utils::pemfile::private_key(&mut std::io::BufReader::new(private_key_file))?
-            .ok_or(io_error("could not parse private key"))?;
+        ntp_proto::tls_utils::pemfile::private_key(&mut std::io::BufReader::new(private_key_file))?;
 
     key_exchange_server(keyset, nts_ke_config, cert_chain, pool_certs, private_key).await
 }
@@ -630,33 +629,23 @@ mod tests {
     #[test]
     fn parse_private_keys() {
         let input = include_bytes!("../../test-keys/end.key");
-        let _ = ntp_proto::tls_utils::pemfile::private_key(&mut input.as_slice())
-            .unwrap()
-            .unwrap();
+        let _ = ntp_proto::tls_utils::pemfile::private_key(&mut input.as_slice()).unwrap();
 
         let input = include_bytes!("../../test-keys/testca.key");
-        let _ = ntp_proto::tls_utils::pemfile::private_key(&mut input.as_slice())
-            .unwrap()
-            .unwrap();
+        let _ = ntp_proto::tls_utils::pemfile::private_key(&mut input.as_slice()).unwrap();
 
         // openssl does no longer seem to want to generate this format
         // so we use https://github.com/rustls/pemfile/blob/main/tests/data/rsa1024.pkcs1.pem
         let input = include_bytes!("../../test-keys/rsa_key.pem");
-        let _ = ntp_proto::tls_utils::pemfile::private_key(&mut input.as_slice())
-            .unwrap()
-            .unwrap();
+        let _ = ntp_proto::tls_utils::pemfile::private_key(&mut input.as_slice()).unwrap();
 
         // openssl ecparam -name prime256v1 -genkey -noout -out ec_key.pem
         let input = include_bytes!("../../test-keys/ec_key.pem");
-        let _ = ntp_proto::tls_utils::pemfile::private_key(&mut input.as_slice())
-            .unwrap()
-            .unwrap();
+        let _ = ntp_proto::tls_utils::pemfile::private_key(&mut input.as_slice()).unwrap();
 
         // openssl genpkey -algorithm EC -out pkcs8_key.pem -pkeyopt ec_paramgen_curve:prime256v1
         let input = include_bytes!("../../test-keys/pkcs8_key.pem");
-        let _ = ntp_proto::tls_utils::pemfile::private_key(&mut input.as_slice())
-            .unwrap()
-            .unwrap();
+        let _ = ntp_proto::tls_utils::pemfile::private_key(&mut input.as_slice()).unwrap();
     }
 
     #[tokio::test]
@@ -958,9 +947,8 @@ mod tests {
                 certificates_from_bufread(BufReader::new(Cursor::new(cc))).unwrap();
 
             let pk = include_bytes!("../../test-keys/end.key");
-            let private_key = ntp_proto::tls_utils::pemfile::private_key(&mut pk.as_slice())
-                .unwrap()
-                .unwrap();
+            let private_key =
+                ntp_proto::tls_utils::pemfile::private_key(&mut pk.as_slice()).unwrap();
 
             let config = build_server_config(certificate_chain, private_key).unwrap();
 
@@ -993,9 +981,7 @@ mod tests {
         let certificate_chain = certificates_from_bufread(BufReader::new(Cursor::new(cc)))?;
 
         let pk = include_bytes!("../../test-keys/end.key");
-        let private_key = ntp_proto::tls_utils::pemfile::private_key(&mut pk.as_slice())
-            .unwrap()
-            .unwrap();
+        let private_key = ntp_proto::tls_utils::pemfile::private_key(&mut pk.as_slice()).unwrap();
 
         let config = build_server_config(certificate_chain, private_key).unwrap();
         let pool_certs = Arc::<[_]>::from(vec![]);

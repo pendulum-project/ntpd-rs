@@ -19,7 +19,6 @@ toml.workspace = true
 tracing.workspace = true
 tracing-subscriber = { version = "0.3.0", default-features = false, features = ["std", "fmt", "ansi"] }
 rustls23.workspace = true
-rustls-pemfile2.workspace = true
 rustls-platform-verifier.workspace = true
 serde.workspace = true
 ntp-proto = { workspace = true }
