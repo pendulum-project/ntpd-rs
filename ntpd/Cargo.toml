@@ -23,7 +23,7 @@ libc.workspace = true
 async-trait.workspace = true
 timestamped-socket.workspace = true
 clock-steering.workspace = true
-pps-time.workspace = true
+pps-time = { workspace = true, optional = true }
 
 serde.workspace = true
 serde_json.workspace = true
@@ -35,7 +35,7 @@ tokio-rustls = { workspace = true, optional = true }
 ntp-proto = { workspace = true, features = ["__internal-test",] }
 
 [features]
-default = [ "rustls23" ]
+default = [ "rustls23", "pps" ]
 hardware-timestamping = []
 unstable_ntpv5 = ["ntp-proto/ntpv5"]
 unstable_nts-pool = [ "ntp-proto/nts-pool", "dep:rustls23" ]
@@ -43,6 +43,7 @@ rustls23 = [ "ntp-proto/rustls23" ]
 rustls22 = [ "ntp-proto/rustls22" ]
 rustls21 = [ "ntp-proto/rustls21" ]
 run_tokio_rustls_tests = [ "rustls23", "dep:tokio-rustls" ]
+pps = [ "dep:pps-time" ]
 
 [lib]
 name = "ntpd"
