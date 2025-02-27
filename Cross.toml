@@ -1,5 +1,11 @@
 [target.x86_64-unknown-linux-gnu]
 image = "ghcr.io/cross-rs/x86_64-unknown-linux-gnu"
 
+[target.armv7-unknown-linux-gnueabihf]
+image = "ghcr.io/cross-rs/armv7-unknown-linux-gnueabihf:main"
+pre-build = [
+    "cd /usr/local/bin && curl --proto '=https' --tlsv1.2 -LsSf https://github.com/cargo-bins/cargo-quickinstall/releases/download/bindgen-cli-0.71.1/bindgen-cli-0.71.1-x86_64-unknown-linux-gnu.tar.gz | tar -zxf -"
+]
+
 [target.aarch64-unknown-linux-gnu]
 image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu"
