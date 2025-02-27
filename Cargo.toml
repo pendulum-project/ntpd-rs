@@ -49,8 +49,6 @@ pps-time = "0.2.3"
 
 # TLS
 rustls23 = { package = "rustls", version = "0.23.16", features = ["logging", "std", "tls12"] }
-rustls-pemfile2 = { package = "rustls-pemfile", version = "2.0" }
-rustls-pki-types = "1.10"
 rustls-platform-verifier = "0.5.0"
 tokio-rustls = { version = "0.26.0", features = ["logging", "tls12"] } # testing only
 

@@ -1,7 +1,6 @@
 #[cfg(feature = "unstable_nts-pool")]
 mod condcompile {
     extern crate rustls23 as rustls;
-    extern crate rustls_pemfile2 as rustls_pemfile;
 
     mod cli;
     mod config;
@@ -21,6 +20,7 @@ mod condcompile {
         pki_types::{CertificateDer, ServerName},
         version::TLS13,
     };
+    use rustls23::pki_types::pem::PemObject;
     use rustls_platform_verifier::Verifier;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
@@ -153,16 +153,36 @@ mod condcompile {
             })?;
 
         let certificate_authority: Arc<[rustls::pki_types::CertificateDer]> =
-            rustls_pemfile::certs(&mut std::io::BufReader::new(certificate_authority_file))
-                .collect::<std::io::Result<Arc<[rustls::pki_types::CertificateDer]>>>()?;
+            rustls::pki_types::CertificateDer::pem_reader_iter(&mut std::io::BufReader::new(
+                certificate_authority_file,
+            ))
+            .map(|item| {
+                item.map_err(|err| match err {
+                    rustls::pki_types::pem::Error::Io(error) => error,
+                    _ => std::io::Error::new(std::io::ErrorKind::InvalidInput, err.to_string()),
+                })
+            })
+            .collect::<std::io::Result<Arc<[rustls::pki_types::CertificateDer]>>>()?;
 
         let certificate_chain: Vec<rustls::pki_types::CertificateDer> =
-            rustls_pemfile::certs(&mut std::io::BufReader::new(certificate_chain_file))
-                .collect::<std::io::Result<Vec<rustls::pki_types::CertificateDer>>>()?;
+            rustls::pki_types::CertificateDer::pem_reader_iter(&mut std::io::BufReader::new(
+                certificate_chain_file,
+            ))
+            .map(|item| {
+                item.map_err(|err| match err {
+                    rustls::pki_types::pem::Error::Io(error) => error,
+                    _ => std::io::Error::new(std::io::ErrorKind::InvalidInput, err.to_string()),
+                })
+            })
+            .collect::<std::io::Result<Vec<rustls::pki_types::CertificateDer>>>()?;
 
-        let private_key =
-            rustls_pemfile::private_key(&mut std::io::BufReader::new(private_key_file))?
-                .ok_or(io_error("could not parse private key"))?;
+        let private_key = rustls::pki_types::PrivateKeyDer::from_pem_reader(
+            &mut std::io::BufReader::new(private_key_file),
+        )
+        .map_err(|err| match err {
+            rustls::pki_types::pem::Error::Io(error) => error,
+            _ => std::io::Error::new(std::io::ErrorKind::InvalidInput, err.to_string()),
+        })?;
 
         pool_key_exchange_server(
             nts_pool_ke_config.listen,
