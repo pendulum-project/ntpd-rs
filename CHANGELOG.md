@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.5.0] - 2025-02-28
+
+### Added
+- Support for PPS based sources (this support can be disabled with a compile flag for now)
+- Per source configuration of poll intervals
+- Allow setting a custom reference id for stratum 1 servers
+
+### Changed
+- Our algorithm can now handle periodic sources
+- ntpd-rs runs single-threaded when only configured as a client, servers still run multithreaded
+- The reference timestamp field is now set to the truncated receive timestamp instead of being zero
+- Support of rustls 0.21 and 0.22 is removed
+- Certificate validation is now done through rustls-platform-verifier, following platform certificate validation more closely
+- Updated dependencies
+
+### Fixed
+- Fixed parsing of IPv6 addresses
+- Fixed incorrect display of date in force-sync command
+- Fixed a client denial of service vulnerability with zero-sized NTS cookies
+- Fixed a client denial of service vulnerability with NTS cookies that are too large
+
 ## [1.4.0] - 2024-12-13
 
 ### Added
@@ -264,6 +285,7 @@ process.
 - Fixed a bug in peer dispersion calculation which resulted in overly
   pessimistic dispersion estimates.
 
+[1.5.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/pendulum-project/ntpd-rs/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.2.3...v1.3.0
