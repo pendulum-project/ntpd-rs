@@ -27,13 +27,13 @@ jobs:
           version: 1
 
       - name: Install toolchain
-        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
+        uses: dtolnay/rust-toolchain@888c2e1ea69ab0d4330cbf0af1ecc7b68f368cc1
         with:
           toolchain: "stable"
           components: "llvm-tools"
 
       - name: Install cross, cargo-deb and cargo-generate-rpm
-        uses: taiki-e/install-action@e10e24b7664da3815cd5c17ed3865fbcd6cc1ed9
+        uses: taiki-e/install-action@2c41309d51ede152b6f2ee6bf3b71e6dc9a8b7df
         with:
           tool: cross, cargo-deb, cargo-generate-rpm@0.14.0
 
