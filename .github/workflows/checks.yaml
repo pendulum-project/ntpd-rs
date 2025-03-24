@@ -67,13 +67,13 @@ jobs:
       - name: Set target rust version
         run: echo "TARGET_RUST_VERSION=$(if [ "${{matrix.rust}}" = "msrv" ]; then grep rust-version Cargo.toml | grep MSRV | cut -d'"' -f2; else echo "${{matrix.rust}}"; fi)" >> $GITHUB_ENV
       - name: Install nightly toolchain for direct-minimal-versions
-        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
+        uses: dtolnay/rust-toolchain@56f84321dbccf38fb67ce29ab63e4754056677e0
         with:
           toolchain: nightly
           targets: "${{ matrix.target }}"
         if: ${{ matrix.rust == 'msrv' }}
       - name: Install toolchain
-        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
+        uses: dtolnay/rust-toolchain@56f84321dbccf38fb67ce29ab63e4754056677e0
         with:
           toolchain: "${TARGET_RUST_VERSION}"
           targets: "${{ matrix.target }}"
@@ -85,11 +85,11 @@ jobs:
         with:
           target: ${{ matrix.target }}
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@e10e24b7664da3815cd5c17ed3865fbcd6cc1ed9
+        uses: taiki-e/install-action@a433d87f121760c7447ab86390794f9a2dce31cf
         with:
           tool: cargo-llvm-cov
       - name: Rust cache
-        uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3
+        uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6
         with:
             shared-key: "${{matrix.rust}}-${{matrix.target}}"
       - name: cargo build
@@ -114,11 +114,11 @@ jobs:
         with:
           persist-credentials: false
       - name: Install nightly toolchain
-        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
+        uses: dtolnay/rust-toolchain@56f84321dbccf38fb67ce29ab63e4754056677e0
         with:
           toolchain: nightly
       - name: Install udeps
-        uses: taiki-e/install-action@e10e24b7664da3815cd5c17ed3865fbcd6cc1ed9
+        uses: taiki-e/install-action@a433d87f121760c7447ab86390794f9a2dce31cf
         with:
           tool: cargo-udeps
       - name: cargo udeps
@@ -170,7 +170,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install rust toolchain
-        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
+        uses: dtolnay/rust-toolchain@56f84321dbccf38fb67ce29ab63e4754056677e0
         with:
           toolchain: stable
           components: rustfmt
@@ -205,27 +205,27 @@ jobs:
         with:
           persist-credentials: false
       - name: Install rust toolchain
-        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
+        uses: dtolnay/rust-toolchain@56f84321dbccf38fb67ce29ab63e4754056677e0
         with:
           toolchain: stable
           components: clippy
           targets: ${{matrix.target}}
 
       - name: Setup tools for cross compilation
-        uses: awalsh128/cache-apt-pkgs-action@5902b33ae29014e6ca012c5d8025d4346556bd40 # v1.4.3
+        uses: awalsh128/cache-apt-pkgs-action@7ca5f46d061ad9aa95863cd9b214dd48edef361d # v1.5.0
         with:
           packages: musl-tools qemu-user-static crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386
           version: 1
         if: ${{matrix.runs_on == 'ubuntu-latest'}}
 
       - name: Install bindgen-cli
-        uses: taiki-e/install-action@e10e24b7664da3815cd5c17ed3865fbcd6cc1ed9
+        uses: taiki-e/install-action@a433d87f121760c7447ab86390794f9a2dce31cf
         with:
           tool: bindgen-cli
         if: ${{matrix.runs_on == 'ubuntu-latest'}}
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3
+        uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6
         with:
             shared-key: "stable-${{matrix.target}}"
 
@@ -252,7 +252,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install nightly toolchain
-        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
+        uses: dtolnay/rust-toolchain@56f84321dbccf38fb67ce29ab63e4754056677e0
         with:
           toolchain: nightly
       - name: Install cargo fuzz
