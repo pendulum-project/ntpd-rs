@@ -21,19 +21,19 @@ jobs:
           - i686-unknown-linux-gnu
     steps:
       - name: Setup packaging tools for cross compiled artifacts
-        uses: awalsh128/cache-apt-pkgs-action@5902b33ae29014e6ca012c5d8025d4346556bd40 # v1.4.3
+        uses: awalsh128/cache-apt-pkgs-action@7ca5f46d061ad9aa95863cd9b214dd48edef361d # v1.5.0
         with:
           packages: musl-tools qemu-user-static crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386
           version: 1
 
       - name: Install toolchain
-        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
+        uses: dtolnay/rust-toolchain@56f84321dbccf38fb67ce29ab63e4754056677e0
         with:
           toolchain: "stable"
           components: "llvm-tools"
 
       - name: Install cross, cargo-deb and cargo-generate-rpm
-        uses: taiki-e/install-action@e10e24b7664da3815cd5c17ed3865fbcd6cc1ed9
+        uses: taiki-e/install-action@be7c31b6745feec79dec5eb79178466c0670bb2d
         with:
           tool: cross, cargo-deb, cargo-generate-rpm@0.14.0
 
@@ -44,7 +44,7 @@ jobs:
         run: RELEASE_TARGETS="${{ matrix.target }}" RELEASE_FEATURES="unstable_ntpv5" utils/build-release.sh
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-binaries-${{ matrix.target }}
           path: target/pkg/
