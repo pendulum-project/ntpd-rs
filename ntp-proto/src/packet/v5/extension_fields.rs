@@ -189,6 +189,9 @@ impl<'a> ReferenceIdResponse<'a> {
         }
     }
 
+    // TODO: Clippy 0.1.86 complains that this function could be const, but that is not true
+    // allow can be removed in later versions
+    #[allow(clippy::missing_const_for_fn)]
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
     }

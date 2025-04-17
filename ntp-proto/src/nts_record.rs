@@ -51,7 +51,7 @@ impl NtsRecord {
             NtsRecord::Server { .. } => 6,
             NtsRecord::Port { .. } => 7,
             #[cfg(feature = "nts-pool")]
-            NtsRecord::KeepAlive { .. } => 0x4000,
+            NtsRecord::KeepAlive => 0x4000,
             #[cfg(feature = "nts-pool")]
             NtsRecord::SupportedAlgorithmList { .. } => 0x4001,
             #[cfg(feature = "nts-pool")]
@@ -75,7 +75,7 @@ impl NtsRecord {
             NtsRecord::Server { critical, .. } => *critical,
             NtsRecord::Port { critical, .. } => *critical,
             #[cfg(feature = "nts-pool")]
-            NtsRecord::KeepAlive { .. } => false,
+            NtsRecord::KeepAlive => false,
             #[cfg(feature = "nts-pool")]
             NtsRecord::SupportedAlgorithmList { .. } => true,
             #[cfg(feature = "nts-pool")]
