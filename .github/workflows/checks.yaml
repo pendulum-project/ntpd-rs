@@ -270,6 +270,56 @@ jobs:
             cargo fuzz run ${{ matrix.features }} $target -- -max_total_time=10
           done
 
+  fuzz-code-coverage:
+    name: Fuzz with code coverage
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - fuzz_target: packet_parsing_sound
+            corpus: ""
+            features: ''
+          - fuzz_target: record_encode_decode
+            corpus: ""
+            features: ''
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        with:
+          persist-credentials: false
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@be73d7920c329f220ce78e0234b8f96b7ae60248
+        with:
+          toolchain: nightly
+          components: llvm-tools-preview
+      - name: Install cargo fuzz & rustfilt
+        uses: taiki-e/install-action@56ab7930c591507f833cbaed864d201386d518a8
+        with:
+          tool: cargo-fuzz,rustfilt
+      - name: Run `cargo fuzz`
+        env:
+          RUST_BACKTRACE: "1"
+          # prevents `cargo fuzz coverage` from rebuilding everything
+          RUSTFLAGS: "-C instrument-coverage"
+        run: |
+          cargo fuzz run ${{matrix.features}} ${{matrix.fuzz_target}} ${{matrix.corpus}} -- -max_total_time=10
+      - name: Fuzz codecov
+        run: |
+          cargo fuzz coverage ${{matrix.features}} ${{matrix.fuzz_target}} ${{matrix.corpus}}
+          $(rustc --print sysroot)/lib/rustlib/$(rustc --print host-tuple)/bin/llvm-cov export -Xdemangler=rustfilt \
+              target/$(rustc --print host-tuple)/coverage/$(rustc --print host-tuple)/release/${{matrix.fuzz_target}} \
+              -instr-profile=fuzz/coverage/${{matrix.fuzz_target}}/coverage.profdata \
+              --format=lcov \
+              -ignore-filename-regex="\.cargo|\.rustup" > lcov.info
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@eaaf4bedf32dbdc6b720b63067d99c4d77d6047d
+        with:
+          files: ./lcov.info
+          fail_ci_if_error: false
+          flags: fuzz-${{ matrix.fuzz_target }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+          name: fuzz
+
   audit-dependencies:
     name: Audit dependencies
     runs-on: ubuntu-latest
