@@ -99,11 +99,15 @@ jobs:
         env:
           RUST_BACKTRACE: 1
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@ad3126e916f78f00edff4ed0317cf185271ccc2d
+        uses: codecov/codecov-action@0565863a31f2c772f9f0395002a31e3f06189574 # v5.4.0
+        if: matrix.rust == 'stable'
         with:
-          files: lcov.info
-          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./lcov.info
           fail_ci_if_error: false
+          flags: test-${{matrix.target}}
+          token: ${{ secrets.CODECOV_TOKEN }}
+          name: test
+          verbose: true
 
   unused:
     name: Check unused dependencies
