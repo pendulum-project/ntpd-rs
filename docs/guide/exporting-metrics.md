@@ -9,7 +9,16 @@ If ntpd-rs was installed from the packages distributed by us, the default config
 sudo systemctl enable --now ntpd-rs-metrics
 ```
 
-After enabling the metrics exporter, a prometheus metrics dataset will be served on `127.0.0.1:9975/metrics`
+After enabling the metrics exporter, a prometheus metrics dataset will be served on `127.0.0.1:9975/metrics` by default. This can be adjusted with the following configuration section in [ntp.toml](../man/ntp.toml.5.md#observability) to expose this to Prometheus:
+
+```toml
+[observability]
+metrics-exporter-listen = "[::]:9975"
+```
+
+Be sure to firewall this port so that only Prometheus instances have access.
+
+## Metrics
 
 The dataset will look something like:
 ```
