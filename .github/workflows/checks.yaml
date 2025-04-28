@@ -85,7 +85,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@09dc018eee06ae1c9e0409786563f534210ceb83
+        uses: taiki-e/install-action@ab3728c7ba6948b9b429627f4d55a68842b27f18
         with:
           tool: cargo-llvm-cov
       - name: Rust cache
@@ -118,7 +118,7 @@ jobs:
         with:
           toolchain: nightly
       - name: Install udeps
-        uses: taiki-e/install-action@09dc018eee06ae1c9e0409786563f534210ceb83
+        uses: taiki-e/install-action@ab3728c7ba6948b9b429627f4d55a68842b27f18
         with:
           tool: cargo-udeps
       - name: cargo udeps
@@ -219,7 +219,7 @@ jobs:
         if: ${{matrix.runs_on == 'ubuntu-latest'}}
 
       - name: Install bindgen-cli
-        uses: taiki-e/install-action@09dc018eee06ae1c9e0409786563f534210ceb83
+        uses: taiki-e/install-action@ab3728c7ba6948b9b429627f4d55a68842b27f18
         with:
           tool: bindgen-cli
         if: ${{matrix.runs_on == 'ubuntu-latest'}}
