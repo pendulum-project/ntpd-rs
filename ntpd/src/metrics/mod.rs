@@ -101,7 +101,6 @@ macro_rules! collect_sources {
             let labels = vec![
                 ("name", $ident.name.clone()),
                 ("address", $ident.address.clone()),
-                ("id", format!("{}", $ident.id)),
             ];
             let value = $value;
             data.push(Measurement { labels, value });
@@ -118,7 +117,6 @@ macro_rules! collect_some_sources {
                 let labels = vec![
                     ("name", $ident.name.clone()),
                     ("address", $ident.address.clone()),
-                    ("id", format!("{}", $ident.id)),
                 ];
                 data.push(Measurement { labels, value });
             }
