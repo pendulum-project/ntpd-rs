@@ -248,14 +248,12 @@ impl NtpDuration {
         .to_be_bytes()
     }
 
-    #[cfg(feature = "ntpv5")]
     pub(crate) const fn from_bits_time32(bits: [u8; 4]) -> Self {
         NtpDuration {
             duration: (u32::from_be_bytes(bits) as i64) << 4,
         }
     }
 
-    #[cfg(feature = "ntpv5")]
     pub(crate) fn to_bits_time32(self) -> [u8; 4] {
         // serializing negative durations should never happen
         // and indicates a programming error elsewhere.
@@ -889,7 +887,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "ntpv5")]
     fn time32() {
         type D = NtpDuration;
         assert_eq!(D::from_bits_time32([0, 0, 0, 0]), D::ZERO);

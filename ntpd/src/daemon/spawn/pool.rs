@@ -1,7 +1,6 @@
 use std::fmt::Display;
 use std::{net::SocketAddr, ops::Deref};
 
-#[cfg(feature = "unstable_ntpv5")]
 use ntp_proto::NtpVersion;
 use ntp_proto::{ProtocolVersion, SourceConfig};
 use tokio::sync::mpsc;
@@ -87,9 +86,6 @@ impl Spawner for PoolSpawner {
                     id,
                     addr,
                     self.config.addr.deref().clone(),
-                    #[cfg(not(feature = "unstable_ntpv5"))]
-                    ProtocolVersion::default(),
-                    #[cfg(feature = "unstable_ntpv5")]
                     match self.config.ntp_version {
                         Some(NtpVersion::V4) => ProtocolVersion::V4,
                         Some(NtpVersion::V5) => ProtocolVersion::V5,
@@ -139,7 +135,6 @@ impl Spawner for PoolSpawner {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "unstable_ntpv5")]
     use ntp_proto::ProtocolVersion;
 
     use ntp_proto::SourceConfig;
@@ -165,7 +160,6 @@ mod tests {
                     .into(),
                 count: 2,
                 ignore: vec![],
-                #[cfg(feature = "unstable_ntpv5")]
                 ntp_version: None,
             },
             SourceConfig::default(),
@@ -179,7 +173,6 @@ mod tests {
         assert_eq!(spawner_id, res.id);
         let params = get_ntp_create_params(res).unwrap();
         let addr1 = params.addr;
-        #[cfg(feature = "unstable_ntpv5")]
         assert_eq!(
             params.protocol_version,
             ProtocolVersion::V4UpgradingToV5 { tries_left: 8 }
@@ -189,7 +182,6 @@ mod tests {
         assert_eq!(spawner_id, res.id);
         let params = get_ntp_create_params(res).unwrap();
         let addr2 = params.addr;
-        #[cfg(feature = "unstable_ntpv5")]
         assert_eq!(
             params.protocol_version,
             ProtocolVersion::V4UpgradingToV5 { tries_left: 8 }
@@ -204,7 +196,6 @@ mod tests {
         assert!(pool.is_complete());
     }
 
-    #[cfg(feature = "unstable_ntpv5")]
     #[tokio::test]
     async fn respects_ntp_version_force_v5() {
         let address_strings = ["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
@@ -216,7 +207,6 @@ mod tests {
                     .into(),
                 count: 2,
                 ignore: vec![],
-                #[cfg(feature = "unstable_ntpv5")]
                 ntp_version: Some(ntp_proto::NtpVersion::V5),
             },
             SourceConfig::default(),
@@ -230,14 +220,12 @@ mod tests {
         assert_eq!(spawner_id, res.id);
         let params = get_ntp_create_params(res).unwrap();
         let addr1 = params.addr;
-        #[cfg(feature = "unstable_ntpv5")]
         assert_eq!(params.protocol_version, ProtocolVersion::V5);
 
         let res = action_rx.try_recv().unwrap();
         assert_eq!(spawner_id, res.id);
         let params = get_ntp_create_params(res).unwrap();
         let addr2 = params.addr;
-        #[cfg(feature = "unstable_ntpv5")]
         assert_eq!(params.protocol_version, ProtocolVersion::V5);
 
         assert_ne!(addr1, addr2);
@@ -249,7 +237,6 @@ mod tests {
         assert!(pool.is_complete());
     }
 
-    #[cfg(feature = "unstable_ntpv5")]
     #[tokio::test]
     async fn respects_ntp_version_force_v4() {
         let address_strings = ["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
@@ -261,7 +248,6 @@ mod tests {
                     .into(),
                 count: 2,
                 ignore: vec![],
-                #[cfg(feature = "unstable_ntpv5")]
                 ntp_version: Some(ntp_proto::NtpVersion::V4),
             },
             SourceConfig::default(),
@@ -275,14 +261,12 @@ mod tests {
         assert_eq!(spawner_id, res.id);
         let params = get_ntp_create_params(res).unwrap();
         let addr1 = params.addr;
-        #[cfg(feature = "unstable_ntpv5")]
         assert_eq!(params.protocol_version, ProtocolVersion::V4);
 
         let res = action_rx.try_recv().unwrap();
         assert_eq!(spawner_id, res.id);
         let params = get_ntp_create_params(res).unwrap();
         let addr2 = params.addr;
-        #[cfg(feature = "unstable_ntpv5")]
         assert_eq!(params.protocol_version, ProtocolVersion::V4);
 
         assert_ne!(addr1, addr2);
@@ -306,7 +290,6 @@ mod tests {
                     .into(),
                 count: 2,
                 ignore: ignores.clone(),
-                #[cfg(feature = "unstable_ntpv5")]
                 ntp_version: None,
             },
             SourceConfig::default(),
@@ -348,7 +331,6 @@ mod tests {
                     .into(),
                 count: 2,
                 ignore: vec![],
-                #[cfg(feature = "unstable_ntpv5")]
                 ntp_version: None,
             },
             SourceConfig::default(),
@@ -394,7 +376,6 @@ mod tests {
                 addr: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![]).into(),
                 count: 2,
                 ignore: vec![],
-                #[cfg(feature = "unstable_ntpv5")]
                 ntp_version: None,
             },
             SourceConfig::default(),

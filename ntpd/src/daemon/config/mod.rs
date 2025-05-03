@@ -3,9 +3,7 @@ mod server;
 pub mod subnet;
 
 use clock_steering::unix::UnixClock;
-#[cfg(feature = "unstable_ntpv5")]
-use ntp_proto::NtpVersion;
-use ntp_proto::{AlgorithmConfig, SourceConfig, SynchronizationConfig};
+use ntp_proto::{AlgorithmConfig, NtpVersion, SourceConfig, SynchronizationConfig};
 pub use ntp_source::*;
 use serde::{Deserialize, Deserializer};
 pub use server::*;
@@ -476,7 +474,6 @@ impl Config {
             ok = false;
         }
 
-        #[cfg(feature = "unstable_ntpv5")]
         if self.sources.iter().any(|config| match config {
             NtpSourceConfig::Sock(_) => false,
             NtpSourceConfig::Pps(_) => false,
@@ -546,7 +543,6 @@ mod tests {
             vec![NtpSourceConfig::Standard(FlattenedPair {
                 first: StandardSource {
                     address: NormalizedAddress::new_unchecked("example.com", 123).into(),
-                    #[cfg(feature = "unstable_ntpv5")]
                     ntp_version: None,
                 },
                 second: Default::default()
@@ -564,7 +560,6 @@ mod tests {
             vec![NtpSourceConfig::Standard(FlattenedPair {
                 first: StandardSource {
                     address: NormalizedAddress::new_unchecked("example.com", 123).into(),
-                    #[cfg(feature = "unstable_ntpv5")]
                     ntp_version: None,
                 },
                 second: Default::default()
@@ -580,7 +575,6 @@ mod tests {
             vec![NtpSourceConfig::Standard(FlattenedPair {
                 first: StandardSource {
                     address: NormalizedAddress::new_unchecked("example.com", 123).into(),
-                    #[cfg(feature = "unstable_ntpv5")]
                     ntp_version: None,
                 },
                 second: Default::default()
@@ -612,7 +606,6 @@ mod tests {
             vec![NtpSourceConfig::Standard(FlattenedPair {
                 first: StandardSource {
                     address: NormalizedAddress::new_unchecked("example.com", 123).into(),
-                    #[cfg(feature = "unstable_ntpv5")]
                     ntp_version: None,
                 },
                 second: Default::default()
@@ -659,7 +652,6 @@ mod tests {
             vec![NtpSourceConfig::Standard(FlattenedPair {
                 first: StandardSource {
                     address: NormalizedAddress::new_unchecked("example.com", 123).into(),
-                    #[cfg(feature = "unstable_ntpv5")]
                     ntp_version: None,
                 },
                 second: Default::default()

@@ -74,7 +74,6 @@ pub struct ClientToPoolDecoder {
     records: Vec<NtsRecord>,
     denied_servers: Vec<String>,
 
-    #[cfg(feature = "ntpv5")]
     allow_v5: bool,
 }
 
@@ -148,7 +147,6 @@ impl ClientToPoolDecoder {
                 state.records.push(record);
                 Continue(state)
             }
-            #[cfg(feature = "ntpv5")]
             DraftId { data } => {
                 if data == crate::packet::v5::DRAFT_VERSION.as_bytes() {
                     state.allow_v5 = true;
@@ -156,7 +154,6 @@ impl ClientToPoolDecoder {
                 Continue(state)
             }
             NextProtocol { protocol_ids } => {
-                #[cfg(feature = "ntpv5")]
                 let selected = if state.allow_v5 {
                     protocol_ids
                         .iter()
@@ -168,12 +165,6 @@ impl ClientToPoolDecoder {
                         .copied()
                         .find_map(ProtocolId::try_deserialize)
                 };
-
-                #[cfg(not(feature = "ntpv5"))]
-                let selected = protocol_ids
-                    .iter()
-                    .copied()
-                    .find_map(ProtocolId::try_deserialize);
 
                 match selected {
                     None => Break(Err(NoValidProtocol)),
@@ -226,7 +217,6 @@ pub struct PoolToServerDecoder {
 
     records: Vec<NtsRecord>,
 
-    #[cfg(feature = "ntpv5")]
     allow_v5: bool,
 }
 
@@ -287,7 +277,6 @@ impl PoolToServerDecoder {
                 state.records.push(record);
                 Continue(state)
             }
-            #[cfg(feature = "ntpv5")]
             DraftId { data } => {
                 if data == crate::packet::v5::DRAFT_VERSION.as_bytes() {
                     state.allow_v5 = true;
@@ -295,7 +284,6 @@ impl PoolToServerDecoder {
                 Continue(state)
             }
             NextProtocol { protocol_ids } => {
-                #[cfg(feature = "ntpv5")]
                 let selected = if state.allow_v5 {
                     protocol_ids
                         .iter()
@@ -307,12 +295,6 @@ impl PoolToServerDecoder {
                         .copied()
                         .find_map(ProtocolId::try_deserialize)
                 };
-
-                #[cfg(not(feature = "ntpv5"))]
-                let selected = protocol_ids
-                    .iter()
-                    .copied()
-                    .find_map(ProtocolId::try_deserialize);
 
                 state.records.push(record);
 

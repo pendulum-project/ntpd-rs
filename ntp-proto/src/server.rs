@@ -1254,7 +1254,6 @@ mod tests {
         assert!(packet.is_kiss_deny());
     }
 
-    #[cfg(feature = "ntpv5")]
     #[test]
     fn test_server_v5() {
         let config = ServerConfig {

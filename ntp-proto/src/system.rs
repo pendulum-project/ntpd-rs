@@ -5,7 +5,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{fmt::Debug, hash::Hash};
 
-#[cfg(feature = "ntpv5")]
 use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
 use crate::source::{NtpSourceUpdate, SourceSnapshot};
 use crate::{
@@ -56,12 +55,9 @@ pub struct SystemSnapshot {
     /// Timekeeping data
     #[serde(flatten)]
     pub time_snapshot: TimeSnapshot,
-
-    #[cfg(feature = "ntpv5")]
     /// Bloom filter that contains all currently used time sources
     #[serde(skip)]
     pub bloom_filter: BloomFilter,
-    #[cfg(feature = "ntpv5")]
     /// NTPv5 reference ID for this instance
     #[serde(skip)]
     pub server_id: ServerId,
@@ -85,20 +81,17 @@ impl SystemSnapshot {
             self.reference_id = source_id;
         }
 
-        #[cfg(feature = "ntpv5")]
-        {
-            self.bloom_filter = BloomFilter::new();
-            for source in used_sources {
-                if let SourceSnapshot::Ntp(source) = source {
-                    if let Some(bf) = &source.bloom_filter {
-                        self.bloom_filter.add(bf);
-                    } else if let ProtocolVersion::V5 = source.protocol_version {
-                        tracing::warn!("Using NTPv5 source without a bloom filter!");
-                    }
+        self.bloom_filter = BloomFilter::new();
+        for source in used_sources {
+            if let SourceSnapshot::Ntp(source) = source {
+                if let Some(bf) = &source.bloom_filter {
+                    self.bloom_filter.add(bf);
+                } else if let ProtocolVersion::V5 = source.protocol_version {
+                    tracing::warn!("Using NTPv5 source without a bloom filter!");
                 }
             }
-            self.bloom_filter.add_id(&self.server_id);
         }
+        self.bloom_filter.add_id(&self.server_id);
     }
 }
 
@@ -109,9 +102,7 @@ impl Default for SystemSnapshot {
             reference_id: ReferenceId::NONE,
             accumulated_steps_threshold: None,
             time_snapshot: TimeSnapshot::default(),
-            #[cfg(feature = "ntpv5")]
             bloom_filter: BloomFilter::new(),
-            #[cfg(feature = "ntpv5")]
             server_id: ServerId::new(&mut rand::thread_rng()),
         }
     }
@@ -430,7 +421,6 @@ mod tests {
                     stratum: 2,
                     reference_id: ReferenceId::NONE,
                     protocol_version: Default::default(),
-                    #[cfg(feature = "ntpv5")]
                     bloom_filter: None,
                 }),
                 SourceSnapshot::Ntp(NtpSourceSnapshot {
@@ -441,7 +431,6 @@ mod tests {
                     stratum: 3,
                     reference_id: ReferenceId::NONE,
                     protocol_version: Default::default(),
-                    #[cfg(feature = "ntpv5")]
                     bloom_filter: None,
                 }),
             ]
