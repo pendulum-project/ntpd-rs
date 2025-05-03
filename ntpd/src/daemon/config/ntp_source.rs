@@ -6,15 +6,12 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use ntp_proto::tls_utils::Certificate;
-#[cfg(feature = "unstable_ntpv5")]
-use ntp_proto::NtpVersion;
+use ntp_proto::{tls_utils::Certificate, NtpVersion};
 use ntp_proto::{PollInterval, PollIntervalLimits, SourceConfig};
 use serde::{de, Deserialize, Deserializer};
 
 use super::super::keyexchange::certificates_from_file;
 
-#[cfg(feature = "unstable_ntpv5")]
 fn deserialize_ntp_version<'de, D>(deserializer: D) -> Result<Option<NtpVersion>, D::Error>
 where
     D: Deserializer<'de>,
@@ -32,7 +29,6 @@ where
 #[serde(deny_unknown_fields)]
 pub struct StandardSource {
     pub address: NtpAddress,
-    #[cfg(feature = "unstable_ntpv5")]
     #[serde(default, deserialize_with = "deserialize_ntp_version")]
     pub ntp_version: Option<NtpVersion>,
 }
@@ -47,7 +43,6 @@ pub struct NtsSourceConfig {
         rename = "certificate-authority"
     )]
     pub certificate_authorities: Arc<[Certificate]>,
-    #[cfg(feature = "unstable_ntpv5")]
     #[serde(default, deserialize_with = "deserialize_ntp_version")]
     pub ntp_version: Option<NtpVersion>,
 }
@@ -82,7 +77,6 @@ pub struct PoolSourceConfig {
     pub count: usize,
     #[serde(default)]
     pub ignore: Vec<IpAddr>,
-    #[cfg(feature = "unstable_ntpv5")]
     #[serde(default, deserialize_with = "deserialize_ntp_version")]
     pub ntp_version: Option<NtpVersion>,
 }
@@ -105,7 +99,6 @@ pub struct NtsPoolSourceConfig {
     pub certificate_authorities: Arc<[Certificate]>,
     #[serde(default = "max_sources_default")]
     pub count: usize,
-    #[cfg(feature = "unstable_ntpv5")]
     #[serde(default, deserialize_with = "deserialize_ntp_version")]
     pub ntp_version: Option<NtpVersion>,
 }
@@ -584,7 +577,6 @@ impl TryFrom<&str> for StandardSource {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Ok(Self {
             address: NormalizedAddress::from_string_ntp(value.to_string())?.into(),
-            #[cfg(feature = "unstable_ntpv5")]
             ntp_version: None,
         })
     }

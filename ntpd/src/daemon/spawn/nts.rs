@@ -77,10 +77,7 @@ impl Spawner for NtsSpawner {
             self.config.address.server_name.clone(),
             self.config.address.port,
             &self.config.certificate_authorities,
-            #[cfg(feature = "unstable_ntpv5")]
             self.config.ntp_version,
-            #[cfg(not(feature = "unstable_ntpv5"))]
-            None,
         )
         .await
         {

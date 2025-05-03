@@ -198,11 +198,9 @@ async fn handle_connection(
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "unstable_ntpv5")]
     use rand::thread_rng;
     use std::{borrow::BorrowMut, time::Duration};
 
-    #[cfg(feature = "unstable_ntpv5")]
     use ntp_proto::v5::{BloomFilter, ServerId};
     use ntp_proto::{
         NtpDuration, NtpLeapIndicator, NtpTimestamp, PollIntervalLimits, Reach, ReferenceId,
@@ -298,9 +296,7 @@ mod tests {
                 leap_indicator: NtpLeapIndicator::Leap59,
                 accumulated_steps: NtpDuration::ZERO,
             },
-            #[cfg(feature = "unstable_ntpv5")]
             bloom_filter: BloomFilter::new(),
-            #[cfg(feature = "unstable_ntpv5")]
             server_id: ServerId::new(&mut thread_rng()),
         });
 
@@ -376,9 +372,7 @@ mod tests {
                 leap_indicator: NtpLeapIndicator::Leap59,
                 accumulated_steps: NtpDuration::ZERO,
             },
-            #[cfg(feature = "unstable_ntpv5")]
             bloom_filter: BloomFilter::new(),
-            #[cfg(feature = "unstable_ntpv5")]
             server_id: ServerId::new(&mut thread_rng()),
         });
 
