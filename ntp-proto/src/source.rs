@@ -1,4 +1,3 @@
-#[cfg(feature = "ntpv5")]
 use crate::packet::{
     v5::server_reference_id::{BloomFilter, RemoteBloomFilter},
     ExtensionField, NtpHeader,
@@ -25,7 +24,6 @@ use tracing::{debug, trace, warn};
 const MAX_STRATUM: u8 = 16;
 const POLL_WINDOW: std::time::Duration = std::time::Duration::from_secs(5);
 const STARTUP_TRIES_THRESHOLD: usize = 3;
-#[cfg(feature = "ntpv5")]
 const AFTER_UPGRADE_TRIES_THRESHOLD: u32 = 2;
 
 pub struct SourceNtsData {
@@ -91,7 +89,6 @@ pub struct NtpSource<Controller: SourceController<MeasurementDelay = NtpDuration
 
     protocol_version: ProtocolVersion,
 
-    #[cfg(feature = "ntpv5")]
     // TODO we only need this if we run as a server
     bloom_filter: RemoteBloomFilter,
 }
@@ -253,7 +250,6 @@ pub struct NtpSourceSnapshot {
 
     pub protocol_version: ProtocolVersion,
 
-    #[cfg(feature = "ntpv5")]
     pub bloom_filter: Option<BloomFilter>,
 }
 
@@ -262,7 +258,7 @@ impl NtpSourceSnapshot {
         &self,
         local_stratum: u8,
         local_ips: &[IpAddr],
-        #[cfg_attr(not(feature = "ntpv5"), allow(unused_variables))] system: &SystemSnapshot,
+        system: &SystemSnapshot,
     ) -> Result<(), AcceptSynchronizationError> {
         use AcceptSynchronizationError::*;
 
@@ -289,7 +285,6 @@ impl NtpSourceSnapshot {
             return Err(Loop);
         }
 
-        #[cfg(feature = "ntpv5")]
         match self.bloom_filter {
             Some(filter) if filter.contains_id(&system.server_id) => {
                 debug!("Source rejected because of detected synchronization loop (bloom filter)");
@@ -318,7 +313,6 @@ impl NtpSourceSnapshot {
             reach: source.reach,
             poll_interval: source.last_poll_interval,
             protocol_version: source.protocol_version,
-            #[cfg(feature = "ntpv5")]
             bloom_filter: source.bloom_filter.full_filter().copied(),
         }
     }
@@ -340,7 +334,6 @@ pub fn source_snapshot() -> NtpSourceSnapshot {
         reach,
         poll_interval: crate::time_types::PollIntervalLimits::default().min,
         protocol_version: Default::default(),
-        #[cfg(feature = "ntpv5")]
         bloom_filter: None,
     }
 }
@@ -357,13 +350,8 @@ pub enum AcceptSynchronizationError {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ProtocolVersion {
     V4,
-    #[cfg(feature = "ntpv5")]
-    V4UpgradingToV5 {
-        tries_left: u8,
-    },
-    #[cfg(feature = "ntpv5")]
+    V4UpgradingToV5 { tries_left: u8 },
     UpgradedToV5,
-    #[cfg(feature = "ntpv5")]
     V5,
 }
 
@@ -371,23 +359,15 @@ impl ProtocolVersion {
     pub fn is_expected_incoming_version(&self, incoming_version: u8) -> bool {
         match self {
             ProtocolVersion::V4 => incoming_version == 4 || incoming_version == 3,
-            #[cfg(feature = "ntpv5")]
             ProtocolVersion::V4UpgradingToV5 { .. } => incoming_version == 4,
-            #[cfg(feature = "ntpv5")]
             ProtocolVersion::UpgradedToV5 | ProtocolVersion::V5 => incoming_version == 5,
         }
     }
 }
 
 impl Default for ProtocolVersion {
-    #[cfg(feature = "ntpv5")]
     fn default() -> Self {
         Self::V4UpgradingToV5 { tries_left: 8 }
-    }
-
-    #[cfg(not(feature = "ntpv5"))]
-    fn default() -> Self {
-        Self::V4
     }
 }
 
@@ -521,7 +501,6 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
 
                 protocol_version, // TODO make this configurable
 
-                #[cfg(feature = "ntpv5")]
                 bloom_filter: RemoteBloomFilter::new(16).expect("16 is a valid chunk size"),
             },
             actions!(NtpSourceAction::SetTimer(Duration::from_secs(0))),
@@ -546,7 +525,6 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
             .max(self.remote_min_poll_interval)
     }
 
-    #[cfg_attr(not(feature = "ntpv5"), allow(unused_mut))]
     pub fn handle_timer(&mut self) -> NtpSourceActionIterator<Controller::SourceMessage> {
         if !self.reach.is_reachable() && self.tries >= STARTUP_TRIES_THRESHOLD {
             if self.have_deny_rstr_response {
@@ -558,7 +536,6 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
             }
         }
 
-        #[cfg(feature = "ntpv5")]
         if matches!(self.protocol_version, ProtocolVersion::UpgradedToV5)
             && self.reach.unanswered_polls() >= AFTER_UPGRADE_TRIES_THRESHOLD
         {
@@ -591,7 +568,6 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
                     ProtocolVersion::V4 => {
                         NtpPacket::nts_poll_message(&cookie, new_cookies, poll_interval)
                     }
-                    #[cfg(feature = "ntpv5")]
                     ProtocolVersion::V4UpgradingToV5 { .. }
                     | ProtocolVersion::V5
                     | ProtocolVersion::UpgradedToV5 => {
@@ -601,11 +577,9 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
             }
             None => match self.protocol_version {
                 ProtocolVersion::V4 => NtpPacket::poll_message(poll_interval),
-                #[cfg(feature = "ntpv5")]
                 ProtocolVersion::V4UpgradingToV5 { .. } => {
                     NtpPacket::poll_message_upgrade_request(poll_interval)
                 }
-                #[cfg(feature = "ntpv5")]
                 ProtocolVersion::UpgradedToV5 | ProtocolVersion::V5 => {
                     NtpPacket::poll_message_v5(poll_interval)
                 }
@@ -613,7 +587,6 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
         };
         self.current_request_identifier = Some((identifier, NtpInstant::now() + POLL_WINDOW));
 
-        #[cfg(feature = "ntpv5")]
         if let NtpHeader::V5(header) = packet.header() {
             let req_ef = self.bloom_filter.next_request(header.client_cookie);
             packet.push_additional(ExtensionField::ReferenceIdRequest(req_ef));
@@ -697,7 +670,6 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
             }
         };
 
-        #[cfg(feature = "ntpv5")]
         if message.valid_server_response(request_identifier, self.nts.is_some()) {
             if let ProtocolVersion::V4UpgradingToV5 { tries_left } = self.protocol_version {
                 let tries_left = tries_left.saturating_sub(1);
@@ -790,7 +762,6 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
         self.stratum = message.stratum();
         self.reference_id = message.reference_id();
 
-        #[cfg(feature = "ntpv5")]
         if let NtpHeader::V5(header) = message.header() {
             // Handle new requested poll interval
             let requested_poll = message.poll();
@@ -880,7 +851,6 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
 
             protocol_version: Default::default(),
 
-            #[cfg(feature = "ntpv5")]
             bloom_filter: RemoteBloomFilter::new(16).unwrap(),
         }
     }
@@ -895,9 +865,7 @@ mod test {
     };
 
     use super::*;
-    #[cfg(feature = "ntpv5")]
     use crate::packet::v5::server_reference_id::ServerId;
-    #[cfg(feature = "ntpv5")]
     use rand::thread_rng;
 
     #[derive(Debug, Clone, Default)]
@@ -1047,13 +1015,9 @@ mod test {
 
         let mut source = NtpSource::test_ntp_source(NoopController);
 
-        #[cfg_attr(not(feature = "ntpv5"), allow(unused_mut))]
         let mut system = SystemSnapshot::default();
 
-        #[cfg(feature = "ntpv5")]
-        {
-            system.server_id = ServerId::new(&mut thread_rng());
-        }
+        system.server_id = ServerId::new(&mut thread_rng());
 
         macro_rules! accept {
             () => {{
@@ -1480,7 +1444,6 @@ mod test {
         assert!(source.remote_min_poll_interval >= old_remote_interval);
     }
 
-    #[cfg(feature = "ntpv5")]
     #[test]
     fn upgrade_state_machine_does_stop() {
         let mut source = NtpSource::test_ntp_source(NoopController);
@@ -1554,7 +1517,6 @@ mod test {
         assert!(!poll.is_upgrade());
     }
 
-    #[cfg(feature = "ntpv5")]
     #[test]
     fn upgrade_state_machine_does_upgrade() {
         let mut source = NtpSource::test_ntp_source(NoopController);
@@ -1654,7 +1616,6 @@ mod test {
         assert!(matches!(source.protocol_version, ProtocolVersion::V5));
     }
 
-    #[cfg(feature = "ntpv5")]
     #[test]
     fn upgrade_state_machine_does_fallback_after_upgrade() {
         let mut source = NtpSource::test_ntp_source(NoopController);
@@ -1746,7 +1707,6 @@ mod test {
         assert_eq!(poll.version(), 4);
     }
 
-    #[cfg(feature = "ntpv5")]
     #[test]
     fn bloom_filters_will_synchronize_at_some_point() {
         let mut server_filter = BloomFilter::new();
