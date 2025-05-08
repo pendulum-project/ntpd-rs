@@ -732,31 +732,39 @@ mod tests {
             process.run(poll_wait).await;
         });
 
+        for _ in 0..3 {
+            poll_send.notify();
+
+            let mut buf = [0; 48];
+            let RecvResult {
+                bytes_read: size,
+                timestamp,
+                remote_addr,
+            } = socket.recv(&mut buf).await.unwrap();
+            assert_eq!(size, 48);
+            assert!(timestamp.is_some());
+
+            let rec_packet = NtpPacket::deserialize(&buf, &NoCipher).unwrap().0;
+            let send_packet = NtpPacket::deny_response(rec_packet);
+            let serialized = serialize_packet_unencrypted(&send_packet);
+
+            // Flush earlier messages
+            while msg_recv.try_recv().is_ok() {}
+
+            socket
+                .send_to(&serialized, std::dbg!(remote_addr))
+                .await
+                .unwrap();
+
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
         poll_send.notify();
 
-        let mut buf = [0; 48];
-        let RecvResult {
-            bytes_read: size,
-            timestamp,
-            remote_addr,
-        } = socket.recv(&mut buf).await.unwrap();
-        assert_eq!(size, 48);
-        assert!(timestamp.is_some());
-
-        let rec_packet = NtpPacket::deserialize(&buf, &NoCipher).unwrap().0;
-        let send_packet = NtpPacket::deny_response(rec_packet);
-        let serialized = serialize_packet_unencrypted(&send_packet);
-
-        // Flush earlier messages
-        while msg_recv.try_recv().is_ok() {}
-
-        socket.send_to(&serialized, remote_addr).await.unwrap();
-
-        let msg = msg_recv.recv().await.unwrap();
+        let msg = dbg!(msg_recv.recv().await.unwrap());
         assert!(matches!(msg, MsgForSystem::MustDemobilize(_)));
 
-        poll_send.notify();
-
+        let mut buf = [0; 48];
         tokio::select! {
             _ = tokio::time::sleep(Duration::from_millis(10)) => {/*expected */},
             _ = socket.recv(&mut buf) => { unreachable!("should not receive anything") }

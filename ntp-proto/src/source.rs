@@ -71,6 +71,10 @@ pub struct NtpSource<Controller: SourceController<MeasurementDelay = NtpDuration
     // attacks and packet reordering.
     current_request_identifier: Option<(RequestIdentifier, NtpInstant)>,
 
+    // Whether we have seen a DENY/RSTR KISS response since the last succesfull
+    // interaction
+    have_deny_rstr_response: bool,
+
     stratum: u8,
     reference_id: ReferenceId,
 
@@ -499,6 +503,8 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
                 last_poll_interval: source_config.poll_interval_limits.min,
                 remote_min_poll_interval: source_config.poll_interval_limits.min,
 
+                have_deny_rstr_response: false,
+
                 current_request_identifier: None,
                 source_id: ReferenceId::from_ip(source_addr.ip()),
                 source_addr,
@@ -543,7 +549,13 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
     #[cfg_attr(not(feature = "ntpv5"), allow(unused_mut))]
     pub fn handle_timer(&mut self) -> NtpSourceActionIterator<Controller::SourceMessage> {
         if !self.reach.is_reachable() && self.tries >= STARTUP_TRIES_THRESHOLD {
-            return actions!(NtpSourceAction::Reset);
+            if self.have_deny_rstr_response {
+                // There were kiss of death responses, so we should probably demobilize instead
+                // of just retrying endlessly
+                return actions!(NtpSourceAction::Demobilize);
+            } else {
+                return actions!(NtpSourceAction::Reset);
+            }
         }
 
         #[cfg(feature = "ntpv5")]
@@ -724,8 +736,14 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
             actions!()
         } else if message.is_kiss_rstr() || message.is_kiss_deny() {
             warn!("Source denied service");
-            // KISS packets may not have correct timestamps at all, handle them anyway
-            actions!(NtpSourceAction::Demobilize)
+            // Handle the kiss if it was signed, otherwise ignore it
+            if self.nts.is_some() {
+                actions!(NtpSourceAction::Demobilize)
+            } else {
+                // Not signed, so easily faked, but do register it for future reference
+                self.have_deny_rstr_response = true;
+                actions!()
+            }
         } else if message.is_kiss_ntsn() {
             warn!("Received nts not-acknowledge");
             // as these can be easily faked, we dont immediately give up on receiving
@@ -761,6 +779,9 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
         trace!("Packet accepted for processing");
         // For reachability, mark that we have had a response
         self.reach.received_packet();
+
+        // Clear received deny/rstr kod
+        self.have_deny_rstr_response = false;
 
         // we received this packet, and don't want to accept future ones with this next_expected_origin
         self.current_request_identifier = None;
@@ -841,6 +862,8 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
             remote_min_poll_interval: PollInterval::default(),
 
             current_request_identifier: None,
+
+            have_deny_rstr_response: false,
 
             source_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
             source_id: ReferenceId::from_int(0),
@@ -1347,6 +1370,7 @@ mod test {
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(100),
         );
+        assert!(!source.have_deny_rstr_response);
         assert!(actions.next().is_none());
 
         let mut packet = NtpPacket::test();
@@ -1372,7 +1396,9 @@ mod test {
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(100),
         );
-        assert!(matches!(actions.next(), Some(NtpSourceAction::Demobilize)));
+        assert!(source.have_deny_rstr_response);
+        source.have_deny_rstr_response = false;
+        assert!(actions.next().is_none());
 
         let mut packet = NtpPacket::test();
         packet.set_reference_id(ReferenceId::KISS_DENY);
@@ -1383,6 +1409,7 @@ mod test {
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(100),
         );
+        assert!(!source.have_deny_rstr_response);
         assert!(actions.next().is_none());
 
         let mut packet = NtpPacket::test();
@@ -1408,7 +1435,9 @@ mod test {
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(100),
         );
-        assert!(matches!(actions.next(), Some(NtpSourceAction::Demobilize)));
+        assert!(source.have_deny_rstr_response);
+        source.have_deny_rstr_response = false;
+        assert!(actions.next().is_none());
 
         let old_remote_interval = source.remote_min_poll_interval;
         let mut packet = NtpPacket::test();
