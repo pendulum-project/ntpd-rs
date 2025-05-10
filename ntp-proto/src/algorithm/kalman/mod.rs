@@ -143,7 +143,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
         );
 
         if let Some(combined) = combine(&selection, &self.algo_config) {
-            info!(
+            debug!(
                 "Offset: {}+-{}ms, frequency: {}+-{}ppm",
                 combined.estimate.offset() * 1e3,
                 combined.estimate.offset_variance().sqrt() * 1e3,
