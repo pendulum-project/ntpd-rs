@@ -213,7 +213,7 @@ impl NtsRecord {
 
     #[allow(unused_variables)]
     pub fn client_key_exchange_records(
-        ntp_version: Option<NtpVersion>,
+        ntp_version: ProtocolVersion,
         denied_servers: impl IntoIterator<Item = String>,
     ) -> Box<[NtsRecord]> {
         let mut base = vec![
@@ -221,14 +221,14 @@ impl NtsRecord {
                 data: crate::packet::v5::DRAFT_VERSION.as_bytes().into(),
             },
             match ntp_version {
-                None => NtsRecord::NextProtocol {
-                    protocol_ids: vec![0x8001, 0],
-                },
-                Some(NtpVersion::V4) => NtsRecord::NextProtocol {
+                ProtocolVersion::V4 => NtsRecord::NextProtocol {
                     protocol_ids: vec![0],
                 },
-                Some(NtpVersion::V5) => NtsRecord::NextProtocol {
+                ProtocolVersion::V5 => NtsRecord::NextProtocol {
                     protocol_ids: vec![0x8001],
+                },
+                _ => NtsRecord::NextProtocol {
+                    protocol_ids: vec![0x8001, 0],
                 },
             },
             NtsRecord::AeadAlgorithm {
@@ -1238,7 +1238,7 @@ impl KeyExchangeClient {
     pub fn new(
         server_name: String,
         tls_config: tls_utils::ClientConfig,
-        ntp_version: Option<NtpVersion>,
+        ntp_version: ProtocolVersion,
         denied_servers: impl IntoIterator<Item = String>,
     ) -> Result<Self, KeyExchangeError> {
         let mut client = Self::new_without_tls_write(server_name, tls_config)?;
@@ -2576,15 +2576,22 @@ mod test {
 
     #[test]
     fn server_decoder_finds_algorithm() {
-        let result =
-            server_decode_records(&NtsRecord::client_key_exchange_records(None, vec![])).unwrap();
+        let result = server_decode_records(&NtsRecord::client_key_exchange_records(
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            vec![],
+        ))
+        .unwrap();
 
         assert_eq!(result.algorithm, AeadAlgorithm::AeadAesSivCmac512);
     }
 
     #[test]
     fn server_decoder_ignores_new_cookie() {
-        let mut records = NtsRecord::client_key_exchange_records(None, vec![]).to_vec();
+        let mut records = NtsRecord::client_key_exchange_records(
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            vec![],
+        )
+        .to_vec();
         records.insert(
             0,
             NtsRecord::NewCookie {
@@ -2598,7 +2605,11 @@ mod test {
 
     #[test]
     fn server_decoder_ignores_server_and_port_preference() {
-        let mut records = NtsRecord::client_key_exchange_records(None, vec![]).to_vec();
+        let mut records = NtsRecord::client_key_exchange_records(
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            vec![],
+        )
+        .to_vec();
         records.insert(
             0,
             NtsRecord::Server {
@@ -2621,7 +2632,11 @@ mod test {
 
     #[test]
     fn server_decoder_ignores_warn() {
-        let mut records = NtsRecord::client_key_exchange_records(None, vec![]).to_vec();
+        let mut records = NtsRecord::client_key_exchange_records(
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            vec![],
+        )
+        .to_vec();
         records.insert(0, NtsRecord::Warning { warningcode: 42 });
 
         let result = server_decode_records(&records).unwrap();
@@ -2630,7 +2645,11 @@ mod test {
 
     #[test]
     fn server_decoder_ignores_unknown_not_critical() {
-        let mut records = NtsRecord::client_key_exchange_records(None, vec![]).to_vec();
+        let mut records = NtsRecord::client_key_exchange_records(
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            vec![],
+        )
+        .to_vec();
         records.insert(
             0,
             NtsRecord::Unknown {
@@ -2646,7 +2665,11 @@ mod test {
 
     #[test]
     fn server_decoder_reports_unknown_critical() {
-        let mut records = NtsRecord::client_key_exchange_records(None, vec![]).to_vec();
+        let mut records = NtsRecord::client_key_exchange_records(
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            vec![],
+        )
+        .to_vec();
         records.insert(
             0,
             NtsRecord::Unknown {
@@ -2665,7 +2688,11 @@ mod test {
 
     #[test]
     fn server_decoder_reports_error() {
-        let mut records = NtsRecord::client_key_exchange_records(None, vec![]).to_vec();
+        let mut records = NtsRecord::client_key_exchange_records(
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            vec![],
+        )
+        .to_vec();
         records.insert(0, NtsRecord::Error { errorcode: 2 });
 
         let error = server_decode_records(&records).unwrap_err();
@@ -2826,8 +2853,13 @@ mod test {
             .with_no_client_auth();
 
         let mut server = tls_utils::ServerConnection::new(Arc::new(serverconfig)).unwrap();
-        let mut client =
-            KeyExchangeClient::new("localhost".into(), clientconfig, None, vec![]).unwrap();
+        let mut client = KeyExchangeClient::new(
+            "localhost".into(),
+            clientconfig,
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            vec![],
+        )
+        .unwrap();
 
         server.writer().write_all(NTS_TIME_NL_RESPONSE).unwrap();
 
@@ -3005,7 +3037,12 @@ mod test {
         let (mut client, server) = client_server_pair(ClientType::Uncertified);
 
         let mut buffer = Vec::with_capacity(1024);
-        for record in NtsRecord::client_key_exchange_records(None, []).iter() {
+        for record in NtsRecord::client_key_exchange_records(
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            [],
+        )
+        .iter()
+        {
             record.write(&mut buffer).unwrap();
         }
         client.tls_connection.writer().write_all(&buffer).unwrap();
@@ -3101,7 +3138,12 @@ mod test {
     #[test]
     fn test_keyexchange_invalid_input() {
         let mut buffer = Vec::with_capacity(1024);
-        for record in NtsRecord::client_key_exchange_records(None, []).iter() {
+        for record in NtsRecord::client_key_exchange_records(
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            [],
+        )
+        .iter()
+        {
             record.write(&mut buffer).unwrap();
         }
 

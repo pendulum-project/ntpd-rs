@@ -333,7 +333,7 @@ pub fn source_snapshot() -> NtpSourceSnapshot {
 
         reach,
         poll_interval: crate::time_types::PollIntervalLimits::default().min,
-        protocol_version: Default::default(),
+        protocol_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
         bloom_filter: None,
     }
 }
@@ -356,6 +356,8 @@ pub enum ProtocolVersion {
 }
 
 impl ProtocolVersion {
+    const DEFAULT_UPGRADE_TRIES: u8 = 8;
+
     pub fn is_expected_incoming_version(&self, incoming_version: u8) -> bool {
         match self {
             ProtocolVersion::V4 => incoming_version == 4 || incoming_version == 3,
@@ -363,11 +365,11 @@ impl ProtocolVersion {
             ProtocolVersion::UpgradedToV5 | ProtocolVersion::V5 => incoming_version == 5,
         }
     }
-}
 
-impl Default for ProtocolVersion {
-    fn default() -> Self {
-        Self::V4UpgradingToV5 { tries_left: 8 }
+    pub fn v4_upgrading_to_v5_with_default_tries() -> ProtocolVersion {
+        ProtocolVersion::V4UpgradingToV5 {
+            tries_left: Self::DEFAULT_UPGRADE_TRIES,
+        }
     }
 }
 
@@ -849,7 +851,7 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
 
             buffer: [0; 1024],
 
-            protocol_version: Default::default(),
+            protocol_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
 
             bloom_filter: RemoteBloomFilter::new(16).unwrap(),
         }
