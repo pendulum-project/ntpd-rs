@@ -6,31 +6,76 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use ntp_proto::{tls_utils::Certificate, NtpVersion};
+use ntp_proto::{tls_utils::Certificate, ProtocolVersion};
 use ntp_proto::{PollInterval, PollIntervalLimits, SourceConfig};
-use serde::{de, Deserialize, Deserializer};
+use serde::{
+    de::{self, Visitor},
+    Deserialize, Deserializer,
+};
 
 use super::super::keyexchange::certificates_from_file;
 
-fn deserialize_ntp_version<'de, D>(deserializer: D) -> Result<Option<NtpVersion>, D::Error>
+fn deserialize_ntp_version<'de, D>(deserializer: D) -> Result<ProtocolVersion, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let version = Option::<u8>::deserialize(deserializer)?;
-    match version {
-        None => Ok(None),
-        Some(4) => Ok(Some(NtpVersion::V4)),
-        Some(5) => Ok(Some(NtpVersion::V5)),
-        Some(v) => Err(de::Error::custom(format!("Invalid ntp version {v}"))),
+    struct ProtocolVersionVisitor;
+
+    impl Visitor<'_> for ProtocolVersionVisitor {
+        type Value = ProtocolVersion;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter
+                .write_str(r#"4 or 5 as an integer or string, or the special string value "auto""#)
+        }
+
+        fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            match v {
+                4 => Ok(ProtocolVersion::V4),
+                5 => Ok(ProtocolVersion::V5),
+                _ => Err(E::custom(r#"Version must be 4, 5 or "auto""#)),
+            }
+        }
+
+        fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            self.visit_u64(v.try_into().map_err(E::custom)?)
+        }
+
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            match v {
+                "4" => Ok(ProtocolVersion::V4),
+                "5" => Ok(ProtocolVersion::V5),
+                "auto" => Ok(ProtocolVersion::v4_upgrading_to_v5_with_default_tries()),
+                _ => Err(E::custom(r#"Version must be 4, 5 or "auto""#)),
+            }
+        }
     }
+
+    deserializer.deserialize_any(ProtocolVersionVisitor)
+}
+
+fn default_ntp_version() -> ProtocolVersion {
+    ProtocolVersion::V4
 }
 
 #[derive(Deserialize, Debug, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct StandardSource {
     pub address: NtpAddress,
-    #[serde(default, deserialize_with = "deserialize_ntp_version")]
-    pub ntp_version: Option<NtpVersion>,
+    #[serde(
+        default = "default_ntp_version",
+        deserialize_with = "deserialize_ntp_version"
+    )]
+    pub ntp_version: ProtocolVersion,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Clone)]
@@ -43,8 +88,11 @@ pub struct NtsSourceConfig {
         rename = "certificate-authority"
     )]
     pub certificate_authorities: Arc<[Certificate]>,
-    #[serde(default, deserialize_with = "deserialize_ntp_version")]
-    pub ntp_version: Option<NtpVersion>,
+    #[serde(
+        default = "default_ntp_version",
+        deserialize_with = "deserialize_ntp_version"
+    )]
+    pub ntp_version: ProtocolVersion,
 }
 
 fn deserialize_certificate_authorities<'de, D>(
@@ -77,8 +125,11 @@ pub struct PoolSourceConfig {
     pub count: usize,
     #[serde(default)]
     pub ignore: Vec<IpAddr>,
-    #[serde(default, deserialize_with = "deserialize_ntp_version")]
-    pub ntp_version: Option<NtpVersion>,
+    #[serde(
+        default = "default_ntp_version",
+        deserialize_with = "deserialize_ntp_version"
+    )]
+    pub ntp_version: ProtocolVersion,
 }
 
 fn max_sources_default() -> usize {
@@ -99,8 +150,11 @@ pub struct NtsPoolSourceConfig {
     pub certificate_authorities: Arc<[Certificate]>,
     #[serde(default = "max_sources_default")]
     pub count: usize,
-    #[serde(default, deserialize_with = "deserialize_ntp_version")]
-    pub ntp_version: Option<NtpVersion>,
+    #[serde(
+        default = "default_ntp_version",
+        deserialize_with = "deserialize_ntp_version"
+    )]
+    pub ntp_version: ProtocolVersion,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -577,7 +631,7 @@ impl TryFrom<&str> for StandardSource {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Ok(Self {
             address: NormalizedAddress::from_string_ntp(value.to_string())?.into(),
-            ntp_version: None,
+            ntp_version: default_ntp_version(),
         })
     }
 }

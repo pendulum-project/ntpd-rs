@@ -1,8 +1,7 @@
 use std::fmt::Display;
 use std::{net::SocketAddr, ops::Deref};
 
-use ntp_proto::NtpVersion;
-use ntp_proto::{ProtocolVersion, SourceConfig};
+use ntp_proto::SourceConfig;
 use tokio::sync::mpsc;
 use tracing::warn;
 
@@ -86,11 +85,7 @@ impl Spawner for PoolSpawner {
                     id,
                     addr,
                     self.config.addr.deref().clone(),
-                    match self.config.ntp_version {
-                        Some(NtpVersion::V4) => ProtocolVersion::V4,
-                        Some(NtpVersion::V5) => ProtocolVersion::V5,
-                        None => ProtocolVersion::default(),
-                    },
+                    self.config.ntp_version,
                     self.source_config,
                     None,
                 );
@@ -160,7 +155,7 @@ mod tests {
                     .into(),
                 count: 2,
                 ignore: vec![],
-                ntp_version: None,
+                ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
             },
             SourceConfig::default(),
         );
@@ -175,7 +170,7 @@ mod tests {
         let addr1 = params.addr;
         assert_eq!(
             params.protocol_version,
-            ProtocolVersion::V4UpgradingToV5 { tries_left: 8 }
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries()
         );
 
         let res = action_rx.try_recv().unwrap();
@@ -184,7 +179,7 @@ mod tests {
         let addr2 = params.addr;
         assert_eq!(
             params.protocol_version,
-            ProtocolVersion::V4UpgradingToV5 { tries_left: 8 }
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
         );
 
         assert_ne!(addr1, addr2);
@@ -207,7 +202,7 @@ mod tests {
                     .into(),
                 count: 2,
                 ignore: vec![],
-                ntp_version: Some(ntp_proto::NtpVersion::V5),
+                ntp_version: ProtocolVersion::V5,
             },
             SourceConfig::default(),
         );
@@ -248,7 +243,7 @@ mod tests {
                     .into(),
                 count: 2,
                 ignore: vec![],
-                ntp_version: Some(ntp_proto::NtpVersion::V4),
+                ntp_version: ProtocolVersion::V4,
             },
             SourceConfig::default(),
         );
@@ -290,7 +285,7 @@ mod tests {
                     .into(),
                 count: 2,
                 ignore: ignores.clone(),
-                ntp_version: None,
+                ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
             },
             SourceConfig::default(),
         );
@@ -331,7 +326,7 @@ mod tests {
                     .into(),
                 count: 2,
                 ignore: vec![],
-                ntp_version: None,
+                ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
             },
             SourceConfig::default(),
         );
@@ -376,7 +371,7 @@ mod tests {
                 addr: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![]).into(),
                 count: 2,
                 ignore: vec![],
-                ntp_version: None,
+                ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
             },
             SourceConfig::default(),
         );

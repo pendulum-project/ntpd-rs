@@ -420,7 +420,7 @@ mod tests {
                     reach: Default::default(),
                     stratum: 2,
                     reference_id: ReferenceId::NONE,
-                    protocol_version: Default::default(),
+                    protocol_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
                     bloom_filter: None,
                 }),
                 SourceSnapshot::Ntp(NtpSourceSnapshot {
@@ -430,7 +430,7 @@ mod tests {
                     reach: Default::default(),
                     stratum: 3,
                     reference_id: ReferenceId::NONE,
-                    protocol_version: Default::default(),
+                    protocol_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
                     bloom_filter: None,
                 }),
             ]
