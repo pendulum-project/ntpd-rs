@@ -17,6 +17,7 @@ use crate::{
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum NtpVersion {
+    V3,
     V4,
     V5,
 }
