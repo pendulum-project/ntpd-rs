@@ -603,13 +603,28 @@ impl PollInterval {
     }
 
     pub const fn as_duration(self) -> NtpDuration {
+        let base_shift = self.0.saturating_add(32);
+        let shift = if base_shift < 0 {
+            0
+        } else if base_shift > 62 {
+            62
+        } else {
+            base_shift
+        };
         NtpDuration {
-            duration: 1 << (self.0 + 32),
+            duration: 1 << shift,
         }
     }
 
     pub const fn as_system_duration(self) -> Duration {
-        Duration::from_secs(1 << self.0)
+        let shift = if self.0 < 0 {
+            0
+        } else if self.0 > 31 {
+            31
+        } else {
+            self.0
+        };
+        Duration::from_secs(1 << shift)
     }
 }
 

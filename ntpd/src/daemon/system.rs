@@ -386,7 +386,10 @@ impl<
                     let _ = self.system_update_sender.send(update);
                 }
                 ntp_proto::SystemAction::SetTimer(duration) => {
-                    wait.as_mut().reset(tokio::time::Instant::now() + duration)
+                    if let Some(deadline) = tokio::time::Instant::now().checked_add(duration) {
+                        // If it overflows, it is so far in the future we may as well not set the timer.
+                        wait.as_mut().reset(deadline);
+                    }
                 }
             }
         }
