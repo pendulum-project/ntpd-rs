@@ -290,7 +290,10 @@ where
                             .ok();
                     }
                     ntp_proto::NtpSourceAction::SetTimer(timeout) => {
-                        poll_wait.as_mut().reset(Instant::now() + timeout)
+                        if let Some(deadline) = Instant::now().checked_add(timeout) {
+                            // If it overflows, it is so far in the future we may as well not set the timer.
+                            poll_wait.as_mut().reset(deadline);
+                        }
                     }
                     ntp_proto::NtpSourceAction::Reset => {
                         self.channels

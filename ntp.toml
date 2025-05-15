@@ -8,7 +8,7 @@ observation-path = "/var/run/ntpd-rs/observe"
 [[source]]
 mode = "pool"
 address = "ntpd-rs.pool.ntp.org"
-count = 4
+count = 16
 
 # Alternative configuration for IPv6 only machines
 #[[source]]
