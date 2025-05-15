@@ -603,21 +603,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nts-pool-ke"
-version = "1.5.0"
-dependencies = [
- "ntp-proto",
- "rustls",
- "rustls-platform-verifier",
- "serde",
- "tokio",
- "tokio-rustls",
- "toml",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "nu-ansi-term"
 version = "0.46.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
