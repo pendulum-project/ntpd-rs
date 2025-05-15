@@ -8,9 +8,6 @@ publish = false
 [package.metadata]
 cargo-fuzz = true
 
-[features]
-ntpv5 = ["ntp-proto/ntpv5"]
-
 [dependencies]
 rand = "0.8.5"
 
@@ -93,5 +90,5 @@ test = false
 doc = false
 
 [patch.crates-io]
-rand = { path="./fuzz_rand_shim" }
-rand_core = { git="https://github.com/rust-random/rand.git", tag="0.8.5" }
+rand = { path = "./fuzz_rand_shim" }
+rand_core = { git = "https://github.com/rust-random/rand.git", tag = "0.8.5" }
