@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "ntp-proto",
-    "nts-pool-ke",
     "ntpd"
 ]
 exclude = [ ]
