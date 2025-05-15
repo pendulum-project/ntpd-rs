@@ -10,6 +10,7 @@ use crate::{
     keyset::{DecodedServerCookie, KeySet},
     system::SystemSnapshot,
     time_types::{NtpDuration, NtpTimestamp, PollInterval},
+    NtpVersion,
 };
 
 use self::{error::ParsingError, extension_fields::ExtensionFieldData, mac::Mac};
@@ -1024,11 +1025,11 @@ impl<'a> NtpPacket<'a> {
         })
     }
 
-    pub fn version(&self) -> u8 {
+    pub fn version(&self) -> NtpVersion {
         match self.header {
-            NtpHeader::V3(_) => 3,
-            NtpHeader::V4(_) => 4,
-            NtpHeader::V5(_) => 5,
+            NtpHeader::V3(_) => NtpVersion::V3,
+            NtpHeader::V4(_) => NtpVersion::V4,
+            NtpHeader::V5(_) => NtpVersion::V5,
         }
     }
 
