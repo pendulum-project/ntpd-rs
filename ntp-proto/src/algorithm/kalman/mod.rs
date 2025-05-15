@@ -193,10 +193,22 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
             };
 
             self.timedata.root_delay = combined.delay;
-            self.timedata.root_dispersion =
-                NtpDuration::from_seconds(combined.estimate.offset_variance().sqrt());
+            self.timedata.root_variance_base_time = time;
+            self.timedata.root_variance_base = combined.estimate.uncertainty.entry(0, 0);
+            self.timedata.root_variance_linear = combined.estimate.uncertainty.entry(0, 1);
+            self.timedata.root_variance_quadratic = combined.estimate.uncertainty.entry(1, 1);
+            self.timedata.root_variance_cubic = selection
+                .iter()
+                .map(|v| v.wander)
+                .fold(None, |v: Option<f64>, a: f64| {
+                    Some(v.map(|b| b.max(a)).unwrap_or(a))
+                })
+                .unwrap_or(self.algo_config.initial_wander);
             self.clock
-                .error_estimate_update(self.timedata.root_dispersion, self.timedata.root_delay)
+                .error_estimate_update(
+                    self.timedata.root_dispersion(time),
+                    self.timedata.root_delay,
+                )
                 .expect("Cannot update clock");
 
             if let Some(leap) = combined.leap_indicator {
@@ -564,7 +576,7 @@ mod tests {
         assert!(!algo.in_startup);
         assert_eq!(algo.timedata.leap_indicator, NtpLeapIndicator::NoWarning);
         assert_ne!(algo.timedata.root_delay, NtpDuration::ZERO);
-        assert_ne!(algo.timedata.root_dispersion, NtpDuration::ZERO);
+        assert_ne!(algo.timedata.root_variance_base, 0.0);
     }
 
     #[test]

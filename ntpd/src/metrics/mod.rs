@@ -219,7 +219,13 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
         "Estimate of how precise our time is",
         MetricType::Gauge,
         Some(Unit::Seconds),
-        Measurement::simple(state.system.time_snapshot.root_dispersion.to_seconds()),
+        Measurement::simple(
+            state
+                .system
+                .time_snapshot
+                .root_dispersion(state.program.now)
+                .to_seconds(),
+        ),
     )?;
 
     format_metric(
