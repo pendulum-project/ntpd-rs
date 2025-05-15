@@ -1,7 +1,3 @@
-use crate::packet::{
-    v5::server_reference_id::{BloomFilter, RemoteBloomFilter},
-    ExtensionField, NtpHeader,
-};
 use crate::{
     algorithm::{ObservableSourceTimedata, SourceController},
     config::SourceConfig,
@@ -10,6 +6,13 @@ use crate::{
     packet::{Cipher, NtpAssociationMode, NtpLeapIndicator, NtpPacket, RequestIdentifier},
     system::{SystemSnapshot, SystemSourceUpdate},
     time_types::{NtpDuration, NtpInstant, NtpTimestamp, PollInterval},
+};
+use crate::{
+    packet::{
+        v5::server_reference_id::{BloomFilter, RemoteBloomFilter},
+        ExtensionField, NtpHeader,
+    },
+    NtpVersion,
 };
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
@@ -358,11 +361,15 @@ pub enum ProtocolVersion {
 impl ProtocolVersion {
     const DEFAULT_UPGRADE_TRIES: u8 = 8;
 
-    pub fn is_expected_incoming_version(&self, incoming_version: u8) -> bool {
+    pub fn is_expected_incoming_version(&self, incoming_version: NtpVersion) -> bool {
         match self {
-            ProtocolVersion::V4 => incoming_version == 4 || incoming_version == 3,
-            ProtocolVersion::V4UpgradingToV5 { .. } => incoming_version == 4,
-            ProtocolVersion::UpgradedToV5 | ProtocolVersion::V5 => incoming_version == 5,
+            ProtocolVersion::V4 => {
+                incoming_version == NtpVersion::V4 || incoming_version == NtpVersion::V3
+            }
+            ProtocolVersion::V4UpgradingToV5 { .. } => incoming_version == NtpVersion::V4,
+            ProtocolVersion::UpgradedToV5 | ProtocolVersion::V5 => {
+                incoming_version == NtpVersion::V5
+            }
         }
     }
 
@@ -655,7 +662,7 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
             .is_expected_incoming_version(message.version())
         {
             warn!(
-                incoming_version = message.version(),
+                incoming_version = message.version().as_u8(),
                 expected_version = ?self.protocol_version,
                 "Received packet with unexpected version from source"
             );
@@ -1472,7 +1479,7 @@ mod test {
 
             let poll_len: usize = poll.len();
             let (poll, _) = NtpPacket::deserialize(&poll, &NoCipher).unwrap();
-            assert_eq!(poll.version(), 4);
+            assert_eq!(poll.version(), NtpVersion::V4);
             assert!(poll.is_upgrade());
 
             let response = NtpPacket::timestamp_response(
@@ -1515,7 +1522,7 @@ mod test {
         }
         let poll = outgoingbuf.unwrap();
         let (poll, _) = NtpPacket::deserialize(&poll, &NoCipher).unwrap();
-        assert_eq!(poll.version(), 4);
+        assert_eq!(poll.version(), NtpVersion::V4);
         assert!(!poll.is_upgrade());
     }
 
@@ -1544,7 +1551,7 @@ mod test {
 
         let poll_len = poll.len();
         let (poll, _) = NtpPacket::deserialize(&poll, &NoCipher).unwrap();
-        assert_eq!(poll.version(), 4);
+        assert_eq!(poll.version(), NtpVersion::V4);
         assert!(poll.is_upgrade());
 
         let response = NtpPacket::timestamp_response(
@@ -1589,7 +1596,7 @@ mod test {
         }
         let poll = outgoingbuf.unwrap();
         let (poll, _) = NtpPacket::deserialize(&poll, &NoCipher).unwrap();
-        assert_eq!(poll.version(), 5);
+        assert_eq!(poll.version(), NtpVersion::V5);
 
         let response = NtpPacket::timestamp_response(
             &SystemSnapshot::default(),
@@ -1643,7 +1650,7 @@ mod test {
 
         let poll_len = poll.len();
         let (poll, _) = NtpPacket::deserialize(&poll, &NoCipher).unwrap();
-        assert_eq!(poll.version(), 4);
+        assert_eq!(poll.version(), NtpVersion::V4);
         assert!(poll.is_upgrade());
 
         let response = NtpPacket::timestamp_response(
@@ -1689,7 +1696,7 @@ mod test {
             }
             let poll = outgoingbuf.unwrap();
             let (poll, _) = NtpPacket::deserialize(&poll, &NoCipher).unwrap();
-            assert_eq!(poll.version(), 5);
+            assert_eq!(poll.version(), NtpVersion::V5);
         }
 
         let actions = source.handle_timer();
@@ -1706,7 +1713,7 @@ mod test {
         let poll = outgoingbuf.unwrap();
         let (poll, _) = NtpPacket::deserialize(&poll, &NoCipher).unwrap();
         assert!(matches!(source.protocol_version, ProtocolVersion::V4));
-        assert_eq!(poll.version(), 4);
+        assert_eq!(poll.version(), NtpVersion::V4);
     }
 
     #[test]

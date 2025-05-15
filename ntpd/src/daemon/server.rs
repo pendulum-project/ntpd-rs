@@ -185,7 +185,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                             timestamp: Some(timestamp),
                         }) => {
                             let mut send_buf = [0u8; MAX_PACKET_SIZE];
-                            match self.server.handle(source_addr.ip(), convert_net_timestamp(timestamp), &buf[..length], &mut send_buf[..length], &mut self.stats) {
+                            match self.server.handle(source_addr.ip(), convert_net_timestamp(timestamp), &buf[..length], &mut send_buf[..length], &self.config.accept_ntp_versions, &mut self.stats) {
                                 ntp_proto::ServerAction::Ignore => { /* explicitly do nothing */ },
                                 ntp_proto::ServerAction::Respond { message } => {
                                     if let Err(send_err) = socket.send_to(message, source_addr).await {

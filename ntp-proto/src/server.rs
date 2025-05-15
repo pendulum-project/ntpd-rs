@@ -10,8 +10,8 @@ use std::{
 use serde::{de, Deserialize, Deserializer};
 
 use crate::{
-    ipfilter::IpFilter, KeySet, NoCipher, NtpClock, NtpPacket, NtpTimestamp, PacketParsingError,
-    SystemSnapshot,
+    ipfilter::IpFilter, KeySet, NoCipher, NtpClock, NtpPacket, NtpTimestamp, NtpVersion,
+    PacketParsingError, SystemSnapshot,
 };
 
 pub enum ServerAction<'a> {
@@ -175,6 +175,7 @@ impl<C: NtpClock> Server<C> {
         recv_timestamp: NtpTimestamp,
         message: &[u8],
         buffer: &'a mut [u8],
+        accepted_versions: &[NtpVersion],
         stats_handler: &mut impl ServerStatHandler,
     ) -> ServerAction<'a> {
         let (mut action, mut reason) = self.intended_action(client_ip);
@@ -209,12 +210,29 @@ impl<C: NtpClock> Server<C> {
 
         // Generate the appropriate response
         let version = packet.version();
+
+        if !accepted_versions.contains(&version) {
+            // handle this packet as if we don't know it
+            stats_handler.register(
+                version.as_u8(),
+                false,
+                ServerReason::Policy,
+                ServerResponse::Ignore,
+            );
+            return ServerAction::Ignore;
+        }
+
         let nts = cookie.is_some() || action == ServerResponse::NTSNak;
 
         // ignore non-NTS packets when configured to require NTS
         if let (false, Some(non_nts_action)) = (nts, self.config.require_nts) {
             if non_nts_action == FilterAction::Ignore {
-                stats_handler.register(version, nts, ServerReason::Policy, ServerResponse::Ignore);
+                stats_handler.register(
+                    version.into(),
+                    nts,
+                    ServerReason::Policy,
+                    ServerResponse::Ignore,
+                );
                 return ServerAction::Ignore;
             } else {
                 action = ServerResponse::Deny;
@@ -262,7 +280,7 @@ impl<C: NtpClock> Server<C> {
         };
         match result {
             Ok(_) => {
-                stats_handler.register(version, nts, reason, action);
+                stats_handler.register(version.into(), nts, reason, action);
                 let length = cursor.position();
                 ServerAction::Respond {
                     message: &cursor.into_inner()[..length as _],
@@ -271,7 +289,7 @@ impl<C: NtpClock> Server<C> {
             Err(e) => {
                 tracing::error!("Could not serialize response: {}", e);
                 stats_handler.register(
-                    version,
+                    version.into(),
                     nts,
                     ServerReason::InternalError,
                     ServerResponse::Ignore,
@@ -529,6 +547,7 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
+            &[NtpVersion::V4],
             &mut stats,
         );
         assert_eq!(
@@ -557,6 +576,7 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
+            &[],
             &mut stats,
         );
         assert_eq!(
@@ -586,6 +606,7 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
+            &[NtpVersion::V4],
             &mut stats,
         );
         assert_eq!(
@@ -637,6 +658,7 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
+            &[NtpVersion::V4],
             &mut stats,
         );
         assert_eq!(
@@ -665,6 +687,7 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
+            &[NtpVersion::V4],
             &mut stats,
         );
         assert_eq!(
@@ -700,6 +723,7 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
+            &[],
             &mut stats,
         );
         assert_eq!(
@@ -745,6 +769,7 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
+            &[NtpVersion::V4],
             &mut stats,
         );
         assert_eq!(
@@ -773,6 +798,7 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
+            &[],
             &mut stats,
         );
         assert_eq!(
@@ -789,6 +815,7 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
+            &[NtpVersion::V4],
             &mut stats,
         );
         assert_eq!(
@@ -833,6 +860,7 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
+            &[NtpVersion::V4],
             &mut stats,
         );
         assert_eq!(
@@ -861,6 +889,7 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
+            &[NtpVersion::V4],
             &mut stats,
         );
         assert_eq!(
@@ -920,6 +949,7 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
+            &[NtpVersion::V4],
             &mut stats,
         );
         assert_eq!(
@@ -941,6 +971,7 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
+            &[],
             &mut stats,
         );
         assert_eq!(
@@ -970,6 +1001,7 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
+            &[],
             &mut stats,
         );
         assert_eq!(
@@ -999,6 +1031,7 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
+            &[],
             &mut stats,
         );
         assert_eq!(
@@ -1028,6 +1061,7 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
+            &[],
             &mut stats,
         );
         assert_eq!(
@@ -1057,6 +1091,7 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
+            &[],
             &mut stats,
         );
         assert_eq!(
@@ -1105,6 +1140,7 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
+            &[NtpVersion::V4],
             &mut stats,
         );
         assert_eq!(
@@ -1140,6 +1176,7 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
+            &[NtpVersion::V4],
             &mut stats,
         );
         assert_eq!(
@@ -1192,6 +1229,7 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
+            &[],
             &mut stats,
         );
         assert_eq!(
@@ -1214,6 +1252,7 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
+            &[NtpVersion::V4],
             &mut stats,
         );
         assert_eq!(
@@ -1239,6 +1278,7 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
+            &[NtpVersion::V4],
             &mut stats,
         );
         assert_eq!(
@@ -1290,6 +1330,7 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
+            &[NtpVersion::V5],
             &mut stats,
         );
         assert_eq!(
@@ -1318,6 +1359,7 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
+            &[NtpVersion::V5],
             &mut stats,
         );
         assert_eq!(

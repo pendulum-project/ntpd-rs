@@ -63,7 +63,7 @@ pub struct ServerConfig {
         default = "default_accepted_ntp_versions",
         deserialize_with = "deserialize_accepted_ntp_versions"
     )]
-    pub accepted_ntp_versions: Vec<NtpVersion>,
+    pub accept_ntp_versions: Vec<NtpVersion>,
 }
 
 fn default_accepted_ntp_versions() -> Vec<NtpVersion> {
@@ -158,7 +158,7 @@ impl TryFrom<&str> for ServerConfig {
             rate_limiting_cache_size: Default::default(),
             rate_limiting_cutoff: Default::default(),
             require_nts: None,
-            accepted_ntp_versions: default_accepted_ntp_versions(),
+            accept_ntp_versions: default_accepted_ntp_versions(),
         })
     }
 }
@@ -173,7 +173,7 @@ impl From<SocketAddr> for ServerConfig {
             rate_limiting_cache_size: Default::default(),
             rate_limiting_cutoff: Default::default(),
             require_nts: None,
-            accepted_ntp_versions: default_accepted_ntp_versions(),
+            accept_ntp_versions: default_accepted_ntp_versions(),
         }
     }
 }
@@ -257,7 +257,7 @@ mod tests {
             Duration::from_millis(1000)
         );
         assert_eq!(
-            test.server.accepted_ntp_versions,
+            test.server.accept_ntp_versions,
             vec![NtpVersion::V3, NtpVersion::V4]
         );
 
