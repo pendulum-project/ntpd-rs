@@ -875,7 +875,6 @@ mod test {
 
     use super::*;
     use crate::packet::v5::server_reference_id::ServerId;
-    use rand::thread_rng;
 
     #[derive(Debug, Clone, Default)]
     struct TestClock {}
@@ -1024,9 +1023,7 @@ mod test {
 
         let mut source = NtpSource::test_ntp_source(NoopController);
 
-        let mut system = SystemSnapshot::default();
-
-        system.server_id = ServerId::new(&mut thread_rng());
+        let system = SystemSnapshot::default();
 
         macro_rules! accept {
             () => {{
@@ -1719,7 +1716,7 @@ mod test {
     #[test]
     fn bloom_filters_will_synchronize_at_some_point() {
         let mut server_filter = BloomFilter::new();
-        server_filter.add_id(&ServerId::new(&mut thread_rng()));
+        server_filter.add_id(&ServerId::default());
 
         let mut client = NtpSource::test_ntp_source(NoopController);
         client.protocol_version = ProtocolVersion::V5;
