@@ -127,7 +127,7 @@ impl Default for SystemSnapshot {
             accumulated_steps_threshold: None,
             time_snapshot: TimeSnapshot::default(),
             bloom_filter: BloomFilter::new(),
-            server_id: ServerId::new(&mut rand::thread_rng()),
+            server_id: ServerId::default(),
         }
     }
 }
