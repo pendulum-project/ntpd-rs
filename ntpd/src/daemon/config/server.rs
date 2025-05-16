@@ -186,6 +186,7 @@ impl From<ServerConfig> for ntp_proto::ServerConfig {
             rate_limiting_cache_size: value.rate_limiting_cache_size,
             rate_limiting_cutoff: value.rate_limiting_cutoff,
             require_nts: value.require_nts,
+            accepted_versions: value.accept_ntp_versions,
         }
     }
 }
@@ -293,6 +294,28 @@ mod tests {
 
             [server.denylist]
             action = "deny"
+            "#,
+        );
+        assert!(test.is_err());
+
+        let test = toml::from_str::<TestConfig>(
+            r#"
+            [server]
+            listen = "127.0.0.1:123"
+            accept-ntp-versions = [3,4,5]
+            "#,
+        )
+        .unwrap();
+        assert_eq!(
+            test.server.accept_ntp_versions,
+            vec![NtpVersion::V3, NtpVersion::V4, NtpVersion::V5]
+        );
+
+        let test = toml::from_str::<TestConfig>(
+            r#"
+            [server]
+            listen = "127.0.0.1:123"
+            accept-ntp-versions = [1]
             "#,
         );
         assert!(test.is_err());
