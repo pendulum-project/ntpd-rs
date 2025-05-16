@@ -15,7 +15,7 @@ use crate::{
     source::{ProtocolVersion, SourceNtsData},
 };
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum NtpVersion {
     V3,
     V4,

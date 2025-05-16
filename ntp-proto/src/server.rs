@@ -79,6 +79,7 @@ pub struct ServerConfig {
     pub rate_limiting_cache_size: usize,
     pub rate_limiting_cutoff: Duration,
     pub require_nts: Option<FilterAction>,
+    pub accepted_versions: Vec<NtpVersion>,
 }
 
 pub struct Server<C> {
@@ -175,7 +176,6 @@ impl<C: NtpClock> Server<C> {
         recv_timestamp: NtpTimestamp,
         message: &[u8],
         buffer: &'a mut [u8],
-        accepted_versions: &[NtpVersion],
         stats_handler: &mut impl ServerStatHandler,
     ) -> ServerAction<'a> {
         let (mut action, mut reason) = self.intended_action(client_ip);
@@ -211,7 +211,7 @@ impl<C: NtpClock> Server<C> {
         // Generate the appropriate response
         let version = packet.version();
 
-        if !accepted_versions.contains(&version) {
+        if !self.config.accepted_versions.contains(&version) {
             // handle this packet as if we don't know it
             stats_handler.register(
                 version.as_u8(),
@@ -525,6 +525,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 0,
             require_nts: None,
+            accepted_versions: vec![NtpVersion::V4],
         };
         let clock = TestClock {
             cur: NtpTimestamp::from_fixed_int(200),
@@ -547,7 +548,6 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
-            &[NtpVersion::V4],
             &mut stats,
         );
         assert_eq!(
@@ -576,7 +576,6 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
-            &[],
             &mut stats,
         );
         assert_eq!(
@@ -597,6 +596,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 0,
             require_nts: None,
+            accepted_versions: vec![NtpVersion::V4],
         };
         server.update_config(config);
 
@@ -606,7 +606,6 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
-            &[NtpVersion::V4],
             &mut stats,
         );
         assert_eq!(
@@ -636,6 +635,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 0,
             require_nts: None,
+            accepted_versions: vec![NtpVersion::V4],
         };
         let clock = TestClock {
             cur: NtpTimestamp::from_fixed_int(200),
@@ -658,7 +658,6 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
-            &[NtpVersion::V4],
             &mut stats,
         );
         assert_eq!(
@@ -687,7 +686,6 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
-            &[NtpVersion::V4],
             &mut stats,
         );
         assert_eq!(
@@ -714,6 +712,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 0,
             require_nts: None,
+            accepted_versions: vec![NtpVersion::V4],
         };
         server.update_config(config);
 
@@ -723,7 +722,6 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
-            &[],
             &mut stats,
         );
         assert_eq!(
@@ -747,6 +745,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_millis(100),
             rate_limiting_cache_size: 32,
             require_nts: None,
+            accepted_versions: vec![NtpVersion::V4],
         };
         let clock = TestClock {
             cur: NtpTimestamp::from_fixed_int(200),
@@ -769,7 +768,6 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
-            &[NtpVersion::V4],
             &mut stats,
         );
         assert_eq!(
@@ -798,7 +796,6 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
-            &[],
             &mut stats,
         );
         assert_eq!(
@@ -815,7 +812,6 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
-            &[NtpVersion::V4],
             &mut stats,
         );
         assert_eq!(
@@ -850,6 +846,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_millis(100),
             rate_limiting_cache_size: 0,
             require_nts: None,
+            accepted_versions: vec![NtpVersion::V4],
         };
 
         server.update_config(config);
@@ -860,7 +857,6 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
-            &[NtpVersion::V4],
             &mut stats,
         );
         assert_eq!(
@@ -889,7 +885,6 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
-            &[NtpVersion::V4],
             &mut stats,
         );
         assert_eq!(
@@ -927,6 +922,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_millis(100),
             rate_limiting_cache_size: 0,
             require_nts: None,
+            accepted_versions: vec![NtpVersion::V4],
         };
         let clock = TestClock {
             cur: NtpTimestamp::from_fixed_int(200),
@@ -949,7 +945,6 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
-            &[NtpVersion::V4],
             &mut stats,
         );
         assert_eq!(
@@ -971,7 +966,6 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
-            &[],
             &mut stats,
         );
         assert_eq!(
@@ -992,6 +986,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_millis(100),
             rate_limiting_cache_size: 0,
             require_nts: None,
+            accepted_versions: vec![NtpVersion::V4],
         };
         server.update_config(config);
 
@@ -1001,7 +996,6 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
-            &[],
             &mut stats,
         );
         assert_eq!(
@@ -1022,6 +1016,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_millis(100),
             rate_limiting_cache_size: 0,
             require_nts: None,
+            accepted_versions: vec![NtpVersion::V4],
         };
         server.update_config(config);
 
@@ -1031,7 +1026,6 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
-            &[],
             &mut stats,
         );
         assert_eq!(
@@ -1052,6 +1046,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_millis(100),
             rate_limiting_cache_size: 0,
             require_nts: None,
+            accepted_versions: vec![NtpVersion::V4],
         };
         server.update_config(config);
 
@@ -1061,7 +1056,6 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
-            &[],
             &mut stats,
         );
         assert_eq!(
@@ -1082,6 +1076,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_millis(100),
             rate_limiting_cache_size: 0,
             require_nts: None,
+            accepted_versions: vec![NtpVersion::V4],
         };
         server.update_config(config);
 
@@ -1091,7 +1086,6 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
-            &[],
             &mut stats,
         );
         assert_eq!(
@@ -1115,6 +1109,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_millis(100),
             rate_limiting_cache_size: 0,
             require_nts: Some(FilterAction::Ignore),
+            accepted_versions: vec![NtpVersion::V4],
         };
         let clock = TestClock {
             cur: NtpTimestamp::from_fixed_int(200),
@@ -1140,7 +1135,6 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
-            &[NtpVersion::V4],
             &mut stats,
         );
         assert_eq!(
@@ -1176,7 +1170,6 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
-            &[NtpVersion::V4],
             &mut stats,
         );
         assert_eq!(
@@ -1207,6 +1200,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 0,
             require_nts: Some(FilterAction::Ignore),
+            accepted_versions: vec![NtpVersion::V4],
         };
         let clock = TestClock {
             cur: NtpTimestamp::from_fixed_int(200),
@@ -1229,7 +1223,6 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
-            &[],
             &mut stats,
         );
         assert_eq!(
@@ -1252,7 +1245,6 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
-            &[NtpVersion::V4],
             &mut stats,
         );
         assert_eq!(
@@ -1278,7 +1270,6 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
-            &[NtpVersion::V4],
             &mut stats,
         );
         assert_eq!(
@@ -1308,6 +1299,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_millis(100),
             rate_limiting_cache_size: 0,
             require_nts: None,
+            accepted_versions: vec![NtpVersion::V5],
         };
         let clock = TestClock {
             cur: NtpTimestamp::from_fixed_int(200),
@@ -1330,7 +1322,6 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
-            &[NtpVersion::V5],
             &mut stats,
         );
         assert_eq!(
@@ -1359,7 +1350,6 @@ mod tests {
             NtpTimestamp::from_fixed_int(100),
             &serialized,
             &mut buf,
-            &[NtpVersion::V5],
             &mut stats,
         );
         assert_eq!(
@@ -1373,6 +1363,86 @@ mod tests {
         let packet = NtpPacket::deserialize(data, &NoCipher).unwrap().0;
         assert!(packet.valid_server_response(id, false));
         assert!(packet.is_kiss_deny());
+    }
+
+    #[test]
+    fn test_server_ignore_version() {
+        let config = ServerConfig {
+            denylist: FilterList {
+                filter: vec![],
+                action: FilterAction::Deny,
+            },
+            allowlist: FilterList {
+                filter: vec!["0.0.0.0/0".parse().unwrap()],
+                action: FilterAction::Ignore,
+            },
+            rate_limiting_cutoff: Duration::from_millis(1000),
+            rate_limiting_cache_size: 0,
+            require_nts: None,
+            accepted_versions: vec![NtpVersion::V3, NtpVersion::V4],
+        };
+        let clock = TestClock {
+            cur: NtpTimestamp::from_fixed_int(200),
+        };
+        let mut stats = TestStatHandler::default();
+
+        let mut server = Server::new(
+            config,
+            clock,
+            SystemSnapshot::default(),
+            KeySetProvider::new(1).get(),
+        );
+
+        let (packet, _) = NtpPacket::poll_message_v5(PollIntervalLimits::default().min);
+        let serialized = serialize_packet_unencrypted(&packet);
+
+        let mut buf = [0; 1024];
+        let response = server.handle(
+            "128.0.0.1".parse().unwrap(),
+            NtpTimestamp::from_fixed_int(100),
+            &serialized,
+            &mut buf,
+            &mut stats,
+        );
+
+        assert_eq!(
+            stats.last_register.take(),
+            Some((5, false, ServerReason::Policy, ServerResponse::Ignore))
+        );
+        assert!(matches!(response, ServerAction::Ignore));
+
+        server.update_config(ServerConfig {
+            denylist: FilterList {
+                filter: vec![],
+                action: FilterAction::Deny,
+            },
+            allowlist: FilterList {
+                filter: vec!["0.0.0.0/0".parse().unwrap()],
+                action: FilterAction::Ignore,
+            },
+            rate_limiting_cutoff: Duration::from_millis(100),
+            rate_limiting_cache_size: 0,
+            require_nts: None,
+            accepted_versions: vec![NtpVersion::V5],
+        });
+
+        let (packet, _) = NtpPacket::poll_message(PollIntervalLimits::default().min);
+        let serialized = serialize_packet_unencrypted(&packet);
+
+        let mut buf = [0; 1024];
+        let response = server.handle(
+            "128.0.0.1".parse().unwrap(),
+            NtpTimestamp::from_fixed_int(100),
+            &serialized,
+            &mut buf,
+            &mut stats,
+        );
+
+        assert_eq!(
+            stats.last_register.take(),
+            Some((4, false, ServerReason::Policy, ServerResponse::Ignore))
+        );
+        assert!(matches!(response, ServerAction::Ignore));
     }
 
     // TimestampedCache tests
