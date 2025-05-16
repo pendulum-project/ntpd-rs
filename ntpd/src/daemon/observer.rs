@@ -198,7 +198,6 @@ async fn handle_connection(
 
 #[cfg(test)]
 mod tests {
-    use rand::thread_rng;
     use std::{borrow::BorrowMut, time::Duration};
 
     use ntp_proto::v5::{BloomFilter, ServerId};
@@ -297,7 +296,7 @@ mod tests {
                 accumulated_steps: NtpDuration::ZERO,
             },
             bloom_filter: BloomFilter::new(),
-            server_id: ServerId::new(&mut thread_rng()),
+            server_id: ServerId::default(),
         });
 
         let handle = tokio::spawn(async move {
@@ -373,7 +372,7 @@ mod tests {
                 accumulated_steps: NtpDuration::ZERO,
             },
             bloom_filter: BloomFilter::new(),
-            server_id: ServerId::new(&mut thread_rng()),
+            server_id: ServerId::default(),
         });
 
         let handle = tokio::spawn(async move {
