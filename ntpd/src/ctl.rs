@@ -241,7 +241,11 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
             println!("Synchronization status:");
             println!(
                 "Dispersion: {:.6}s, Delay: {:.6}s",
-                output.system.time_snapshot.root_dispersion.to_seconds(),
+                output
+                    .system
+                    .time_snapshot
+                    .root_dispersion(output.program.now)
+                    .to_seconds(),
                 output.system.time_snapshot.root_delay.to_seconds()
             );
             println!("Stratum: {}", output.system.stratum);

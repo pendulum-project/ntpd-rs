@@ -17,20 +17,40 @@ use crate::{
     source::{NtpSource, NtpSourceActionIterator, ProtocolVersion, SourceNtsData},
     time_types::NtpDuration,
 };
-use crate::{OneWaySource, OneWaySourceUpdate};
+use crate::{NtpTimestamp, OneWaySource, OneWaySourceUpdate};
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct TimeSnapshot {
     /// Precision of the local clock
     pub precision: NtpDuration,
     /// Current root delay
     pub root_delay: NtpDuration,
-    /// Current root dispersion
-    pub root_dispersion: NtpDuration,
+    /// t=0 for root variance calculation
+    pub root_variance_base_time: NtpTimestamp,
+    /// Constant contribution for root variance
+    pub root_variance_base: f64,
+    /// Linear (*t) contribution for root variance
+    pub root_variance_linear: f64,
+    /// Quadratic (*t*t) contribution for root variance
+    pub root_variance_quadratic: f64,
+    /// Cubic (*t*t*t) contribution for root variance
+    pub root_variance_cubic: f64,
     /// Current leap indicator state
     pub leap_indicator: NtpLeapIndicator,
     /// Total amount that the clock has stepped
     pub accumulated_steps: NtpDuration,
+}
+
+impl TimeSnapshot {
+    pub fn root_dispersion(&self, now: NtpTimestamp) -> NtpDuration {
+        let t = (now - self.root_variance_base_time).to_seconds();
+        NtpDuration::from_seconds(
+            self.root_variance_base
+                + t * self.root_variance_linear
+                + t.powi(2) * self.root_variance_quadratic
+                + t.powi(3) * self.root_variance_cubic,
+        )
+    }
 }
 
 impl Default for TimeSnapshot {
@@ -38,7 +58,11 @@ impl Default for TimeSnapshot {
         Self {
             precision: NtpDuration::from_exponent(-18),
             root_delay: NtpDuration::ZERO,
-            root_dispersion: NtpDuration::ZERO,
+            root_variance_base_time: NtpTimestamp::default(),
+            root_variance_base: 0.0,
+            root_variance_linear: 0.0,
+            root_variance_quadratic: 0.0,
+            root_variance_cubic: 0.0,
             leap_indicator: NtpLeapIndicator::Unknown,
             accumulated_steps: NtpDuration::ZERO,
         }
