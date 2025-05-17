@@ -25,8 +25,7 @@ where
         type Value = ProtocolVersion;
 
         fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            formatter
-                .write_str(r#"4 or 5 as an integer or string, or the special string value "auto""#)
+            formatter.write_str(r#"4 or 5 as an integer, or the special string value "auto""#)
         }
 
         fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
@@ -52,8 +51,6 @@ where
             E: de::Error,
         {
             match v {
-                "4" => Ok(ProtocolVersion::V4),
-                "5" => Ok(ProtocolVersion::V5),
                 "auto" => Ok(ProtocolVersion::v4_upgrading_to_v5_with_default_tries()),
                 _ => Err(E::custom(r#"Version must be 4, 5 or "auto""#)),
             }
@@ -68,7 +65,7 @@ fn default_ntp_version() -> ProtocolVersion {
 }
 
 #[derive(Deserialize, Debug, PartialEq, Clone)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct StandardSource {
     pub address: NtpAddress,
     #[serde(
@@ -79,7 +76,7 @@ pub struct StandardSource {
 }
 
 #[derive(Debug, Deserialize, PartialEq, Clone)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct NtsSourceConfig {
     pub address: NtsKeAddress,
     #[serde(
@@ -117,7 +114,7 @@ fn default_certificate_authorities() -> Arc<[Certificate]> {
 }
 
 #[derive(Deserialize, Debug, PartialEq, Clone)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct PoolSourceConfig {
     #[serde(rename = "address")]
     pub addr: NtpAddress,
@@ -138,7 +135,7 @@ fn max_sources_default() -> usize {
 
 #[cfg(feature = "unstable_nts-pool")]
 #[derive(Deserialize, Debug, PartialEq, Clone)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct NtsPoolSourceConfig {
     #[serde(rename = "address")]
     pub addr: NtsKeAddress,
@@ -653,6 +650,11 @@ impl<'a> TryFrom<&'a str> for NtpSourceConfig {
 mod tests {
     use super::*;
 
+    #[derive(Deserialize, Debug)]
+    struct TestConfig {
+        source: NtpSourceConfig,
+    }
+
     fn source_addr(config: &NtpSourceConfig) -> String {
         match config {
             NtpSourceConfig::Standard(c) => c.first.address.to_string(),
@@ -668,11 +670,6 @@ mod tests {
 
     #[test]
     fn test_deserialize_source() {
-        #[derive(Deserialize, Debug)]
-        struct TestConfig {
-            source: NtpSourceConfig,
-        }
-
         let test: TestConfig = toml::from_str(
             r#"
             [source]
@@ -762,15 +759,71 @@ mod tests {
     }
 
     #[test]
+    fn test_deserialize_source_ntp_version() {
+        let test: TestConfig = toml::from_str(
+            r#"
+            [source]
+            address = "example.com"
+            mode = "server"
+            ntp-version = "auto"
+            "#,
+        )
+        .unwrap();
+        let NtpSourceConfig::Standard(source) = test.source else {
+            panic!("Invalid source type");
+        };
+        assert_eq!(
+            source.first.ntp_version,
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries()
+        );
+
+        let test: TestConfig = toml::from_str(
+            r#"
+            [source]
+            address = "example.com"
+            mode = "pool"
+            ntp-version = 5
+            "#,
+        )
+        .unwrap();
+        let NtpSourceConfig::Pool(source) = test.source else {
+            panic!("Invalid source type");
+        };
+        assert_eq!(source.first.ntp_version, ProtocolVersion::V5);
+
+        let test: TestConfig = toml::from_str(
+            r#"
+            [source]
+            address = "example.com"
+            mode = "server"
+            ntp-version = 4
+            "#,
+        )
+        .unwrap();
+        let NtpSourceConfig::Standard(source) = test.source else {
+            panic!("Invalid source type");
+        };
+        assert_eq!(source.first.ntp_version, ProtocolVersion::V4);
+
+        let test: TestConfig = toml::from_str(
+            r#"
+            [source]
+            address = "example.com"
+            mode = "nts"
+            "#,
+        )
+        .unwrap();
+        let NtpSourceConfig::Nts(source) = test.source else {
+            panic!("Invalid source type");
+        };
+        assert_eq!(source.first.ntp_version, ProtocolVersion::V4);
+    }
+
+    #[test]
     fn test_deserialize_source_pem_certificate() {
         let contents = include_bytes!("../../../testdata/certificates/nos-nl.pem");
         let path = std::env::temp_dir().join("nos-nl.pem");
         std::fs::write(&path, contents).unwrap();
-
-        #[derive(Deserialize, Debug)]
-        struct TestConfig {
-            source: NtpSourceConfig,
-        }
 
         let test: TestConfig = toml::from_str(&format!(
             r#"
@@ -799,12 +852,6 @@ mod tests {
 
     #[test]
     fn test_source_config_parsing() {
-        #[derive(Deserialize, Debug)]
-        struct TestConfig {
-            #[allow(unused)]
-            source: NtpSourceConfig,
-        }
-
         let test: Result<TestConfig, _> = toml::from_str(
             r#"
                 [source]
@@ -828,12 +875,6 @@ mod tests {
 
     #[test]
     fn test_sock_config_parsing() {
-        #[derive(Deserialize, Debug)]
-        struct TestConfig {
-            #[allow(unused)]
-            source: NtpSourceConfig,
-        }
-
         let TestConfig {
             source: NtpSourceConfig::Sock(test),
         } = toml::from_str(
@@ -950,12 +991,6 @@ mod tests {
     #[cfg(feature = "pps")]
     #[test]
     fn test_pps_config_parsing() {
-        #[derive(Deserialize, Debug)]
-        struct TestConfig {
-            #[allow(unused)]
-            source: NtpSourceConfig,
-        }
-
         let TestConfig {
             source: NtpSourceConfig::Pps(test),
         } = toml::from_str(
