@@ -665,7 +665,7 @@ mod tests {
         assert_eq!(config.source_defaults.initial_poll_interval.as_log(), 5);
 
         let config: Config = toml::from_str(
-            "[[source]]\nmode = \"server\"\naddress = \"example.com\"\nntp_version = \"auto\"",
+            "[[source]]\nmode = \"server\"\naddress = \"example.com\"\nntp-version = \"auto\"",
         )
         .unwrap();
         assert_eq!(
