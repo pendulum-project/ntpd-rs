@@ -37,7 +37,6 @@ tokio-rustls.workspace = true
 [features]
 default = [ "pps" ]
 hardware-timestamping = []
-unstable_ntpv5 = ["ntp-proto/ntpv5"]
 unstable_nts-pool = ["ntp-proto/nts-pool"]
 pps = [ "dep:pps-time" ]
 

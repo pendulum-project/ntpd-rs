@@ -1,9 +1,7 @@
 use std::fmt::Display;
 use std::{net::SocketAddr, ops::Deref};
 
-#[cfg(feature = "unstable_ntpv5")]
-use ntp_proto::NtpVersion;
-use ntp_proto::{ProtocolVersion, SourceConfig};
+use ntp_proto::SourceConfig;
 use tokio::sync::mpsc;
 use tracing::warn;
 
@@ -95,14 +93,7 @@ impl Spawner for StandardSpawner {
                     SourceId::new(),
                     addr,
                     self.config.address.deref().clone(),
-                    #[cfg(not(feature = "unstable_ntpv5"))]
-                    ProtocolVersion::default(),
-                    #[cfg(feature = "unstable_ntpv5")]
-                    match self.config.ntp_version {
-                        Some(NtpVersion::V4) => ProtocolVersion::V4,
-                        Some(NtpVersion::V5) => ProtocolVersion::V5,
-                        None => ProtocolVersion::default(),
-                    },
+                    self.config.ntp_version,
                     self.source_config,
                     None,
                 ),
@@ -145,7 +136,6 @@ impl Spawner for StandardSpawner {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "unstable_ntpv5")]
     use ntp_proto::ProtocolVersion;
 
     use ntp_proto::SourceConfig;
@@ -170,8 +160,7 @@ mod tests {
                     vec!["127.0.0.1:123".parse().unwrap()],
                 )
                 .into(),
-                #[cfg(feature = "unstable_ntpv5")]
-                ntp_version: None,
+                ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
             },
             SourceConfig::default(),
         );
@@ -186,17 +175,15 @@ mod tests {
         assert_eq!(create_params.get_addr(), "127.0.0.1:123");
         let params = get_ntp_create_params(res).unwrap();
         assert_eq!(params.addr.to_string(), "127.0.0.1:123");
-        #[cfg(feature = "unstable_ntpv5")]
         assert_eq!(
             params.protocol_version,
-            ProtocolVersion::V4UpgradingToV5 { tries_left: 8 }
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries()
         );
 
         // Should be complete after spawning
         assert!(spawner.is_complete());
     }
 
-    #[cfg(feature = "unstable_ntpv5")]
     #[tokio::test]
     async fn respects_ntp_version_force_v5() {
         let mut spawner = StandardSpawner::new(
@@ -207,7 +194,7 @@ mod tests {
                     vec!["127.0.0.1:123".parse().unwrap()],
                 )
                 .into(),
-                ntp_version: Some(ntp_proto::NtpVersion::V5),
+                ntp_version: ProtocolVersion::V5,
             },
             SourceConfig::default(),
         );
@@ -226,7 +213,6 @@ mod tests {
         assert!(spawner.is_complete());
     }
 
-    #[cfg(feature = "unstable_ntpv5")]
     #[tokio::test]
     async fn respects_ntp_version_force_v4() {
         let mut spawner = StandardSpawner::new(
@@ -237,7 +223,7 @@ mod tests {
                     vec!["127.0.0.1:123".parse().unwrap()],
                 )
                 .into(),
-                ntp_version: Some(ntp_proto::NtpVersion::V4),
+                ntp_version: ProtocolVersion::V4,
             },
             SourceConfig::default(),
         );
@@ -266,8 +252,7 @@ mod tests {
                     vec!["127.0.0.1:123".parse().unwrap()],
                 )
                 .into(),
-                #[cfg(feature = "unstable_ntpv5")]
-                ntp_version: None,
+                ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
             },
             SourceConfig::default(),
         );
@@ -308,8 +293,7 @@ mod tests {
                     addresses.to_vec(),
                 )
                 .into(),
-                #[cfg(feature = "unstable_ntpv5")]
-                ntp_version: None,
+                ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
             },
             SourceConfig::default(),
         );
@@ -366,8 +350,7 @@ mod tests {
             StandardSource {
                 address: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![])
                     .into(),
-                #[cfg(feature = "unstable_ntpv5")]
-                ntp_version: None,
+                ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
             },
             SourceConfig::default(),
         );

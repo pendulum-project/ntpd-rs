@@ -15,11 +15,51 @@ use crate::{
     source::{ProtocolVersion, SourceNtsData},
 };
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum NtpVersion {
+    V3,
     V4,
-    #[cfg(feature = "ntpv5")]
     V5,
+}
+
+impl NtpVersion {
+    pub fn as_u8(self) -> u8 {
+        self.into()
+    }
+}
+
+#[derive(Debug)]
+pub struct InvalidNtpVersion(u8);
+
+impl Display for InvalidNtpVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Invalid NTP version: {}", self.0)
+    }
+}
+
+impl std::error::Error for InvalidNtpVersion {}
+
+impl TryFrom<u8> for NtpVersion {
+    type Error = InvalidNtpVersion;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            3 => Ok(NtpVersion::V3),
+            4 => Ok(NtpVersion::V4),
+            5 => Ok(NtpVersion::V5),
+            e => Err(InvalidNtpVersion(e)),
+        }
+    }
+}
+
+impl From<NtpVersion> for u8 {
+    fn from(value: NtpVersion) -> Self {
+        match value {
+            NtpVersion::V3 => 3,
+            NtpVersion::V4 => 4,
+            NtpVersion::V5 => 5,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -58,7 +98,6 @@ impl NtsRecord {
             NtsRecord::FixedKeyRequest { .. } => 0x4002,
             #[cfg(feature = "nts-pool")]
             NtsRecord::NtpServerDeny { .. } => 0x4003,
-            #[cfg(feature = "ntpv5")]
             NtsRecord::DraftId { .. } => 0x4008,
             NtsRecord::Unknown { record_type, .. } => record_type & !0x8000,
         }
@@ -82,7 +121,6 @@ impl NtsRecord {
             NtsRecord::FixedKeyRequest { .. } => true,
             #[cfg(feature = "nts-pool")]
             NtsRecord::NtpServerDeny { .. } => false,
-            #[cfg(feature = "ntpv5")]
             NtsRecord::DraftId { .. } => false,
             NtsRecord::Unknown { critical, .. } => *critical,
         }
@@ -161,7 +199,6 @@ pub enum NtsRecord {
         critical: bool,
         data: Vec<u8>,
     },
-    #[cfg(feature = "ntpv5")]
     DraftId {
         data: Vec<u8>,
     },
@@ -217,33 +254,23 @@ impl NtsRecord {
 
     #[allow(unused_variables)]
     pub fn client_key_exchange_records(
-        ntp_version: Option<NtpVersion>,
+        ntp_version: ProtocolVersion,
         denied_servers: impl IntoIterator<Item = String>,
     ) -> Box<[NtsRecord]> {
         let mut base = vec![
-            #[cfg(feature = "ntpv5")]
             NtsRecord::DraftId {
                 data: crate::packet::v5::DRAFT_VERSION.as_bytes().into(),
             },
-            #[cfg(feature = "ntpv5")]
             match ntp_version {
-                None => NtsRecord::NextProtocol {
-                    protocol_ids: vec![0x8001, 0],
-                },
-                Some(NtpVersion::V4) => NtsRecord::NextProtocol {
+                ProtocolVersion::V4 => NtsRecord::NextProtocol {
                     protocol_ids: vec![0],
                 },
-                Some(NtpVersion::V5) => NtsRecord::NextProtocol {
+                ProtocolVersion::V5 => NtsRecord::NextProtocol {
                     protocol_ids: vec![0x8001],
                 },
-            },
-            #[cfg(not(feature = "ntpv5"))]
-            NtsRecord::NextProtocol {
-                protocol_ids: vec![
-                    #[cfg(feature = "ntpv5")]
-                    0x8001,
-                    0,
-                ],
+                _ => NtsRecord::NextProtocol {
+                    protocol_ids: vec![0x8001, 0],
+                },
             },
             NtsRecord::AeadAlgorithm {
                 critical: false,
@@ -267,21 +294,13 @@ impl NtsRecord {
     }
 
     #[cfg(feature = "nts-pool")]
-    pub fn client_key_exchange_records_fixed(
-        c2s: Vec<u8>,
-        s2c: Vec<u8>,
-    ) -> [NtsRecord; if cfg!(feature = "ntpv5") { 5 } else { 4 }] {
+    pub fn client_key_exchange_records_fixed(c2s: Vec<u8>, s2c: Vec<u8>) -> [NtsRecord; 5] {
         [
-            #[cfg(feature = "ntpv5")]
             NtsRecord::DraftId {
                 data: crate::packet::v5::DRAFT_VERSION.as_bytes().into(),
             },
             NtsRecord::NextProtocol {
-                protocol_ids: vec![
-                    #[cfg(feature = "ntpv5")]
-                    0x8001,
-                    0,
-                ],
+                protocol_ids: vec![0x8001, 0],
             },
             NtsRecord::AeadAlgorithm {
                 critical: false,
@@ -448,7 +467,6 @@ impl NtsRecord {
                     },
                 }
             }
-            #[cfg(feature = "ntpv5")]
             0x4008 => NtsRecord::DraftId {
                 data: read_bytes_exact(reader, record_len)?,
             },
@@ -560,7 +578,6 @@ impl NtsRecord {
 
                 writer.write_all(name.as_bytes())?;
             }
-            #[cfg(feature = "ntpv5")]
             NtsRecord::DraftId { data } => {
                 writer.write_all(&(data.len() as u16).to_be_bytes())?;
                 writer.write_all(data)?;
@@ -774,16 +791,11 @@ pub enum ProtocolId {
     #[default]
     NtpV4 = 0,
 
-    #[cfg(feature = "ntpv5")]
     NtpV5 = 0x8001,
 }
 
 impl ProtocolId {
-    const IN_ORDER_OF_PREFERENCE: &'static [Self] = &[
-        #[cfg(feature = "ntpv5")]
-        Self::NtpV5,
-        Self::NtpV4,
-    ];
+    const IN_ORDER_OF_PREFERENCE: &'static [Self] = &[Self::NtpV5, Self::NtpV4];
 
     pub const fn try_deserialize(number: u16) -> Option<Self> {
         match number {
@@ -792,7 +804,6 @@ impl ProtocolId {
         }
     }
 
-    #[cfg(feature = "ntpv5")]
     pub const fn try_deserialize_v5(number: u16) -> Option<Self> {
         match number {
             0 => Some(Self::NtpV4),
@@ -1027,7 +1038,6 @@ impl KeyExchangeResultDecoder {
                     }))
                 }
             }
-            #[cfg(feature = "ntpv5")]
             DraftId { .. } => {
                 tracing::debug!("Unexpected draft id");
                 Continue(state)
@@ -1225,7 +1235,6 @@ impl KeyExchangeClient {
                                 remote: result.remote.unwrap_or(self.server_name),
                                 protocol_version: match protocol {
                                     ProtocolId::NtpV4 => ProtocolVersion::V4,
-                                    #[cfg(feature = "ntpv5")]
                                     ProtocolId::NtpV5 => ProtocolVersion::V5,
                                 },
                                 port: result.port.unwrap_or(Self::NTP_DEFAULT_PORT),
@@ -1270,7 +1279,7 @@ impl KeyExchangeClient {
     pub fn new(
         server_name: String,
         tls_config: tls_utils::ClientConfig,
-        ntp_version: Option<NtpVersion>,
+        ntp_version: ProtocolVersion,
         denied_servers: impl IntoIterator<Item = String>,
     ) -> Result<Self, KeyExchangeError> {
         let mut client = Self::new_without_tls_write(server_name, tls_config)?;
@@ -1298,7 +1307,6 @@ struct KeyExchangeServerDecoder {
     /// Protocol (NTP version) that is supported by both client and server
     protocol: Option<ProtocolId>,
 
-    #[cfg(feature = "ntpv5")]
     allow_v5: bool,
 
     #[cfg(feature = "nts-pool")]
@@ -1409,7 +1417,6 @@ impl KeyExchangeServerDecoder {
                 // perform a final validation step: did we receive everything that we should?
                 Break(state.done())
             }
-            #[cfg(feature = "ntpv5")]
             DraftId { data } => {
                 if data == crate::packet::v5::DRAFT_VERSION.as_bytes() {
                     state.allow_v5 = true;
@@ -1450,7 +1457,6 @@ impl KeyExchangeServerDecoder {
                 Continue(state)
             }
             NextProtocol { protocol_ids } => {
-                #[cfg(feature = "ntpv5")]
                 let selected = if state.allow_v5 {
                     protocol_ids
                         .iter()
@@ -1462,12 +1468,6 @@ impl KeyExchangeServerDecoder {
                         .copied()
                         .find_map(ProtocolId::try_deserialize)
                 };
-
-                #[cfg(not(feature = "ntpv5"))]
-                let selected = protocol_ids
-                    .iter()
-                    .copied()
-                    .find_map(ProtocolId::try_deserialize);
 
                 match selected {
                     None => Break(Err(NoValidProtocol)),
@@ -1870,40 +1870,6 @@ mod test {
                 assert_eq!(proto as u16, i);
             }
         }
-    }
-
-    #[cfg(not(feature = "ntpv5"))]
-    #[test]
-    fn test_client_key_exchange_records() {
-        let mut buffer = Vec::with_capacity(1024);
-        for record in NtsRecord::client_key_exchange_records(None, []).iter() {
-            record.write(&mut buffer).unwrap();
-        }
-
-        assert_eq!(
-            buffer,
-            &[128, 1, 0, 2, 0, 0, 0, 4, 0, 4, 0, 17, 0, 15, 128, 0, 0, 0]
-        );
-    }
-
-    #[cfg(not(feature = "ntpv5"))]
-    #[test]
-    fn test_decode_client_key_exchange_records() {
-        let bytes = [128, 1, 0, 2, 0, 0, 0, 4, 0, 4, 0, 17, 0, 15, 128, 0, 0, 0];
-
-        let mut decoder = NtsRecord::decoder();
-        decoder.extend(bytes);
-
-        assert_eq!(
-            [
-                decoder.step().unwrap().unwrap(),
-                decoder.step().unwrap().unwrap(),
-                decoder.step().unwrap().unwrap(),
-            ],
-            NtsRecord::client_key_exchange_records(None, vec![]).as_ref()
-        );
-
-        assert!(decoder.step().unwrap().is_none());
     }
 
     #[test]
@@ -2651,15 +2617,22 @@ mod test {
 
     #[test]
     fn server_decoder_finds_algorithm() {
-        let result =
-            server_decode_records(&NtsRecord::client_key_exchange_records(None, vec![])).unwrap();
+        let result = server_decode_records(&NtsRecord::client_key_exchange_records(
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            vec![],
+        ))
+        .unwrap();
 
         assert_eq!(result.algorithm, AeadAlgorithm::AeadAesSivCmac512);
     }
 
     #[test]
     fn server_decoder_ignores_new_cookie() {
-        let mut records = NtsRecord::client_key_exchange_records(None, vec![]).to_vec();
+        let mut records = NtsRecord::client_key_exchange_records(
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            vec![],
+        )
+        .to_vec();
         records.insert(
             0,
             NtsRecord::NewCookie {
@@ -2673,7 +2646,11 @@ mod test {
 
     #[test]
     fn server_decoder_ignores_server_and_port_preference() {
-        let mut records = NtsRecord::client_key_exchange_records(None, vec![]).to_vec();
+        let mut records = NtsRecord::client_key_exchange_records(
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            vec![],
+        )
+        .to_vec();
         records.insert(
             0,
             NtsRecord::Server {
@@ -2696,7 +2673,11 @@ mod test {
 
     #[test]
     fn server_decoder_ignores_warn() {
-        let mut records = NtsRecord::client_key_exchange_records(None, vec![]).to_vec();
+        let mut records = NtsRecord::client_key_exchange_records(
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            vec![],
+        )
+        .to_vec();
         records.insert(0, NtsRecord::Warning { warningcode: 42 });
 
         let result = server_decode_records(&records).unwrap();
@@ -2705,7 +2686,11 @@ mod test {
 
     #[test]
     fn server_decoder_ignores_unknown_not_critical() {
-        let mut records = NtsRecord::client_key_exchange_records(None, vec![]).to_vec();
+        let mut records = NtsRecord::client_key_exchange_records(
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            vec![],
+        )
+        .to_vec();
         records.insert(
             0,
             NtsRecord::Unknown {
@@ -2721,7 +2706,11 @@ mod test {
 
     #[test]
     fn server_decoder_reports_unknown_critical() {
-        let mut records = NtsRecord::client_key_exchange_records(None, vec![]).to_vec();
+        let mut records = NtsRecord::client_key_exchange_records(
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            vec![],
+        )
+        .to_vec();
         records.insert(
             0,
             NtsRecord::Unknown {
@@ -2740,7 +2729,11 @@ mod test {
 
     #[test]
     fn server_decoder_reports_error() {
-        let mut records = NtsRecord::client_key_exchange_records(None, vec![]).to_vec();
+        let mut records = NtsRecord::client_key_exchange_records(
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            vec![],
+        )
+        .to_vec();
         records.insert(0, NtsRecord::Error { errorcode: 2 });
 
         let error = server_decode_records(&records).unwrap_err();
@@ -2901,8 +2894,13 @@ mod test {
             .with_no_client_auth();
 
         let mut server = tls_utils::ServerConnection::new(Arc::new(serverconfig)).unwrap();
-        let mut client =
-            KeyExchangeClient::new("localhost".into(), clientconfig, None, vec![]).unwrap();
+        let mut client = KeyExchangeClient::new(
+            "localhost".into(),
+            clientconfig,
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            vec![],
+        )
+        .unwrap();
 
         server.writer().write_all(NTS_TIME_NL_RESPONSE).unwrap();
 
@@ -3080,7 +3078,12 @@ mod test {
         let (mut client, server) = client_server_pair(ClientType::Uncertified);
 
         let mut buffer = Vec::with_capacity(1024);
-        for record in NtsRecord::client_key_exchange_records(None, []).iter() {
+        for record in NtsRecord::client_key_exchange_records(
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            [],
+        )
+        .iter()
+        {
             record.write(&mut buffer).unwrap();
         }
         client.tls_connection.writer().write_all(&buffer).unwrap();
@@ -3092,7 +3095,6 @@ mod test {
 
         assert_eq!(result.nts.cookies.len(), 8);
 
-        #[cfg(feature = "ntpv5")]
         assert_eq!(result.protocol_version, ProtocolVersion::V5);
 
         // test that the supported algorithms record is not provided "unasked for"
@@ -3148,7 +3150,6 @@ mod test {
         assert_eq!(cookie.c2s.key_bytes(), c2s);
         assert_eq!(cookie.s2c.key_bytes(), s2c);
 
-        #[cfg(feature = "ntpv5")]
         assert_eq!(result.protocol_version, ProtocolVersion::V5);
     }
 
@@ -3178,7 +3179,12 @@ mod test {
     #[test]
     fn test_keyexchange_invalid_input() {
         let mut buffer = Vec::with_capacity(1024);
-        for record in NtsRecord::client_key_exchange_records(None, []).iter() {
+        for record in NtsRecord::client_key_exchange_records(
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            [],
+        )
+        .iter()
+        {
             record.write(&mut buffer).unwrap();
         }
 

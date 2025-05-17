@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use ntp_proto::{FilterAction, FilterList};
+use ntp_proto::{FilterAction, FilterList, NtpVersion};
 use serde::{Deserialize, Deserializer};
 
 #[derive(Debug, PartialEq, Eq, Clone, Deserialize)]
@@ -59,6 +59,32 @@ pub struct ServerConfig {
     pub rate_limiting_cutoff: Duration,
     #[serde(default, deserialize_with = "deserialize_require_nts")]
     pub require_nts: Option<FilterAction>,
+    #[serde(
+        default = "default_accepted_ntp_versions",
+        deserialize_with = "deserialize_accepted_ntp_versions"
+    )]
+    pub accept_ntp_versions: Vec<NtpVersion>,
+}
+
+fn default_accepted_ntp_versions() -> Vec<NtpVersion> {
+    vec![NtpVersion::V3, NtpVersion::V4]
+}
+
+fn deserialize_accepted_ntp_versions<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<NtpVersion>, D::Error> {
+    let data = Vec::<u8>::deserialize(deserializer)?;
+
+    data.into_iter()
+        .map(|v| match v {
+            3 => Ok(NtpVersion::V3),
+            4 => Ok(NtpVersion::V4),
+            5 => Ok(NtpVersion::V5),
+            e => Err(serde::de::Error::custom(format!(
+                "{e} is not a valid NTP version, version must be 4 and/or 5"
+            ))),
+        })
+        .collect::<Result<Vec<NtpVersion>, D::Error>>()
 }
 
 fn deserialize_require_nts<'de, D: Deserializer<'de>>(
@@ -132,6 +158,7 @@ impl TryFrom<&str> for ServerConfig {
             rate_limiting_cache_size: Default::default(),
             rate_limiting_cutoff: Default::default(),
             require_nts: None,
+            accept_ntp_versions: default_accepted_ntp_versions(),
         })
     }
 }
@@ -146,6 +173,7 @@ impl From<SocketAddr> for ServerConfig {
             rate_limiting_cache_size: Default::default(),
             rate_limiting_cutoff: Default::default(),
             require_nts: None,
+            accept_ntp_versions: default_accepted_ntp_versions(),
         }
     }
 }
@@ -158,6 +186,7 @@ impl From<ServerConfig> for ntp_proto::ServerConfig {
             rate_limiting_cache_size: value.rate_limiting_cache_size,
             rate_limiting_cutoff: value.rate_limiting_cutoff,
             require_nts: value.require_nts,
+            accepted_versions: value.accept_ntp_versions,
         }
     }
 }
@@ -228,6 +257,10 @@ mod tests {
             test.server.rate_limiting_cutoff,
             Duration::from_millis(1000)
         );
+        assert_eq!(
+            test.server.accept_ntp_versions,
+            vec![NtpVersion::V3, NtpVersion::V4]
+        );
 
         let test: TestConfig = toml::from_str(
             r#"
@@ -261,6 +294,28 @@ mod tests {
 
             [server.denylist]
             action = "deny"
+            "#,
+        );
+        assert!(test.is_err());
+
+        let test = toml::from_str::<TestConfig>(
+            r#"
+            [server]
+            listen = "127.0.0.1:123"
+            accept-ntp-versions = [3,4,5]
+            "#,
+        )
+        .unwrap();
+        assert_eq!(
+            test.server.accept_ntp_versions,
+            vec![NtpVersion::V3, NtpVersion::V4, NtpVersion::V5]
+        );
+
+        let test = toml::from_str::<TestConfig>(
+            r#"
+            [server]
+            listen = "127.0.0.1:123"
+            accept-ntp-versions = [1]
             "#,
         );
         assert!(test.is_err());

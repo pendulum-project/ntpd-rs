@@ -77,10 +77,7 @@ impl Spawner for NtsPoolSpawner {
                 self.config.addr.server_name.clone(),
                 self.config.addr.port,
                 &self.config.certificate_authorities,
-                #[cfg(feature = "unstable_ntpv5")]
                 self.config.ntp_version,
-                #[cfg(not(feature = "unstable_ntpv5"))]
-                None,
                 self.current_sources
                     .iter()
                     .map(|source| source.remote.clone()),

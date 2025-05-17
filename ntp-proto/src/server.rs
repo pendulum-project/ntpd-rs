@@ -10,8 +10,8 @@ use std::{
 use serde::{de, Deserialize, Deserializer};
 
 use crate::{
-    ipfilter::IpFilter, KeySet, NoCipher, NtpClock, NtpPacket, NtpTimestamp, PacketParsingError,
-    SystemSnapshot,
+    ipfilter::IpFilter, KeySet, NoCipher, NtpClock, NtpPacket, NtpTimestamp, NtpVersion,
+    PacketParsingError, SystemSnapshot,
 };
 
 pub enum ServerAction<'a> {
@@ -79,6 +79,7 @@ pub struct ServerConfig {
     pub rate_limiting_cache_size: usize,
     pub rate_limiting_cutoff: Duration,
     pub require_nts: Option<FilterAction>,
+    pub accepted_versions: Vec<NtpVersion>,
 }
 
 pub struct Server<C> {
@@ -209,12 +210,29 @@ impl<C: NtpClock> Server<C> {
 
         // Generate the appropriate response
         let version = packet.version();
+
+        if !self.config.accepted_versions.contains(&version) {
+            // handle this packet as if we don't know it
+            stats_handler.register(
+                version.as_u8(),
+                false,
+                ServerReason::Policy,
+                ServerResponse::Ignore,
+            );
+            return ServerAction::Ignore;
+        }
+
         let nts = cookie.is_some() || action == ServerResponse::NTSNak;
 
         // ignore non-NTS packets when configured to require NTS
         if let (false, Some(non_nts_action)) = (nts, self.config.require_nts) {
             if non_nts_action == FilterAction::Ignore {
-                stats_handler.register(version, nts, ServerReason::Policy, ServerResponse::Ignore);
+                stats_handler.register(
+                    version.into(),
+                    nts,
+                    ServerReason::Policy,
+                    ServerResponse::Ignore,
+                );
                 return ServerAction::Ignore;
             } else {
                 action = ServerResponse::Deny;
@@ -262,7 +280,7 @@ impl<C: NtpClock> Server<C> {
         };
         match result {
             Ok(_) => {
-                stats_handler.register(version, nts, reason, action);
+                stats_handler.register(version.into(), nts, reason, action);
                 let length = cursor.position();
                 ServerAction::Respond {
                     message: &cursor.into_inner()[..length as _],
@@ -271,7 +289,7 @@ impl<C: NtpClock> Server<C> {
             Err(e) => {
                 tracing::error!("Could not serialize response: {}", e);
                 stats_handler.register(
-                    version,
+                    version.into(),
                     nts,
                     ServerReason::InternalError,
                     ServerResponse::Ignore,
@@ -507,6 +525,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 0,
             require_nts: None,
+            accepted_versions: vec![NtpVersion::V4],
         };
         let clock = TestClock {
             cur: NtpTimestamp::from_fixed_int(200),
@@ -577,6 +596,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 0,
             require_nts: None,
+            accepted_versions: vec![NtpVersion::V4],
         };
         server.update_config(config);
 
@@ -615,6 +635,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 0,
             require_nts: None,
+            accepted_versions: vec![NtpVersion::V4],
         };
         let clock = TestClock {
             cur: NtpTimestamp::from_fixed_int(200),
@@ -691,6 +712,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 0,
             require_nts: None,
+            accepted_versions: vec![NtpVersion::V4],
         };
         server.update_config(config);
 
@@ -723,6 +745,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_millis(100),
             rate_limiting_cache_size: 32,
             require_nts: None,
+            accepted_versions: vec![NtpVersion::V4],
         };
         let clock = TestClock {
             cur: NtpTimestamp::from_fixed_int(200),
@@ -823,6 +846,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_millis(100),
             rate_limiting_cache_size: 0,
             require_nts: None,
+            accepted_versions: vec![NtpVersion::V4],
         };
 
         server.update_config(config);
@@ -898,6 +922,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_millis(100),
             rate_limiting_cache_size: 0,
             require_nts: None,
+            accepted_versions: vec![NtpVersion::V4],
         };
         let clock = TestClock {
             cur: NtpTimestamp::from_fixed_int(200),
@@ -961,6 +986,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_millis(100),
             rate_limiting_cache_size: 0,
             require_nts: None,
+            accepted_versions: vec![NtpVersion::V4],
         };
         server.update_config(config);
 
@@ -990,6 +1016,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_millis(100),
             rate_limiting_cache_size: 0,
             require_nts: None,
+            accepted_versions: vec![NtpVersion::V4],
         };
         server.update_config(config);
 
@@ -1019,6 +1046,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_millis(100),
             rate_limiting_cache_size: 0,
             require_nts: None,
+            accepted_versions: vec![NtpVersion::V4],
         };
         server.update_config(config);
 
@@ -1048,6 +1076,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_millis(100),
             rate_limiting_cache_size: 0,
             require_nts: None,
+            accepted_versions: vec![NtpVersion::V4],
         };
         server.update_config(config);
 
@@ -1080,6 +1109,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_millis(100),
             rate_limiting_cache_size: 0,
             require_nts: Some(FilterAction::Ignore),
+            accepted_versions: vec![NtpVersion::V4],
         };
         let clock = TestClock {
             cur: NtpTimestamp::from_fixed_int(200),
@@ -1170,6 +1200,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_secs(1),
             rate_limiting_cache_size: 0,
             require_nts: Some(FilterAction::Ignore),
+            accepted_versions: vec![NtpVersion::V4],
         };
         let clock = TestClock {
             cur: NtpTimestamp::from_fixed_int(200),
@@ -1254,7 +1285,6 @@ mod tests {
         assert!(packet.is_kiss_deny());
     }
 
-    #[cfg(feature = "ntpv5")]
     #[test]
     fn test_server_v5() {
         let config = ServerConfig {
@@ -1269,6 +1299,7 @@ mod tests {
             rate_limiting_cutoff: Duration::from_millis(100),
             rate_limiting_cache_size: 0,
             require_nts: None,
+            accepted_versions: vec![NtpVersion::V5],
         };
         let clock = TestClock {
             cur: NtpTimestamp::from_fixed_int(200),
@@ -1332,6 +1363,86 @@ mod tests {
         let packet = NtpPacket::deserialize(data, &NoCipher).unwrap().0;
         assert!(packet.valid_server_response(id, false));
         assert!(packet.is_kiss_deny());
+    }
+
+    #[test]
+    fn test_server_ignore_version() {
+        let config = ServerConfig {
+            denylist: FilterList {
+                filter: vec![],
+                action: FilterAction::Deny,
+            },
+            allowlist: FilterList {
+                filter: vec!["0.0.0.0/0".parse().unwrap()],
+                action: FilterAction::Ignore,
+            },
+            rate_limiting_cutoff: Duration::from_millis(1000),
+            rate_limiting_cache_size: 0,
+            require_nts: None,
+            accepted_versions: vec![NtpVersion::V3, NtpVersion::V4],
+        };
+        let clock = TestClock {
+            cur: NtpTimestamp::from_fixed_int(200),
+        };
+        let mut stats = TestStatHandler::default();
+
+        let mut server = Server::new(
+            config,
+            clock,
+            SystemSnapshot::default(),
+            KeySetProvider::new(1).get(),
+        );
+
+        let (packet, _) = NtpPacket::poll_message_v5(PollIntervalLimits::default().min);
+        let serialized = serialize_packet_unencrypted(&packet);
+
+        let mut buf = [0; 1024];
+        let response = server.handle(
+            "128.0.0.1".parse().unwrap(),
+            NtpTimestamp::from_fixed_int(100),
+            &serialized,
+            &mut buf,
+            &mut stats,
+        );
+
+        assert_eq!(
+            stats.last_register.take(),
+            Some((5, false, ServerReason::Policy, ServerResponse::Ignore))
+        );
+        assert!(matches!(response, ServerAction::Ignore));
+
+        server.update_config(ServerConfig {
+            denylist: FilterList {
+                filter: vec![],
+                action: FilterAction::Deny,
+            },
+            allowlist: FilterList {
+                filter: vec!["0.0.0.0/0".parse().unwrap()],
+                action: FilterAction::Ignore,
+            },
+            rate_limiting_cutoff: Duration::from_millis(100),
+            rate_limiting_cache_size: 0,
+            require_nts: None,
+            accepted_versions: vec![NtpVersion::V5],
+        });
+
+        let (packet, _) = NtpPacket::poll_message(PollIntervalLimits::default().min);
+        let serialized = serialize_packet_unencrypted(&packet);
+
+        let mut buf = [0; 1024];
+        let response = server.handle(
+            "128.0.0.1".parse().unwrap(),
+            NtpTimestamp::from_fixed_int(100),
+            &serialized,
+            &mut buf,
+            &mut stats,
+        );
+
+        assert_eq!(
+            stats.last_register.take(),
+            Some((4, false, ServerReason::Policy, ServerResponse::Ignore))
+        );
+        assert!(matches!(response, ServerAction::Ignore));
     }
 
     // TimestampedCache tests
