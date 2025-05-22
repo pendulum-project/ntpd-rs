@@ -257,29 +257,34 @@ impl NtsRecord {
         ntp_version: ProtocolVersion,
         denied_servers: impl IntoIterator<Item = String>,
     ) -> Box<[NtsRecord]> {
-        let mut base = vec![
-            NtsRecord::DraftId {
+        let mut records = vec![];
+
+        if ntp_version == ProtocolVersion::V5
+            || matches!(ntp_version, ProtocolVersion::V4UpgradingToV5 { .. })
+        {
+            records.push(NtsRecord::DraftId {
                 data: crate::packet::v5::DRAFT_VERSION.as_bytes().into(),
+            });
+        }
+        records.push(match ntp_version {
+            ProtocolVersion::V4 => NtsRecord::NextProtocol {
+                protocol_ids: vec![0],
             },
-            match ntp_version {
-                ProtocolVersion::V4 => NtsRecord::NextProtocol {
-                    protocol_ids: vec![0],
-                },
-                ProtocolVersion::V5 => NtsRecord::NextProtocol {
-                    protocol_ids: vec![0x8001],
-                },
-                _ => NtsRecord::NextProtocol {
-                    protocol_ids: vec![0x8001, 0],
-                },
+            ProtocolVersion::V5 => NtsRecord::NextProtocol {
+                protocol_ids: vec![0x8001],
             },
-            NtsRecord::AeadAlgorithm {
-                critical: false,
-                algorithm_ids: AeadAlgorithm::IN_ORDER_OF_PREFERENCE
-                    .iter()
-                    .map(|algorithm| *algorithm as u16)
-                    .collect(),
+            _ => NtsRecord::NextProtocol {
+                protocol_ids: vec![0x8001, 0],
             },
-        ];
+        });
+
+        records.push(NtsRecord::AeadAlgorithm {
+            critical: false,
+            algorithm_ids: AeadAlgorithm::IN_ORDER_OF_PREFERENCE
+                .iter()
+                .map(|algorithm| *algorithm as u16)
+                .collect(),
+        });
 
         #[cfg(feature = "nts-pool")]
         base.extend(
@@ -288,9 +293,9 @@ impl NtsRecord {
                 .map(|server| NtsRecord::NtpServerDeny { denied: server }),
         );
 
-        base.push(NtsRecord::EndOfMessage);
+        records.push(NtsRecord::EndOfMessage);
 
-        base.into_boxed_slice()
+        records.into_boxed_slice()
     }
 
     #[cfg(feature = "nts-pool")]
