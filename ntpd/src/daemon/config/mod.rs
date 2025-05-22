@@ -3,9 +3,7 @@ mod server;
 pub mod subnet;
 
 use clock_steering::unix::UnixClock;
-#[cfg(feature = "unstable_ntpv5")]
-use ntp_proto::NtpVersion;
-use ntp_proto::{AlgorithmConfig, SourceConfig, SynchronizationConfig};
+use ntp_proto::{AlgorithmConfig, ProtocolVersion, SourceConfig, SynchronizationConfig};
 pub use ntp_source::*;
 use serde::{Deserialize, Deserializer};
 pub use server::*;
@@ -476,22 +474,21 @@ impl Config {
             ok = false;
         }
 
-        #[cfg(feature = "unstable_ntpv5")]
         if self.sources.iter().any(|config| match config {
             NtpSourceConfig::Sock(_) => false,
             NtpSourceConfig::Pps(_) => false,
             NtpSourceConfig::Standard(config) => {
-                matches!(config.first.ntp_version, Some(NtpVersion::V5))
+                matches!(config.first.ntp_version, ProtocolVersion::V5)
             }
             NtpSourceConfig::Nts(config) => {
-                matches!(config.first.ntp_version, Some(NtpVersion::V5))
+                matches!(config.first.ntp_version, ProtocolVersion::V5)
             }
             NtpSourceConfig::Pool(config) => {
-                matches!(config.first.ntp_version, Some(NtpVersion::V5))
+                matches!(config.first.ntp_version, ProtocolVersion::V5)
             }
             #[cfg(feature = "unstable_nts-pool")]
             NtpSourceConfig::NtsPool(config) => {
-                matches!(config.first.ntp_version, Some(NtpVersion::V5))
+                matches!(config.first.ntp_version, ProtocolVersion::V5)
             }
         }) {
             warn!("Forcing a source into NTPv5, which is still a draft. There is no guarantee that the server will remain compatible with this or future versions of ntpd-rs.");
@@ -533,7 +530,7 @@ impl From<toml::de::Error> for ConfigError {
 
 #[cfg(test)]
 mod tests {
-    use ntp_proto::{NtpDuration, StepThreshold};
+    use ntp_proto::{NtpDuration, ProtocolVersion, StepThreshold};
 
     use super::*;
 
@@ -546,8 +543,7 @@ mod tests {
             vec![NtpSourceConfig::Standard(FlattenedPair {
                 first: StandardSource {
                     address: NormalizedAddress::new_unchecked("example.com", 123).into(),
-                    #[cfg(feature = "unstable_ntpv5")]
-                    ntp_version: None,
+                    ntp_version: ProtocolVersion::V4,
                 },
                 second: Default::default()
             })]
@@ -564,8 +560,7 @@ mod tests {
             vec![NtpSourceConfig::Standard(FlattenedPair {
                 first: StandardSource {
                     address: NormalizedAddress::new_unchecked("example.com", 123).into(),
-                    #[cfg(feature = "unstable_ntpv5")]
-                    ntp_version: None,
+                    ntp_version: ProtocolVersion::V4,
                 },
                 second: Default::default()
             })]
@@ -580,8 +575,7 @@ mod tests {
             vec![NtpSourceConfig::Standard(FlattenedPair {
                 first: StandardSource {
                     address: NormalizedAddress::new_unchecked("example.com", 123).into(),
-                    #[cfg(feature = "unstable_ntpv5")]
-                    ntp_version: None,
+                    ntp_version: ProtocolVersion::V4,
                 },
                 second: Default::default()
             })]
@@ -612,8 +606,7 @@ mod tests {
             vec![NtpSourceConfig::Standard(FlattenedPair {
                 first: StandardSource {
                     address: NormalizedAddress::new_unchecked("example.com", 123).into(),
-                    #[cfg(feature = "unstable_ntpv5")]
-                    ntp_version: None,
+                    ntp_version: ProtocolVersion::V4,
                 },
                 second: Default::default()
             })]
@@ -659,8 +652,7 @@ mod tests {
             vec![NtpSourceConfig::Standard(FlattenedPair {
                 first: StandardSource {
                     address: NormalizedAddress::new_unchecked("example.com", 123).into(),
-                    #[cfg(feature = "unstable_ntpv5")]
-                    ntp_version: None,
+                    ntp_version: ProtocolVersion::V4,
                 },
                 second: Default::default()
             })]
@@ -671,6 +663,22 @@ mod tests {
         assert_eq!(poll_interval_limits.max.as_log(), 9);
 
         assert_eq!(config.source_defaults.initial_poll_interval.as_log(), 5);
+
+        let config: Config = toml::from_str(
+            "[[source]]\nmode = \"server\"\naddress = \"example.com\"\nntp-version = \"auto\"",
+        )
+        .unwrap();
+        assert_eq!(
+            config.sources,
+            vec![NtpSourceConfig::Standard(FlattenedPair {
+                first: StandardSource {
+                    address: NormalizedAddress::new_unchecked("example.com", 123).into(),
+                    ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+                },
+                second: Default::default()
+            })]
+        );
+        assert!(config.observability.log_level.is_none());
     }
 
     #[test]

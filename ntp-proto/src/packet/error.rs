@@ -10,7 +10,6 @@ pub enum ParsingError<T> {
     MalformedNonce,
     MalformedCookiePlaceholder,
     DecryptError(T),
-    #[cfg(feature = "ntpv5")]
     V5(super::v5::V5Error),
 }
 
@@ -25,7 +24,6 @@ impl<T> ParsingError<T> {
             MalformedNonce => Err(MalformedNonce),
             MalformedCookiePlaceholder => Err(MalformedCookiePlaceholder),
             DecryptError(decrypt_error) => Ok(decrypt_error),
-            #[cfg(feature = "ntpv5")]
             V5(e) => Err(V5(e)),
         }
     }
@@ -42,7 +40,6 @@ impl ParsingError<std::convert::Infallible> {
             MalformedNonce => MalformedNonce,
             MalformedCookiePlaceholder => MalformedCookiePlaceholder,
             DecryptError(decrypt_error) => match decrypt_error {},
-            #[cfg(feature = "ntpv5")]
             V5(e) => V5(e),
         }
     }
@@ -59,7 +56,6 @@ impl<T> Display for ParsingError<T> {
             Self::MalformedNonce => f.write_str("Malformed nonce (likely invalid length)"),
             Self::MalformedCookiePlaceholder => f.write_str("Malformed cookie placeholder"),
             Self::DecryptError(_) => f.write_str("Failed to decrypt NTS extension fields"),
-            #[cfg(feature = "ntpv5")]
             Self::V5(e) => Display::fmt(e, f),
         }
     }

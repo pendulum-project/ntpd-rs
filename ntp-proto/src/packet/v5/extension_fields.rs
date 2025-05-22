@@ -5,6 +5,7 @@ use crate::packet::ExtensionField;
 use std::borrow::Cow;
 use std::convert::Infallible;
 
+#[allow(dead_code)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum Type {
     DraftIdentification,
@@ -21,6 +22,7 @@ pub enum Type {
 }
 
 impl Type {
+    #[cfg(test)]
     pub const fn from_bits(bits: u16) -> Self {
         match bits {
             0xF5FF => Self::DraftIdentification,

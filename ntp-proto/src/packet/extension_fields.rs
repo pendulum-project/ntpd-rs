@@ -5,7 +5,6 @@ use std::{
 
 use crate::{io::NonBlockingWrite, keyset::DecodedServerCookie};
 
-#[cfg(feature = "ntpv5")]
 use crate::packet::v5::extension_fields::{ReferenceIdRequest, ReferenceIdResponse};
 
 use super::{crypto::EncryptResult, error::ParsingError, Cipher, CipherProvider, Mac};
@@ -16,16 +15,10 @@ enum ExtensionFieldTypeId {
     NtsCookie,
     NtsCookiePlaceholder,
     NtsEncryptedField,
-    Unknown {
-        type_id: u16,
-    },
-    #[cfg(feature = "ntpv5")]
+    Unknown { type_id: u16 },
     DraftIdentification,
-    #[cfg(feature = "ntpv5")]
     Padding,
-    #[cfg(feature = "ntpv5")]
     ReferenceIdRequest,
-    #[cfg(feature = "ntpv5")]
     ReferenceIdResponse,
 }
 
@@ -36,13 +29,9 @@ impl ExtensionFieldTypeId {
             0x204 => Self::NtsCookie,
             0x304 => Self::NtsCookiePlaceholder,
             0x404 => Self::NtsEncryptedField,
-            #[cfg(feature = "ntpv5")]
             0xF5FF => Self::DraftIdentification,
-            #[cfg(feature = "ntpv5")]
             0xF501 => Self::Padding,
-            #[cfg(feature = "ntpv5")]
             0xF503 => Self::ReferenceIdRequest,
-            #[cfg(feature = "ntpv5")]
             0xF504 => Self::ReferenceIdResponse,
             _ => Self::Unknown { type_id },
         }
@@ -54,13 +43,9 @@ impl ExtensionFieldTypeId {
             ExtensionFieldTypeId::NtsCookie => 0x204,
             ExtensionFieldTypeId::NtsCookiePlaceholder => 0x304,
             ExtensionFieldTypeId::NtsEncryptedField => 0x404,
-            #[cfg(feature = "ntpv5")]
             ExtensionFieldTypeId::DraftIdentification => 0xF5FF,
-            #[cfg(feature = "ntpv5")]
             ExtensionFieldTypeId::Padding => 0xF501,
-            #[cfg(feature = "ntpv5")]
             ExtensionFieldTypeId::ReferenceIdRequest => 0xF503,
-            #[cfg(feature = "ntpv5")]
             ExtensionFieldTypeId::ReferenceIdResponse => 0xF504,
             ExtensionFieldTypeId::Unknown { type_id } => type_id,
         }
@@ -71,22 +56,13 @@ impl ExtensionFieldTypeId {
 pub enum ExtensionField<'a> {
     UniqueIdentifier(Cow<'a, [u8]>),
     NtsCookie(Cow<'a, [u8]>),
-    NtsCookiePlaceholder {
-        cookie_length: u16,
-    },
+    NtsCookiePlaceholder { cookie_length: u16 },
     InvalidNtsEncryptedField,
-    #[cfg(feature = "ntpv5")]
     DraftIdentification(Cow<'a, str>),
-    #[cfg(feature = "ntpv5")]
     Padding(usize),
-    #[cfg(feature = "ntpv5")]
     ReferenceIdRequest(super::v5::extension_fields::ReferenceIdRequest),
-    #[cfg(feature = "ntpv5")]
     ReferenceIdResponse(super::v5::extension_fields::ReferenceIdResponse<'a>),
-    Unknown {
-        type_id: u16,
-        data: Cow<'a, [u8]>,
-    },
+    Unknown { type_id: u16, data: Cow<'a, [u8]> },
 }
 
 impl std::fmt::Debug for ExtensionField<'_> {
@@ -101,15 +77,11 @@ impl std::fmt::Debug for ExtensionField<'_> {
                 .field("body_length", body_length)
                 .finish(),
             Self::InvalidNtsEncryptedField => f.debug_struct("InvalidNtsEncryptedField").finish(),
-            #[cfg(feature = "ntpv5")]
             Self::DraftIdentification(arg0) => {
                 f.debug_tuple("DraftIdentification").field(arg0).finish()
             }
-            #[cfg(feature = "ntpv5")]
             Self::Padding(len) => f.debug_struct("Padding").field("length", &len).finish(),
-            #[cfg(feature = "ntpv5")]
             Self::ReferenceIdRequest(r) => f.debug_tuple("ReferenceIdRequest").field(r).finish(),
-            #[cfg(feature = "ntpv5")]
             Self::ReferenceIdResponse(r) => f.debug_tuple("ReferenceIdResponse").field(r).finish(),
             Self::Unknown {
                 type_id: typeid,
@@ -146,13 +118,9 @@ impl<'a> ExtensionField<'a> {
                 cookie_length: body_length,
             },
             InvalidNtsEncryptedField => InvalidNtsEncryptedField,
-            #[cfg(feature = "ntpv5")]
             DraftIdentification(data) => DraftIdentification(Cow::Owned(data.into_owned())),
-            #[cfg(feature = "ntpv5")]
             Padding(len) => Padding(len),
-            #[cfg(feature = "ntpv5")]
             ReferenceIdRequest(req) => ReferenceIdRequest(req),
-            #[cfg(feature = "ntpv5")]
             ReferenceIdResponse(res) => ReferenceIdResponse(res.into_owned()),
         }
     }
@@ -177,15 +145,11 @@ impl<'a> ExtensionField<'a> {
                 cookie_length: body_length,
             } => Self::encode_nts_cookie_placeholder(w, *body_length, minimum_size, version),
             InvalidNtsEncryptedField => Err(std::io::ErrorKind::Other.into()),
-            #[cfg(feature = "ntpv5")]
             DraftIdentification(data) => {
                 Self::encode_draft_identification(w, data, minimum_size, version)
             }
-            #[cfg(feature = "ntpv5")]
             Padding(len) => Self::encode_padding_field(w, *len, minimum_size, version),
-            #[cfg(feature = "ntpv5")]
             ReferenceIdRequest(req) => req.serialize(w),
-            #[cfg(feature = "ntpv5")]
             ReferenceIdResponse(res) => res.serialize(w),
         }
     }
@@ -430,7 +394,6 @@ impl<'a> ExtensionField<'a> {
         Ok(())
     }
 
-    #[cfg(feature = "ntpv5")]
     fn encode_draft_identification(
         mut w: impl NonBlockingWrite,
         data: &str,
@@ -452,7 +415,6 @@ impl<'a> ExtensionField<'a> {
         Ok(())
     }
 
-    #[cfg(feature = "ntpv5")]
     pub fn encode_padding_field(
         mut w: impl NonBlockingWrite,
         length: usize,
@@ -513,7 +475,6 @@ impl<'a> ExtensionField<'a> {
         })
     }
 
-    #[cfg(feature = "ntpv5")]
     fn decode_draft_identification(
         message: &'a [u8],
         extension_header_version: ExtensionHeaderVersion,
@@ -533,7 +494,6 @@ impl<'a> ExtensionField<'a> {
 
     fn decode(
         raw: RawExtensionField<'a>,
-        #[cfg_attr(not(feature = "ntpv5"), allow(unused_variables))]
         extension_header_version: ExtensionHeaderVersion,
     ) -> Result<Self, ParsingError<std::convert::Infallible>> {
         type EF<'a> = ExtensionField<'a>;
@@ -545,13 +505,10 @@ impl<'a> ExtensionField<'a> {
             TypeId::UniqueIdentifier => EF::decode_unique_identifier(message),
             TypeId::NtsCookie => EF::decode_nts_cookie(message),
             TypeId::NtsCookiePlaceholder => EF::decode_nts_cookie_placeholder(message),
-            #[cfg(feature = "ntpv5")]
             TypeId::DraftIdentification => {
                 EF::decode_draft_identification(message, extension_header_version)
             }
-            #[cfg(feature = "ntpv5")]
             TypeId::ReferenceIdRequest => Ok(ReferenceIdRequest::decode(message)?.into()),
-            #[cfg(feature = "ntpv5")]
             TypeId::ReferenceIdResponse => Ok(ReferenceIdResponse::decode(message).into()),
             type_id => EF::decode_unknown(type_id.to_type_id(), message),
         }
@@ -623,7 +580,6 @@ impl<'a> ExtensionFieldData<'a> {
             let minimum_size = match version {
                 ExtensionHeaderVersion::V4 if is_last => 28,
                 ExtensionHeaderVersion::V4 => 16,
-                #[cfg(feature = "ntpv5")]
                 ExtensionHeaderVersion::V5 => 4,
             };
             field.serialize(&mut *w, minimum_size, version)?;
@@ -647,7 +603,6 @@ impl<'a> ExtensionFieldData<'a> {
         let mut cookie = None;
         let mac_size = match version {
             ExtensionHeaderVersion::V4 => Mac::MAXIMUM_SIZE,
-            #[cfg(feature = "ntpv5")]
             ExtensionHeaderVersion::V5 => 0,
         };
 
@@ -800,18 +755,11 @@ impl<'a> RawEncryptedField<'a> {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ExtensionHeaderVersion {
     V4,
-    #[cfg(feature = "ntpv5")]
     V5,
 }
 
 #[cfg(feature = "__internal-fuzz")]
 impl<'a> arbitrary::Arbitrary<'a> for ExtensionHeaderVersion {
-    #[cfg(not(feature = "ntpv5"))]
-    fn arbitrary(_u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        Ok(Self::V4)
-    }
-
-    #[cfg(feature = "ntpv5")]
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         Ok(if bool::arbitrary(u)? {
             Self::V4
@@ -1044,7 +992,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "ntpv5")]
     #[test]
     fn draft_identification() {
         let test_id = crate::packet::v5::DRAFT_VERSION;
@@ -1071,7 +1018,6 @@ mod tests {
         assert_eq!(&out, &data);
     }
 
-    #[cfg(feature = "ntpv5")]
     #[test]
     fn extension_field_length() {
         let data: Vec<_> = (0..21).collect();

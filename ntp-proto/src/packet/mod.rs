@@ -10,6 +10,7 @@ use crate::{
     keyset::{DecodedServerCookie, KeySet},
     system::SystemSnapshot,
     time_types::{NtpDuration, NtpTimestamp, PollInterval},
+    NtpVersion,
 };
 
 use self::{error::ParsingError, extension_fields::ExtensionFieldData, mac::Mac};
@@ -19,7 +20,6 @@ mod error;
 mod extension_fields;
 mod mac;
 
-#[cfg(feature = "ntpv5")]
 pub mod v5;
 
 pub use crypto::{
@@ -122,7 +122,6 @@ pub struct NtpPacket<'a> {
 pub enum NtpHeader {
     V3(NtpHeaderV3V4),
     V4(NtpHeaderV3V4),
-    #[cfg(feature = "ntpv5")]
     V5(v5::NtpHeaderV5),
 }
 
@@ -365,7 +364,6 @@ impl<'a> NtpPacket<'a> {
                     }
                 }
             }
-            #[cfg(feature = "ntpv5")]
             5 => {
                 let (header, header_size) =
                     v5::NtpHeaderV5::deserialize(data).map_err(|e| e.generalize())?;
@@ -431,7 +429,7 @@ impl<'a> NtpPacket<'a> {
     #[cfg(test)]
     pub fn serialize_without_encryption_vec(
         &self,
-        #[cfg_attr(not(feature = "ntpv5"), allow(unused_variables))] desired_size: Option<usize>,
+        desired_size: Option<usize>,
     ) -> std::io::Result<Vec<u8>> {
         let mut buffer = vec![0u8; 1024];
         let mut cursor = Cursor::new(buffer.as_mut_slice());
@@ -448,15 +446,13 @@ impl<'a> NtpPacket<'a> {
         &self,
         w: &mut Cursor<&mut [u8]>,
         cipher: &(impl CipherProvider + ?Sized),
-        #[cfg_attr(not(feature = "ntpv5"), allow(unused_variables))] desired_size: Option<usize>,
+        desired_size: Option<usize>,
     ) -> std::io::Result<()> {
-        #[cfg(feature = "ntpv5")]
         let start = w.position();
 
         match self.header {
             NtpHeader::V3(header) => header.serialize(&mut *w, 3)?,
             NtpHeader::V4(header) => header.serialize(&mut *w, 4)?,
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(header) => header.serialize(&mut *w)?,
         };
 
@@ -466,7 +462,6 @@ impl<'a> NtpPacket<'a> {
                 self.efdata
                     .serialize(&mut *w, cipher, ExtensionHeaderVersion::V4)?
             }
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(_) => {
                 self.efdata
                     .serialize(&mut *w, cipher, ExtensionHeaderVersion::V5)?
@@ -477,7 +472,6 @@ impl<'a> NtpPacket<'a> {
             mac.serialize(&mut *w)?;
         }
 
-        #[cfg(feature = "ntpv5")]
         if let Some(desired_size) = desired_size {
             let written = (w.position() - start) as usize;
             if desired_size > written {
@@ -529,7 +523,6 @@ impl<'a> NtpPacket<'a> {
         )
     }
 
-    #[cfg(feature = "ntpv5")]
     pub fn nts_poll_message_v5(
         cookie: &'a [u8],
         new_cookies: u8,
@@ -582,7 +575,6 @@ impl<'a> NtpPacket<'a> {
         )
     }
 
-    #[cfg(feature = "ntpv5")]
     pub fn poll_message_upgrade_request(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
         let (mut header, id) = NtpHeaderV3V4::poll_message(poll_interval);
 
@@ -602,7 +594,6 @@ impl<'a> NtpPacket<'a> {
         )
     }
 
-    #[cfg(feature = "ntpv5")]
     pub fn poll_message_v5(poll_interval: PollInterval) -> (Self, RequestIdentifier) {
         let (header, id) = v5::NtpHeaderV5::poll_message(poll_interval);
 
@@ -622,7 +613,6 @@ impl<'a> NtpPacket<'a> {
         )
     }
 
-    #[cfg_attr(not(feature = "ntpv5"), allow(unused_mut))]
     pub fn timestamp_response<C: NtpClock>(
         system: &SystemSnapshot,
         input: Self,
@@ -644,14 +634,11 @@ impl<'a> NtpPacket<'a> {
                 let mut response_header =
                     NtpHeaderV3V4::timestamp_response(system, *header, recv_timestamp, clock);
 
-                #[cfg(feature = "ntpv5")]
-                {
-                    // Respond with the upgrade timestamp (NTP5NTP5) iff the input had it and the packet
-                    // had the correct draft identification
-                    if header.reference_timestamp == v5::UPGRADE_TIMESTAMP {
-                        response_header.reference_timestamp = v5::UPGRADE_TIMESTAMP;
-                    };
-                }
+                // Respond with the upgrade timestamp (NTP5NTP5) iff the input had it and the packet
+                // had the correct draft identification
+                if header.reference_timestamp == v5::UPGRADE_TIMESTAMP {
+                    response_header.reference_timestamp = v5::UPGRADE_TIMESTAMP;
+                };
 
                 NtpPacket {
                     header: NtpHeader::V4(response_header),
@@ -670,7 +657,6 @@ impl<'a> NtpPacket<'a> {
                     mac: None,
                 }
             }
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(header) => NtpPacket {
                 // TODO deduplicate extension handling with V4
                 header: NtpHeader::V5(v5::NtpHeaderV5::timestamp_response(
@@ -706,7 +692,6 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
-    #[cfg(feature = "ntpv5")]
     fn draft_id(&self) -> Option<&'_ str> {
         self.efdata
             .untrusted
@@ -772,7 +757,6 @@ impl<'a> NtpPacket<'a> {
                 },
                 mac: None,
             },
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(header) => NtpPacket {
                 header: NtpHeader::V5(v5::NtpHeaderV5::timestamp_response(
                     system,
@@ -852,7 +836,6 @@ impl<'a> NtpPacket<'a> {
                 },
                 mac: None,
             },
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(header) => NtpPacket {
                 header: NtpHeader::V5(v5::NtpHeaderV5::rate_limit_response(header)),
                 efdata: ExtensionFieldData {
@@ -892,7 +875,6 @@ impl<'a> NtpPacket<'a> {
                 },
                 mac: None,
             },
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(header) => NtpPacket {
                 header: NtpHeader::V5(v5::NtpHeaderV5::rate_limit_response(header)),
                 efdata: ExtensionFieldData {
@@ -936,7 +918,6 @@ impl<'a> NtpPacket<'a> {
                 },
                 mac: None,
             },
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(header) => NtpPacket {
                 header: NtpHeader::V5(v5::NtpHeaderV5::deny_response(header)),
                 efdata: ExtensionFieldData {
@@ -976,7 +957,6 @@ impl<'a> NtpPacket<'a> {
                 },
                 mac: None,
             },
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(header) => NtpPacket {
                 header: NtpHeader::V5(v5::NtpHeaderV5::deny_response(header)),
                 efdata: ExtensionFieldData {
@@ -1015,7 +995,6 @@ impl<'a> NtpPacket<'a> {
                 },
                 mac: None,
             },
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(header) => NtpPacket {
                 header: NtpHeader::V5(v5::NtpHeaderV5::nts_nak_response(header)),
                 efdata: ExtensionFieldData {
@@ -1046,12 +1025,11 @@ impl<'a> NtpPacket<'a> {
         })
     }
 
-    pub fn version(&self) -> u8 {
+    pub fn version(&self) -> NtpVersion {
         match self.header {
-            NtpHeader::V3(_) => 3,
-            NtpHeader::V4(_) => 4,
-            #[cfg(feature = "ntpv5")]
-            NtpHeader::V5(_) => 5,
+            NtpHeader::V3(_) => NtpVersion::V3,
+            NtpHeader::V4(_) => NtpVersion::V4,
+            NtpHeader::V5(_) => NtpVersion::V5,
         }
     }
 
@@ -1063,7 +1041,6 @@ impl<'a> NtpPacket<'a> {
         match self.header {
             NtpHeader::V3(header) => header.leap,
             NtpHeader::V4(header) => header.leap,
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(header) => header.leap,
         }
     }
@@ -1074,7 +1051,6 @@ impl<'a> NtpPacket<'a> {
             NtpHeader::V4(header) => header.mode,
 
             // FIXME long term the return type should change to capture both mode types
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(header) => match header.mode {
                 v5::NtpMode::Request => NtpAssociationMode::Client,
                 v5::NtpMode::Response => NtpAssociationMode::Server,
@@ -1085,7 +1061,6 @@ impl<'a> NtpPacket<'a> {
     pub fn poll(&self) -> PollInterval {
         match self.header {
             NtpHeader::V3(h) | NtpHeader::V4(h) => h.poll,
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(h) => h.poll,
         }
     }
@@ -1094,7 +1069,6 @@ impl<'a> NtpPacket<'a> {
         match self.header {
             NtpHeader::V3(header) => header.stratum,
             NtpHeader::V4(header) => header.stratum,
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(header) => header.stratum,
         }
     }
@@ -1103,7 +1077,6 @@ impl<'a> NtpPacket<'a> {
         match self.header {
             NtpHeader::V3(header) => header.precision,
             NtpHeader::V4(header) => header.precision,
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(header) => header.precision,
         }
     }
@@ -1112,7 +1085,6 @@ impl<'a> NtpPacket<'a> {
         match self.header {
             NtpHeader::V3(header) => header.root_delay,
             NtpHeader::V4(header) => header.root_delay,
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(header) => header.root_delay,
         }
     }
@@ -1121,7 +1093,6 @@ impl<'a> NtpPacket<'a> {
         match self.header {
             NtpHeader::V3(header) => header.root_dispersion,
             NtpHeader::V4(header) => header.root_dispersion,
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(header) => header.root_dispersion,
         }
     }
@@ -1130,7 +1101,6 @@ impl<'a> NtpPacket<'a> {
         match self.header {
             NtpHeader::V3(header) => header.receive_timestamp,
             NtpHeader::V4(header) => header.receive_timestamp,
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(header) => header.receive_timestamp,
         }
     }
@@ -1139,7 +1109,6 @@ impl<'a> NtpPacket<'a> {
         match self.header {
             NtpHeader::V3(header) => header.transmit_timestamp,
             NtpHeader::V4(header) => header.transmit_timestamp,
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(header) => header.transmit_timestamp,
         }
     }
@@ -1148,7 +1117,6 @@ impl<'a> NtpPacket<'a> {
         match self.header {
             NtpHeader::V3(header) => header.reference_id,
             NtpHeader::V4(header) => header.reference_id,
-            #[cfg(feature = "ntpv5")]
             // TODO NTPv5 does not have reference IDs so this should always be None for now
             NtpHeader::V5(_header) => ReferenceId::NONE,
         }
@@ -1158,7 +1126,6 @@ impl<'a> NtpPacket<'a> {
         match self.header {
             NtpHeader::V3(header) => header.reference_id,
             NtpHeader::V4(header) => header.reference_id,
-            #[cfg(feature = "ntpv5")]
             // Kiss code in ntpv5 is the first four bytes of the server cookie
             NtpHeader::V5(header) => {
                 ReferenceId::from_bytes(header.server_cookie.0[..4].try_into().unwrap())
@@ -1170,7 +1137,6 @@ impl<'a> NtpPacket<'a> {
         match self.header {
             NtpHeader::V3(header) => header.stratum == 0,
             NtpHeader::V4(header) => header.stratum == 0,
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(header) => header.stratum == 0,
         }
     }
@@ -1179,19 +1145,14 @@ impl<'a> NtpPacket<'a> {
         self.is_kiss()
             && match self.header {
                 NtpHeader::V3(_) | NtpHeader::V4(_) => self.kiss_code().is_deny(),
-                #[cfg(feature = "ntpv5")]
                 NtpHeader::V5(header) => header.poll == PollInterval::NEVER,
             }
     }
 
-    pub fn is_kiss_rate(
-        &self,
-        #[cfg_attr(not(feature = "ntpv5"), allow(unused))] own_interval: PollInterval,
-    ) -> bool {
+    pub fn is_kiss_rate(&self, own_interval: PollInterval) -> bool {
         self.is_kiss()
             && match self.header {
                 NtpHeader::V3(_) | NtpHeader::V4(_) => self.kiss_code().is_rate(),
-                #[cfg(feature = "ntpv5")]
                 NtpHeader::V5(header) => {
                     header.poll > own_interval && header.poll != PollInterval::NEVER
                 }
@@ -1202,7 +1163,6 @@ impl<'a> NtpPacket<'a> {
         self.is_kiss()
             && match self.header {
                 NtpHeader::V3(_) | NtpHeader::V4(_) => self.kiss_code().is_rstr(),
-                #[cfg(feature = "ntpv5")]
                 NtpHeader::V5(_) => false,
             }
     }
@@ -1211,12 +1171,10 @@ impl<'a> NtpPacket<'a> {
         self.is_kiss()
             && match self.header {
                 NtpHeader::V3(_) | NtpHeader::V4(_) => self.kiss_code().is_ntsn(),
-                #[cfg(feature = "ntpv5")]
                 NtpHeader::V5(header) => header.flags.authnak,
             }
     }
 
-    #[cfg(feature = "ntpv5")]
     pub fn is_upgrade(&self) -> bool {
         matches!(
             self.header,
@@ -1253,7 +1211,6 @@ impl<'a> NtpPacket<'a> {
             NtpHeader::V4(header) => {
                 header.origin_timestamp == identifier.expected_origin_timestamp
             }
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(header) => {
                 header.client_cookie
                     == v5::NtpClientCookie::from_ntp_timestamp(identifier.expected_origin_timestamp)
@@ -1310,7 +1267,6 @@ impl NtpPacket<'_> {
         match &mut self.header {
             NtpHeader::V3(ref mut header) => header.mode = mode,
             NtpHeader::V4(ref mut header) => header.mode = mode,
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(ref mut header) => {
                 header.mode = match mode {
                     NtpAssociationMode::Client => v5::NtpMode::Request,
@@ -1325,7 +1281,6 @@ impl NtpPacket<'_> {
         match &mut self.header {
             NtpHeader::V3(ref mut header) => header.origin_timestamp = timestamp,
             NtpHeader::V4(ref mut header) => header.origin_timestamp = timestamp,
-            #[cfg(feature = "ntpv5")]
             // TODO can we just reuse the cookie as the origin timestamp?
             NtpHeader::V5(ref mut header) => {
                 header.client_cookie = v5::NtpClientCookie::from_ntp_timestamp(timestamp)
@@ -1337,7 +1292,6 @@ impl NtpPacket<'_> {
         match &mut self.header {
             NtpHeader::V3(ref mut header) => header.transmit_timestamp = timestamp,
             NtpHeader::V4(ref mut header) => header.transmit_timestamp = timestamp,
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(ref mut header) => header.transmit_timestamp = timestamp,
         }
     }
@@ -1346,7 +1300,6 @@ impl NtpPacket<'_> {
         match &mut self.header {
             NtpHeader::V3(ref mut header) => header.receive_timestamp = timestamp,
             NtpHeader::V4(ref mut header) => header.receive_timestamp = timestamp,
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(ref mut header) => header.receive_timestamp = timestamp,
         }
     }
@@ -1355,7 +1308,6 @@ impl NtpPacket<'_> {
         match &mut self.header {
             NtpHeader::V3(ref mut header) => header.precision = precision,
             NtpHeader::V4(ref mut header) => header.precision = precision,
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(ref mut header) => header.precision = precision,
         }
     }
@@ -1364,7 +1316,6 @@ impl NtpPacket<'_> {
         match &mut self.header {
             NtpHeader::V3(ref mut header) => header.leap = leap,
             NtpHeader::V4(ref mut header) => header.leap = leap,
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(ref mut header) => header.leap = leap,
         }
     }
@@ -1373,7 +1324,6 @@ impl NtpPacket<'_> {
         match &mut self.header {
             NtpHeader::V3(ref mut header) => header.stratum = stratum,
             NtpHeader::V4(ref mut header) => header.stratum = stratum,
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(ref mut header) => header.stratum = stratum,
         }
     }
@@ -1382,7 +1332,6 @@ impl NtpPacket<'_> {
         match &mut self.header {
             NtpHeader::V3(ref mut header) => header.reference_id = reference_id,
             NtpHeader::V4(ref mut header) => header.reference_id = reference_id,
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(_header) => todo!("NTPv5 does not have reference IDs"),
         }
     }
@@ -1391,7 +1340,6 @@ impl NtpPacket<'_> {
         match &mut self.header {
             NtpHeader::V3(ref mut header) => header.root_delay = root_delay,
             NtpHeader::V4(ref mut header) => header.root_delay = root_delay,
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(ref mut header) => header.root_delay = root_delay,
         }
     }
@@ -1400,7 +1348,6 @@ impl NtpPacket<'_> {
         match &mut self.header {
             NtpHeader::V3(ref mut header) => header.root_dispersion = root_dispersion,
             NtpHeader::V4(ref mut header) => header.root_dispersion = root_dispersion,
-            #[cfg(feature = "ntpv5")]
             NtpHeader::V5(ref mut header) => header.root_dispersion = root_dispersion,
         }
     }
@@ -1593,13 +1540,6 @@ mod tests {
         assert!(NtpPacket::deserialize(packet, &NoCipher).is_err());
         let packet = b"\x3B\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
         assert!(NtpPacket::deserialize(packet, &NoCipher).is_err());
-
-        #[cfg(not(feature = "ntpv5"))]
-        {
-            // Version 5 packet should not parse without the ntpv5 feature
-            let packet = b"\x2C\x02\x06\xe9\x00\x00\x02\x36\x00\x00\x03\xb7\xc0\x35\x67\x6c\xe5\xf6\x61\xfd\x6f\x16\x5f\x03\xe5\xf6\x63\xa8\x76\x19\xef\x40\xe5\xf6\x63\xa8\x79\x8c\x65\x81\xe5\xf6\x63\xa8\x79\x8e\xae\x2b";
-            assert!(NtpPacket::deserialize(packet, &NoCipher).is_err());
-        }
     }
 
     #[test]
@@ -1804,7 +1744,6 @@ mod tests {
         assert!(!response.valid_server_response(id, true));
     }
 
-    #[cfg(feature = "ntpv5")]
     #[test]
     fn v5_upgrade_packet() {
         let (packet, _) = NtpPacket::poll_message_upgrade_request(PollInterval::default());
@@ -2438,7 +2377,6 @@ mod tests {
         assert_eq!(p, out);
     }
 
-    #[cfg(feature = "ntpv5")]
     #[test]
     fn ef_with_missing_padding_v5() {
         let (packet, _) = NtpPacket::poll_message_v5(PollInterval::default());
@@ -2456,7 +2394,6 @@ mod tests {
         ));
     }
 
-    #[cfg(feature = "ntpv5")]
     #[test]
     fn padding_v5() {
         for i in 10..40 {

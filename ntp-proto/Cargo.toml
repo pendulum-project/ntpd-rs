@@ -17,7 +17,6 @@ default = []
 __internal-fuzz = ["arbitrary", "__internal-api"]
 __internal-test = ["__internal-api"]
 __internal-api = []
-ntpv5 = []
 nts-pool = []
 
 [dependencies]

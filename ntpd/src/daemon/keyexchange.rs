@@ -9,9 +9,12 @@ use std::{
 };
 
 use libc::{ECONNABORTED, EMFILE, ENFILE, ENOBUFS, ENOMEM};
-use ntp_proto::tls_utils::{self, Certificate, PrivateKey, TLS13};
 use ntp_proto::{
-    KeyExchangeClient, KeyExchangeError, KeyExchangeResult, KeyExchangeServer, KeySet, NtpVersion,
+    tls_utils::{self, Certificate, PrivateKey, TLS13},
+    ProtocolVersion,
+};
+use ntp_proto::{
+    KeyExchangeClient, KeyExchangeError, KeyExchangeResult, KeyExchangeServer, KeySet,
 };
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
@@ -41,7 +44,7 @@ pub(crate) async fn key_exchange_client(
     server_name: String,
     port: u16,
     extra_certificates: &[Certificate],
-    ntp_version: Option<NtpVersion>,
+    ntp_version: ProtocolVersion,
 ) -> Result<KeyExchangeResult, KeyExchangeError> {
     let socket = tokio::net::TcpStream::connect((server_name.as_str(), port)).await?;
     let config = build_client_config(extra_certificates).await?;
@@ -54,7 +57,7 @@ pub(crate) async fn key_exchange_client_with_denied_servers(
     server_name: String,
     port: u16,
     extra_certificates: &[Certificate],
-    ntp_version: Option<NtpVersion>,
+    ntp_version: ProtocolVersion,
     denied_servers: impl IntoIterator<Item = String>,
 ) -> Result<KeyExchangeResult, KeyExchangeError> {
     let socket = tokio::net::TcpStream::connect((server_name.as_str(), port)).await?;
@@ -270,7 +273,7 @@ where
         io: IO,
         server_name: String,
         config: tls_utils::ClientConfig,
-        ntp_version: Option<NtpVersion>,
+        ntp_version: ProtocolVersion,
         denied_servers: impl IntoIterator<Item = String>,
     ) -> Result<Self, KeyExchangeError> {
         Ok(Self {
@@ -678,7 +681,7 @@ mod tests {
             "localhost".to_string(),
             5431,
             &certificates_from_bufread(BufReader::new(Cursor::new(ca))).unwrap(),
-            None,
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
         )
         .await
         .unwrap();
@@ -808,7 +811,7 @@ mod tests {
                 "localhost".to_string(),
                 port,
                 &certificates_from_bufread(BufReader::new(Cursor::new(ca))).unwrap(),
-                None,
+                ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
             )
         )
         .await
@@ -825,7 +828,7 @@ mod tests {
                 "localhost".to_string(),
                 port,
                 &certificates_from_bufread(BufReader::new(Cursor::new(ca))).unwrap(),
-                None,
+                ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
             ),
         )
         .await
@@ -868,7 +871,7 @@ mod tests {
             "localhost".to_string(),
             port,
             &certificates_from_bufread(BufReader::new(Cursor::new(ca))).unwrap(),
-            None,
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
         )
         .await
         .unwrap();
@@ -912,7 +915,13 @@ mod tests {
 
     #[tokio::test]
     async fn client_connection_refused() {
-        let result = key_exchange_client("localhost".to_string(), alloc_port(), &[], None).await;
+        let result = key_exchange_client(
+            "localhost".to_string(),
+            alloc_port(),
+            &[],
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+        )
+        .await;
 
         let error = result.unwrap_err();
 
@@ -926,7 +935,12 @@ mod tests {
 
     fn client_key_exchange_message_length() -> usize {
         let mut buffer = Vec::with_capacity(1024);
-        for record in ntp_proto::NtsRecord::client_key_exchange_records(None, vec![]).iter() {
+        for record in ntp_proto::NtsRecord::client_key_exchange_records(
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            vec![],
+        )
+        .iter()
+        {
             record.write(&mut buffer).unwrap();
         }
 
@@ -973,7 +987,13 @@ mod tests {
         let extra_certificates =
             &certificates_from_bufread(BufReader::new(Cursor::new(ca))).unwrap();
 
-        key_exchange_client("localhost".to_string(), port, extra_certificates, None).await
+        key_exchange_client(
+            "localhost".to_string(),
+            port,
+            extra_certificates,
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+        )
+        .await
     }
 
     async fn run_server(listener: tokio::net::TcpListener) -> Result<(), KeyExchangeError> {
@@ -1131,7 +1151,11 @@ mod tests {
 
     #[tokio::test]
     async fn server_expected_client_records() {
-        let records = NtsRecord::client_key_exchange_records(None, vec![]).to_vec();
+        let records = NtsRecord::client_key_exchange_records(
+            ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            vec![],
+        )
+        .to_vec();
         let result = send_records_to_server(records).await;
 
         assert!(result.is_ok());

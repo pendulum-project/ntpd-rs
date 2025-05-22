@@ -250,7 +250,6 @@ pub enum ResponseHandlingError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::thread_rng;
 
     #[test]
     fn set_bits() {
@@ -277,17 +276,16 @@ mod tests {
 
     #[test]
     fn set_contains() {
-        let mut rng = thread_rng();
         let mut filter = BloomFilter::new();
 
-        let id = ServerId::new(&mut rng);
+        let id = ServerId::default();
         assert!(!filter.contains_id(&id));
 
         filter.add_id(&id);
         assert!(filter.contains_id(&id));
 
         for _ in 0..128 {
-            let rid = ServerId::new(&mut rng);
+            let rid = ServerId::default();
 
             filter.add_id(&rid);
             assert!(filter.contains_id(&rid));
@@ -296,12 +294,11 @@ mod tests {
 
     #[test]
     fn set_collect() {
-        let mut rng = thread_rng();
         let mut ids = vec![];
         let mut filters = vec![];
 
         for _ in 0..10 {
-            let id = ServerId::new(&mut rng);
+            let id = ServerId::default();
             let mut filter = BloomFilter::new();
             filter.add_id(&id);
 
@@ -375,7 +372,7 @@ mod tests {
     fn works_with_any_chunk_size() {
         let mut target_filter = BloomFilter::new();
         for _ in 0..16 {
-            target_filter.add_id(&ServerId::new(&mut thread_rng()));
+            target_filter.add_id(&ServerId::default());
         }
 
         for chunk_size in 0..=512 {
