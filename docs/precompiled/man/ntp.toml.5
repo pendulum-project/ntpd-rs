@@ -175,6 +175,17 @@ Initial poll interval used on startup.
 The value is given as the log2 of the number of seconds (i.e.\ two to
 the power of the interval).
 The default value of 4 results in an interval of 16 seconds.
+.TP
+\f[V]ntp-version\f[R] = \f[V]4\f[R] | \f[V]5\f[R] | \f[V]\[dq]auto\[dq]\f[R] (\f[B]4\f[R])
+Which NTP version to use for this source.
+By default this uses NTP version 4.
+You can use \f[V]5\f[R] to set the protocol version to the draft NTPv5
+specification, but your source must support the same draft.
+To use the experimental upgrade protocol set the NTP version to
+\f[V]\[dq]auto\[dq]\f[R].
+This uses a specially constructed NTPv4 packet to attempt an upgrade to
+the supported draft NTPv5 version if the source also supports the same
+draft version.
 .SS \f[V][[server]]\f[R]
 .PP
 The NTP daemon can be configured to distribute time via any number of
@@ -261,6 +272,12 @@ When set to \f[V]\[dq]deny\[dq]\f[R] non-NTS enabled messages will be
 explicitly denied with an NTP \f[V]DENY\f[R] kiss code.
 When set to \f[V]false\f[R] (the default), normal NTP messages are also
 allowed.
+.TP
+\f[V]accept-ntp-versions\f[R] = [ \f[V]3\f[R] | \f[V]4\f[R] | \f[V]5\f[R], .. ] (\f[B][3, 4]\f[R])
+An array of NTP versions that are accepted by the server.
+By default only NTPv3 and NTPv4 packets are supported.
+To also allow draft NTPv5 packets, you can set this value to
+\f[V][3, 4, 5]\f[R].
 .SS \f[V][observability]\f[R]
 .PP
 Settings in this section configure how you can observe the behavior of
