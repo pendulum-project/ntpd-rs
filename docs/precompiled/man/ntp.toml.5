@@ -426,6 +426,13 @@ may indicate that someone or something is triggering illicit steps.
 By default however this panic mechanism is disabled.
 Is disabled if left unset or if set to the value \f[V]0\f[R].
 .TP
+\f[V]warn-on-jump\f[R] = \f[I]bool\f[R] (\f[B]true\f[R])
+Should the daemon emit a warning when stepping the clock.
+Such jumps can be problematic for other software, for example database
+servers.
+This setting can be used to disabled on systems where steps are expected
+and not harmful for other software.
+.TP
 \f[V]local-stratum\f[R] = \f[I]stratum\f[R] (\f[B]16\f[R])
 Sets the NTP clock stratum of the system clock when no NTP time sources
 have been configured, or when the time has not yet been synchronized
