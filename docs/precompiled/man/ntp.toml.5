@@ -186,6 +186,8 @@ To use the experimental upgrade protocol set the NTP version to
 This uses a specially constructed NTPv4 packet to attempt an upgrade to
 the supported draft NTPv5 version if the source also supports the same
 draft version.
+NTPv5 support is currently in beta and can still change in a backwards
+incompatible way.
 .SS \f[V][[server]]\f[R]
 .PP
 The NTP daemon can be configured to distribute time via any number of
@@ -278,6 +280,8 @@ An array of NTP versions that are accepted by the server.
 By default only NTPv3 and NTPv4 packets are supported.
 To also allow draft NTPv5 packets, you can set this value to
 \f[V][3, 4, 5]\f[R].
+NTPv5 support is currently in beta and can still change in a backwards
+incompatible way.
 .SS \f[V][observability]\f[R]
 .PP
 Settings in this section configure how you can observe the behavior of
