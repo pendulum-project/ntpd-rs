@@ -140,6 +140,8 @@ sources.
     experimental upgrade protocol set the NTP version to `"auto"`. This uses a
     specially constructed NTPv4 packet to attempt an upgrade to the supported
     draft NTPv5 version if the source also supports the same draft version.
+    NTPv5 support is currently in beta and can still change in a backwards
+    incompatible way.
 
 ## `[[server]]`
 The NTP daemon can be configured to distribute time via any number of
@@ -209,7 +211,8 @@ time.
 `accept-ntp-versions` = [ `3` | `4` | `5`, .. ] (**[3, 4]**)
 :   An array of NTP versions that are accepted by the server. By default only
     NTPv3 and NTPv4 packets are supported. To also allow draft NTPv5 packets,
-    you can set this value to `[3, 4, 5]`.
+    you can set this value to `[3, 4, 5]`. NTPv5 support is currently in beta
+    and can still change in a backwards incompatible way.
 
 
 ## `[observability]`
