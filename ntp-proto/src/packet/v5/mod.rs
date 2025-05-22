@@ -6,7 +6,6 @@ use crate::{
 use rand::random;
 
 mod error;
-#[allow(dead_code)]
 pub mod extension_fields;
 pub mod server_reference_id;
 
@@ -15,7 +14,6 @@ pub use error::V5Error;
 
 use super::RequestIdentifier;
 
-#[allow(dead_code)]
 pub(crate) const DRAFT_VERSION: &str = "draft-ietf-ntp-ntpv5-02";
 pub(crate) const UPGRADE_TIMESTAMP: NtpTimestamp = NtpTimestamp::from_bits(*b"NTP5DRFT");
 
@@ -39,12 +37,12 @@ impl NtpMode {
         self as u8
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) const fn is_request(self) -> bool {
         matches!(self, Self::Request)
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) const fn is_response(self) -> bool {
         matches!(self, Self::Response)
     }
@@ -297,7 +295,6 @@ impl NtpHeaderV5 {
         ))
     }
 
-    #[allow(dead_code)]
     pub(crate) fn serialize(&self, mut w: impl NonBlockingWrite) -> std::io::Result<()> {
         w.write_all(&[(self.leap.to_bits() << 6) | (Self::VERSION << 3) | self.mode.to_bits()])?;
         w.write_all(&[self.stratum, self.poll.as_byte(), self.precision as u8])?;
