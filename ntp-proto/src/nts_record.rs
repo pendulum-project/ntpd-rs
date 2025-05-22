@@ -287,7 +287,7 @@ impl NtsRecord {
         });
 
         #[cfg(feature = "nts-pool")]
-        base.extend(
+        records.extend(
             denied_servers
                 .into_iter()
                 .map(|server| NtsRecord::NtpServerDeny { denied: server }),
