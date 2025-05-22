@@ -252,9 +252,9 @@ impl NtsRecord {
     pub const BAD_REQUEST: u16 = 1;
     pub const INTERNAL_SERVER_ERROR: u16 = 2;
 
-    #[allow(unused_variables)]
     pub fn client_key_exchange_records(
         ntp_version: ProtocolVersion,
+        #[cfg_attr(not(feature = "nts-pool"), allow(unused_variables))]
         denied_servers: impl IntoIterator<Item = String>,
     ) -> Box<[NtsRecord]> {
         let mut records = vec![];
