@@ -133,6 +133,14 @@ sources.
     the number of seconds (i.e. two to the power of the interval). The default
     value of 4 results in an interval of 16 seconds.
 
+`ntp-version` = `4` | `5` | `"auto"` (**4**)
+:   Which NTP version to use for this source. By default this uses NTP version
+    4. You can use `5` to set the protocol version to the draft NTPv5
+    specification, but your source must support the same draft. To use the
+    experimental upgrade protocol set the NTP version to `"auto"`. This uses a
+    specially constructed NTPv4 packet to attempt an upgrade to the supported
+    draft NTPv5 version if the source also supports the same draft version.
+
 ## `[[server]]`
 The NTP daemon can be configured to distribute time via any number of
 `[[server]]` sections. If no such sections have been defined, the daemon runs in
@@ -197,6 +205,12 @@ time.
     to `"deny"` non-NTS enabled messages will be explicitly denied with an NTP
     `DENY` kiss code. When set to `false` (the default), normal NTP messages are
     also allowed.
+
+`accept-ntp-versions` = [ `3` | `4` | `5`, .. ] (**[3, 4]**)
+:   An array of NTP versions that are accepted by the server. By default only
+    NTPv3 and NTPv4 packets are supported. To also allow draft NTPv5 packets,
+    you can set this value to `[3, 4, 5]`.
+
 
 ## `[observability]`
 Settings in this section configure how you can observe the behavior of the
