@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt::Debug, hash::Hash, time::Duration};
 
 pub(crate) use source::AveragingBuffer;
 use source::OneWayKalmanSourceController;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     clock::NtpClock,
@@ -272,7 +272,11 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                     state.state = state.state.process_offset_steering(change, state.period);
                 }
             }
-            info!("Jumped offset by {}ms", change * 1e3);
+            if self.synchronization_config.warn_on_jump {
+                warn!("Jumped offset by {}ms. This may cause problems for other software. If this is not a problem for your system, you can reclassify this warning as an informative message through the `synchronization.warn_on_jump` setting in ntp.toml.", change * 1e3);
+            } else {
+                info!("Jumped offset by {}ms", change * 1e3);
+            }
             StateUpdate {
                 source_message: Some(KalmanControllerMessage {
                     inner: KalmanControllerMessageInner::Step { steer: change },

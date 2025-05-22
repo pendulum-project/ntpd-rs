@@ -340,6 +340,12 @@ time sources is gathered and applied to the system clock.
     however this panic mechanism is disabled. Is disabled if left unset or if
     set to the value `0`.
 
+`warn-on-jump` = *bool* (**true**)
+:   Should the daemon emit a warning when stepping the clock. Such jumps can be
+    problematic for other software, for example database servers. This setting
+    can be used to disabled on systems where steps are expected and not harmful
+    for other software.
+
 `local-stratum` = *stratum* (**16**)
 :   Sets the NTP clock stratum of the system clock when no NTP time sources have
     been configured, or when the time has not yet been synchronized from an NTP

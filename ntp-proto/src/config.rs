@@ -353,6 +353,10 @@ pub struct SynchronizationConfig {
     ///
     #[serde(default = "default_reference_id")]
     pub reference_id: ReferenceIdConfig,
+
+    /// Should a warning be emitted on jumps in the clock
+    #[serde(default = "default_warn_on_jump")]
+    pub warn_on_jump: bool,
 }
 
 impl Default for SynchronizationConfig {
@@ -366,6 +370,8 @@ impl Default for SynchronizationConfig {
 
             local_stratum: default_local_stratum(),
             reference_id: default_reference_id(),
+
+            warn_on_jump: default_warn_on_jump(),
         }
     }
 }
@@ -400,4 +406,8 @@ fn default_startup_step_panic_threshold() -> StepThreshold {
 
 fn default_local_stratum() -> u8 {
     16
+}
+
+fn default_warn_on_jump() -> bool {
+    true
 }
