@@ -245,7 +245,7 @@ impl NtpHeaderV3V4 {
             poll: input.poll,
             precision: system.time_snapshot.precision.log2(),
             root_delay: system.time_snapshot.root_delay,
-            root_dispersion: system.time_snapshot.root_dispersion,
+            root_dispersion: system.time_snapshot.root_dispersion(recv_timestamp),
             // Timestamp must be last to make it as accurate as possible.
             transmit_timestamp: clock.now().expect("Failed to read time"),
             leap: system.time_snapshot.leap_indicator,

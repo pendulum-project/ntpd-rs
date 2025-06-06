@@ -3,7 +3,7 @@ use super::sockets::create_unix_socket_with_permissions;
 use super::spawn::SourceId;
 use super::system::ServerData;
 use libc::{ECONNABORTED, EMFILE, ENFILE, ENOBUFS, ENOMEM};
-use ntp_proto::{ObservableSourceState, SystemSnapshot};
+use ntp_proto::{NtpClock, NtpTimestamp, ObservableSourceState, SystemSnapshot};
 use std::collections::HashMap;
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
@@ -27,12 +27,14 @@ pub struct ProgramData {
     pub build_commit: String,
     pub build_commit_date: String,
     pub uptime_seconds: f64,
+    pub now: NtpTimestamp,
 }
 
 impl ProgramData {
-    pub fn with_uptime(uptime_seconds: f64) -> ProgramData {
+    pub fn with_dynamics(uptime_seconds: f64, now: NtpTimestamp) -> ProgramData {
         ProgramData {
             uptime_seconds,
+            now,
             ..Default::default()
         }
     }
@@ -45,6 +47,7 @@ impl Default for ProgramData {
             build_commit: env!("NTPD_RS_GIT_REV").to_owned(),
             build_commit_date: env!("NTPD_RS_GIT_DATE").to_owned(),
             uptime_seconds: 0.0,
+            now: NtpTimestamp::default(),
         }
     }
 }
@@ -65,16 +68,18 @@ impl From<&ServerData> for ObservableServerState {
 }
 
 #[instrument(level = tracing::Level::ERROR, skip_all, name = "Observer", fields(path = debug(config.observation_path.clone())))]
-pub fn spawn(
+pub fn spawn<C: 'static + NtpClock + Send>(
     config: &super::config::ObservabilityConfig,
     sources_reader: Arc<std::sync::RwLock<HashMap<SourceId, ObservableSourceState<SourceId>>>>,
     server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
     system_reader: tokio::sync::watch::Receiver<SystemSnapshot>,
+    clock: C,
 ) -> JoinHandle<std::io::Result<()>> {
     let config = config.clone();
     tokio::spawn(
         (async move {
-            let result = observer(config, sources_reader, server_reader, system_reader).await;
+            let result =
+                observer(config, sources_reader, server_reader, system_reader, clock).await;
             if let Err(ref e) = result {
                 warn!("Abnormal termination of the state observer: {e}");
                 warn!("The state observer will not be available");
@@ -85,11 +90,12 @@ pub fn spawn(
     )
 }
 
-async fn observer(
+async fn observer<C: 'static + NtpClock + Send>(
     config: super::config::ObservabilityConfig,
     sources_reader: Arc<std::sync::RwLock<HashMap<SourceId, ObservableSourceState<SourceId>>>>,
     server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
     system_reader: tokio::sync::watch::Receiver<SystemSnapshot>,
+    clock: C,
 ) -> std::io::Result<()> {
     let start_time = Instant::now();
     let timeout = std::time::Duration::from_millis(500);
@@ -141,6 +147,7 @@ async fn observer(
         let server_reader = server_reader.clone();
         let system_reader = system_reader.clone();
 
+        let now = clock.now().expect("Unable to get current time");
         let fut = async move {
             handle_connection(
                 &mut stream,
@@ -148,6 +155,7 @@ async fn observer(
                 &sources_reader,
                 server_reader,
                 system_reader,
+                now,
             )
             .await
         };
@@ -169,9 +177,10 @@ async fn handle_connection(
     sources_reader: &std::sync::RwLock<HashMap<SourceId, ObservableSourceState<SourceId>>>,
     server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
     system_reader: tokio::sync::watch::Receiver<SystemSnapshot>,
+    now: NtpTimestamp,
 ) -> std::io::Result<()> {
     let observe = ObservableState {
-        program: ProgramData::with_uptime(start_time.elapsed().as_secs_f64()),
+        program: ProgramData::with_dynamics(start_time.elapsed().as_secs_f64(), now),
         sources: sources_reader
             .read()
             .expect("Unexpected poisoned mutex")
@@ -196,13 +205,53 @@ mod tests {
     #[cfg(feature = "unstable_ntpv5")]
     use ntp_proto::v5::{BloomFilter, ServerId};
     use ntp_proto::{
-        NtpDuration, NtpLeapIndicator, PollIntervalLimits, Reach, ReferenceId, TimeSnapshot,
+        NtpDuration, NtpLeapIndicator, NtpTimestamp, PollIntervalLimits, Reach, ReferenceId,
+        TimeSnapshot,
     };
     use tokio::{io::AsyncReadExt, net::UnixStream};
 
     use crate::test::alloc_port;
 
     use super::*;
+
+    #[derive(Debug, Clone, Copy)]
+    struct TestClock;
+
+    impl NtpClock for TestClock {
+        type Error = core::convert::Infallible;
+
+        fn now(&self) -> Result<NtpTimestamp, Self::Error> {
+            Ok(NtpTimestamp::default())
+        }
+
+        fn set_frequency(&self, _freq: f64) -> Result<NtpTimestamp, Self::Error> {
+            unimplemented!()
+        }
+
+        fn get_frequency(&self) -> Result<f64, Self::Error> {
+            unimplemented!()
+        }
+
+        fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
+            unimplemented!()
+        }
+
+        fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
+            unimplemented!()
+        }
+
+        fn error_estimate_update(
+            &self,
+            _est_error: NtpDuration,
+            _max_error: NtpDuration,
+        ) -> Result<(), Self::Error> {
+            unimplemented!()
+        }
+
+        fn status_update(&self, _leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
+            unimplemented!()
+        }
+    }
 
     #[tokio::test]
     async fn test_observation() {
@@ -241,7 +290,11 @@ mod tests {
             time_snapshot: TimeSnapshot {
                 precision: NtpDuration::from_seconds(1e-3),
                 root_delay: NtpDuration::ZERO,
-                root_dispersion: NtpDuration::ZERO,
+                root_variance_base_time: NtpTimestamp::default(),
+                root_variance_base: 0.0,
+                root_variance_linear: 0.0,
+                root_variance_quadratic: 0.0,
+                root_variance_cubic: 0.0,
                 leap_indicator: NtpLeapIndicator::Leap59,
                 accumulated_steps: NtpDuration::ZERO,
             },
@@ -252,9 +305,15 @@ mod tests {
         });
 
         let handle = tokio::spawn(async move {
-            observer(config, source_snapshots, servers_reader, system_reader)
-                .await
-                .unwrap();
+            observer(
+                config,
+                source_snapshots,
+                servers_reader,
+                system_reader,
+                TestClock,
+            )
+            .await
+            .unwrap();
         });
 
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -309,7 +368,11 @@ mod tests {
             time_snapshot: TimeSnapshot {
                 precision: NtpDuration::from_seconds(1e-3),
                 root_delay: NtpDuration::ZERO,
-                root_dispersion: NtpDuration::ZERO,
+                root_variance_base_time: NtpTimestamp::default(),
+                root_variance_base: 0.0,
+                root_variance_linear: 0.0,
+                root_variance_quadratic: 0.0,
+                root_variance_cubic: 0.0,
                 leap_indicator: NtpLeapIndicator::Leap59,
                 accumulated_steps: NtpDuration::ZERO,
             },
@@ -320,9 +383,15 @@ mod tests {
         });
 
         let handle = tokio::spawn(async move {
-            observer(config, source_snapshots, servers_reader, system_reader)
-                .await
-                .unwrap();
+            observer(
+                config,
+                source_snapshots,
+                servers_reader,
+                system_reader,
+                TestClock,
+            )
+            .await
+            .unwrap();
         });
 
         tokio::time::sleep(Duration::from_millis(10)).await;

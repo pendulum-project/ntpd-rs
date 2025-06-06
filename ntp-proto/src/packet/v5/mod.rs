@@ -213,7 +213,7 @@ impl NtpHeaderV5 {
                 authnak: false,
             },
             root_delay: system.time_snapshot.root_delay,
-            root_dispersion: system.time_snapshot.root_dispersion,
+            root_dispersion: system.time_snapshot.root_dispersion(recv_timestamp),
             server_cookie: NtpServerCookie::new_random(),
             client_cookie: input.client_cookie,
             receive_timestamp: recv_timestamp,
