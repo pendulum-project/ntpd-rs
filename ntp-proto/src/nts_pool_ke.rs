@@ -154,17 +154,10 @@ impl ClientToPoolDecoder {
                 Continue(state)
             }
             NextProtocol { protocol_ids } => {
-                let selected = if state.allow_v5 {
-                    protocol_ids
-                        .iter()
-                        .copied()
-                        .find_map(ProtocolId::try_deserialize_v5)
-                } else {
-                    protocol_ids
-                        .iter()
-                        .copied()
-                        .find_map(ProtocolId::try_deserialize)
-                };
+                let selected = protocol_ids
+                    .iter()
+                    .copied()
+                    .find_map(ProtocolId::try_deserialize);
 
                 match selected {
                     None => Break(Err(NoValidProtocol)),
@@ -284,17 +277,10 @@ impl PoolToServerDecoder {
                 Continue(state)
             }
             NextProtocol { protocol_ids } => {
-                let selected = if state.allow_v5 {
-                    protocol_ids
-                        .iter()
-                        .copied()
-                        .find_map(ProtocolId::try_deserialize_v5)
-                } else {
-                    protocol_ids
-                        .iter()
-                        .copied()
-                        .find_map(ProtocolId::try_deserialize)
-                };
+                let selected = protocol_ids
+                    .iter()
+                    .copied()
+                    .find_map(ProtocolId::try_deserialize);
 
                 state.records.push(record);
 
