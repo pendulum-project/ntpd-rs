@@ -206,6 +206,34 @@ pub struct NtsKeConfig {
     pub listen: SocketAddr,
     pub ntp_port: Option<u16>,
     pub ntp_server: Option<String>,
+    #[serde(
+        default = "default_accept_ntp_versions",
+        deserialize_with = "deserialize_accepted_ntp_versions_for_nts"
+    )]
+    pub accept_ntp_versions: Vec<NtpVersion>,
+}
+
+fn default_accept_ntp_versions() -> Vec<NtpVersion> {
+    vec![NtpVersion::V4]
+}
+
+fn deserialize_accepted_ntp_versions_for_nts<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<NtpVersion>, D::Error> {
+    let data = Vec::<u8>::deserialize(deserializer)?;
+
+    data.into_iter()
+        .map(|v| match v {
+            3 => Err(serde::de::Error::custom(
+                "Ntp version 3 does not support NTS!",
+            )),
+            4 => Ok(NtpVersion::V4),
+            5 => Ok(NtpVersion::V5),
+            e => Err(serde::de::Error::custom(format!(
+                "{e} is not a valid NTP version, version must be 4 and/or 5"
+            ))),
+        })
+        .collect::<Result<Vec<NtpVersion>, D::Error>>()
 }
 
 fn default_nts_ke_timeout() -> u64 {

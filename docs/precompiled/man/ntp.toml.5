@@ -397,6 +397,14 @@ default.
 ip or as domain name) where clients can find the NTP server.
 Should be used when this name does not match the name of the NTS key
 exchange server.
+.TP
+\f[V]accept-ntp-versions\f[R] = [ \f[V]4\f[R] | \f[V]5\f[R], .. ] (\f[B][4]\f[R])
+An array of NTP versions that are accepted by the server.
+By default only NTS for NTPv4 packets is supported.
+To also allow negotiating NTS for draft NTPv5 packets, you can set this
+value to \f[V][4, 5]\f[R].
+NTPv5 support is currently in beta and can still change in a backwards
+incompatible way.
 .SS \f[V][synchronization]\f[R]
 .PP
 This section of the configuration focusses on how the time information

@@ -805,13 +805,6 @@ impl ProtocolId {
     pub const fn try_deserialize(number: u16) -> Option<Self> {
         match number {
             0 => Some(Self::NtpV4),
-            _ => None,
-        }
-    }
-
-    pub const fn try_deserialize_v5(number: u16) -> Option<Self> {
-        match number {
-            0 => Some(Self::NtpV4),
             0x8001 => Some(Self::NtpV5),
             _ => None,
         }
@@ -1309,8 +1302,10 @@ struct KeyExchangeServerDecoder {
     /// it may be that the server and client supported algorithms have no
     /// intersection!
     algorithm: Option<AeadAlgorithm>,
-    /// Protocol (NTP version) that is supported by both client and server
-    protocol: Option<ProtocolId>,
+    /// Protocols supported by both client and server
+    protocols: Vec<ProtocolId>,
+    /// Protocols the server supports
+    protocols_supported: Vec<ProtocolId>,
 
     allow_v5: bool,
 
@@ -1357,7 +1352,16 @@ impl KeyExchangeServerDecoder {
     }
 
     fn validate(self) -> Result<ServerKeyExchangeData, KeyExchangeError> {
-        let Some(protocol) = self.protocol else {
+        let Some(protocol) = self.protocols.iter().find_map(|prot| match prot {
+            ProtocolId::NtpV4 => Some(ProtocolId::NtpV4),
+            ProtocolId::NtpV5 => {
+                if self.allow_v5 {
+                    Some(ProtocolId::NtpV5)
+                } else {
+                    None
+                }
+            }
+        }) else {
             // The NTS Next Protocol Negotiation record [..] MUST occur exactly once in every NTS-KE request and response.
             return Err(KeyExchangeError::NoValidProtocol);
         };
@@ -1382,7 +1386,9 @@ impl KeyExchangeServerDecoder {
     #[cfg(feature = "nts-pool")]
     fn done(self) -> Result<ServerKeyExchangeData, KeyExchangeError> {
         if self.requested_supported_algorithms {
-            let protocol = self.protocol.unwrap_or_default();
+            // TODO: Actually properly handle requested_supported_algorithms without
+            // also providing keys at the same time.
+            let protocol = ProtocolId::NtpV4;
             let algorithm = self.algorithm.unwrap_or_default();
 
             let result = ServerKeyExchangeData {
@@ -1462,30 +1468,30 @@ impl KeyExchangeServerDecoder {
                 Continue(state)
             }
             NextProtocol { protocol_ids } => {
-                let selected = if state.allow_v5 {
-                    protocol_ids
-                        .iter()
-                        .copied()
-                        .find_map(ProtocolId::try_deserialize_v5)
-                } else {
-                    protocol_ids
-                        .iter()
-                        .copied()
-                        .find_map(ProtocolId::try_deserialize)
-                };
-
-                match selected {
-                    None => Break(Err(NoValidProtocol)),
-                    Some(protocol) => {
-                        // The NTS Next Protocol Negotiation record [..] MUST occur exactly once in every NTS-KE request and response.
-                        match state.protocol {
-                            None => {
-                                state.protocol = Some(protocol);
-                                Continue(state)
-                            }
-                            Some(_) => Break(Err(KeyExchangeError::BadRequest)),
-                        }
+                // Note: The below is specifically engineered to
+                // 1) let protocols keep the same order as the ids received from the client
+                // 2) but filtered for those supported by this server
+                // 3) with duplicates removed to keep memory use bounded.
+                let mut protocols = Vec::with_capacity(state.protocols_supported.len());
+                for protocol in protocol_ids
+                    .iter()
+                    .copied()
+                    .filter_map(ProtocolId::try_deserialize)
+                {
+                    if state.protocols_supported.contains(&protocol)
+                        && !protocols.contains(&protocol)
+                    {
+                        protocols.push(protocol);
                     }
+                }
+                if protocols.is_empty() {
+                    Break(Err(NoValidProtocol))
+                } else if !state.protocols.is_empty() {
+                    Break(Err(KeyExchangeError::BadRequest))
+                } else {
+                    state.protocols = protocols;
+
+                    Continue(state)
                 }
             }
             AeadAlgorithm { algorithm_ids, .. } => {
@@ -1546,8 +1552,19 @@ impl KeyExchangeServerDecoder {
         }
     }
 
-    fn new() -> Self {
-        Self::default()
+    fn new(ntp_versions: &[NtpVersion]) -> Self {
+        let protocols_supported = ntp_versions
+            .iter()
+            .filter_map(|version| match version {
+                NtpVersion::V3 => None,
+                NtpVersion::V4 => Some(ProtocolId::NtpV4),
+                NtpVersion::V5 => Some(ProtocolId::NtpV5),
+            })
+            .collect();
+        Self {
+            protocols_supported,
+            ..Self::default()
+        }
     }
 }
 
@@ -1795,6 +1812,7 @@ impl KeyExchangeServer {
         keyset: Arc<KeySet>,
         ntp_port: Option<u16>,
         ntp_server: Option<String>,
+        ntp_versions: &[NtpVersion],
         pool_certificates: Arc<[tls_utils::Certificate]>,
     ) -> Result<Self, KeyExchangeError> {
         // Ensure we send only ntske/1 as alpn
@@ -1809,7 +1827,7 @@ impl KeyExchangeServer {
         Ok(Self {
             tls_connection,
             state: State::Active {
-                decoder: KeyExchangeServerDecoder::new(),
+                decoder: KeyExchangeServerDecoder::new(ntp_versions),
             },
             keyset,
             ntp_port,
@@ -1823,7 +1841,7 @@ impl KeyExchangeServer {
 #[cfg(feature = "__internal-fuzz")]
 pub fn fuzz_key_exchange_server_decoder(data: &[u8]) {
     // this fuzz harness is inspired by the server_decoder_finds_algorithm() test
-    let mut decoder = KeyExchangeServerDecoder::new();
+    let mut decoder = KeyExchangeServerDecoder::new(&[NtpVersion::V4, NtpVersion::V5]);
 
     let decode_output = || {
         // chunk size 24 is taken from the original test function, this may
@@ -2553,7 +2571,7 @@ mod test {
             record.write(&mut bytes).unwrap();
         }
 
-        let mut decoder = KeyExchangeServerDecoder::new();
+        let mut decoder = KeyExchangeServerDecoder::new(&[NtpVersion::V4]);
 
         for chunk in bytes.chunks(24) {
             decoder = match decoder.step_with_slice(chunk) {
@@ -3006,9 +3024,15 @@ mod test {
 
         let client =
             KeyExchangeClient::new_without_tls_write("localhost".into(), clientconfig).unwrap();
-        let server =
-            KeyExchangeServer::new(Arc::new(serverconfig), keyset, None, None, pool_cert.into())
-                .unwrap();
+        let server = KeyExchangeServer::new(
+            Arc::new(serverconfig),
+            keyset,
+            None,
+            None,
+            &[NtpVersion::V4, NtpVersion::V5],
+            pool_cert.into(),
+        )
+        .unwrap();
 
         (client, server)
     }

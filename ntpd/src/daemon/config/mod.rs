@@ -3,7 +3,9 @@ mod server;
 pub mod subnet;
 
 use clock_steering::unix::UnixClock;
-use ntp_proto::{AlgorithmConfig, ProtocolVersion, SourceConfig, SynchronizationConfig};
+use ntp_proto::{
+    AlgorithmConfig, NtpVersion, ProtocolVersion, SourceConfig, SynchronizationConfig,
+};
 pub use ntp_source::*;
 use serde::{Deserialize, Deserializer};
 pub use server::*;
@@ -493,6 +495,33 @@ impl Config {
         }) {
             warn!("Forcing a source into NTPv5, which is still a draft. There is no guarantee that the server will remain compatible with this or future versions of ntpd-rs.");
             ok = false;
+        }
+
+        // Check that the NTS configuration is consistent with the NTP configuration
+        for ke_server in self
+            .nts_ke
+            .iter()
+            .filter(|ke_server| ke_server.ntp_server.is_none())
+        {
+            if ke_server.accept_ntp_versions.contains(&NtpVersion::V4)
+                && !self.servers.iter().any(|server| {
+                    server.listen.port() == ke_server.ntp_port.unwrap_or(123)
+                        && server.accept_ntp_versions.contains(&NtpVersion::V4)
+                })
+            {
+                warn!("Configured NTS for NTPv4 on port {}, but have no server listening on that port for NTPv4 traffic. If this is for an external ntp server, consider configuring a value for `ntp-server`.", ke_server.ntp_port.unwrap_or(123));
+                ok = false;
+            }
+
+            if ke_server.accept_ntp_versions.contains(&NtpVersion::V5)
+                && !self.servers.iter().any(|server| {
+                    server.listen.port() == ke_server.ntp_port.unwrap_or(123)
+                        && server.accept_ntp_versions.contains(&NtpVersion::V5)
+                })
+            {
+                warn!("Configured NTS for NTPv5 on port {}, but have no server listening on that port for NTPv5 traffic. If this is for an external ntp server, consider configuring a value for `ntp-server`.", ke_server.ntp_port.unwrap_or(123));
+                ok = false;
+            }
         }
 
         ok
