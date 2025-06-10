@@ -384,7 +384,6 @@ impl<'a> NtpPacket<'a> {
                     Ok::<_, ParsingError<std::convert::Infallible>>(packet)
                 };
 
-                // TODO: Check extension field handling in V5
                 let res_packet = match ExtensionFieldData::deserialize(
                     data,
                     header_size,
@@ -1281,7 +1280,6 @@ impl NtpPacket<'_> {
         match &mut self.header {
             NtpHeader::V3(ref mut header) => header.origin_timestamp = timestamp,
             NtpHeader::V4(ref mut header) => header.origin_timestamp = timestamp,
-            // TODO can we just reuse the cookie as the origin timestamp?
             NtpHeader::V5(ref mut header) => {
                 header.client_cookie = v5::NtpClientCookie::from_ntp_timestamp(timestamp)
             }

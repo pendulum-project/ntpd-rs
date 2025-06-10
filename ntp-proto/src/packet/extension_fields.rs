@@ -10,7 +10,7 @@ use crate::packet::v5::extension_fields::{ReferenceIdRequest, ReferenceIdRespons
 use super::{crypto::EncryptResult, error::ParsingError, Cipher, CipherProvider, Mac};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-enum ExtensionFieldTypeId {
+pub(super) enum ExtensionFieldTypeId {
     UniqueIdentifier,
     NtsCookie,
     NtsCookiePlaceholder,
@@ -37,7 +37,7 @@ impl ExtensionFieldTypeId {
         }
     }
 
-    fn to_type_id(self) -> u16 {
+    pub(super) fn to_type_id(self) -> u16 {
         match self {
             ExtensionFieldTypeId::UniqueIdentifier => 0x104,
             ExtensionFieldTypeId::NtsCookie => 0x204,
@@ -505,11 +505,21 @@ impl<'a> ExtensionField<'a> {
             TypeId::UniqueIdentifier => EF::decode_unique_identifier(message),
             TypeId::NtsCookie => EF::decode_nts_cookie(message),
             TypeId::NtsCookiePlaceholder => EF::decode_nts_cookie_placeholder(message),
-            TypeId::DraftIdentification => {
+            TypeId::DraftIdentification
+                if extension_header_version == ExtensionHeaderVersion::V5 =>
+            {
                 EF::decode_draft_identification(message, extension_header_version)
             }
-            TypeId::ReferenceIdRequest => Ok(ReferenceIdRequest::decode(message)?.into()),
-            TypeId::ReferenceIdResponse => Ok(ReferenceIdResponse::decode(message).into()),
+            TypeId::ReferenceIdRequest
+                if extension_header_version == ExtensionHeaderVersion::V5 =>
+            {
+                Ok(ReferenceIdRequest::decode(message)?.into())
+            }
+            TypeId::ReferenceIdResponse
+                if extension_header_version == ExtensionHeaderVersion::V5 =>
+            {
+                Ok(ReferenceIdResponse::decode(message).into())
+            }
             type_id => EF::decode_unknown(type_id.to_type_id(), message),
         }
     }
@@ -1003,7 +1013,7 @@ mod tests {
         data.extend(&[0]); // Padding
 
         let raw = RawExtensionField::deserialize(&data, 4, ExtensionHeaderVersion::V5).unwrap();
-        let ef = ExtensionField::decode(raw, ExtensionHeaderVersion::V4).unwrap();
+        let ef = ExtensionField::decode(raw, ExtensionHeaderVersion::V5).unwrap();
 
         let ExtensionField::DraftIdentification(ref parsed) = ef else {
             panic!("Unexpected extension field {ef:?}... expected DraftIdentification");
