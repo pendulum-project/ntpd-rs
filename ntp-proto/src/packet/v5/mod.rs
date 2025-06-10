@@ -197,14 +197,10 @@ impl NtpHeaderV5 {
             leap: system.time_snapshot.leap_indicator,
             mode: NtpMode::Response,
             stratum: system.stratum,
-            // TODO this changed in NTPv5
             poll: input.poll,
             precision: system.time_snapshot.precision.log2(),
-            // TODO this is new in NTPv5
             timescale: NtpTimescale::Utc,
-            // TODO this is new in NTPv5
             era: NtpEra(0),
-            // TODO this is new in NTPv5
             flags: NtpFlags {
                 unknown_leap: false,
                 interleaved_mode: false,
