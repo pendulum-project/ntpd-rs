@@ -314,6 +314,12 @@ not tampered with.
     NTP server. Should be used when this name does not match the name of the
     NTS key exchange server.
 
+`accept-ntp-versions` = [ `4` | `5`, .. ] (**[4]**)
+:   An array of NTP versions that are accepted by the server. By default only
+    NTS for NTPv4 packets is supported. To also allow negotiating NTS for draft
+    NTPv5 packets, you can set this value to `[4, 5]`. NTPv5 support is
+    currently in beta and can still change in a backwards incompatible way.
+
 ## `[synchronization]`
 This section of the configuration focusses on how the time information from the
 time sources is gathered and applied to the system clock.

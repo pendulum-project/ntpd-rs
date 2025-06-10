@@ -11,7 +11,7 @@ use std::{
 use libc::{ECONNABORTED, EMFILE, ENFILE, ENOBUFS, ENOMEM};
 use ntp_proto::{
     tls_utils::{self, Certificate, PrivateKey, TLS13},
-    ProtocolVersion,
+    NtpVersion, ProtocolVersion,
 };
 use ntp_proto::{
     KeyExchangeClient, KeyExchangeError, KeyExchangeResult, KeyExchangeServer, KeySet,
@@ -232,6 +232,7 @@ async fn key_exchange_server(
             let pool_certs = pool_certs.clone();
             let ntp_port = ke_config.ntp_port;
             let ntp_server = ke_config.ntp_server.clone();
+            let accept_ntp_versions = ke_config.accept_ntp_versions.clone();
 
             let fut = async move {
                 BoundKeyExchangeServer::run(
@@ -240,6 +241,7 @@ async fn key_exchange_server(
                     keyset,
                     ntp_port,
                     ntp_server.clone(),
+                    &accept_ntp_versions,
                     pool_certs,
                 )
                 .await
@@ -406,11 +408,19 @@ where
         keyset: Arc<KeySet>,
         ntp_port: Option<u16>,
         ntp_server: Option<String>,
+        ntp_versions: &[NtpVersion],
         pool_certs: Arc<[Certificate]>,
     ) -> Result<Self, KeyExchangeError> {
         let data = BoundKeyExchangeServerData {
             io,
-            server: KeyExchangeServer::new(config, keyset, ntp_port, ntp_server, pool_certs)?,
+            server: KeyExchangeServer::new(
+                config,
+                keyset,
+                ntp_port,
+                ntp_server,
+                ntp_versions,
+                pool_certs,
+            )?,
             need_flush: false,
         };
 
@@ -423,9 +433,18 @@ where
         keyset: Arc<KeySet>,
         ntp_port: Option<u16>,
         ntp_server: Option<String>,
+        ntp_versions: &[NtpVersion],
         pool_certs: Arc<[Certificate]>,
     ) -> Result<(), KeyExchangeError> {
-        let this = Self::new(io, config, keyset, ntp_port, ntp_server, pool_certs)?;
+        let this = Self::new(
+            io,
+            config,
+            keyset,
+            ntp_port,
+            ntp_server,
+            ntp_versions,
+            pool_certs,
+        )?;
 
         this.await
     }
@@ -669,6 +688,7 @@ mod tests {
             listen: "0.0.0.0:5431".parse().unwrap(),
             ntp_port: None,
             ntp_server: None,
+            accept_ntp_versions: vec![NtpVersion::V4],
         };
 
         let _join_handle = spawn(nts_ke_config, keyset);
@@ -710,6 +730,7 @@ mod tests {
             listen: SocketAddr::new("0.0.0.0".parse().unwrap(), port),
             ntp_port: None,
             ntp_server: None,
+            accept_ntp_versions: vec![NtpVersion::V4],
         };
 
         let _join_handle = spawn(nts_ke_config, keyset);
@@ -747,6 +768,7 @@ mod tests {
             listen: SocketAddr::new("0.0.0.0".parse().unwrap(), port),
             ntp_port: None,
             ntp_server: None,
+            accept_ntp_versions: vec![NtpVersion::V4],
         };
 
         let _join_handle = spawn(nts_ke_config, keyset);
@@ -784,6 +806,7 @@ mod tests {
             listen: SocketAddr::new("0.0.0.0".parse().unwrap(), port),
             ntp_port: None,
             ntp_server: None,
+            accept_ntp_versions: vec![NtpVersion::V4],
         };
 
         let _join_handle = spawn(nts_ke_config, keyset);
@@ -859,6 +882,7 @@ mod tests {
             listen: SocketAddr::new("0.0.0.0".parse().unwrap(), port),
             ntp_port: Some(568),
             ntp_server: Some("jantje".into()),
+            accept_ntp_versions: vec![NtpVersion::V4],
         };
 
         let _join_handle = spawn(nts_ke_config, keyset);
@@ -901,6 +925,7 @@ mod tests {
             listen: SocketAddr::new("0.0.0.0".parse().unwrap(), port),
             ntp_port: None,
             ntp_server: None,
+            accept_ntp_versions: vec![NtpVersion::V4],
         };
 
         let Err(io_error) = run_nts_ke(nts_ke_config, keyset).await else {
@@ -1011,7 +1036,16 @@ mod tests {
         let provider = KeySetProvider::new(0);
         let keyset = provider.get();
 
-        BoundKeyExchangeServer::run(stream, config, keyset, None, None, pool_certs).await
+        BoundKeyExchangeServer::run(
+            stream,
+            config,
+            keyset,
+            None,
+            None,
+            &[NtpVersion::V4],
+            pool_certs,
+        )
+        .await
     }
 
     async fn client_tls_stream(
