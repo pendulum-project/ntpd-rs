@@ -242,40 +242,39 @@ jobs:
         run: cargo clippy --target ${{matrix.target}} --manifest-path ./fuzz/fuzz_rand_shim/Cargo.toml --all-targets -- -D warnings
         if: ${{matrix.fuzzer}}
 
-  fuzz:
-    name: Smoke-test fuzzing targets
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        features:
-          - ""
-          - "--all-features"
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          persist-credentials: false
-      - name: Install nightly toolchain
-        uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b
-        with:
-          toolchain: nightly
-      - name: Install cargo fuzz
-        uses: taiki-e/cache-cargo-install-action@4d586f211d9b0bca9e7b59e57e2a0febf36c0929 # v2.1.1
-        with:
-          tool: cargo-fuzz
-      - name: Smoke-test fuzz targets
-        run: |
-          cargo fuzz build ${{ matrix.features }}
-          for target in $(cargo fuzz list) ; do
-            cargo fuzz run ${{ matrix.features }} $target -- -max_total_time=10
-          done
-
   fuzz-code-coverage:
     name: Fuzz with code coverage
     runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
+          - fuzz_target: cookie_parsing_sound
+            corpus: ""
+            features: ''
+          - fuzz_target: duration_from_float
+            corpus: ""
+            features: ''
+          - fuzz_target: encrypted_client_parsing
+            corpus: ""
+            features: ''
+          - fuzz_target: encrypted_server_parsing
+            corpus: ""
+            features: ''
+          - fuzz_target: ipfilter
+            corpus: ""
+            features: ''
+          - fuzz_target: key_exchange_result_decoder
+            corpus: ""
+            features: ''
+          - fuzz_target: key_exchange_server_decoder
+            corpus: ""
+            features: ''
+          - fuzz_target: ntsrecord
+            corpus: ""
+            features: ''
+          - fuzz_target: packet_keyset
+            corpus: ""
+            features: ''
           - fuzz_target: packet_parsing_sound
             corpus: ""
             features: ''
