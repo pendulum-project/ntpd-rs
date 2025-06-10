@@ -1,77 +1,10 @@
 use crate::io::NonBlockingWrite;
 use crate::packet::error::ParsingError;
+use crate::packet::extension_fields::ExtensionFieldTypeId;
 use crate::packet::v5::server_reference_id::BloomFilter;
 use crate::packet::ExtensionField;
 use std::borrow::Cow;
 use std::convert::Infallible;
-
-#[allow(dead_code)]
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum Type {
-    DraftIdentification,
-    Padding,
-    Mac,
-    ReferenceIdRequest,
-    ReferenceIdResponse,
-    ServerInformation,
-    Correction,
-    ReferenceTimestamp,
-    MonotonicReceiveTimestamp,
-    SecondaryReceiveTimestamp,
-    Unknown(u16),
-}
-
-impl Type {
-    #[cfg(test)]
-    pub const fn from_bits(bits: u16) -> Self {
-        match bits {
-            0xF5FF => Self::DraftIdentification,
-            0xF501 => Self::Padding,
-            0xF502 => Self::Mac,
-            0xF503 => Self::ReferenceIdRequest,
-            0xF504 => Self::ReferenceIdResponse,
-            0xF505 => Self::ServerInformation,
-            0xF506 => Self::Correction,
-            0xF507 => Self::ReferenceTimestamp,
-            0xF508 => Self::MonotonicReceiveTimestamp,
-            0xF509 => Self::SecondaryReceiveTimestamp,
-            other => Self::Unknown(other),
-        }
-    }
-
-    pub const fn to_bits(self) -> u16 {
-        match self {
-            Self::DraftIdentification => 0xF5FF,
-            Self::Padding => 0xF501,
-            Self::Mac => 0xF502,
-            Self::ReferenceIdRequest => 0xF503,
-            Self::ReferenceIdResponse => 0xF504,
-            Self::ServerInformation => 0xF505,
-            Self::Correction => 0xF506,
-            Self::ReferenceTimestamp => 0xF507,
-            Self::MonotonicReceiveTimestamp => 0xF508,
-            Self::SecondaryReceiveTimestamp => 0xF509,
-            Self::Unknown(other) => other,
-        }
-    }
-
-    #[cfg(test)]
-    fn all_known() -> impl Iterator<Item = Self> {
-        [
-            Self::DraftIdentification,
-            Self::Padding,
-            Self::Mac,
-            Self::ReferenceIdRequest,
-            Self::ReferenceIdResponse,
-            Self::ServerInformation,
-            Self::Correction,
-            Self::ReferenceTimestamp,
-            Self::MonotonicReceiveTimestamp,
-            Self::SecondaryReceiveTimestamp,
-        ]
-        .into_iter()
-    }
-}
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct ReferenceIdRequest {
@@ -108,7 +41,11 @@ impl ReferenceIdRequest {
         let payload_len = self.payload_len;
         let ef_len: u16 = payload_len + 4;
 
-        writer.write_all(&Type::ReferenceIdRequest.to_bits().to_be_bytes())?;
+        writer.write_all(
+            &ExtensionFieldTypeId::ReferenceIdRequest
+                .to_type_id()
+                .to_be_bytes(),
+        )?;
         writer.write_all(&ef_len.to_be_bytes())?;
         writer.write_all(&self.offset.to_be_bytes())?;
         writer.write_all(&[0; 2])?;
@@ -178,7 +115,11 @@ impl<'a> ReferenceIdResponse<'a> {
         let len = len + 4; // Add room for type and length
         assert_eq!(len % 4, 0);
 
-        writer.write_all(&Type::ReferenceIdResponse.to_bits().to_be_bytes())?;
+        writer.write_all(
+            &ExtensionFieldTypeId::ReferenceIdResponse
+                .to_type_id()
+                .to_be_bytes(),
+        )?;
         writer.write_all(&len.to_be_bytes())?;
         writer.write_all(self.bytes.as_ref())?;
 
@@ -214,23 +155,6 @@ impl<'a> From<ReferenceIdResponse<'a>> for ExtensionField<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn type_round_trip() {
-        for i in 0..=u16::MAX {
-            let ty = Type::from_bits(i);
-            assert_eq!(i, ty.to_bits());
-        }
-
-        for ty in Type::all_known() {
-            let bits = ty.to_bits();
-            let ty2 = Type::from_bits(bits);
-            assert_eq!(ty, ty2);
-
-            let bits2 = ty2.to_bits();
-            assert_eq!(bits, bits2);
-        }
-    }
 
     #[test]
     fn test_reference_id_request_too_short() {
