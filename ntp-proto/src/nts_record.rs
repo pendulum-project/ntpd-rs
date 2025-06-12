@@ -915,16 +915,6 @@ pub struct NtsKeys {
     s2c: Box<dyn Cipher>,
 }
 
-impl NtsKeys {
-    #[cfg(feature = "nts-pool")]
-    pub fn as_fixed_key_request(&self) -> NtsRecord {
-        NtsRecord::FixedKeyRequest {
-            c2s: self.c2s.key_bytes().to_vec(),
-            s2c: self.s2c.key_bytes().to_vec(),
-        }
-    }
-}
-
 impl std::fmt::Debug for NtsKeys {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NtsKeys")
