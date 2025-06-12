@@ -23,8 +23,6 @@ mod source;
 mod system;
 mod time_types;
 
-#[cfg(feature = "nts-pool")]
-mod nts_pool_ke;
 pub mod tls_utils;
 
 pub(crate) mod exitcode {
@@ -93,15 +91,6 @@ mod exports {
     pub mod v5 {
         pub use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
     }
-
-    #[cfg(feature = "nts-pool")]
-    pub use super::nts_record::AeadAlgorithm;
-
-    #[cfg(feature = "nts-pool")]
-    pub use super::nts_pool_ke::{
-        ClientToPoolData, ClientToPoolDecoder, PoolToServerData, PoolToServerDecoder,
-        SupportedAlgorithmsDecoder,
-    };
 }
 
 #[cfg(feature = "__internal-api")]
