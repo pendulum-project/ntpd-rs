@@ -3,38 +3,38 @@
 ## [1.5.0] - 2025-02-28
 
 ### Added
-- Support for PPS based sources (this support can be disabled with a compile flag for now)
-- Per source configuration of poll intervals
-- Allow setting a custom reference id for stratum 1 servers
+- Support for PPS based sources (this support can be disabled with a compile flag for now).
+- Per source configuration of poll intervals.
+- Allow setting a custom reference id for stratum 1 servers.
 
 ### Changed
-- Our algorithm can now handle periodic sources
-- ntpd-rs runs single-threaded when only configured as a client, servers still run multithreaded
-- The reference timestamp field is now set to the truncated receive timestamp instead of being zero
-- Support of rustls 0.21 and 0.22 is removed
-- Certificate validation is now done through rustls-platform-verifier, following platform certificate validation more closely
-- Updated dependencies
+- Our algorithm can now handle periodic sources.
+- ntpd-rs runs single-threaded when only configured as a client, servers still run multithreaded.
+- The reference timestamp field is now set to the truncated receive timestamp instead of being zero.
+- Support of rustls 0.21 and 0.22 is removed.
+- Certificate validation is now done through rustls-platform-verifier, following platform certificate validation more closely.
+- Updated dependencies.
 
 ### Fixed
-- Fixed parsing of IPv6 addresses
-- Fixed incorrect display of date in force-sync command
-- Fixed a client denial of service vulnerability with zero-sized NTS cookies
-- Fixed a client denial of service vulnerability with NTS cookies that are too large
+- Fixed parsing of IPv6 addresses.
+- Fixed incorrect display of date in force-sync command.
+- Fixed a client denial of service vulnerability with zero-sized NTS cookies.
+- Fixed a client denial of service vulnerability with NTS cookies that are too large.
 
 ## [1.4.0] - 2024-12-13
 
 ### Added
-- Support for GPS based sources via a GPSd socket
-- Added a setting to allow disabling of colors in our logs (`observability.ansi-colors`)
+- Support for GPS based sources via a GPSd socket.
+- Added a setting to allow disabling of colors in our logs (`observability.ansi-colors`).
 
 ### Changed
-- Fallback to V4 should V5 not work for some reason (if NTPv5 is enabled)
-- Make the NTP version of a source configurable
-- We now support rustls from 0.21 and up, to allow compilation on more targets
+- Fallback to V4 should V5 not work for some reason (if NTPv5 is enabled).
+- Make the NTP version of a source configurable.
+- We now support rustls from 0.21 and up, to allow compilation on more targets.
 
 ### Fixed
-- Force sync did not work when a single source was configured
-- Fix incorrect indexing in decode of ReferenceIdRequest for NTPv5 messages
+- Force sync did not work when a single source was configured.
+- Fix incorrect indexing in decode of ReferenceIdRequest for NTPv5 messages.
 
 ## [1.3.1] - 2024-11-28
 
@@ -48,8 +48,8 @@
 - Added information on NTS to the ntp-ctl status overview.
 
 ### Changed
-- Made the logs a little less chatty
-- Updated dependencies
+- Made the logs a little less chatty.
+- Updated dependencies.
 
 ### Fixed
 - On startup, if the clock needed a jump to get in line, this could cause oscillations.
@@ -57,12 +57,12 @@
 ## [1.2.3] - 2024-07-22
 
 ### Fixed
-- Metrics exporter should wait for an actual request before sending a response
+- Metrics exporter should wait for an actual request before sending a response.
 
 ## [1.2.2] - 2024-07-18
 
 ### Changed
-- Updated dependencies
+- Updated dependencies.
 
 ### Fixed
 - Fixed a bug in network change detection that prevented startup on FreeBSD.
@@ -80,22 +80,22 @@
 
 ### Changed
 - Updated dependencies
-- ntp-udp and ntp-os-clock were replaced by timestamped-socket and clock-steering
-- Minor improvements to NTS keyset storage errors
-- Loop detection is handled globally instead of per source
-- The MSRV was raised to 1.70
-- The metrics exporter is better able to handle multiple simultaneous connections
-- Pendulum is now part of Trifecta Tech Foundation (copyright was updated)
-- Large parts of the daemon code have been refactored to simplify the code
+- ntp-udp and ntp-os-clock were replaced by timestamped-socket and clock-steering.
+- Minor improvements to NTS keyset storage errors.
+- Loop detection is handled globally instead of per source.
+- The MSRV was raised to 1.70.
+- The metrics exporter is better able to handle multiple simultaneous connections.
+- Pendulum is now part of Trifecta Tech Foundation (copyright was updated).
+- Large parts of the daemon code have been refactored to simplify the code.
 
 ### Fixed
 - Metrics would not synchronize if the metrics data was too large
-- ntpd-rs would ignore responses from servers implementing NTPv3
+- ntpd-rs would ignore responses from servers implementing NTPv3.
 
 ## [1.1.3] - 2024-06-28
 
 ### Fixed
-- Unlimited number of NTS-KE connections could crash ntpd-rs server (CVE-2024-38528)
+- Unlimited number of NTS-KE connections could crash ntpd-rs server (CVE-2024-38528).
 
 ## [1.1.2] - 2024-02-01
 
@@ -121,22 +121,22 @@
 - Server can now be run without permission to change the system clock so long
   as no time sources are configured.
 - Experimental NTPv5 draft support was added behind a feature flag (disabled by
-  default)
+  default).
 
 ### Changed
 - The sources section can be left out of the configuration now.
-- When no sources are configured, the daemon will merely state it won't change
-  system time, rather than warn
-- The MSRV was raised to 1.67
+- When no sources are configured, the daemon will merely state it won't change.
+  system time, rather than warn.
+- The MSRV was raised to 1.67.
 
 ## [1.0.0] - 2023-10-05
 
 ### Added
 - Man pages have been added to the built packages.
-- `ntp-ctl` now has human-friendly output
-- Added metrics for NTS packets processed in the server
+- `ntp-ctl` now has human-friendly output.
+- Added metrics for NTS packets processed in the server.
 - Exposed root dispersion and root delay reported by time source as metrics.
-- Added `ntp_uptime_seconds` metric, which also includes the software version
+- Added `ntp_uptime_seconds` metric, which also includes the software version.
 
 ### Changed
 - Peers have been renamed to sources.
