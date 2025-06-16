@@ -60,16 +60,7 @@ For more details on how to install and use ntpd-rs, see our [documentation websi
 
 ## Roadmap
 
-In Q1 2023 we completed our work on NTS. Our implementation is now
-full-featured, it supports NTP client and server with NTS.
-
-Our roadmap for 2024:
-
-* Q2-Q4 2024: Packaging and industry adoption, maintenance & community work
-* Q4 2024: NTS Pool (pending funding)
-
-We seek sponsorship for features and maintenance to continue our work. Contact
-us via pendulum@tweedegolf.com if you are interested!
+See [Project Pendulum] for our roadmap.
 
 ## History
 
@@ -93,7 +84,13 @@ Tweede golf is the long-term maintainer of ntpd-rs, that is now part of Tweede
 golf's [Project Pendulum]. Pendulum is building modern, open-source
 implementations of the Network Time Protocol (ntpd-rs) and the Precision Time Protocol (Statime).
 
-In July of 2023 the [Sovereign Tech Fund] invested in Pendulum, securing ntpd-rs development and maintenance in 2023, and maintenance and adoption work in 2024.
+In July of 2023 the [Sovereign Tech Agency] invested in Pendulum, securing ntpd-rs development and maintenance in 2023, and maintenance and adoption work in 2024.
+
+### 2024
+
+In 2024, we completed the work for [Sovereign Tech Agency], which resulted in (among many other deliverables) a stable release for ntpd-rs. 
+
+In June of 2024, ntpd-rs was deployed in the infrastructure of [Let's Encrypt].
 
 ![STF](https://tweedegolf.nl/images/logo-stf-blank.png)
 
@@ -104,4 +101,5 @@ In July of 2023 the [Sovereign Tech Fund] invested in Pendulum, securing ntpd-rs
 [NTP initiative page]: https://www.memorysafety.org/initiative/ntp
 [NTP announcement]: https://www.memorysafety.org/blog/ntp-and-nts-have-arrived/
 [Project Pendulum]: https://github.com/pendulum-project
-[Sovereign Tech Fund]: https://sovereigntechfund.de/en/
+[Sovereign Tech Agency]: https://www.sovereign.tech/tech/pendulum
+[Let's Encrypt]: https://letsencrypt.org/2024/06/24/ntpd-rs-deployment/
