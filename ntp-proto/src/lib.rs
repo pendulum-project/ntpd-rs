@@ -33,6 +33,58 @@ pub(crate) mod exitcode {
     pub const SOFTWARE: i32 = 70;
 }
 
+// This is a mod so we can control visibility for the moment, but these really are intended to be the top-level things.
+mod generic {
+    use std::fmt::Display;
+
+    #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+    pub enum NtpVersion {
+        V3,
+        V4,
+        V5,
+    }
+
+    impl NtpVersion {
+        pub fn as_u8(self) -> u8 {
+            self.into()
+        }
+    }
+
+    #[derive(Debug)]
+    pub struct InvalidNtpVersion(u8);
+
+    impl Display for InvalidNtpVersion {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "Invalid NTP version: {}", self.0)
+        }
+    }
+
+    impl std::error::Error for InvalidNtpVersion {}
+
+    impl TryFrom<u8> for NtpVersion {
+        type Error = InvalidNtpVersion;
+
+        fn try_from(value: u8) -> Result<Self, Self::Error> {
+            match value {
+                3 => Ok(NtpVersion::V3),
+                4 => Ok(NtpVersion::V4),
+                5 => Ok(NtpVersion::V5),
+                e => Err(InvalidNtpVersion(e)),
+            }
+        }
+    }
+
+    impl From<NtpVersion> for u8 {
+        fn from(value: NtpVersion) -> Self {
+            match value {
+                NtpVersion::V3 => 3,
+                NtpVersion::V4 => 4,
+                NtpVersion::V5 => 5,
+            }
+        }
+    }
+}
+
 mod exports {
     pub use super::algorithm::{
         AlgorithmConfig, KalmanClockController, KalmanControllerMessage, KalmanSourceController,
@@ -82,8 +134,8 @@ mod exports {
     #[cfg(feature = "__internal-fuzz")]
     pub use super::nts_record::fuzz_key_exchange_server_decoder;
     pub use super::nts_record::{
-        KeyExchangeClient, KeyExchangeError, KeyExchangeResult, KeyExchangeServer, NtpVersion,
-        NtsRecord, NtsRecordDecoder, WriteError,
+        KeyExchangeClient, KeyExchangeError, KeyExchangeResult, KeyExchangeServer, NtsRecord,
+        NtsRecordDecoder, WriteError,
     };
 
     pub use super::cookiestash::MAX_COOKIES;
@@ -91,6 +143,8 @@ mod exports {
     pub mod v5 {
         pub use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
     }
+
+    pub use super::generic::NtpVersion;
 }
 
 #[cfg(feature = "__internal-api")]
