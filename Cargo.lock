@@ -577,6 +577,7 @@ dependencies = [
  "rustls-platform-verifier",
  "serde",
  "serde_json",
+ "tokio",
  "tracing",
  "zeroize",
 ]

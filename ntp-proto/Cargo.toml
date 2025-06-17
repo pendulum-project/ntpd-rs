@@ -24,6 +24,7 @@ nts-pool = []
 md-5.workspace = true
 rand.workspace = true
 tracing.workspace = true
+tokio = { workspace = true, features = ["io-util"] }
 serde.workspace = true
 rustls23.workspace = true
 rustls-platform-verifier.workspace = true
