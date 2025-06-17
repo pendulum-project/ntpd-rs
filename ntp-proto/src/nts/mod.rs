@@ -1,3 +1,5 @@
+mod record;
+
 /// From https://www.iana.org/assignments/aead-parameters/aead-parameters.xhtml
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 enum AeadAlgorithm {
