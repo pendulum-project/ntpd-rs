@@ -16,6 +16,7 @@ mod identifiers;
 mod io;
 mod ipfilter;
 mod keyset;
+mod nts;
 mod nts_record;
 mod packet;
 mod server;
