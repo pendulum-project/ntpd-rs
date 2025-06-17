@@ -13,21 +13,23 @@ fn vote_leap<Index: Copy>(selection: &[SourceSnapshot<Index>]) -> Option<NtpLeap
     let mut votes_59 = 0;
     let mut votes_61 = 0;
     let mut votes_none = 0;
+    let mut votes_unknown = 0;
     for snapshot in selection {
         match snapshot.leap_indicator {
             NtpLeapIndicator::NoWarning => votes_none += 1,
             NtpLeapIndicator::Leap61 => votes_61 += 1,
             NtpLeapIndicator::Leap59 => votes_59 += 1,
-            NtpLeapIndicator::Unknown => {
+            NtpLeapIndicator::Unknown => votes_unknown += 1,
+            NtpLeapIndicator::Unsynchronized => {
                 panic!("Unsynchronized source selected for synchronization!")
             }
         }
     }
-    if votes_none * 2 > selection.len() {
+    if votes_none * 2 > selection.len() - votes_unknown {
         Some(NtpLeapIndicator::NoWarning)
-    } else if votes_59 * 2 > selection.len() {
+    } else if votes_59 * 2 > selection.len() - votes_unknown {
         Some(NtpLeapIndicator::Leap59)
-    } else if votes_61 * 2 > selection.len() {
+    } else if votes_61 * 2 > selection.len() - votes_unknown {
         Some(NtpLeapIndicator::Leap61)
     } else {
         None

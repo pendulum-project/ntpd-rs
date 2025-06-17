@@ -34,7 +34,11 @@ pub enum NtpLeapIndicator {
     NoWarning,
     Leap61,
     Leap59,
+    // Unknown and unsynchronized have the same wire representation, and weren't distinguished in NTPv4.
+    // however, NTPv5 provides a distinction which we need in some parts of the code. For now, we just use
+    // this to encode both, but long term we might want a different approach here.
     Unknown,
+    Unsynchronized,
 }
 
 impl NtpLeapIndicator {
@@ -45,7 +49,7 @@ impl NtpLeapIndicator {
             0 => NtpLeapIndicator::NoWarning,
             1 => NtpLeapIndicator::Leap61,
             2 => NtpLeapIndicator::Leap59,
-            3 => NtpLeapIndicator::Unknown,
+            3 => NtpLeapIndicator::Unsynchronized,
             // This function should only ever be called from the packet parser
             // with just two bits, so this really should be unreachable
             _ => unreachable!(),
@@ -58,11 +62,12 @@ impl NtpLeapIndicator {
             NtpLeapIndicator::Leap61 => 1,
             NtpLeapIndicator::Leap59 => 2,
             NtpLeapIndicator::Unknown => 3,
+            NtpLeapIndicator::Unsynchronized => 3,
         }
     }
 
     pub fn is_synchronized(&self) -> bool {
-        !matches!(self, Self::Unknown)
+        !matches!(self, Self::Unsynchronized)
     }
 }
 
