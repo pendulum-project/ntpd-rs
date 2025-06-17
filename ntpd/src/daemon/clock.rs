@@ -69,6 +69,7 @@ impl NtpClock for NtpClockWrapper {
             ntp_proto::NtpLeapIndicator::Leap61 => clock_steering::LeapIndicator::Leap61,
             ntp_proto::NtpLeapIndicator::Leap59 => clock_steering::LeapIndicator::Leap59,
             ntp_proto::NtpLeapIndicator::Unknown => clock_steering::LeapIndicator::Unknown,
+            ntp_proto::NtpLeapIndicator::Unsynchronized => clock_steering::LeapIndicator::Unknown,
         })
     }
 }
