@@ -58,7 +58,6 @@ pub enum NtsRecord {
 }
 
 impl NtsRecord {
-    #[allow(unused)]
     pub async fn parse(mut reader: impl AsyncRead + Unpin) -> Result<Self, Error> {
         let record_type = reader.read_u16().await?;
         let size = reader.read_u16().await?;
@@ -242,7 +241,6 @@ impl NtsRecord {
         Ok(Self::NtpServerDeny { denied })
     }
 
-    #[allow(unused)]
     pub async fn serialize(&self, mut writer: impl AsyncWrite + Unpin) -> Result<(), Error> {
         writer.write_u16(self.record_type()).await?;
         let size: u16 = self
