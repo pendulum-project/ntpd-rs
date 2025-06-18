@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use tokio::io::{AsyncRead, AsyncWrite};
 
 #[cfg(feature = "nts-pool")]
@@ -8,10 +10,10 @@ use crate::packet::Cipher;
 use super::record::NtsRecord;
 use super::{AeadAlgorithm, ErrorCode, NextProtocol, NtsError, WarningCode};
 
-pub enum Request {
+pub enum Request<'a> {
     KeyExchange {
-        algorithms: Vec<AeadAlgorithm>,
-        protocols: Vec<NextProtocol>,
+        algorithms: Cow<'a, [AeadAlgorithm]>,
+        protocols: Cow<'a, [NextProtocol]>,
     },
     #[cfg(feature = "nts-pool")]
     FixedKey {
@@ -27,7 +29,7 @@ pub enum Request {
     },
 }
 
-impl Request {
+impl Request<'_> {
     #[allow(unused)]
     pub async fn parse(mut reader: impl AsyncRead + Unpin) -> Result<Self, NtsError> {
         let mut protocols = None;
@@ -193,12 +195,12 @@ impl Request {
                 .serialize(&mut writer)
                 .await?;
                 NtsRecord::NextProtocol {
-                    protocol_ids: vec![protocol],
+                    protocol_ids: [protocol].as_slice().into(),
                 }
                 .serialize(&mut writer)
                 .await?;
                 NtsRecord::AeadAlgorithm {
-                    algorithm_ids: vec![algorithm],
+                    algorithm_ids: [algorithm].as_slice().into(),
                 }
                 .serialize(&mut writer)
                 .await?;
@@ -211,14 +213,14 @@ impl Request {
             } => {
                 if wants_protocols {
                     NtsRecord::SupportedNextProtocolList {
-                        supported_protocols: vec![],
+                        supported_protocols: [].as_slice().into(),
                     }
                     .serialize(&mut writer)
                     .await?;
                 }
                 if wants_algorithms {
                     NtsRecord::SupportedAlgorithmList {
-                        supported_algorithms: vec![],
+                        supported_algorithms: [].as_slice().into(),
                     }
                     .serialize(&mut writer)
                     .await?;
@@ -231,15 +233,15 @@ impl Request {
     }
 }
 
-pub struct KeyExchangeResponse {
+pub struct KeyExchangeResponse<'a> {
     pub protocol: NextProtocol,
     pub algorithm: AeadAlgorithm,
-    pub cookies: Vec<Vec<u8>>,
-    pub server: Option<String>,
+    pub cookies: Cow<'a, [Cow<'a, [u8]>]>,
+    pub server: Option<Cow<'a, str>>,
     pub port: Option<u16>,
 }
 
-impl KeyExchangeResponse {
+impl KeyExchangeResponse<'_> {
     #[allow(unused)]
     pub async fn parse(mut reader: impl AsyncRead + Unpin) -> Result<Self, NtsError> {
         let mut protocol = None;
@@ -317,7 +319,7 @@ impl KeyExchangeResponse {
             Ok(KeyExchangeResponse {
                 protocol,
                 algorithm,
-                cookies,
+                cookies: cookies.into(),
                 server,
                 port,
             })
@@ -332,19 +334,21 @@ impl KeyExchangeResponse {
         mut writer: impl AsyncWrite + Unpin,
     ) -> Result<(), std::io::Error> {
         NtsRecord::NextProtocol {
-            protocol_ids: vec![self.protocol],
+            protocol_ids: [self.protocol].as_slice().into(),
         }
         .serialize(&mut writer)
         .await?;
         NtsRecord::AeadAlgorithm {
-            algorithm_ids: vec![self.algorithm],
+            algorithm_ids: [self.algorithm].as_slice().into(),
         }
         .serialize(&mut writer)
         .await?;
-        for cookie_data in self.cookies {
-            NtsRecord::NewCookie { cookie_data }
-                .serialize(&mut writer)
-                .await?;
+        for cookie_data in self.cookies.iter() {
+            NtsRecord::NewCookie {
+                cookie_data: Cow::Borrowed(cookie_data),
+            }
+            .serialize(&mut writer)
+            .await?;
         }
         if let Some(name) = self.server {
             NtsRecord::Server { name }.serialize(&mut writer).await?;
@@ -373,12 +377,12 @@ impl NoOverlapResponse {
         match self {
             NoOverlapResponse::NoOverlappingAlgorithm { protocol } => {
                 NtsRecord::NextProtocol {
-                    protocol_ids: vec![protocol],
+                    protocol_ids: [protocol].as_slice().into(),
                 }
                 .serialize(&mut writer)
                 .await?;
                 NtsRecord::AeadAlgorithm {
-                    algorithm_ids: vec![],
+                    algorithm_ids: [].as_slice().into(),
                 }
                 .serialize(&mut writer)
                 .await?;
@@ -386,7 +390,7 @@ impl NoOverlapResponse {
             }
             NoOverlapResponse::NoOverlappingProtocol => {
                 NtsRecord::NextProtocol {
-                    protocol_ids: vec![],
+                    protocol_ids: [].as_slice().into(),
                 }
                 .serialize(&mut writer)
                 .await?;
@@ -420,13 +424,13 @@ impl ErrorResponse {
 }
 
 #[cfg(feature = "nts-pool")]
-pub struct SupportsResponse {
-    algorithms: Option<Vec<AlgorithmDescription>>,
-    protocols: Option<Vec<NextProtocol>>,
+pub struct SupportsResponse<'a> {
+    algorithms: Option<Cow<'a, [AlgorithmDescription]>>,
+    protocols: Option<Cow<'a, [NextProtocol]>>,
 }
 
 #[cfg(feature = "nts-pool")]
-impl SupportsResponse {
+impl SupportsResponse<'_> {
     #[allow(unused)]
     pub async fn serialize(
         self,
@@ -519,8 +523,8 @@ mod tests {
                 algorithms,
                 protocols,
             } => {
-                assert_eq!(algorithms, [AeadAlgorithm::AeadAesSivCmac256]);
-                assert_eq!(protocols, [NextProtocol::NTPv4]);
+                assert_eq!(algorithms, [AeadAlgorithm::AeadAesSivCmac256].as_slice());
+                assert_eq!(protocols, [NextProtocol::NTPv4].as_slice());
             }
             #[allow(unreachable_patterns)]
             _ => panic!("Unexpected misparse of message"),
@@ -539,8 +543,11 @@ mod tests {
                 algorithms,
                 protocols,
             } => {
-                assert_eq!(algorithms, [AeadAlgorithm::AeadAesSivCmac512]);
-                assert_eq!(protocols, [NextProtocol::DraftNTPv5, NextProtocol::NTPv4]);
+                assert_eq!(algorithms, [AeadAlgorithm::AeadAesSivCmac512].as_slice());
+                assert_eq!(
+                    protocols,
+                    [NextProtocol::DraftNTPv5, NextProtocol::NTPv4].as_slice()
+                );
             }
             #[allow(unreachable_patterns)]
             _ => panic!("Unexpected misparse of message"),
@@ -626,8 +633,8 @@ mod tests {
                 algorithms,
                 protocols,
             } => {
-                assert_eq!(algorithms, [AeadAlgorithm::AeadAesSivCmac256]);
-                assert_eq!(protocols, [NextProtocol::NTPv4]);
+                assert_eq!(algorithms, [AeadAlgorithm::AeadAesSivCmac256].as_slice());
+                assert_eq!(protocols, [NextProtocol::NTPv4].as_slice());
             }
             #[allow(unreachable_patterns)]
             _ => panic!("Unexpected misparse of message"),
@@ -646,8 +653,8 @@ mod tests {
                 algorithms,
                 protocols,
             } => {
-                assert_eq!(algorithms, [AeadAlgorithm::AeadAesSivCmac256]);
-                assert_eq!(protocols, [NextProtocol::NTPv4]);
+                assert_eq!(algorithms, [AeadAlgorithm::AeadAesSivCmac256].as_slice());
+                assert_eq!(protocols, [NextProtocol::NTPv4].as_slice());
             }
             #[allow(unreachable_patterns)]
             _ => panic!("Unexpected misparse of message"),
@@ -666,8 +673,8 @@ mod tests {
                 algorithms,
                 protocols,
             } => {
-                assert_eq!(algorithms, [AeadAlgorithm::AeadAesSivCmac256]);
-                assert_eq!(protocols, [NextProtocol::NTPv4]);
+                assert_eq!(algorithms, [AeadAlgorithm::AeadAesSivCmac256].as_slice());
+                assert_eq!(protocols, [NextProtocol::NTPv4].as_slice());
             }
             #[allow(unreachable_patterns)]
             _ => panic!("Unexpected misparse of message"),
@@ -686,8 +693,8 @@ mod tests {
                 algorithms,
                 protocols,
             } => {
-                assert_eq!(algorithms, [AeadAlgorithm::AeadAesSivCmac256]);
-                assert_eq!(protocols, [NextProtocol::NTPv4]);
+                assert_eq!(algorithms, [AeadAlgorithm::AeadAesSivCmac256].as_slice());
+                assert_eq!(protocols, [NextProtocol::NTPv4].as_slice());
             }
             #[allow(unreachable_patterns)]
             _ => panic!("Unexpected misparse of message"),
@@ -701,11 +708,13 @@ mod tests {
             swrap(
                 Request::serialize,
                 Request::KeyExchange {
-                    algorithms: vec![
+                    algorithms: [
                         AeadAlgorithm::AeadAesSivCmac512,
                         AeadAlgorithm::AeadAesSivCmac256
-                    ],
-                    protocols: vec![NextProtocol::NTPv4]
+                    ]
+                    .as_slice()
+                    .into(),
+                    protocols: [NextProtocol::NTPv4].as_slice().into(),
                 },
                 &mut buf
             ),
@@ -861,6 +870,71 @@ mod tests {
                 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
                 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15,
             ],
+        )
+        .is_err());
+    }
+
+    #[cfg(feature = "nts-pool")]
+    #[test]
+    fn test_request_fixedkey_reject_multiple() {
+        assert!(pwrap(
+            Request::parse,
+            &[
+                0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+                19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
+                40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
+                61, 62, 63, 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
+                37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
+                58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x80, 0, 0, 0,
+            ]
+        )
+        .is_err());
+
+        assert!(pwrap(
+            Request::parse,
+            &[
+                0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+                19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
+                40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
+                61, 62, 63, 0x80, 1, 0, 4, 0, 0, 0x80, 1, 0x80, 4, 0, 2, 0, 15, 0x80, 0, 0, 0,
+            ]
+        )
+        .is_err());
+
+        assert!(pwrap(
+            Request::parse,
+            &[
+                0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+                19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
+                40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
+                61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 4, 0, 15, 0, 15, 0x80, 0, 0, 0,
+            ]
+        )
+        .is_err());
+    }
+
+    #[cfg(feature = "nts-pool")]
+    #[test]
+    fn test_request_fixedkey_reject_wrong_size_keys() {
+        assert!(pwrap(
+            Request::parse,
+            &[0xC0, 2, 0, 4, 1, 2, 3, 4, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x80, 0, 0, 0]
+        )
+        .is_err());
+    }
+
+    #[cfg(feature = "nts-pool")]
+    #[test]
+    fn test_request_fixedkey_reject_unknown_algorithm() {
+        assert!(pwrap(
+            Request::parse,
+            &[
+                0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+                19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
+                40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
+                61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 2, 0x80, 0, 0, 0,
+            ]
         )
         .is_err());
     }
@@ -1324,7 +1398,7 @@ mod tests {
         };
         assert_eq!(response.protocol, NextProtocol::NTPv4);
         assert_eq!(response.algorithm, AeadAlgorithm::AeadAesSivCmac512);
-        assert_eq!(response.cookies, [] as [Vec<u8>; 0]);
+        assert_eq!(response.cookies, [].as_slice() as &[Cow<'static, [u8]>]);
         assert_eq!(response.port, None);
         assert_eq!(response.server, None);
 
@@ -1339,7 +1413,11 @@ mod tests {
         };
         assert_eq!(response.protocol, NextProtocol::NTPv4);
         assert_eq!(response.algorithm, AeadAlgorithm::AeadAesSivCmac512);
-        assert_eq!(response.cookies, [[1, 2], [3, 4]]);
+        assert_eq!(
+            response.cookies,
+            [[1u8, 2].as_slice().into(), [3u8, 4].as_slice().into()].as_slice()
+                as &[Cow<'static, [u8]>]
+        );
         assert_eq!(response.port, None);
         assert_eq!(response.server, None);
 
@@ -1353,9 +1431,9 @@ mod tests {
         };
         assert_eq!(response.protocol, NextProtocol::NTPv4);
         assert_eq!(response.algorithm, AeadAlgorithm::AeadAesSivCmac256);
-        assert_eq!(response.cookies, [] as [Vec<u8>; 0]);
+        assert_eq!(response.cookies, [].as_slice() as &[Cow<'static, [u8]>]);
         assert_eq!(response.port, None);
-        assert_eq!(response.server, Some("hi".to_string()));
+        assert_eq!(response.server, Some("hi".into()));
 
         let Ok(response) = pwrap(
             KeyExchangeResponse::parse,
@@ -1367,7 +1445,7 @@ mod tests {
         };
         assert_eq!(response.protocol, NextProtocol::NTPv4);
         assert_eq!(response.algorithm, AeadAlgorithm::AeadAesSivCmac256);
-        assert_eq!(response.cookies, [] as [Vec<u8>; 0]);
+        assert_eq!(response.cookies, [].as_slice() as &[Cow<'static, [u8]>]);
         assert_eq!(response.port, Some(5));
         assert_eq!(response.server, None);
 
@@ -1382,9 +1460,13 @@ mod tests {
         };
         assert_eq!(response.protocol, NextProtocol::NTPv4);
         assert_eq!(response.algorithm, AeadAlgorithm::AeadAesSivCmac512);
-        assert_eq!(response.cookies, [[1, 2], [3, 4]]);
+        assert_eq!(
+            response.cookies,
+            [[1u8, 2].as_slice().into(), [3u8, 4].as_slice().into()].as_slice()
+                as &[Cow<'static, [u8]>]
+        );
         assert_eq!(response.port, Some(5));
-        assert_eq!(response.server, Some("hi".to_string()));
+        assert_eq!(response.server, Some("hi".into()));
     }
 
     #[test]
@@ -1481,7 +1563,7 @@ mod tests {
         };
         assert_eq!(response.protocol, NextProtocol::NTPv4);
         assert_eq!(response.algorithm, AeadAlgorithm::Unknown(4));
-        assert_eq!(response.cookies, [] as [Vec<u8>; 0]);
+        assert_eq!(response.cookies, [].as_slice() as &[Cow<'static, [u8]>]);
         assert_eq!(response.port, None);
         assert_eq!(response.server, None);
     }
@@ -1527,7 +1609,7 @@ mod tests {
             KeyExchangeResponse {
                 protocol: NextProtocol::NTPv4,
                 algorithm: AeadAlgorithm::Unknown(4),
-                cookies: vec![],
+                cookies: [].as_slice().into(),
                 server: None,
                 port: None
             },
@@ -1545,7 +1627,9 @@ mod tests {
             KeyExchangeResponse {
                 protocol: NextProtocol::NTPv4,
                 algorithm: AeadAlgorithm::Unknown(4),
-                cookies: vec![vec![1, 2, 3], vec![4, 5]],
+                cookies: [[1, 2, 3].as_slice().into(), [4, 5].as_slice().into()]
+                    .as_slice()
+                    .into(),
                 server: None,
                 port: None
             },
@@ -1566,8 +1650,8 @@ mod tests {
             KeyExchangeResponse {
                 protocol: NextProtocol::NTPv4,
                 algorithm: AeadAlgorithm::Unknown(4),
-                cookies: vec![],
-                server: Some("hi".to_string()),
+                cookies: [].as_slice().into(),
+                server: Some("hi".into()),
                 port: None
             },
             &mut buf
@@ -1584,7 +1668,7 @@ mod tests {
             KeyExchangeResponse {
                 protocol: NextProtocol::NTPv4,
                 algorithm: AeadAlgorithm::Unknown(4),
-                cookies: vec![],
+                cookies: [].as_slice().into(),
                 server: None,
                 port: Some(15)
             },
@@ -1602,8 +1686,10 @@ mod tests {
             KeyExchangeResponse {
                 protocol: NextProtocol::NTPv4,
                 algorithm: AeadAlgorithm::Unknown(4),
-                cookies: vec![vec![1, 2, 3], vec![4, 5]],
-                server: Some("hi".to_string()),
+                cookies: [[1, 2, 3].as_slice().into(), [4, 5].as_slice().into()]
+                    .as_slice()
+                    .into(),
+                server: Some("hi".into()),
                 port: Some(15)
             },
             &mut buf
@@ -1625,9 +1711,11 @@ mod tests {
         assert!(swrap(
             SupportsResponse::serialize,
             SupportsResponse {
-                algorithms: Some(vec![AeadAlgorithm::AeadAesSivCmac256
-                    .description()
-                    .unwrap()]),
+                algorithms: Some(
+                    [AeadAlgorithm::AeadAesSivCmac256.description().unwrap()]
+                        .as_slice()
+                        .into()
+                ),
                 protocols: None
             },
             &mut buf
@@ -1639,10 +1727,12 @@ mod tests {
         assert!(swrap(
             SupportsResponse::serialize,
             SupportsResponse {
-                algorithms: Some(vec![AeadAlgorithm::AeadAesSivCmac256
-                    .description()
-                    .unwrap()]),
-                protocols: Some(vec![NextProtocol::NTPv4]),
+                algorithms: Some(
+                    [AeadAlgorithm::AeadAesSivCmac256.description().unwrap()]
+                        .as_slice()
+                        .into()
+                ),
+                protocols: Some([NextProtocol::NTPv4].as_slice().into()),
             },
             &mut buf
         )
@@ -1657,7 +1747,7 @@ mod tests {
             SupportsResponse::serialize,
             SupportsResponse {
                 algorithms: None,
-                protocols: Some(vec![NextProtocol::NTPv4]),
+                protocols: Some([NextProtocol::NTPv4].as_slice().into()),
             },
             &mut buf
         )
