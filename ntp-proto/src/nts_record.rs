@@ -9,58 +9,12 @@ use crate::tls_utils::{self, ServerName};
 
 use crate::{
     cookiestash::CookieStash,
+    generic::NtpVersion,
     io::{NonBlockingRead, NonBlockingWrite},
     keyset::{DecodedServerCookie, KeySet},
     packet::{AesSivCmac256, AesSivCmac512, Cipher},
     source::{ProtocolVersion, SourceNtsData},
 };
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
-pub enum NtpVersion {
-    V3,
-    V4,
-    V5,
-}
-
-impl NtpVersion {
-    pub fn as_u8(self) -> u8 {
-        self.into()
-    }
-}
-
-#[derive(Debug)]
-pub struct InvalidNtpVersion(u8);
-
-impl Display for InvalidNtpVersion {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Invalid NTP version: {}", self.0)
-    }
-}
-
-impl std::error::Error for InvalidNtpVersion {}
-
-impl TryFrom<u8> for NtpVersion {
-    type Error = InvalidNtpVersion;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            3 => Ok(NtpVersion::V3),
-            4 => Ok(NtpVersion::V4),
-            5 => Ok(NtpVersion::V5),
-            e => Err(InvalidNtpVersion(e)),
-        }
-    }
-}
-
-impl From<NtpVersion> for u8 {
-    fn from(value: NtpVersion) -> Self {
-        match value {
-            NtpVersion::V3 => 3,
-            NtpVersion::V4 => 4,
-            NtpVersion::V5 => 5,
-        }
-    }
-}
 
 #[derive(Debug)]
 pub enum WriteError {
