@@ -1,3 +1,20 @@
+use std::{borrow::Cow, sync::Arc};
+
+use rustls23::{
+    pki_types::{CertificateDer, ServerName},
+    version::TLS13,
+};
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio_rustls::TlsConnector;
+
+use crate::{
+    cookiestash::CookieStash,
+    nts::messages::{KeyExchangeResponse, Request},
+    packet::{AesSivCmac256, AesSivCmac512, Cipher},
+    source::{ProtocolVersion, SourceNtsData},
+    tls_utils, NTP_DEFAULT_PORT,
+};
+
 mod messages;
 mod record;
 
@@ -52,6 +69,75 @@ impl From<NextProtocol> for u16 {
             NextProtocol::NTPv4 => 0,
             NextProtocol::DraftNTPv5 => 0x8001,
             NextProtocol::Unknown(v) => v,
+        }
+    }
+}
+
+fn extract_key_bytes<T: Default + AsMut<[u8]>, ConnectionData>(
+    tls_connection: &tls_utils::ConnectionCommon<ConnectionData>,
+    context: &[u8],
+) -> Result<T, tls_utils::Error> {
+    let mut key = T::default();
+    tls_connection.export_keying_material(
+        &mut key,
+        b"EXPORTER-network-time-security",
+        Some(context),
+    )?;
+
+    Ok(key)
+}
+
+struct NtsKeys {
+    c2s: Box<dyn Cipher>,
+    s2c: Box<dyn Cipher>,
+}
+
+impl NtsKeys {
+    fn extract_from_connection<T>(
+        tls_connection: &tls_utils::ConnectionCommon<T>,
+        protocol: NextProtocol,
+        algorithm: AeadAlgorithm,
+    ) -> Result<Self, NtsError> {
+        let protocol_id: u16 = protocol.into();
+        let algorithm_id: u16 = algorithm.into();
+
+        let c2s_context = &[
+            (protocol_id >> 8) as u8,
+            protocol_id as u8,
+            (algorithm_id >> 8) as u8,
+            algorithm_id as u8,
+            0,
+        ];
+        let s2c_context = &[
+            (protocol_id >> 8) as u8,
+            protocol_id as u8,
+            (algorithm_id >> 8) as u8,
+            algorithm_id as u8,
+            1,
+        ];
+
+        match algorithm {
+            AeadAlgorithm::AeadAesSivCmac256 => Ok(NtsKeys {
+                c2s: Box::new(AesSivCmac256::new(extract_key_bytes(
+                    tls_connection,
+                    c2s_context,
+                )?)),
+                s2c: Box::new(AesSivCmac256::new(extract_key_bytes(
+                    tls_connection,
+                    s2c_context,
+                )?)),
+            }),
+            AeadAlgorithm::AeadAesSivCmac512 => Ok(NtsKeys {
+                c2s: Box::new(AesSivCmac512::new(extract_key_bytes(
+                    tls_connection,
+                    c2s_context,
+                )?)),
+                s2c: Box::new(AesSivCmac512::new(extract_key_bytes(
+                    tls_connection,
+                    s2c_context,
+                )?)),
+            }),
+            AeadAlgorithm::Unknown(_) => Err(NtsError::Invalid),
         }
     }
 }
@@ -151,6 +237,8 @@ impl From<WarningCode> for u16 {
 #[derive(Debug)]
 pub enum NtsError {
     IO(std::io::Error),
+    Tls(tls_utils::Error),
+    Dns(tls_utils::InvalidDnsNameError),
     UnrecognizedCriticalRecord,
     Invalid,
     NoOverlappingProtocol,
@@ -169,10 +257,24 @@ impl From<std::io::Error> for NtsError {
     }
 }
 
+impl From<tls_utils::Error> for NtsError {
+    fn from(value: tls_utils::Error) -> Self {
+        Self::Tls(value)
+    }
+}
+
+impl From<tls_utils::InvalidDnsNameError> for NtsError {
+    fn from(value: tls_utils::InvalidDnsNameError) -> Self {
+        Self::Dns(value)
+    }
+}
+
 impl std::fmt::Display for NtsError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             NtsError::IO(error) => error.fmt(f),
+            NtsError::Tls(error) => error.fmt(f),
+            NtsError::Dns(error) => error.fmt(f),
             NtsError::UnrecognizedCriticalRecord => f.write_str("Unrecognized critical record"),
             NtsError::Invalid => f.write_str("Invalid request or response"),
             NtsError::NoOverlappingProtocol => f.write_str("No overlap in supported protocols"),
@@ -196,6 +298,106 @@ impl std::fmt::Display for NtsError {
 }
 
 impl std::error::Error for NtsError {}
+
+#[derive(Debug)]
+#[allow(unused)]
+pub struct KeyExchangeResult {
+    pub remote: String,
+    pub port: u16,
+    pub nts: Box<SourceNtsData>,
+    pub protocol_version: ProtocolVersion,
+}
+
+#[derive(Debug, Clone)]
+pub struct NtsClientConfig {
+    pub certificates: Arc<[CertificateDer<'static>]>,
+    pub protocol_version: ProtocolVersion,
+}
+
+struct KeyExchangeClient {
+    connector: TlsConnector,
+    protocols: Box<[NextProtocol]>,
+    algorithms: Box<[AeadAlgorithm]>,
+}
+
+impl KeyExchangeClient {
+    #[allow(unused)]
+    pub fn new(config: NtsClientConfig) -> Result<Self, NtsError> {
+        let builder = tls_utils::ClientConfig::builder_with_protocol_versions(&[&TLS13]);
+        let verifier =
+            tls_utils::PlatformVerifier::new_with_extra_roots(config.certificates.iter().cloned())?
+                .with_provider(builder.crypto_provider().clone());
+        let mut tls_config = builder
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(verifier))
+            .with_no_client_auth();
+        tls_config.alpn_protocols = vec![b"ntske/1".to_vec()];
+
+        Ok(KeyExchangeClient {
+            connector: TlsConnector::from(Arc::new(tls_config)),
+            protocols: match config.protocol_version {
+                ProtocolVersion::V4 => [NextProtocol::NTPv4].into(),
+                ProtocolVersion::V5 => [NextProtocol::DraftNTPv5].into(),
+                _ => [NextProtocol::DraftNTPv5, NextProtocol::NTPv4].into(),
+            },
+            algorithms: [
+                AeadAlgorithm::AeadAesSivCmac512,
+                AeadAlgorithm::AeadAesSivCmac256,
+            ]
+            .into(),
+        })
+    }
+
+    #[allow(unused)]
+    pub async fn exchange_keys(
+        &self,
+        io: impl AsyncRead + AsyncWrite + Unpin,
+        server_name: String,
+    ) -> Result<KeyExchangeResult, NtsError> {
+        let request = Request::KeyExchange {
+            algorithms: self.algorithms.as_ref().into(),
+            protocols: self.protocols.as_ref().into(),
+        };
+
+        let mut io = self
+            .connector
+            .connect(ServerName::try_from(server_name.clone())?, io)
+            .await?;
+
+        request.serialize(&mut io).await?;
+
+        let response = KeyExchangeResponse::parse(&mut io).await?;
+
+        let keys = NtsKeys::extract_from_connection(
+            io.get_ref().1,
+            response.protocol,
+            response.algorithm,
+        )?;
+
+        let mut cookies = CookieStash::default();
+        for cookie in response.cookies.into_owned().into_iter() {
+            cookies.store(cookie.into_owned());
+        }
+
+        Ok(KeyExchangeResult {
+            remote: response
+                .server
+                .unwrap_or(Cow::Owned(server_name))
+                .into_owned(),
+            port: response.port.unwrap_or(NTP_DEFAULT_PORT),
+            nts: Box::new(SourceNtsData {
+                cookies,
+                c2s: keys.c2s,
+                s2c: keys.s2c,
+            }),
+            protocol_version: match response.protocol {
+                NextProtocol::NTPv4 => ProtocolVersion::V4,
+                NextProtocol::DraftNTPv5 => ProtocolVersion::V5,
+                NextProtocol::Unknown(_) => return Err(NtsError::Invalid),
+            },
+        })
+    }
+}
 
 #[cfg(test)]
 mod tests {
