@@ -34,6 +34,8 @@ pub(crate) mod exitcode {
     pub const SOFTWARE: i32 = 70;
 }
 
+const NTP_DEFAULT_PORT: u16 = 123;
+
 // This is a mod so we can control visibility for the moment, but these really are intended to be the top-level things.
 mod generic {
     use std::fmt::Display;
