@@ -8,7 +8,7 @@ GPSd can be added as a time source for ntpd-rs by adding the following to the co
 ```toml
 [[source]]
 mode = "sock"
-path = "/run/chrony.ttyAMA0.sock"
+path = "/run/ntpd-rs/chrony.ttyAMA0.sock"
 precision = 1e-3
 ```
 The `path` points to the location of the socket that GPSd writes timing data to. This socket was originally meant for chrony, but ntpd-rs also supports this same socket format. Here, `ttyAMA0` is the GPS receiver device used by GPSd.
