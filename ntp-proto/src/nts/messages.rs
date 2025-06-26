@@ -403,7 +403,7 @@ impl NoOverlapResponse {
 }
 
 pub struct ErrorResponse {
-    errorcode: ErrorCode,
+    pub errorcode: ErrorCode,
 }
 
 impl ErrorResponse {

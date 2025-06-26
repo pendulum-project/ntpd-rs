@@ -1369,7 +1369,7 @@ impl Default for NtpPacket<'_> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        keyset::KeySetProvider, nts_record::AeadAlgorithm, system::TimeSnapshot,
+        keyset::KeySetProvider, nts::AeadAlgorithm, system::TimeSnapshot,
         time_types::PollIntervalLimits,
     };
 

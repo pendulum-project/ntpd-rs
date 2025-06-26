@@ -1,26 +1,27 @@
 use std::{borrow::Cow, sync::Arc};
 
-use rustls23::{
-    pki_types::{CertificateDer, ServerName},
-    version::TLS13,
-};
-use tokio::io::{AsyncRead, AsyncWrite};
-use tokio_rustls::TlsConnector;
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
+use tokio_rustls::{TlsAcceptor, TlsConnector};
 
 use crate::{
     cookiestash::CookieStash,
-    nts::messages::{KeyExchangeResponse, Request},
+    generic::NtpVersion,
+    keyset::KeySet,
+    nts::messages::{ErrorResponse, KeyExchangeResponse, NoOverlapResponse, Request},
     packet::{AesSivCmac256, AesSivCmac512, Cipher},
     source::{ProtocolVersion, SourceNtsData},
-    tls_utils, NTP_DEFAULT_PORT,
+    tls_utils::{self, Certificate, PrivateKey, ServerName, TLS13},
+    DecodedServerCookie, NTP_DEFAULT_PORT,
 };
 
 mod messages;
 mod record;
 
+const DEFAULT_NUMBER_OF_COOKIES: usize = 8;
+
 /// From https://www.iana.org/assignments/aead-parameters/aead-parameters.xhtml
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
-enum AeadAlgorithm {
+pub enum AeadAlgorithm {
     AeadAesSivCmac256,
     AeadAesSivCmac512,
     Unknown(u16),
@@ -310,8 +311,17 @@ pub struct KeyExchangeResult {
 
 #[derive(Debug, Clone)]
 pub struct NtsClientConfig {
-    pub certificates: Arc<[CertificateDer<'static>]>,
+    pub certificates: Arc<[Certificate]>,
     pub protocol_version: ProtocolVersion,
+}
+
+impl Default for NtsClientConfig {
+    fn default() -> Self {
+        Self {
+            certificates: Default::default(),
+            protocol_version: ProtocolVersion::V4,
+        }
+    }
 }
 
 struct KeyExchangeClient {
@@ -323,7 +333,7 @@ struct KeyExchangeClient {
 impl KeyExchangeClient {
     #[allow(unused)]
     pub fn new(config: NtsClientConfig) -> Result<Self, NtsError> {
-        let builder = tls_utils::ClientConfig::builder_with_protocol_versions(&[&TLS13]);
+        let builder = tls_utils::client_config_builder_with_protocol_versions(&[&TLS13]);
         let verifier =
             tls_utils::PlatformVerifier::new_with_extra_roots(config.certificates.iter().cloned())?
                 .with_provider(builder.crypto_provider().clone());
@@ -399,6 +409,160 @@ impl KeyExchangeClient {
     }
 }
 
+#[derive(Debug)]
+pub struct NtsServerConfig {
+    pub certificate_chain: Vec<Certificate>,
+    pub private_key: PrivateKey,
+    pub accepted_versions: Vec<NtpVersion>,
+    pub server: Option<String>,
+    pub port: Option<u16>,
+}
+
+struct KeyExchangeServer {
+    acceptor: TlsAcceptor,
+    protocols: Box<[NextProtocol]>,
+    server: Option<String>,
+    port: Option<u16>,
+}
+
+impl KeyExchangeServer {
+    #[allow(unused)]
+    pub fn new(config: NtsServerConfig) -> Result<Self, NtsError> {
+        let mut server_config = tls_utils::server_config_builder_with_protocol_versions(&[&TLS13])
+            .with_client_cert_verifier(Arc::new(tls_utils::NoClientAuth))
+            .with_single_cert(config.certificate_chain, config.private_key)?;
+        server_config.alpn_protocols = vec![b"ntske/1".to_vec()];
+
+        let protocols = config
+            .accepted_versions
+            .into_iter()
+            .filter_map(|v| match v {
+                NtpVersion::V3 => None,
+                NtpVersion::V4 => Some(NextProtocol::NTPv4),
+                NtpVersion::V5 => Some(NextProtocol::DraftNTPv5),
+            })
+            .collect();
+
+        Ok(KeyExchangeServer {
+            acceptor: TlsAcceptor::from(Arc::new(server_config)),
+            protocols,
+            server: config.server,
+            port: config.port,
+        })
+    }
+
+    #[allow(unused)]
+    pub async fn handle_connection(
+        &self,
+        io: impl AsyncRead + AsyncWrite + Unpin,
+        keyset: &KeySet,
+    ) -> Result<(), NtsError> {
+        let mut io = self.acceptor.accept(io).await?;
+
+        let request = match Request::parse(&mut io).await {
+            Ok(request) => request,
+            Err(NtsError::Invalid) => {
+                ErrorResponse {
+                    errorcode: ErrorCode::BadRequest,
+                }
+                .serialize(&mut io)
+                .await?;
+                io.shutdown().await?;
+                return Err(NtsError::Invalid);
+            }
+            Err(NtsError::UnrecognizedCriticalRecord) => {
+                ErrorResponse {
+                    errorcode: ErrorCode::UnrecognizedCriticalRecord,
+                }
+                .serialize(&mut io)
+                .await?;
+                io.shutdown().await?;
+                return Err(NtsError::Invalid);
+            }
+            Err(v) => return Err(v),
+        };
+
+        match request {
+            Request::KeyExchange {
+                algorithms,
+                protocols,
+            } => {
+                let protocol = protocols
+                    .iter()
+                    .find(|v| self.protocols.contains(v))
+                    .cloned();
+                let algorithm = algorithms
+                    .iter()
+                    .find(|v| !matches!(v, AeadAlgorithm::Unknown(_)))
+                    .cloned();
+
+                let result = match (protocol, algorithm) {
+                    (None, _) => {
+                        NoOverlapResponse::NoOverlappingProtocol
+                            .serialize(&mut io)
+                            .await;
+
+                        Err(NtsError::NoOverlappingProtocol)
+                    }
+                    (Some(protocol), None) => {
+                        NoOverlapResponse::NoOverlappingAlgorithm { protocol }
+                            .serialize(&mut io)
+                            .await;
+
+                        Err(NtsError::NoOverlappingAlgorithm)
+                    }
+                    (Some(protocol), Some(algorithm)) => {
+                        let keys = match NtsKeys::extract_from_connection(
+                            io.get_ref().1,
+                            protocol,
+                            algorithm,
+                        ) {
+                            Ok(keys) => keys,
+                            Err(e) => {
+                                ErrorResponse {
+                                    errorcode: ErrorCode::InternalServerError,
+                                }
+                                .serialize(&mut io)
+                                .await?;
+                                return Err(e);
+                            }
+                        };
+
+                        let cookie = DecodedServerCookie {
+                            algorithm,
+                            s2c: keys.s2c,
+                            c2s: keys.c2s,
+                        };
+
+                        let mut cookies = Vec::with_capacity(DEFAULT_NUMBER_OF_COOKIES);
+
+                        for _ in 0..DEFAULT_NUMBER_OF_COOKIES {
+                            cookies.push(keyset.encode_cookie(&cookie).into());
+                        }
+
+                        let response = KeyExchangeResponse {
+                            protocol,
+                            algorithm,
+                            cookies: cookies.into(),
+                            server: self.server.as_deref().map(|v| v.into()),
+                            port: self.port,
+                        };
+
+                        response.serialize(&mut io).await?;
+
+                        Ok(())
+                    }
+                };
+                io.shutdown().await?;
+
+                result
+            }
+            #[cfg(feature = "nts-pool")]
+            Request::FixedKey { .. } | Request::Support { .. } => todo!(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -429,5 +593,270 @@ mod tests {
         for i in 0..=u16::MAX {
             assert_eq!(i, u16::from(WarningCode::from(i)));
         }
+    }
+
+    #[tokio::test]
+    async fn test_keyexchange_roundtrip_v4() {
+        let (client, server) = tokio::io::duplex(2048);
+
+        let client = async move {
+            let certificates = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/testca.pem").as_slice(),
+            )
+            .collect::<Result<Arc<_>, _>>()
+            .unwrap();
+            let kex = KeyExchangeClient::new(NtsClientConfig {
+                certificates,
+                protocol_version: ProtocolVersion::V4,
+            })
+            .unwrap();
+            kex.exchange_keys(client, "localhost".into()).await.unwrap()
+        };
+
+        let server = async move {
+            let certificate_chain = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/end.fullchain.pem").as_slice(),
+            )
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+            let private_key = tls_utils::pemfile::private_key(
+                &mut include_bytes!("../../test-keys/end.key").as_slice(),
+            )
+            .unwrap();
+            let kex = KeyExchangeServer::new(NtsServerConfig {
+                certificate_chain,
+                private_key,
+                accepted_versions: vec![NtpVersion::V4],
+                server: None,
+                port: None,
+            })
+            .unwrap();
+            let keyset = KeySet::new();
+            assert!(kex.handle_connection(server, &keyset).await.is_ok());
+            keyset
+        };
+
+        let (mut kexresult, keyset) = tokio::join!(client, server);
+        assert_eq!(kexresult.protocol_version, ProtocolVersion::V4);
+
+        let mut count = 0;
+        while let Some(cookie) = kexresult.nts.get_cookie() {
+            let decoded = keyset.decode_cookie(&cookie).unwrap();
+
+            assert_eq!(decoded.c2s.key_bytes(), kexresult.nts.c2s.key_bytes());
+            assert_eq!(decoded.s2c.key_bytes(), kexresult.nts.s2c.key_bytes());
+            count += 1;
+        }
+        assert_eq!(count, 8);
+    }
+
+    #[tokio::test]
+    async fn test_keyexchange_roundtrip_v5() {
+        let (client, server) = tokio::io::duplex(2048);
+
+        let client = async move {
+            let certificates = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/testca.pem").as_slice(),
+            )
+            .collect::<Result<Arc<_>, _>>()
+            .unwrap();
+            let kex = KeyExchangeClient::new(NtsClientConfig {
+                certificates,
+                protocol_version: ProtocolVersion::V5,
+            })
+            .unwrap();
+            kex.exchange_keys(client, "localhost".into()).await.unwrap()
+        };
+
+        let server = async move {
+            let certificate_chain = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/end.fullchain.pem").as_slice(),
+            )
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+            let private_key = tls_utils::pemfile::private_key(
+                &mut include_bytes!("../../test-keys/end.key").as_slice(),
+            )
+            .unwrap();
+            let kex = KeyExchangeServer::new(NtsServerConfig {
+                certificate_chain,
+                private_key,
+                accepted_versions: vec![NtpVersion::V5],
+                server: None,
+                port: None,
+            })
+            .unwrap();
+            let keyset = KeySet::new();
+            assert!(kex.handle_connection(server, &keyset).await.is_ok());
+            keyset
+        };
+
+        let (mut kexresult, keyset) = tokio::join!(client, server);
+        assert_eq!(kexresult.protocol_version, ProtocolVersion::V5);
+
+        let mut count = 0;
+        while let Some(cookie) = kexresult.nts.get_cookie() {
+            let decoded = keyset.decode_cookie(&cookie).unwrap();
+
+            assert_eq!(decoded.c2s.key_bytes(), kexresult.nts.c2s.key_bytes());
+            assert_eq!(decoded.s2c.key_bytes(), kexresult.nts.s2c.key_bytes());
+            count += 1;
+        }
+        assert_eq!(count, 8);
+    }
+
+    #[tokio::test]
+    async fn test_keyexchange_roundtrip_upgrading() {
+        let (client, server) = tokio::io::duplex(2048);
+
+        let client = async move {
+            let certificates = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/testca.pem").as_slice(),
+            )
+            .collect::<Result<Arc<_>, _>>()
+            .unwrap();
+            let kex = KeyExchangeClient::new(NtsClientConfig {
+                certificates,
+                protocol_version: ProtocolVersion::V4UpgradingToV5 { tries_left: 8 },
+            })
+            .unwrap();
+            kex.exchange_keys(client, "localhost".into()).await.unwrap()
+        };
+
+        let server = async move {
+            let certificate_chain = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/end.fullchain.pem").as_slice(),
+            )
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+            let private_key = tls_utils::pemfile::private_key(
+                &mut include_bytes!("../../test-keys/end.key").as_slice(),
+            )
+            .unwrap();
+            let kex = KeyExchangeServer::new(NtsServerConfig {
+                certificate_chain,
+                private_key,
+                accepted_versions: vec![NtpVersion::V4, NtpVersion::V5],
+                server: None,
+                port: None,
+            })
+            .unwrap();
+            let keyset = KeySet::new();
+            assert!(kex.handle_connection(server, &keyset).await.is_ok());
+            keyset
+        };
+
+        let (mut kexresult, keyset) = tokio::join!(client, server);
+        assert_eq!(kexresult.protocol_version, ProtocolVersion::V5);
+
+        let mut count = 0;
+        while let Some(cookie) = kexresult.nts.get_cookie() {
+            let decoded = keyset.decode_cookie(&cookie).unwrap();
+
+            assert_eq!(decoded.c2s.key_bytes(), kexresult.nts.c2s.key_bytes());
+            assert_eq!(decoded.s2c.key_bytes(), kexresult.nts.s2c.key_bytes());
+            count += 1;
+        }
+        assert_eq!(count, 8);
+    }
+
+    #[tokio::test]
+    async fn test_keyexchange_roundtrip_no_upgrade_possible() {
+        let (client, server) = tokio::io::duplex(2048);
+
+        let client = async move {
+            let certificates = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/testca.pem").as_slice(),
+            )
+            .collect::<Result<Arc<_>, _>>()
+            .unwrap();
+            let kex = KeyExchangeClient::new(NtsClientConfig {
+                certificates,
+                protocol_version: ProtocolVersion::V4UpgradingToV5 { tries_left: 8 },
+            })
+            .unwrap();
+            kex.exchange_keys(client, "localhost".into()).await.unwrap()
+        };
+
+        let server = async move {
+            let certificate_chain = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/end.fullchain.pem").as_slice(),
+            )
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+            let private_key = tls_utils::pemfile::private_key(
+                &mut include_bytes!("../../test-keys/end.key").as_slice(),
+            )
+            .unwrap();
+            let kex = KeyExchangeServer::new(NtsServerConfig {
+                certificate_chain,
+                private_key,
+                accepted_versions: vec![NtpVersion::V4],
+                server: None,
+                port: None,
+            })
+            .unwrap();
+            let keyset = KeySet::new();
+            assert!(kex.handle_connection(server, &keyset).await.is_ok());
+            keyset
+        };
+
+        let (mut kexresult, keyset) = tokio::join!(client, server);
+        assert_eq!(kexresult.protocol_version, ProtocolVersion::V4);
+
+        let mut count = 0;
+        while let Some(cookie) = kexresult.nts.get_cookie() {
+            let decoded = keyset.decode_cookie(&cookie).unwrap();
+
+            assert_eq!(decoded.c2s.key_bytes(), kexresult.nts.c2s.key_bytes());
+            assert_eq!(decoded.s2c.key_bytes(), kexresult.nts.s2c.key_bytes());
+            count += 1;
+        }
+        assert_eq!(count, 8);
+    }
+
+    #[tokio::test]
+    async fn test_keyexchange_roundtrip_no_proto_overlap() {
+        let (client, server) = tokio::io::duplex(2048);
+
+        let client = async move {
+            let certificates = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/testca.pem").as_slice(),
+            )
+            .collect::<Result<Arc<_>, _>>()
+            .unwrap();
+            let kex = KeyExchangeClient::new(NtsClientConfig {
+                certificates,
+                protocol_version: ProtocolVersion::V5,
+            })
+            .unwrap();
+            kex.exchange_keys(client, "localhost".into()).await
+        };
+
+        let server = async move {
+            let certificate_chain = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/end.fullchain.pem").as_slice(),
+            )
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+            let private_key = tls_utils::pemfile::private_key(
+                &mut include_bytes!("../../test-keys/end.key").as_slice(),
+            )
+            .unwrap();
+            let kex = KeyExchangeServer::new(NtsServerConfig {
+                certificate_chain,
+                private_key,
+                accepted_versions: vec![NtpVersion::V4],
+                server: None,
+                port: None,
+            })
+            .unwrap();
+            let keyset = KeySet::new();
+            kex.handle_connection(server, &keyset).await
+        };
+
+        let (kexresult, serverresult) = tokio::join!(client, server);
+        assert!(matches!(kexresult, Err(NtsError::NoOverlappingProtocol)));
+        assert!(matches!(serverresult, Err(NtsError::NoOverlappingProtocol)));
     }
 }

@@ -426,8 +426,8 @@ mod tests {
     use std::net::{Ipv4Addr, Ipv6Addr};
 
     use crate::{
-        nts_record::AeadAlgorithm, packet::AesSivCmac256, Cipher, DecodedServerCookie,
-        KeySetProvider, NtpDuration, NtpLeapIndicator, PollIntervalLimits,
+        nts::AeadAlgorithm, packet::AesSivCmac256, Cipher, DecodedServerCookie, KeySetProvider,
+        NtpDuration, NtpLeapIndicator, PollIntervalLimits,
     };
 
     use super::*;
