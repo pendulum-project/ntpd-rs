@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.6.0] - 2025-06-26
+
+### Added
+- Support draft versions of NTPv5 with configuration changes.
+- Allow disabling ntp versions in the server.
+
+### Changed
+- NTPv5 draft support now targets draft 4.
+- Time jumps now emit warnings.
+- Updated dependencies.
+
+### Fixed
+- Fixed a crash in force-sync when using many servers.
+- Fixed root dispersion of the server not properly updating over time.
+- Fixed a bug in handling unsigned ntp deny messages.
+
 ## [1.5.0] - 2025-02-28
 
 ### Added
@@ -285,6 +301,7 @@ process.
 - Fixed a bug in peer dispersion calculation which resulted in overly
   pessimistic dispersion estimates.
 
+[1.6.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/pendulum-project/ntpd-rs/compare/v1.3.0...v1.3.1
