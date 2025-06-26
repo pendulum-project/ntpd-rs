@@ -6,7 +6,7 @@ use std::{
 use aead::{generic_array::GenericArray, KeyInit};
 
 use crate::{
-    nts_record::AeadAlgorithm,
+    nts::AeadAlgorithm,
     packet::{
         AesSivCmac256, AesSivCmac512, Cipher, CipherHolder, CipherProvider, DecryptError,
         EncryptResult, ExtensionField,
@@ -23,7 +23,7 @@ impl DecodedServerCookie {
     fn plaintext(&self) -> Vec<u8> {
         let mut plaintext = Vec::new();
 
-        let algorithm_bytes = (self.algorithm as u16).to_be_bytes();
+        let algorithm_bytes = u16::from(self.algorithm).to_be_bytes();
         plaintext.extend_from_slice(&algorithm_bytes);
         plaintext.extend_from_slice(self.s2c.key_bytes());
         plaintext.extend_from_slice(self.c2s.key_bytes());
@@ -216,8 +216,7 @@ impl KeySet {
             return Err(DecryptError);
         };
 
-        let algorithm =
-            AeadAlgorithm::try_deserialize(u16::from_be_bytes([b0, b1])).ok_or(DecryptError)?;
+        let algorithm = AeadAlgorithm::from(u16::from_be_bytes([b0, b1]));
 
         Ok(match algorithm {
             AeadAlgorithm::AeadAesSivCmac256 => {
@@ -250,6 +249,7 @@ impl KeySet {
                     c2s: Box::new(AesSivCmac512::new(GenericArray::clone_from_slice(c2s))),
                 }
             }
+            AeadAlgorithm::Unknown(_) => return Err(DecryptError),
         })
     }
 
