@@ -896,14 +896,14 @@ impl<'a> Iterator for ExtensionFieldStreamer<'a> {
 const fn next_multiple_of_u16(lhs: u16, rhs: u16) -> u16 {
     match lhs % rhs {
         0 => lhs,
-        r => lhs + (rhs - r),
+        r => lhs.wrapping_add(rhs - r),
     }
 }
 
 const fn next_multiple_of_usize(lhs: usize, rhs: usize) -> usize {
     match lhs % rhs {
         0 => lhs,
-        r => lhs + (rhs - r),
+        r => lhs.wrapping_add(rhs - r),
     }
 }
 
