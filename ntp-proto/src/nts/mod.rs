@@ -367,10 +367,15 @@ impl KeyExchangeClient {
         &self,
         io: impl AsyncRead + AsyncWrite + Unpin,
         server_name: String,
+        #[cfg_attr(not(feature = "nts-pool"), allow(unused))] denied_servers: impl IntoIterator<
+            Item = Cow<'_, str>,
+        >,
     ) -> Result<KeyExchangeResult, NtsError> {
         let request = Request::KeyExchange {
             algorithms: self.algorithms.as_ref().into(),
             protocols: self.protocols.as_ref().into(),
+            #[cfg(feature = "nts-pool")]
+            denied_servers: denied_servers.into_iter().collect::<Vec<_>>().into(),
         };
 
         let mut io = self
@@ -523,6 +528,7 @@ impl KeyExchangeServer {
             Request::KeyExchange {
                 algorithms,
                 protocols,
+                ..
             } => {
                 let protocol = protocols
                     .iter()
@@ -725,7 +731,9 @@ mod tests {
                 protocol_version: ProtocolVersion::V4,
             })
             .unwrap();
-            kex.exchange_keys(client, "localhost".into()).await.unwrap()
+            kex.exchange_keys(client, "localhost".into(), [])
+                .await
+                .unwrap()
         };
 
         let server = async move {
@@ -782,7 +790,9 @@ mod tests {
                 protocol_version: ProtocolVersion::V5,
             })
             .unwrap();
-            kex.exchange_keys(client, "localhost".into()).await.unwrap()
+            kex.exchange_keys(client, "localhost".into(), [])
+                .await
+                .unwrap()
         };
 
         let server = async move {
@@ -839,7 +849,9 @@ mod tests {
                 protocol_version: ProtocolVersion::V4UpgradingToV5 { tries_left: 8 },
             })
             .unwrap();
-            kex.exchange_keys(client, "localhost".into()).await.unwrap()
+            kex.exchange_keys(client, "localhost".into(), [])
+                .await
+                .unwrap()
         };
 
         let server = async move {
@@ -896,7 +908,9 @@ mod tests {
                 protocol_version: ProtocolVersion::V4UpgradingToV5 { tries_left: 8 },
             })
             .unwrap();
-            kex.exchange_keys(client, "localhost".into()).await.unwrap()
+            kex.exchange_keys(client, "localhost".into(), [])
+                .await
+                .unwrap()
         };
 
         let server = async move {
@@ -953,7 +967,7 @@ mod tests {
                 protocol_version: ProtocolVersion::V5,
             })
             .unwrap();
-            kex.exchange_keys(client, "localhost".into()).await
+            kex.exchange_keys(client, "localhost".into(), []).await
         };
 
         let server = async move {
