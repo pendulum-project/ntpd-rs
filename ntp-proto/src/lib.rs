@@ -131,10 +131,14 @@ mod exports {
         FrequencyTolerance, NtpDuration, NtpInstant, NtpTimestamp, PollInterval, PollIntervalLimits,
     };
 
+    #[cfg(feature = "__internal-fuzz")]
+    pub use super::nts::Request as KeyExchangeRequest;
     pub use super::nts::{
         KeyExchangeClient, KeyExchangeResult, KeyExchangeServer, NtsClientConfig, NtsError,
         NtsServerConfig,
     };
+    #[cfg(feature = "__internal-fuzz")]
+    pub use super::nts::{KeyExchangeResponse, NtsRecord};
 
     pub use super::cookiestash::MAX_COOKIES;
 

@@ -14,6 +14,7 @@ use super::{ErrorCode, WarningCode};
 pub enum NtsRecord<'a> {
     EndOfMessage,
     NextProtocol {
+        #[cfg_attr(feature = "__internal-fuzz", allow(private_interfaces))]
         protocol_ids: Cow<'a, [NextProtocol]>,
     },
     Error {

@@ -10,6 +10,7 @@ cargo-fuzz = true
 
 [dependencies]
 rand = "0.8.5"
+tokio = { version = "1.32", features = ["full"] }
 
 [dependencies.libfuzzer-sys]
 version = "0.4"
@@ -66,20 +67,14 @@ test = false
 doc = false
 
 [[bin]]
-name = "ntsrecord"
-path = "fuzz_targets/ntsrecord.rs"
+name = "key_exchange_request_parsing"
+path = "fuzz_targets/key_exchange_request_parsing.rs"
 test = false
 doc = false
 
 [[bin]]
-name = "key_exchange_result_decoder"
-path = "fuzz_targets/key_exchange_result_decoder.rs"
-test = false
-doc = false
-
-[[bin]]
-name = "key_exchange_server_decoder"
-path = "fuzz_targets/key_exchange_server_decoder.rs"
+name = "key_exchange_response_parsing"
+path = "fuzz_targets/key_exchange_response_parsing.rs"
 test = false
 doc = false
 

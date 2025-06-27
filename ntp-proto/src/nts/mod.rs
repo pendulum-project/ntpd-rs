@@ -7,12 +7,19 @@ use crate::{
     cookiestash::CookieStash,
     generic::NtpVersion,
     keyset::KeySet,
-    nts::messages::{ErrorResponse, KeyExchangeResponse, NoOverlapResponse, Request},
+    nts::messages::{ErrorResponse, NoOverlapResponse},
     packet::{AesSivCmac256, AesSivCmac512, Cipher},
     source::{ProtocolVersion, SourceNtsData},
     tls_utils::{self, Certificate, PrivateKey, ServerName, TLS13},
     DecodedServerCookie, NTP_DEFAULT_PORT,
 };
+
+#[cfg(feature = "__internal-fuzz")]
+pub use messages::{KeyExchangeResponse, Request};
+#[cfg(not(feature = "__internal-fuzz"))]
+use messages::{KeyExchangeResponse, Request};
+#[cfg(feature = "__internal-fuzz")]
+pub use record::NtsRecord;
 
 mod messages;
 mod record;
