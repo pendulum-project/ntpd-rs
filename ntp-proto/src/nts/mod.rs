@@ -152,7 +152,6 @@ struct AlgorithmDescription {
 
 #[cfg(feature = "nts-pool")]
 impl AeadAlgorithm {
-    #[allow(unused)]
     fn description(self) -> Option<AlgorithmDescription> {
         use crate::packet::{AesSivCmac256, AesSivCmac512};
 
@@ -305,7 +304,6 @@ impl std::fmt::Display for NtsError {
 impl std::error::Error for NtsError {}
 
 #[derive(Debug)]
-#[allow(unused)]
 pub struct KeyExchangeResult {
     pub remote: String,
     pub port: u16,
@@ -328,14 +326,13 @@ impl Default for NtsClientConfig {
     }
 }
 
-struct KeyExchangeClient {
+pub struct KeyExchangeClient {
     connector: TlsConnector,
     protocols: Box<[NextProtocol]>,
     algorithms: Box<[AeadAlgorithm]>,
 }
 
 impl KeyExchangeClient {
-    #[allow(unused)]
     pub fn new(config: NtsClientConfig) -> Result<Self, NtsError> {
         let builder = tls_utils::client_config_builder_with_protocol_versions(&[&TLS13]);
         let verifier =
@@ -362,7 +359,6 @@ impl KeyExchangeClient {
         })
     }
 
-    #[allow(unused)]
     pub async fn exchange_keys(
         &self,
         io: impl AsyncRead + AsyncWrite + Unpin,
@@ -429,7 +425,7 @@ pub struct NtsServerConfig {
     pub pool_certificates: Vec<Certificate>,
 }
 
-struct KeyExchangeServer {
+pub struct KeyExchangeServer {
     acceptor: TlsAcceptor,
     protocols: Box<[NextProtocol]>,
     #[cfg(feature = "nts-pool")]
@@ -441,12 +437,11 @@ struct KeyExchangeServer {
 }
 
 impl KeyExchangeServer {
-    #[allow(unused)]
     pub fn new(config: NtsServerConfig) -> Result<Self, NtsError> {
         let builder = tls_utils::server_config_builder_with_protocol_versions(&[&TLS13]);
         #[cfg(feature = "nts-pool")]
         let provider = builder.crypto_provider().clone();
-        let mut server_config = tls_utils::server_config_builder_with_protocol_versions(&[&TLS13])
+        let mut server_config = builder
             .with_client_cert_verifier(Arc::new(
                 #[cfg(not(feature = "nts-pool"))]
                 tls_utils::NoClientAuth,
@@ -493,7 +488,6 @@ impl KeyExchangeServer {
             .unwrap_or(false)
     }
 
-    #[allow(unused)]
     pub async fn handle_connection(
         &self,
         io: impl AsyncRead + AsyncWrite + Unpin,
@@ -543,14 +537,14 @@ impl KeyExchangeServer {
                     (None, _) => {
                         NoOverlapResponse::NoOverlappingProtocol
                             .serialize(&mut io)
-                            .await;
+                            .await?;
 
                         Err(NtsError::NoOverlappingProtocol)
                     }
                     (Some(protocol), None) => {
                         NoOverlapResponse::NoOverlappingAlgorithm { protocol }
                             .serialize(&mut io)
-                            .await;
+                            .await?;
 
                         Err(NtsError::NoOverlappingAlgorithm)
                     }

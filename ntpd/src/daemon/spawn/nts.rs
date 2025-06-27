@@ -2,16 +2,18 @@ use std::fmt::Display;
 use std::net::SocketAddr;
 use std::ops::Deref;
 
-use ntp_proto::SourceConfig;
+use ntp_proto::{KeyExchangeClient, NtsClientConfig, NtsError, SourceConfig};
+use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tracing::warn;
 
-use super::super::{config::NtsSourceConfig, keyexchange::key_exchange_client};
+use super::super::config::NtsSourceConfig;
 
 use super::{SourceId, SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId};
 
 pub struct NtsSpawner {
     config: NtsSourceConfig,
+    key_exchange_client: KeyExchangeClient,
     source_config: SourceConfig,
     id: SpawnerId,
     has_spawned: bool,
@@ -55,13 +57,22 @@ pub(super) async fn resolve_addr(address: (&str, u16)) -> Option<SocketAddr> {
 }
 
 impl NtsSpawner {
-    pub fn new(config: NtsSourceConfig, source_config: SourceConfig) -> NtsSpawner {
-        NtsSpawner {
+    pub fn new(
+        config: NtsSourceConfig,
+        source_config: SourceConfig,
+    ) -> Result<NtsSpawner, NtsError> {
+        let key_exchange_client = KeyExchangeClient::new(NtsClientConfig {
+            certificates: config.certificate_authorities.clone(),
+            protocol_version: config.ntp_version,
+        })?;
+
+        Ok(NtsSpawner {
             config,
+            key_exchange_client,
             source_config,
             id: Default::default(),
             has_spawned: false,
-        }
+        })
     }
 }
 
@@ -73,13 +84,23 @@ impl Spawner for NtsSpawner {
         &mut self,
         action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), NtsSpawnError> {
-        match key_exchange_client(
-            self.config.address.server_name.clone(),
+        let io = match TcpStream::connect((
+            self.config.address.server_name.as_str(),
             self.config.address.port,
-            &self.config.certificate_authorities,
-            self.config.ntp_version,
-        )
+        ))
         .await
+        {
+            Ok(io) => io,
+            Err(e) => {
+                warn!(error = ?e, "error while attempting key exchange");
+                return Ok(());
+            }
+        };
+
+        match self
+            .key_exchange_client
+            .exchange_keys(io, self.config.address.server_name.clone(), [])
+            .await
         {
             Ok(ke) => {
                 if let Some(address) = resolve_addr((ke.remote.as_str(), ke.port)).await {

@@ -1,14 +1,14 @@
+use std::borrow::Cow;
 use std::fmt::Display;
 use std::ops::Deref;
 
+use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tracing::warn;
 
-use ntp_proto::SourceConfig;
+use ntp_proto::{KeyExchangeClient, NtsClientConfig, NtsError, SourceConfig};
 
-use super::super::{
-    config::NtsPoolSourceConfig, keyexchange::key_exchange_client_with_denied_servers,
-};
+use super::super::config::NtsPoolSourceConfig;
 
 use super::{SourceId, SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId};
 
@@ -21,6 +21,7 @@ struct PoolSource {
 
 pub struct NtsPoolSpawner {
     config: NtsPoolSourceConfig,
+    key_exchange_client: KeyExchangeClient,
     source_config: SourceConfig,
     id: SpawnerId,
     current_sources: Vec<PoolSource>,
@@ -48,13 +49,22 @@ impl From<mpsc::error::SendError<SpawnEvent>> for NtsPoolSpawnError {
 }
 
 impl NtsPoolSpawner {
-    pub fn new(config: NtsPoolSourceConfig, source_config: SourceConfig) -> NtsPoolSpawner {
-        NtsPoolSpawner {
+    pub fn new(
+        config: NtsPoolSourceConfig,
+        source_config: SourceConfig,
+    ) -> Result<NtsPoolSpawner, NtsError> {
+        let key_exchange_client = KeyExchangeClient::new(NtsClientConfig {
+            certificates: config.certificate_authorities.clone(),
+            protocol_version: config.ntp_version,
+        })?;
+
+        Ok(NtsPoolSpawner {
             config,
+            key_exchange_client,
             source_config,
             id: Default::default(),
             current_sources: Default::default(),
-        }
+        })
     }
 
     fn contains_source(&self, domain: &str) -> bool {
@@ -73,16 +83,29 @@ impl Spawner for NtsPoolSpawner {
         action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), NtsPoolSpawnError> {
         for _ in 0..self.config.count.saturating_sub(self.current_sources.len()) {
-            match key_exchange_client_with_denied_servers(
-                self.config.addr.server_name.clone(),
+            let io = match TcpStream::connect((
+                self.config.addr.server_name.as_str(),
                 self.config.addr.port,
-                &self.config.certificate_authorities,
-                self.config.ntp_version,
-                self.current_sources
-                    .iter()
-                    .map(|source| source.remote.clone()),
-            )
+            ))
             .await
+            {
+                Ok(io) => io,
+                Err(e) => {
+                    warn!(error = ?e, "error while attempting key exchange");
+                    break;
+                }
+            };
+
+            match self
+                .key_exchange_client
+                .exchange_keys(
+                    io,
+                    self.config.addr.server_name.clone(),
+                    self.current_sources
+                        .iter()
+                        .map(|source| Cow::Borrowed(source.remote.as_str())),
+                )
+                .await
             {
                 Ok(ke) if !self.contains_source(&ke.remote) => {
                     if let Some(address) = resolve_addr((ke.remote.as_str(), ke.port)).await {
