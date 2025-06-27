@@ -263,13 +263,10 @@ jobs:
           - fuzz_target: ipfilter
             corpus: ""
             features: ''
-          - fuzz_target: key_exchange_result_decoder
+          - fuzz_target: key_exchange_response_parsing
             corpus: ""
             features: ''
-          - fuzz_target: key_exchange_server_decoder
-            corpus: ""
-            features: ''
-          - fuzz_target: ntsrecord
+          - fuzz_target: key_exchange_request_parsing
             corpus: ""
             features: ''
           - fuzz_target: packet_keyset
