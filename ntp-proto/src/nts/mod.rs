@@ -241,6 +241,7 @@ pub enum NtsError {
     Dns(tls_utils::InvalidDnsNameError),
     UnrecognizedCriticalRecord,
     Invalid,
+    NoCookie,
     NoOverlappingProtocol,
     NoOverlappingAlgorithm,
     UnknownWarning(u16),
@@ -279,6 +280,7 @@ impl std::fmt::Display for NtsError {
             NtsError::Dns(error) => error.fmt(f),
             NtsError::UnrecognizedCriticalRecord => f.write_str("Unrecognized critical record"),
             NtsError::Invalid => f.write_str("Invalid request or response"),
+            NtsError::NoCookie => f.write_str("Remote provided no cookies"),
             NtsError::NoOverlappingProtocol => f.write_str("No overlap in supported protocols"),
             NtsError::NoOverlappingAlgorithm => {
                 f.write_str("No overlap in supported AEAD algorithms")
@@ -392,6 +394,10 @@ impl KeyExchangeClient {
         let mut cookies = CookieStash::default();
         for cookie in response.cookies.into_owned().into_iter() {
             cookies.store(cookie.into_owned());
+        }
+
+        if cookies.is_empty() {
+            return Err(NtsError::NoCookie);
         }
 
         Ok(KeyExchangeResult {
@@ -991,6 +997,63 @@ mod tests {
         let (kexresult, serverresult) = tokio::join!(client, server);
         assert!(matches!(kexresult, Err(NtsError::NoOverlappingProtocol)));
         assert!(matches!(serverresult, Err(NtsError::NoOverlappingProtocol)));
+    }
+
+    #[tokio::test]
+    async fn test_key_exchange_roundtrip_no_cookies() {
+        let (client, server) = tokio::io::duplex(2048);
+
+        let client = async move {
+            let certificates = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/testca.pem").as_slice(),
+            )
+            .collect::<Result<Arc<_>, _>>()
+            .unwrap();
+            let kex = KeyExchangeClient::new(NtsClientConfig {
+                certificates,
+                protocol_version: ProtocolVersion::V4,
+            })
+            .unwrap();
+            kex.exchange_keys(client, "localhost".into(), []).await
+        };
+
+        let server = async move {
+            let certificate_chain = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/end.fullchain.pem").as_slice(),
+            )
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+            let private_key = tls_utils::pemfile::private_key(
+                &mut include_bytes!("../../test-keys/end.key").as_slice(),
+            )
+            .unwrap();
+            let kex = KeyExchangeServer::new(NtsServerConfig {
+                certificate_chain,
+                private_key,
+                accepted_versions: vec![NtpVersion::V4],
+                server: None,
+                port: None,
+                #[cfg(feature = "nts-pool")]
+                pool_certificates: vec![],
+            })
+            .unwrap();
+            let mut server = kex.acceptor.accept(server).await.unwrap();
+            Request::parse(&mut server).await.unwrap();
+            KeyExchangeResponse {
+                protocol: NextProtocol::NTPv4,
+                algorithm: AeadAlgorithm::AeadAesSivCmac256,
+                cookies: [].as_slice().into(),
+                server: None,
+                port: None,
+            }
+            .serialize(&mut server)
+            .await
+            .unwrap();
+            server.shutdown().await.unwrap();
+        };
+
+        let (kexresult, _) = tokio::join!(client, server);
+        assert!(matches!(kexresult, Err(NtsError::NoCookie)));
     }
 
     #[cfg(feature = "nts-pool")]
