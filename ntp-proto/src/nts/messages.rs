@@ -13,6 +13,7 @@ use super::{AeadAlgorithm, ErrorCode, NextProtocol, NtsError, WarningCode};
 pub enum Request<'a> {
     KeyExchange {
         algorithms: Cow<'a, [AeadAlgorithm]>,
+        #[cfg_attr(feature = "__internal-fuzz", allow(private_interfaces))]
         protocols: Cow<'a, [NextProtocol]>,
         #[cfg(feature = "nts-pool")]
         denied_servers: Cow<'a, [Cow<'a, str>]>,
@@ -251,6 +252,7 @@ impl Request<'_> {
 }
 
 pub struct KeyExchangeResponse<'a> {
+    #[cfg_attr(feature = "__internal-fuzz", allow(private_interfaces))]
     pub protocol: NextProtocol,
     pub algorithm: AeadAlgorithm,
     pub cookies: Cow<'a, [Cow<'a, [u8]>]>,
