@@ -425,8 +425,8 @@ impl ErrorResponse {
 
 #[cfg(feature = "nts-pool")]
 pub struct SupportsResponse<'a> {
-    algorithms: Option<Cow<'a, [AlgorithmDescription]>>,
-    protocols: Option<Cow<'a, [NextProtocol]>>,
+    pub algorithms: Option<Cow<'a, [AlgorithmDescription]>>,
+    pub protocols: Option<Cow<'a, [NextProtocol]>>,
 }
 
 #[cfg(feature = "nts-pool")]
