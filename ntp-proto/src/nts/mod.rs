@@ -250,6 +250,8 @@ pub enum NtsError {
     AeadNotSupported(u16),
     #[cfg(feature = "nts-pool")]
     IncorrectSizedKey,
+    #[cfg(feature = "nts-pool")]
+    NotPermitted,
 }
 
 impl From<std::io::Error> for NtsError {
@@ -294,6 +296,8 @@ impl std::fmt::Display for NtsError {
             NtsError::IncorrectSizedKey => {
                 write!(f, "Received fix key request with incorrectly sized key(s)")
             }
+            #[cfg(feature = "nts-pool")]
+            NtsError::NotPermitted => write!(f, "Request not permitted without authentication"),
         }
     }
 }
@@ -416,20 +420,34 @@ pub struct NtsServerConfig {
     pub accepted_versions: Vec<NtpVersion>,
     pub server: Option<String>,
     pub port: Option<u16>,
+    #[cfg(feature = "nts-pool")]
+    pub pool_certificates: Vec<Certificate>,
 }
 
 struct KeyExchangeServer {
     acceptor: TlsAcceptor,
     protocols: Box<[NextProtocol]>,
+    #[cfg(feature = "nts-pool")]
+    algorithms: Box<[AlgorithmDescription]>,
     server: Option<String>,
     port: Option<u16>,
+    #[cfg(feature = "nts-pool")]
+    pool_certificates: Vec<Certificate>,
 }
 
 impl KeyExchangeServer {
     #[allow(unused)]
     pub fn new(config: NtsServerConfig) -> Result<Self, NtsError> {
+        let builder = tls_utils::server_config_builder_with_protocol_versions(&[&TLS13]);
+        #[cfg(feature = "nts-pool")]
+        let provider = builder.crypto_provider().clone();
         let mut server_config = tls_utils::server_config_builder_with_protocol_versions(&[&TLS13])
-            .with_client_cert_verifier(Arc::new(tls_utils::NoClientAuth))
+            .with_client_cert_verifier(Arc::new(
+                #[cfg(not(feature = "nts-pool"))]
+                tls_utils::NoClientAuth,
+                #[cfg(feature = "nts-pool")]
+                tls_utils::AllowAnyAnonymousOrCertificateBearingClient::new(&provider),
+            ))
             .with_single_cert(config.certificate_chain, config.private_key)?;
         server_config.alpn_protocols = vec![b"ntske/1".to_vec()];
 
@@ -446,9 +464,28 @@ impl KeyExchangeServer {
         Ok(KeyExchangeServer {
             acceptor: TlsAcceptor::from(Arc::new(server_config)),
             protocols,
+            #[cfg(feature = "nts-pool")]
+            algorithms: Box::new([
+                AeadAlgorithm::AeadAesSivCmac256
+                    .description()
+                    .expect("Missing description for AEAD algorithm"),
+                AeadAlgorithm::AeadAesSivCmac512
+                    .description()
+                    .expect("Missing description for AEAD algorithm"),
+            ]),
             server: config.server,
             port: config.port,
+            #[cfg(feature = "nts-pool")]
+            pool_certificates: config.pool_certificates,
         })
+    }
+
+    #[cfg(feature = "nts-pool")]
+    fn is_priviliged<T>(&self, tls: &tls_utils::ConnectionCommon<T>) -> bool {
+        tls.peer_certificates()
+            .and_then(|cert_chain| cert_chain.first())
+            .map(|cert| self.pool_certificates.contains(cert))
+            .unwrap_or(false)
     }
 
     #[allow(unused)]
@@ -558,7 +595,85 @@ impl KeyExchangeServer {
                 result
             }
             #[cfg(feature = "nts-pool")]
-            Request::FixedKey { .. } | Request::Support { .. } => todo!(),
+            Request::FixedKey {
+                c2s_key,
+                s2c_key,
+                algorithm,
+                protocol,
+            } if self.is_priviliged(io.get_ref().1) => {
+                let cookie = DecodedServerCookie {
+                    algorithm,
+                    s2c: s2c_key,
+                    c2s: c2s_key,
+                };
+
+                let mut cookies = Vec::with_capacity(DEFAULT_NUMBER_OF_COOKIES);
+
+                for _ in 0..DEFAULT_NUMBER_OF_COOKIES {
+                    cookies.push(keyset.encode_cookie(&cookie).into());
+                }
+
+                let response = KeyExchangeResponse {
+                    protocol,
+                    algorithm,
+                    cookies: cookies.into(),
+                    server: self.server.as_deref().map(|v| v.into()),
+                    port: self.port,
+                };
+
+                response.serialize(&mut io).await?;
+                io.shutdown().await?;
+
+                Ok(())
+            }
+            #[cfg(feature = "nts-pool")]
+            Request::FixedKey { .. } => {
+                ErrorResponse {
+                    errorcode: ErrorCode::BadRequest,
+                }
+                .serialize(&mut io)
+                .await?;
+                io.shutdown().await?;
+
+                Err(NtsError::NotPermitted)
+            }
+            #[cfg(feature = "nts-pool")]
+            Request::Support {
+                wants_protocols,
+                wants_algorithms,
+            } if self.is_priviliged(io.get_ref().1) => {
+                use crate::nts::messages::SupportsResponse;
+                use std::ops::Deref;
+
+                SupportsResponse {
+                    algorithms: if wants_algorithms {
+                        Some(self.algorithms.deref().into())
+                    } else {
+                        None
+                    },
+                    protocols: if wants_protocols {
+                        Some(self.protocols.deref().into())
+                    } else {
+                        None
+                    },
+                }
+                .serialize(&mut io)
+                .await?;
+                io.shutdown().await?;
+
+                Ok(())
+            }
+            #[cfg(feature = "nts-pool")]
+            Request::Support { .. } => {
+                ErrorResponse {
+                    errorcode: ErrorCode::BadRequest,
+                }
+                .serialize(&mut io)
+                .await?;
+                io.shutdown().await?;
+
+                Err(NtsError::NotPermitted)
+            }
         }
     }
 }
@@ -629,6 +744,8 @@ mod tests {
                 accepted_versions: vec![NtpVersion::V4],
                 server: None,
                 port: None,
+                #[cfg(feature = "nts-pool")]
+                pool_certificates: vec![],
             })
             .unwrap();
             let keyset = KeySet::new();
@@ -684,6 +801,8 @@ mod tests {
                 accepted_versions: vec![NtpVersion::V5],
                 server: None,
                 port: None,
+                #[cfg(feature = "nts-pool")]
+                pool_certificates: vec![],
             })
             .unwrap();
             let keyset = KeySet::new();
@@ -739,6 +858,8 @@ mod tests {
                 accepted_versions: vec![NtpVersion::V4, NtpVersion::V5],
                 server: None,
                 port: None,
+                #[cfg(feature = "nts-pool")]
+                pool_certificates: vec![],
             })
             .unwrap();
             let keyset = KeySet::new();
@@ -794,6 +915,8 @@ mod tests {
                 accepted_versions: vec![NtpVersion::V4],
                 server: None,
                 port: None,
+                #[cfg(feature = "nts-pool")]
+                pool_certificates: vec![],
             })
             .unwrap();
             let keyset = KeySet::new();
@@ -849,6 +972,8 @@ mod tests {
                 accepted_versions: vec![NtpVersion::V4],
                 server: None,
                 port: None,
+                #[cfg(feature = "nts-pool")]
+                pool_certificates: vec![],
             })
             .unwrap();
             let keyset = KeySet::new();
@@ -858,5 +983,354 @@ mod tests {
         let (kexresult, serverresult) = tokio::join!(client, server);
         assert!(matches!(kexresult, Err(NtsError::NoOverlappingProtocol)));
         assert!(matches!(serverresult, Err(NtsError::NoOverlappingProtocol)));
+    }
+
+    #[cfg(feature = "nts-pool")]
+    #[tokio::test]
+    async fn test_keyexchange_roundtrip_fixed_key() {
+        let (client, server) = tokio::io::duplex(2048);
+
+        let client = async move {
+            let certificates = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/testca.pem").as_slice(),
+            )
+            .collect::<Result<Arc<_>, _>>()
+            .unwrap();
+            let certificate_chain = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/end.fullchain.pem").as_slice(),
+            )
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+            let private_key = tls_utils::pemfile::private_key(
+                &mut include_bytes!("../../test-keys/end.key").as_slice(),
+            )
+            .unwrap();
+
+            let builder = tls_utils::client_config_builder_with_protocol_versions(&[&TLS13]);
+            let verifier =
+                tls_utils::PlatformVerifier::new_with_extra_roots(certificates.iter().cloned())
+                    .unwrap()
+                    .with_provider(builder.crypto_provider().clone());
+            let mut tls_config = builder
+                .dangerous()
+                .with_custom_certificate_verifier(Arc::new(verifier))
+                .with_client_auth_cert(certificate_chain, private_key)
+                .unwrap();
+            tls_config.alpn_protocols = vec![b"ntske/1".into()];
+            let connector = TlsConnector::from(Arc::new(tls_config));
+
+            let mut client = connector
+                .connect(ServerName::try_from("localhost").unwrap(), client)
+                .await
+                .unwrap();
+
+            client
+                .write_all(&[
+                    0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+                    18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
+                    38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
+                    58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x80, 0, 0,
+                    0,
+                ])
+                .await
+                .unwrap();
+
+            KeyExchangeResponse::parse(&mut client).await.unwrap()
+        };
+
+        let server = async move {
+            let certificate_chain = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/end.fullchain.pem").as_slice(),
+            )
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+            let private_key = tls_utils::pemfile::private_key(
+                &mut include_bytes!("../../test-keys/end.key").as_slice(),
+            )
+            .unwrap();
+            let pool_certificates = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/end.pem").as_slice(),
+            )
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+            let kex = KeyExchangeServer::new(NtsServerConfig {
+                certificate_chain,
+                private_key,
+                accepted_versions: vec![NtpVersion::V4],
+                server: None,
+                port: None,
+                #[cfg(feature = "nts-pool")]
+                pool_certificates,
+            })
+            .unwrap();
+            let keyset = KeySet::new();
+            kex.handle_connection(server, &keyset).await.unwrap();
+            keyset
+        };
+
+        let (response, keyset) = tokio::join!(client, server);
+
+        assert_eq!(response.algorithm, AeadAlgorithm::AeadAesSivCmac256);
+        assert_eq!(response.protocol, NextProtocol::NTPv4);
+
+        for cookie in response.cookies.iter() {
+            let decoded = keyset.decode_cookie(cookie).unwrap();
+            assert_eq!(
+                decoded.c2s.key_bytes(),
+                [
+                    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
+                    22, 23, 24, 25, 26, 27, 28, 29, 30, 31
+                ]
+            );
+            assert_eq!(
+                decoded.s2c.key_bytes(),
+                [
+                    32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51,
+                    52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63
+                ]
+            );
+        }
+    }
+
+    #[cfg(feature = "nts-pool")]
+    #[tokio::test]
+    async fn test_keyexchange_fixed_key_no_permission() {
+        let (client, server) = tokio::io::duplex(2048);
+
+        let client = async move {
+            let certificates = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/testca.pem").as_slice(),
+            )
+            .collect::<Result<Arc<_>, _>>()
+            .unwrap();
+
+            let builder = tls_utils::client_config_builder_with_protocol_versions(&[&TLS13]);
+            let verifier =
+                tls_utils::PlatformVerifier::new_with_extra_roots(certificates.iter().cloned())
+                    .unwrap()
+                    .with_provider(builder.crypto_provider().clone());
+            let mut tls_config = builder
+                .dangerous()
+                .with_custom_certificate_verifier(Arc::new(verifier))
+                .with_no_client_auth();
+            tls_config.alpn_protocols = vec![b"ntske/1".into()];
+            let connector = TlsConnector::from(Arc::new(tls_config));
+
+            let mut client = connector
+                .connect(ServerName::try_from("localhost").unwrap(), client)
+                .await
+                .unwrap();
+
+            client
+                .write_all(&[
+                    0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+                    18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
+                    38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
+                    58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x80, 0, 0,
+                    0,
+                ])
+                .await
+                .unwrap();
+
+            KeyExchangeResponse::parse(&mut client).await
+        };
+
+        let server = async move {
+            let certificate_chain = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/end.fullchain.pem").as_slice(),
+            )
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+            let private_key = tls_utils::pemfile::private_key(
+                &mut include_bytes!("../../test-keys/end.key").as_slice(),
+            )
+            .unwrap();
+            let pool_certificates = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/end.pem").as_slice(),
+            )
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+            let kex = KeyExchangeServer::new(NtsServerConfig {
+                certificate_chain,
+                private_key,
+                accepted_versions: vec![NtpVersion::V4],
+                server: None,
+                port: None,
+                #[cfg(feature = "nts-pool")]
+                pool_certificates,
+            })
+            .unwrap();
+            let keyset = KeySet::new();
+            kex.handle_connection(server, &keyset).await
+        };
+
+        let (response, kexerror) = tokio::join!(client, server);
+
+        assert!(response.is_err());
+        assert!(kexerror.is_err());
+    }
+
+    #[cfg(feature = "nts-pool")]
+    #[tokio::test]
+    async fn test_keyexchange_roundtrip_supports() {
+        let (client, server) = tokio::io::duplex(2048);
+
+        let client = async move {
+            use tokio::io::AsyncReadExt;
+
+            let certificates = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/testca.pem").as_slice(),
+            )
+            .collect::<Result<Arc<_>, _>>()
+            .unwrap();
+            let certificate_chain = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/end.fullchain.pem").as_slice(),
+            )
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+            let private_key = tls_utils::pemfile::private_key(
+                &mut include_bytes!("../../test-keys/end.key").as_slice(),
+            )
+            .unwrap();
+
+            let builder = tls_utils::client_config_builder_with_protocol_versions(&[&TLS13]);
+            let verifier =
+                tls_utils::PlatformVerifier::new_with_extra_roots(certificates.iter().cloned())
+                    .unwrap()
+                    .with_provider(builder.crypto_provider().clone());
+            let mut tls_config = builder
+                .dangerous()
+                .with_custom_certificate_verifier(Arc::new(verifier))
+                .with_client_auth_cert(certificate_chain, private_key)
+                .unwrap();
+            tls_config.alpn_protocols = vec![b"ntske/1".into()];
+            let connector = TlsConnector::from(Arc::new(tls_config));
+
+            let mut client = connector
+                .connect(ServerName::try_from("localhost").unwrap(), client)
+                .await
+                .unwrap();
+
+            client
+                .write_all(&[0xC0, 4, 0, 0, 0xC0, 1, 0, 0, 0x80, 0, 0, 0])
+                .await
+                .unwrap();
+
+            let mut data = vec![];
+            client.read_to_end(&mut data).await.unwrap();
+            data
+        };
+
+        let server = async move {
+            let certificate_chain = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/end.fullchain.pem").as_slice(),
+            )
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+            let private_key = tls_utils::pemfile::private_key(
+                &mut include_bytes!("../../test-keys/end.key").as_slice(),
+            )
+            .unwrap();
+            let pool_certificates = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/end.pem").as_slice(),
+            )
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+            let kex = KeyExchangeServer::new(NtsServerConfig {
+                certificate_chain,
+                private_key,
+                accepted_versions: vec![NtpVersion::V4],
+                server: None,
+                port: None,
+                #[cfg(feature = "nts-pool")]
+                pool_certificates,
+            })
+            .unwrap();
+            let keyset = KeySet::new();
+            kex.handle_connection(server, &keyset).await.unwrap();
+        };
+
+        let (response, _) = tokio::join!(client, server);
+
+        assert_eq!(
+            response,
+            [0xC0, 1, 0, 8, 0, 15, 0, 32, 0, 17, 0, 64, 0xC0, 4, 0, 2, 0, 0, 0x80, 0, 0, 0]
+        );
+    }
+
+    #[cfg(feature = "nts-pool")]
+    #[tokio::test]
+    async fn test_keyexchange_supports_no_permission() {
+        let (client, server) = tokio::io::duplex(2048);
+
+        let client = async move {
+            use tokio::io::AsyncReadExt;
+
+            let certificates = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/testca.pem").as_slice(),
+            )
+            .collect::<Result<Arc<_>, _>>()
+            .unwrap();
+
+            let builder = tls_utils::client_config_builder_with_protocol_versions(&[&TLS13]);
+            let verifier =
+                tls_utils::PlatformVerifier::new_with_extra_roots(certificates.iter().cloned())
+                    .unwrap()
+                    .with_provider(builder.crypto_provider().clone());
+            let mut tls_config = builder
+                .dangerous()
+                .with_custom_certificate_verifier(Arc::new(verifier))
+                .with_no_client_auth();
+            tls_config.alpn_protocols = vec![b"ntske/1".into()];
+            let connector = TlsConnector::from(Arc::new(tls_config));
+
+            let mut client = connector
+                .connect(ServerName::try_from("localhost").unwrap(), client)
+                .await
+                .unwrap();
+
+            client
+                .write_all(&[0xC0, 4, 0, 0, 0xC0, 1, 0, 0, 0x80, 0, 0, 0])
+                .await
+                .unwrap();
+
+            let mut data = vec![];
+            client.read_to_end(&mut data).await.unwrap();
+            data
+        };
+
+        let server = async move {
+            let certificate_chain = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/end.fullchain.pem").as_slice(),
+            )
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+            let private_key = tls_utils::pemfile::private_key(
+                &mut include_bytes!("../../test-keys/end.key").as_slice(),
+            )
+            .unwrap();
+            let pool_certificates = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/end.pem").as_slice(),
+            )
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+            let kex = KeyExchangeServer::new(NtsServerConfig {
+                certificate_chain,
+                private_key,
+                accepted_versions: vec![NtpVersion::V4],
+                server: None,
+                port: None,
+                #[cfg(feature = "nts-pool")]
+                pool_certificates,
+            })
+            .unwrap();
+            let keyset = KeySet::new();
+            kex.handle_connection(server, &keyset).await
+        };
+
+        let (response, server_res) = tokio::join!(client, server);
+
+        assert_eq!(response, [0x80, 2, 0, 2, 0, 1, 0x80, 0, 0, 0]);
+        assert!(server_res.is_err());
     }
 }
