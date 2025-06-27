@@ -256,7 +256,7 @@ impl KeySet {
     #[cfg(test)]
     pub(crate) fn new() -> Self {
         Self {
-            keys: vec![AesSivCmac512::new(std::iter::repeat(0).take(64).collect())],
+            keys: vec![AesSivCmac512::new(std::iter::repeat_n(0, 64).collect())],
             id_offset: 1,
             primary: 0,
         }
@@ -316,7 +316,7 @@ mod tests {
         };
 
         let keyset = KeySet {
-            keys: vec![AesSivCmac512::new(std::iter::repeat(0).take(64).collect())],
+            keys: vec![AesSivCmac512::new(std::iter::repeat_n(0, 64).collect())],
             id_offset: 1,
             primary: 0,
         };
@@ -356,7 +356,7 @@ mod tests {
         };
 
         let keyset = KeySet {
-            keys: vec![AesSivCmac512::new(std::iter::repeat(0).take(64).collect())],
+            keys: vec![AesSivCmac512::new(std::iter::repeat_n(0, 64).collect())],
             id_offset: 1,
             primary: 0,
         };
@@ -379,7 +379,7 @@ mod tests {
         };
 
         let keyset = KeySet {
-            keys: vec![AesSivCmac512::new(std::iter::repeat(0).take(64).collect())],
+            keys: vec![AesSivCmac512::new(std::iter::repeat_n(0, 64).collect())],
             id_offset: 1,
             primary: 0,
         };

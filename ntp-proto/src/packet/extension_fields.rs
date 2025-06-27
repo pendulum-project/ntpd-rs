@@ -172,10 +172,7 @@ impl<'a> ExtensionField<'a> {
         version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
         if data_length > u16::MAX as usize - ExtensionField::HEADER_LENGTH {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Extension field too long",
-            ));
+            return Err(std::io::Error::other("Extension field too long"));
         }
 
         // u16 for the type_id, u16 for the length
@@ -196,10 +193,7 @@ impl<'a> ExtensionField<'a> {
         minimum_size: u16,
     ) -> std::io::Result<()> {
         if data_length > u16::MAX as usize - ExtensionField::HEADER_LENGTH {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Extension field too long",
-            ));
+            return Err(std::io::Error::other("Extension field too long"));
         }
 
         let actual_length = next_multiple_of_usize(
@@ -566,7 +560,7 @@ impl<'a> ExtensionFieldData<'a> {
         if !self.authenticated.is_empty() || !self.encrypted.is_empty() {
             let cipher = match cipher.get(&self.authenticated) {
                 Some(cipher) => cipher,
-                None => return Err(std::io::Error::new(std::io::ErrorKind::Other, "no cipher")),
+                None => return Err(std::io::Error::other("no cipher")),
             };
 
             // the authenticated extension fields are always followed by the encrypted extension

@@ -278,8 +278,7 @@ async fn handler(buf: &mut String, observation_socket_path: &Path) -> std::io::R
     let observable_state: ObservableState =
         crate::daemon::sockets::read_json(&mut stream, &mut msg).await?;
 
-    format_response(buf, &observable_state)
-        .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "formatting error"))
+    format_response(buf, &observable_state).map_err(|_| std::io::Error::other("formatting error"))
 }
 
 fn format_response(buf: &mut String, state: &ObservableState) -> std::fmt::Result {

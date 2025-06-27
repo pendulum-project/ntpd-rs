@@ -35,7 +35,7 @@ pub fn spawn(
 }
 
 fn io_error(msg: &str) -> std::io::Error {
-    std::io::Error::new(std::io::ErrorKind::Other, msg)
+    std::io::Error::other(msg)
 }
 
 async fn run_nts_ke(

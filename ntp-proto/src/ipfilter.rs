@@ -146,7 +146,7 @@ impl BitTree {
         // allocate additional empty nodes
         let unknown_count = known_bitmap.count_zeros() as usize;
         self.nodes
-            .extend(std::iter::repeat(TreeNode::default()).take(unknown_count));
+            .extend(std::iter::repeat_n(TreeNode::default(), unknown_count));
 
         // Create children for segments undecided at this level.
         let mut child_offset = child_offset;

@@ -548,7 +548,7 @@ impl NormalizedAddress {
                     if let Ok(socket_addr) = address_with_port.parse::<SocketAddr>() {
                         Ok((socket_addr.ip().to_string(), socket_addr.port()))
                     } else {
-                        Err(std::io::Error::new(std::io::ErrorKind::Other, e))
+                        Err(std::io::Error::other(e))
                     }
                 }
             }
@@ -558,7 +558,7 @@ impl NormalizedAddress {
             // the port is.
             match port.parse::<u16>() {
                 Ok(port) => Ok((server_name.to_string(), port)),
-                Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
+                Err(e) => Err(std::io::Error::other(e)),
             }
         } else {
             // Not ipv6 and no port. As we cant reasonably check host

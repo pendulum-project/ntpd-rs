@@ -131,7 +131,7 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper, Sourc
                 .map(|spawner| system.add_spawner(spawner))
                 .map_err(|e| {
                     tracing::error!("Could not spawn source: {}", e);
-                    std::io::Error::new(std::io::ErrorKind::Other, e)
+                    std::io::Error::other(e)
                 })?;
             }
             NtpSourceConfig::Pool(cfg) => {
@@ -149,7 +149,7 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper, Sourc
                 .map(|spawner| system.add_spawner(spawner))
                 .map_err(|e| {
                     tracing::error!("Could not spawn source: {}", e);
-                    std::io::Error::new(std::io::ErrorKind::Other, e)
+                    std::io::Error::other(e)
                 })?;
             }
             NtpSourceConfig::Sock(cfg) => {
@@ -411,7 +411,7 @@ impl<
     async fn handle_source_network_issue(&mut self, index: SourceId) -> std::io::Result<()> {
         self.system
             .handle_source_remove(index)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
 
         // Restart the source reusing its configuration.
         let state = self.sources.remove(&index).unwrap();
@@ -435,7 +435,7 @@ impl<
     async fn handle_source_unreachable(&mut self, index: SourceId) -> std::io::Result<()> {
         self.system
             .handle_source_remove(index)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
 
         // Restart the source reusing its configuration.
         let state = self.sources.remove(&index).unwrap();
