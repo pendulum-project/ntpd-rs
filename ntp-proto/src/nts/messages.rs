@@ -14,6 +14,8 @@ pub enum Request<'a> {
     KeyExchange {
         algorithms: Cow<'a, [AeadAlgorithm]>,
         protocols: Cow<'a, [NextProtocol]>,
+        #[cfg(feature = "nts-pool")]
+        denied_servers: Cow<'a, [Cow<'a, str>]>,
     },
     #[cfg(feature = "nts-pool")]
     FixedKey {
@@ -34,6 +36,8 @@ impl Request<'_> {
     pub async fn parse(mut reader: impl AsyncRead + Unpin) -> Result<Self, NtsError> {
         let mut protocols = None;
         let mut algorithms = None;
+        #[cfg(feature = "nts-pool")]
+        let mut denied_servers = vec![];
         #[cfg(feature = "nts-pool")]
         let mut wants_protocols = false;
         #[cfg(feature = "nts-pool")]
@@ -84,6 +88,10 @@ impl Request<'_> {
 
                     wants_protocols = true;
                 }
+                #[cfg(feature = "nts-pool")]
+                NtsRecord::NtpServerDeny { denied } => {
+                    denied_servers.push(denied);
+                }
                 // Unknown critical
                 NtsRecord::Unknown { critical: true, .. } => {
                     return Err(NtsError::UnrecognizedCriticalRecord)
@@ -91,7 +99,7 @@ impl Request<'_> {
                 // Ignored
                 NtsRecord::Unknown { .. } | NtsRecord::Server { .. } | NtsRecord::Port { .. } => {}
                 #[cfg(feature = "nts-pool")]
-                NtsRecord::KeepAlive | NtsRecord::NtpServerDeny { .. } => {}
+                NtsRecord::KeepAlive => {}
                 // not allowed
                 NtsRecord::Error { .. }
                 | NtsRecord::Warning { .. }
@@ -153,6 +161,8 @@ impl Request<'_> {
             Ok(Request::KeyExchange {
                 algorithms,
                 protocols,
+                #[cfg(feature = "nts-pool")]
+                denied_servers: denied_servers.into(),
             })
         } else {
             Err(NtsError::Invalid)
@@ -168,6 +178,8 @@ impl Request<'_> {
             Request::KeyExchange {
                 algorithms,
                 protocols,
+                #[cfg(feature = "nts-pool")]
+                denied_servers,
             } => {
                 NtsRecord::NextProtocol {
                     protocol_ids: protocols,
@@ -179,6 +191,16 @@ impl Request<'_> {
                 }
                 .serialize(&mut writer)
                 .await?;
+                #[cfg(feature = "nts-pool")]
+                for denied in denied_servers.iter() {
+                    use std::ops::Deref;
+
+                    NtsRecord::NtpServerDeny {
+                        denied: denied.deref().into(),
+                    }
+                    .serialize(&mut writer)
+                    .await?;
+                }
                 NtsRecord::EndOfMessage.serialize(&mut writer).await?;
             }
             #[cfg(feature = "nts-pool")]
@@ -522,6 +544,7 @@ mod tests {
             Request::KeyExchange {
                 algorithms,
                 protocols,
+                ..
             } => {
                 assert_eq!(algorithms, [AeadAlgorithm::AeadAesSivCmac256].as_slice());
                 assert_eq!(protocols, [NextProtocol::NTPv4].as_slice());
@@ -542,6 +565,7 @@ mod tests {
             Request::KeyExchange {
                 algorithms,
                 protocols,
+                ..
             } => {
                 assert_eq!(algorithms, [AeadAlgorithm::AeadAesSivCmac512].as_slice());
                 assert_eq!(
@@ -632,6 +656,7 @@ mod tests {
             Request::KeyExchange {
                 algorithms,
                 protocols,
+                ..
             } => {
                 assert_eq!(algorithms, [AeadAlgorithm::AeadAesSivCmac256].as_slice());
                 assert_eq!(protocols, [NextProtocol::NTPv4].as_slice());
@@ -652,6 +677,7 @@ mod tests {
             Request::KeyExchange {
                 algorithms,
                 protocols,
+                ..
             } => {
                 assert_eq!(algorithms, [AeadAlgorithm::AeadAesSivCmac256].as_slice());
                 assert_eq!(protocols, [NextProtocol::NTPv4].as_slice());
@@ -672,6 +698,7 @@ mod tests {
             Request::KeyExchange {
                 algorithms,
                 protocols,
+                ..
             } => {
                 assert_eq!(algorithms, [AeadAlgorithm::AeadAesSivCmac256].as_slice());
                 assert_eq!(protocols, [NextProtocol::NTPv4].as_slice());
@@ -692,9 +719,36 @@ mod tests {
             Request::KeyExchange {
                 algorithms,
                 protocols,
+                ..
             } => {
                 assert_eq!(algorithms, [AeadAlgorithm::AeadAesSivCmac256].as_slice());
                 assert_eq!(protocols, [NextProtocol::NTPv4].as_slice());
+            }
+            #[allow(unreachable_patterns)]
+            _ => panic!("Unexpected misparse of message"),
+        }
+    }
+
+    #[cfg(feature = "nts-pool")]
+    #[test]
+    fn test_request_basic_denied_servers() {
+        let Ok(request) = pwrap(
+            Request::parse,
+            &[
+                0x80, 4, 0, 2, 0, 15, 0x80, 1, 0, 2, 0, 0, 0x40, 3, 0, 2, b'h', b'i', 0x80, 0, 0, 0,
+            ],
+        ) else {
+            panic!("Expected parse");
+        };
+        match request {
+            Request::KeyExchange {
+                algorithms,
+                protocols,
+                denied_servers,
+            } => {
+                assert_eq!(algorithms, [AeadAlgorithm::AeadAesSivCmac256].as_slice());
+                assert_eq!(protocols, [NextProtocol::NTPv4].as_slice());
+                assert_eq!(denied_servers, ["hi"].as_slice());
             }
             #[allow(unreachable_patterns)]
             _ => panic!("Unexpected misparse of message"),
@@ -715,6 +769,8 @@ mod tests {
                     .as_slice()
                     .into(),
                     protocols: [NextProtocol::NTPv4].as_slice().into(),
+                    #[cfg(feature = "nts-pool")]
+                    denied_servers: vec![].into(),
                 },
                 &mut buf
             ),
@@ -723,6 +779,27 @@ mod tests {
         assert_eq!(
             buf,
             [0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 4, 0, 17, 0, 15, 0x80, 0, 0, 0]
+        );
+    }
+
+    #[cfg(feature = "nts-pool")]
+    #[test]
+    fn test_request_basic_serialize_denied_servers() {
+        let mut buf = vec![];
+        assert!(swrap(
+            Request::serialize,
+            Request::KeyExchange {
+                algorithms: [AeadAlgorithm::AeadAesSivCmac256].as_slice().into(),
+                protocols: [NextProtocol::NTPv4].as_slice().into(),
+                denied_servers: ["hi".into()].as_slice().into(),
+            },
+            &mut buf
+        )
+        .is_ok());
+
+        assert_eq!(
+            buf,
+            [0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x40, 3, 0, 2, b'h', b'i', 0x80, 0, 0, 0]
         );
     }
 
