@@ -17,7 +17,6 @@ mod io;
 mod ipfilter;
 mod keyset;
 mod nts;
-mod nts_record;
 mod packet;
 mod server;
 mod source;
@@ -132,13 +131,9 @@ mod exports {
         FrequencyTolerance, NtpDuration, NtpInstant, NtpTimestamp, PollInterval, PollIntervalLimits,
     };
 
-    #[cfg(feature = "__internal-fuzz")]
-    pub use super::nts_record::fuzz_key_exchange_result_decoder;
-    #[cfg(feature = "__internal-fuzz")]
-    pub use super::nts_record::fuzz_key_exchange_server_decoder;
-    pub use super::nts_record::{
-        KeyExchangeClient, KeyExchangeError, KeyExchangeResult, KeyExchangeServer, NtsRecord,
-        NtsRecordDecoder, WriteError,
+    pub use super::nts::{
+        KeyExchangeClient, KeyExchangeResult, KeyExchangeServer, NtsClientConfig, NtsError,
+        NtsServerConfig,
     };
 
     pub use super::cookiestash::MAX_COOKIES;

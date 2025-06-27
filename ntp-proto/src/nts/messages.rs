@@ -32,7 +32,6 @@ pub enum Request<'a> {
 }
 
 impl Request<'_> {
-    #[allow(unused)]
     pub async fn parse(mut reader: impl AsyncRead + Unpin) -> Result<Self, NtsError> {
         let mut protocols = None;
         let mut algorithms = None;
@@ -119,10 +118,7 @@ impl Request<'_> {
             });
         } else if let Some(key_bytes) = key_bytes {
             return if let (Some(protocols), Some(algorithms)) = (protocols, algorithms) {
-                use crate::{
-                    packet::{AesSivCmac256, AesSivCmac512},
-                    NoCipher,
-                };
+                use crate::packet::{AesSivCmac256, AesSivCmac512};
 
                 if protocols.len() != 1 || algorithms.len() != 1 {
                     return Err(NtsError::Invalid);
@@ -169,7 +165,6 @@ impl Request<'_> {
         }
     }
 
-    #[allow(unused)]
     pub async fn serialize(
         self,
         mut writer: impl AsyncWrite + Unpin,
@@ -264,7 +259,6 @@ pub struct KeyExchangeResponse<'a> {
 }
 
 impl KeyExchangeResponse<'_> {
-    #[allow(unused)]
     pub async fn parse(mut reader: impl AsyncRead + Unpin) -> Result<Self, NtsError> {
         let mut protocol = None;
         let mut algorithm = None;
@@ -350,7 +344,6 @@ impl KeyExchangeResponse<'_> {
         }
     }
 
-    #[allow(unused)]
     pub async fn serialize(
         self,
         mut writer: impl AsyncWrite + Unpin,
@@ -384,14 +377,12 @@ impl KeyExchangeResponse<'_> {
     }
 }
 
-#[allow(unused)]
 pub enum NoOverlapResponse {
     NoOverlappingAlgorithm { protocol: NextProtocol },
     NoOverlappingProtocol,
 }
 
 impl NoOverlapResponse {
-    #[allow(unused)]
     pub async fn serialize(
         self,
         mut writer: impl AsyncWrite + Unpin,
@@ -429,7 +420,6 @@ pub struct ErrorResponse {
 }
 
 impl ErrorResponse {
-    #[allow(unused)]
     pub async fn serialize(
         self,
         mut writer: impl AsyncWrite + Unpin,
@@ -453,7 +443,6 @@ pub struct SupportsResponse<'a> {
 
 #[cfg(feature = "nts-pool")]
 impl SupportsResponse<'_> {
-    #[allow(unused)]
     pub async fn serialize(
         self,
         mut writer: impl AsyncWrite + Unpin,

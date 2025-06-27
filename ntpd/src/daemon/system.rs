@@ -118,66 +118,46 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper, Sourc
     for source_config in source_configs {
         match source_config {
             NtpSourceConfig::Standard(cfg) => {
-                system
-                    .add_spawner(StandardSpawner::new(
-                        cfg.first.clone(),
-                        cfg.second.clone().with_defaults(source_defaults_config),
-                    ))
-                    .map_err(|e| {
-                        tracing::error!("Could not spawn source: {}", e);
-                        std::io::Error::new(std::io::ErrorKind::Other, e)
-                    })?;
+                system.add_spawner(StandardSpawner::new(
+                    cfg.first.clone(),
+                    cfg.second.clone().with_defaults(source_defaults_config),
+                ));
             }
             NtpSourceConfig::Nts(cfg) => {
-                system
-                    .add_spawner(NtsSpawner::new(
-                        cfg.first.clone(),
-                        cfg.second.clone().with_defaults(source_defaults_config),
-                    ))
-                    .map_err(|e| {
-                        tracing::error!("Could not spawn source: {}", e);
-                        std::io::Error::new(std::io::ErrorKind::Other, e)
-                    })?;
+                NtsSpawner::new(
+                    cfg.first.clone(),
+                    cfg.second.clone().with_defaults(source_defaults_config),
+                )
+                .map(|spawner| system.add_spawner(spawner))
+                .map_err(|e| {
+                    tracing::error!("Could not spawn source: {}", e);
+                    std::io::Error::new(std::io::ErrorKind::Other, e)
+                })?;
             }
             NtpSourceConfig::Pool(cfg) => {
-                system
-                    .add_spawner(PoolSpawner::new(
-                        cfg.first.clone(),
-                        cfg.second.clone().with_defaults(source_defaults_config),
-                    ))
-                    .map_err(|e| {
-                        tracing::error!("Could not spawn source: {}", e);
-                        std::io::Error::new(std::io::ErrorKind::Other, e)
-                    })?;
+                system.add_spawner(PoolSpawner::new(
+                    cfg.first.clone(),
+                    cfg.second.clone().with_defaults(source_defaults_config),
+                ));
             }
             #[cfg(feature = "unstable_nts-pool")]
             NtpSourceConfig::NtsPool(cfg) => {
-                system
-                    .add_spawner(NtsPoolSpawner::new(
-                        cfg.first.clone(),
-                        cfg.second.clone().with_defaults(source_defaults_config),
-                    ))
-                    .map_err(|e| {
-                        tracing::error!("Could not spawn source: {}", e);
-                        std::io::Error::new(std::io::ErrorKind::Other, e)
-                    })?;
+                NtsPoolSpawner::new(
+                    cfg.first.clone(),
+                    cfg.second.clone().with_defaults(source_defaults_config),
+                )
+                .map(|spawner| system.add_spawner(spawner))
+                .map_err(|e| {
+                    tracing::error!("Could not spawn source: {}", e);
+                    std::io::Error::new(std::io::ErrorKind::Other, e)
+                })?;
             }
             NtpSourceConfig::Sock(cfg) => {
-                system
-                    .add_spawner(SockSpawner::new(cfg.clone(), source_defaults_config))
-                    .map_err(|e| {
-                        tracing::error!("Could not spawn source: {}", e);
-                        std::io::Error::new(std::io::ErrorKind::Other, e)
-                    })?;
+                system.add_spawner(SockSpawner::new(cfg.clone(), source_defaults_config));
             }
             #[cfg(feature = "pps")]
             NtpSourceConfig::Pps(cfg) => {
-                system
-                    .add_spawner(PpsSpawner::new(cfg.clone(), source_defaults_config))
-                    .map_err(|e| {
-                        tracing::error!("Could not spawn source: {}", e);
-                        std::io::Error::new(std::io::ErrorKind::Other, e)
-                    })?;
+                system.add_spawner(PpsSpawner::new(cfg.clone(), source_defaults_config));
             }
         }
     }
@@ -313,10 +293,7 @@ impl<
         )
     }
 
-    fn add_spawner(
-        &mut self,
-        spawner: impl Spawner + Send + Sync + 'static,
-    ) -> Result<SpawnerId, C::Error> {
+    fn add_spawner(&mut self, spawner: impl Spawner + Send + Sync + 'static) -> SpawnerId {
         let (notify_tx, notify_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
         let id = spawner.get_id();
         let spawner_data = SystemSpawnerData { id, notify_tx };
@@ -325,7 +302,7 @@ impl<
         let spawn_tx = self.spawn_tx.clone();
         // tokio::spawn(async move { spawner.run(spawn_tx, notify_rx).await });
         tokio::spawn(spawner_task(spawner, spawn_tx, notify_rx));
-        Ok(id)
+        id
     }
 
     async fn run(&mut self, mut wait: Pin<&mut SingleshotSleep<T>>) -> std::io::Result<()> {
