@@ -28,8 +28,8 @@ where
 }
 
 fn other_error<T>(msg: String) -> std::io::Result<T> {
-    use std::io::{Error, ErrorKind};
-    Err(Error::new(ErrorKind::Other, msg))
+    use std::io::Error;
+    Err(Error::other(msg))
 }
 
 pub fn create_unix_socket_with_permissions(

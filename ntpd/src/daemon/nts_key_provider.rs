@@ -33,7 +33,7 @@ pub async fn spawn(config: KeysetConfig) -> watch::Receiver<Arc<KeySet>> {
                 },
             )
             .await
-            .unwrap_or_else(|e| Err(std::io::Error::new(std::io::ErrorKind::Other, e)))
+            .unwrap_or_else(|e| Err(std::io::Error::other(e)))
             .unwrap_or_else(|e| {
                 warn!(error = ?e, "Could not load nts server keys, starting with new set");
                 (

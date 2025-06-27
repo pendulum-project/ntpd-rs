@@ -23,6 +23,7 @@ pub enum Request<'a> {
         c2s_key: Box<dyn Cipher>,
         s2c_key: Box<dyn Cipher>,
         algorithm: AeadAlgorithm,
+        #[cfg_attr(feature = "__internal-fuzz", allow(private_interfaces))]
         protocol: NextProtocol,
     },
     #[cfg(feature = "nts-pool")]

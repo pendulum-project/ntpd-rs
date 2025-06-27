@@ -44,10 +44,12 @@ pub enum NtsRecord<'a> {
     KeepAlive,
     #[cfg(feature = "nts-pool")]
     SupportedNextProtocolList {
+        #[cfg_attr(feature = "__internal-fuzz", allow(private_interfaces))]
         supported_protocols: Cow<'a, [NextProtocol]>,
     },
     #[cfg(feature = "nts-pool")]
     SupportedAlgorithmList {
+        #[cfg_attr(feature = "__internal-fuzz", allow(private_interfaces))]
         supported_algorithms: Cow<'a, [AlgorithmDescription]>,
     },
     #[cfg(feature = "nts-pool")]

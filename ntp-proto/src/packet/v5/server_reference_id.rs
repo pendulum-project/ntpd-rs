@@ -104,7 +104,7 @@ impl BloomFilter {
         &self.0
     }
 
-    fn set_bit(&mut self, idx: U12) {
+    const fn set_bit(&mut self, idx: U12) {
         let (idx, mask) = idx.byte_and_mask();
         self.0[idx] |= mask;
     }
@@ -182,7 +182,7 @@ impl RemoteBloomFilter {
         self.is_filled.then_some(&self.filter)
     }
 
-    pub fn next_request(&mut self, cookie: NtpClientCookie) -> ReferenceIdRequest {
+    pub const fn next_request(&mut self, cookie: NtpClientCookie) -> ReferenceIdRequest {
         let offset = self.next_to_request;
         let last_request = self.last_requested.replace((offset, cookie));
 
@@ -219,7 +219,7 @@ impl RemoteBloomFilter {
         Ok(())
     }
 
-    fn advance_next_to_request(&mut self) {
+    const fn advance_next_to_request(&mut self) {
         self.next_to_request = (self.next_to_request + self.chunk_size) % BloomFilter::BYTES as u16;
 
         if self.next_to_request == 0 {

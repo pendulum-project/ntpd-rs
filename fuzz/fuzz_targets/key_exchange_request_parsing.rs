@@ -33,7 +33,7 @@ fuzz_target!(|data: Vec<u8>| {
     if let Ok(request) = parse(&data) {
         let mut a = vec![];
         serialize(request, &mut a).unwrap();
-        let request2 = parse(&mut a).unwrap();
+        let request2 = parse(&a).unwrap();
         let mut b = vec![];
         serialize(request2, &mut b).unwrap();
         assert_eq!(a, b);
