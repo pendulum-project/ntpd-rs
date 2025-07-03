@@ -11,7 +11,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::daemon::{config::CliArg, initialize_logging_parse_config, ObservableState};
+use crate::daemon::{ObservableState, config::CliArg, initialize_logging_parse_config};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 

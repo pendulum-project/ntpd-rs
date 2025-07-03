@@ -1,6 +1,6 @@
 use std::{net::IpAddr, sync::Arc};
 
-use timestamped_socket::interface::{interfaces, ChangeDetector};
+use timestamped_socket::interface::{ChangeDetector, interfaces};
 use tokio::sync::watch;
 
 pub fn spawn() -> std::io::Result<watch::Receiver<Arc<[IpAddr]>>> {
@@ -25,7 +25,10 @@ pub fn spawn() -> std::io::Result<watch::Receiver<Arc<[IpAddr]>>> {
                     );
                 }
                 Err(e) => {
-                    tracing::warn!("Could not get new list of which ip addresses the interfaces in the system have: {}", e);
+                    tracing::warn!(
+                        "Could not get new list of which ip addresses the interfaces in the system have: {}",
+                        e
+                    );
                 }
             }
         }

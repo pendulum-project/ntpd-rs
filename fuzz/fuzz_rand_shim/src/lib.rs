@@ -12,7 +12,7 @@ pub use real_rand::prelude;
 pub use real_rand::rngs;
 pub use real_rand::seq;
 
-pub use real_rand::{random, CryptoRng, Error, Fill, Rng, RngCore, SeedableRng};
+pub use real_rand::{CryptoRng, Error, Fill, Rng, RngCore, SeedableRng, random};
 
 thread_local!(
     static THREAD_RNG: RefCell<StdRng> = {

@@ -4,6 +4,7 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio_rustls::{TlsAcceptor, TlsConnector};
 
 use crate::{
+    DecodedServerCookie, NTP_DEFAULT_PORT,
     cookiestash::CookieStash,
     generic::NtpVersion,
     keyset::KeySet,
@@ -11,7 +12,6 @@ use crate::{
     packet::{AesSivCmac256, AesSivCmac512, Cipher},
     source::{ProtocolVersion, SourceNtsData},
     tls_utils::{self, Certificate, PrivateKey, ServerName, TLS13},
-    DecodedServerCookie, NTP_DEFAULT_PORT,
 };
 
 #[cfg(feature = "__internal-fuzz")]
@@ -1332,7 +1332,9 @@ mod tests {
 
         assert_eq!(
             response,
-            [0xC0, 1, 0, 8, 0, 15, 0, 32, 0, 17, 0, 64, 0xC0, 4, 0, 2, 0, 0, 0x80, 0, 0, 0]
+            [
+                0xC0, 1, 0, 8, 0, 15, 0, 32, 0, 17, 0, 64, 0xC0, 4, 0, 2, 0, 0, 0x80, 0, 0, 0
+            ]
         );
     }
 

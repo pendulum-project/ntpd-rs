@@ -472,7 +472,9 @@ impl Config {
                     .synchronization_base
                     .minimum_agreeing_sources
         {
-            warn!("Fewer sources configured than are required to agree on the current time. Daemon will not change system time.");
+            warn!(
+                "Fewer sources configured than are required to agree on the current time. Daemon will not change system time."
+            );
             ok = false;
         }
 
@@ -493,7 +495,9 @@ impl Config {
                 matches!(config.first.ntp_version, ProtocolVersion::V5)
             }
         }) {
-            warn!("Forcing a source into NTPv5, which is still a draft. There is no guarantee that the server will remain compatible with this or future versions of ntpd-rs.");
+            warn!(
+                "Forcing a source into NTPv5, which is still a draft. There is no guarantee that the server will remain compatible with this or future versions of ntpd-rs."
+            );
             ok = false;
         }
 
@@ -509,7 +513,10 @@ impl Config {
                         && server.accept_ntp_versions.contains(&NtpVersion::V4)
                 })
             {
-                warn!("Configured NTS for NTPv4 on port {}, but have no server listening on that port for NTPv4 traffic. If this is for an external ntp server, consider configuring a value for `ntp-server`.", ke_server.ntp_port.unwrap_or(123));
+                warn!(
+                    "Configured NTS for NTPv4 on port {}, but have no server listening on that port for NTPv4 traffic. If this is for an external ntp server, consider configuring a value for `ntp-server`.",
+                    ke_server.ntp_port.unwrap_or(123)
+                );
                 ok = false;
             }
 
@@ -519,7 +526,10 @@ impl Config {
                         && server.accept_ntp_versions.contains(&NtpVersion::V5)
                 })
             {
-                warn!("Configured NTS for NTPv5 on port {}, but have no server listening on that port for NTPv5 traffic. If this is for an external ntp server, consider configuring a value for `ntp-server`.", ke_server.ntp_port.unwrap_or(123));
+                warn!(
+                    "Configured NTS for NTPv5 on port {}, but have no server listening on that port for NTPv5 traffic. If this is for an external ntp server, consider configuring a value for `ntp-server`.",
+                    ke_server.ntp_port.unwrap_or(123)
+                );
                 ok = false;
             }
         }
@@ -640,18 +650,22 @@ mod tests {
                 second: Default::default()
             })]
         );
-        assert!(config
-            .synchronization
-            .synchronization_base
-            .single_step_panic_threshold
-            .forward
-            .is_none());
-        assert!(config
-            .synchronization
-            .synchronization_base
-            .single_step_panic_threshold
-            .backward
-            .is_none());
+        assert!(
+            config
+                .synchronization
+                .synchronization_base
+                .single_step_panic_threshold
+                .forward
+                .is_none()
+        );
+        assert!(
+            config
+                .synchronization
+                .synchronization_base
+                .single_step_panic_threshold
+                .backward
+                .is_none()
+        );
 
         let config: Config = toml::from_str(
             r#"

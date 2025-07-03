@@ -1,6 +1,6 @@
 use crate::config::SynchronizationConfig;
 
-use super::{config::AlgorithmConfig, SourceSnapshot};
+use super::{SourceSnapshot, config::AlgorithmConfig};
 
 #[derive(Debug)]
 enum BoundType {

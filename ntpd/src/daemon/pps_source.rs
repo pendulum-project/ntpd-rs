@@ -6,7 +6,7 @@ use ntp_proto::{
 };
 use pps_time::PpsDevice;
 use tokio::sync::mpsc;
-use tracing::{debug, error, instrument, warn, Instrument, Span};
+use tracing::{Instrument, Span, debug, error, instrument, warn};
 
 use crate::daemon::{exitcode, ntp_source::MsgForSystem};
 

@@ -5,14 +5,13 @@ members = [
 ]
 exclude = [ ]
 
-# Without the `-p` flag, cargo ignores `--no-default-features` when you have a
-# workspace, and without `resolver = "2"` here, you can't use `-p` like this.
-resolver = "2"
+# Properly take compiler version into account when resolving crates.
+resolver = "3"
 
 # Global settings for our crates
 [workspace.package]
 version = "1.6.0"
-edition = "2021"
+edition = "2024"
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/pendulum-project/ntpd-rs"
 homepage = "https://github.com/pendulum-project/ntpd-rs"

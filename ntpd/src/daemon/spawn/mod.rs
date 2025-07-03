@@ -4,7 +4,7 @@ use ntp_proto::{ProtocolVersion, SourceConfig, SourceNtsData};
 use serde::{Deserialize, Serialize};
 use tokio::{
     sync::mpsc,
-    time::{timeout, Instant},
+    time::{Instant, timeout},
 };
 
 use super::{config::NormalizedAddress, system::NETWORK_WAIT_PERIOD};
@@ -214,7 +214,7 @@ pub trait Spawner {
     /// This should just do bookkeeping, any adding of sources should be done
     /// in try_add.
     async fn handle_source_removed(&mut self, event: SourceRemovedEvent)
-        -> Result<(), Self::Error>;
+    -> Result<(), Self::Error>;
 
     /// Event handler for when a source is successfully registered in the system
     ///
