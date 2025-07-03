@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, path::PathBuf, sync::atomic::AtomicU64};
+use std::{future::Future, net::SocketAddr, path::PathBuf, sync::atomic::AtomicU64};
 
 use ntp_proto::{ProtocolVersion, SourceConfig, SourceNtsData};
 use serde::{Deserialize, Serialize};
@@ -190,7 +190,6 @@ pub struct PpsSourceCreateParameters {
     pub period: f64,
 }
 
-#[async_trait::async_trait]
 pub trait Spawner {
     type Error: std::error::Error + Send;
 
@@ -199,7 +198,10 @@ pub trait Spawner {
     /// It is ok for this function to use some time when spawning a new client.
     /// However, it should not implement it's own retry or backoff feature, but
     /// rather rely on that provided by the basic spawner.
-    async fn try_spawn(&mut self, action_tx: &mpsc::Sender<SpawnEvent>) -> Result<(), Self::Error>;
+    fn try_spawn(
+        &mut self,
+        action_tx: &mpsc::Sender<SpawnEvent>,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
     /// Is there desire to spawn new sources?
     fn is_complete(&self) -> bool;
@@ -213,8 +215,10 @@ pub trait Spawner {
     ///
     /// This should just do bookkeeping, any adding of sources should be done
     /// in try_add.
-    async fn handle_source_removed(&mut self, event: SourceRemovedEvent)
-    -> Result<(), Self::Error>;
+    fn handle_source_removed(
+        &mut self,
+        event: SourceRemovedEvent,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
     /// Event handler for when a source is successfully registered in the system
     ///
@@ -224,11 +228,11 @@ pub trait Spawner {
     ///
     /// This should just do bookkeeping, any adding of sources should be done
     /// in try_add.
-    async fn handle_registered(
+    fn handle_registered(
         &mut self,
         _event: SourceCreateParameters,
-    ) -> Result<(), Self::Error> {
-        Ok(())
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        async { Ok(()) }
     }
 
     /// Get the id of the spawner

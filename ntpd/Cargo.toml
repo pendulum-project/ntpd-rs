@@ -20,7 +20,6 @@ tracing-subscriber.workspace = true
 toml.workspace = true
 rand.workspace = true
 libc.workspace = true
-async-trait.workspace = true
 timestamped-socket.workspace = true
 clock-steering.workspace = true
 pps-time = { workspace = true, optional = true }

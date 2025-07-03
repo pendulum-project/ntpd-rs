@@ -26,7 +26,6 @@ impl SockSpawner {
     }
 }
 
-#[async_trait::async_trait]
 impl Spawner for SockSpawner {
     type Error = StandardSpawnError;
 
