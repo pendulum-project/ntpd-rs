@@ -45,7 +45,6 @@ impl PoolSpawner {
     }
 }
 
-#[async_trait::async_trait]
 impl Spawner for PoolSpawner {
     type Error = PoolSpawnError;
 

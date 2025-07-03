@@ -75,7 +75,6 @@ impl StandardSpawner {
     }
 }
 
-#[async_trait::async_trait]
 impl Spawner for StandardSpawner {
     type Error = StandardSpawnError;
 
