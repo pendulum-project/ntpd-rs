@@ -1,4 +1,4 @@
-use clock_steering::{unix::UnixClock, Clock, TimeOffset};
+use clock_steering::{Clock, TimeOffset, unix::UnixClock};
 use ntp_proto::NtpClock;
 
 use super::util::convert_clock_timestamp;

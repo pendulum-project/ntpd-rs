@@ -7,6 +7,7 @@ use std::{fmt::Debug, hash::Hash};
 
 use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
 use crate::source::{NtpSourceUpdate, SourceSnapshot};
+use crate::{NtpTimestamp, OneWaySource, OneWaySourceUpdate};
 use crate::{
     algorithm::{StateUpdate, TimeSyncController},
     clock::NtpClock,
@@ -16,7 +17,6 @@ use crate::{
     source::{NtpSource, NtpSourceActionIterator, ProtocolVersion, SourceNtsData},
     time_types::NtpDuration,
 };
-use crate::{NtpTimestamp, OneWaySource, OneWaySourceUpdate};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct TimeSnapshot {
@@ -416,7 +416,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
 mod tests {
     use std::net::{Ipv4Addr, SocketAddr};
 
-    use crate::{time_types::PollIntervalLimits, NtpSourceSnapshot};
+    use crate::{NtpSourceSnapshot, time_types::PollIntervalLimits};
 
     use super::*;
 

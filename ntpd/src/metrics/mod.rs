@@ -189,10 +189,13 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
         "Threshold for the accumulated step amount at which the NTP daemon will exit (or -1 if no threshold was set)",
         MetricType::Gauge,
         Some(Unit::Seconds),
-        Measurement::simple(state.system
-            .accumulated_steps_threshold
-            .map(|v| v.to_seconds())
-            .unwrap_or(-1.0)),
+        Measurement::simple(
+            state
+                .system
+                .accumulated_steps_threshold
+                .map(|v| v.to_seconds())
+                .unwrap_or(-1.0),
+        ),
     )?;
 
     format_metric(

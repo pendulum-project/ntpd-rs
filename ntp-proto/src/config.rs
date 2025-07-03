@@ -1,8 +1,8 @@
 use std::fmt;
 
 use serde::{
-    de::{self, MapAccess, Unexpected, Visitor},
     Deserialize, Deserializer,
+    de::{self, MapAccess, Unexpected, Visitor},
 };
 
 use crate::time_types::{NtpDuration, PollInterval, PollIntervalLimits};

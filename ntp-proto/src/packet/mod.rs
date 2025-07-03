@@ -1,16 +1,16 @@
 use std::{borrow::Cow, io::Cursor};
 
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    NtpVersion,
     clock::NtpClock,
     identifiers::ReferenceId,
     io::NonBlockingWrite,
     keyset::{DecodedServerCookie, KeySet},
     system::SystemSnapshot,
     time_types::{NtpDuration, NtpTimestamp, PollInterval},
-    NtpVersion,
 };
 
 use self::{error::ParsingError, extension_fields::ExtensionFieldData, mac::Mac};
@@ -222,7 +222,7 @@ impl NtpHeaderV3V4 {
         // it is just a randomly generated timestamp.
         // We then expect to get it back identically from the remote
         // in the origin field.
-        let transmit_timestamp = thread_rng().gen();
+        let transmit_timestamp = thread_rng().r#gen();
         packet.transmit_timestamp = transmit_timestamp;
 
         (
@@ -497,7 +497,7 @@ impl<'a> NtpPacket<'a> {
     ) -> (NtpPacket<'static>, RequestIdentifier) {
         let (header, id) = NtpHeaderV3V4::poll_message(poll_interval);
 
-        let identifier: [u8; 32] = rand::thread_rng().gen();
+        let identifier: [u8; 32] = rand::thread_rng().r#gen();
 
         let mut authenticated = vec![
             ExtensionField::UniqueIdentifier(identifier.to_vec().into()),
@@ -534,7 +534,7 @@ impl<'a> NtpPacket<'a> {
     ) -> (NtpPacket<'static>, RequestIdentifier) {
         let (header, id) = v5::NtpHeaderV5::poll_message(poll_interval);
 
-        let identifier: [u8; 32] = rand::thread_rng().gen();
+        let identifier: [u8; 32] = rand::thread_rng().r#gen();
 
         let mut authenticated = vec![
             ExtensionField::UniqueIdentifier(identifier.to_vec().into()),
@@ -1254,11 +1254,7 @@ fn check_uid_extensionfield<'a, I: IntoIterator<Item = &'a ExtensionField<'a>>>(
             found_uid = true;
         }
     }
-    if found_uid {
-        Some(true)
-    } else {
-        None
-    }
+    if found_uid { Some(true) } else { None }
 }
 
 #[cfg(any(test, feature = "__internal-fuzz", feature = "__internal-test"))]
@@ -1269,9 +1265,9 @@ impl NtpPacket<'_> {
 
     pub fn set_mode(&mut self, mode: NtpAssociationMode) {
         match &mut self.header {
-            NtpHeader::V3(ref mut header) => header.mode = mode,
-            NtpHeader::V4(ref mut header) => header.mode = mode,
-            NtpHeader::V5(ref mut header) => {
+            NtpHeader::V3(header) => header.mode = mode,
+            NtpHeader::V4(header) => header.mode = mode,
+            NtpHeader::V5(header) => {
                 header.mode = match mode {
                     NtpAssociationMode::Client => v5::NtpMode::Request,
                     NtpAssociationMode::Server => v5::NtpMode::Response,
@@ -1283,9 +1279,9 @@ impl NtpPacket<'_> {
 
     pub fn set_origin_timestamp(&mut self, timestamp: NtpTimestamp) {
         match &mut self.header {
-            NtpHeader::V3(ref mut header) => header.origin_timestamp = timestamp,
-            NtpHeader::V4(ref mut header) => header.origin_timestamp = timestamp,
-            NtpHeader::V5(ref mut header) => {
+            NtpHeader::V3(header) => header.origin_timestamp = timestamp,
+            NtpHeader::V4(header) => header.origin_timestamp = timestamp,
+            NtpHeader::V5(header) => {
                 header.client_cookie = v5::NtpClientCookie::from_ntp_timestamp(timestamp)
             }
         }
@@ -1293,65 +1289,65 @@ impl NtpPacket<'_> {
 
     pub fn set_transmit_timestamp(&mut self, timestamp: NtpTimestamp) {
         match &mut self.header {
-            NtpHeader::V3(ref mut header) => header.transmit_timestamp = timestamp,
-            NtpHeader::V4(ref mut header) => header.transmit_timestamp = timestamp,
-            NtpHeader::V5(ref mut header) => header.transmit_timestamp = timestamp,
+            NtpHeader::V3(header) => header.transmit_timestamp = timestamp,
+            NtpHeader::V4(header) => header.transmit_timestamp = timestamp,
+            NtpHeader::V5(header) => header.transmit_timestamp = timestamp,
         }
     }
 
     pub fn set_receive_timestamp(&mut self, timestamp: NtpTimestamp) {
         match &mut self.header {
-            NtpHeader::V3(ref mut header) => header.receive_timestamp = timestamp,
-            NtpHeader::V4(ref mut header) => header.receive_timestamp = timestamp,
-            NtpHeader::V5(ref mut header) => header.receive_timestamp = timestamp,
+            NtpHeader::V3(header) => header.receive_timestamp = timestamp,
+            NtpHeader::V4(header) => header.receive_timestamp = timestamp,
+            NtpHeader::V5(header) => header.receive_timestamp = timestamp,
         }
     }
 
     pub fn set_precision(&mut self, precision: i8) {
         match &mut self.header {
-            NtpHeader::V3(ref mut header) => header.precision = precision,
-            NtpHeader::V4(ref mut header) => header.precision = precision,
-            NtpHeader::V5(ref mut header) => header.precision = precision,
+            NtpHeader::V3(header) => header.precision = precision,
+            NtpHeader::V4(header) => header.precision = precision,
+            NtpHeader::V5(header) => header.precision = precision,
         }
     }
 
     pub fn set_leap(&mut self, leap: NtpLeapIndicator) {
         match &mut self.header {
-            NtpHeader::V3(ref mut header) => header.leap = leap,
-            NtpHeader::V4(ref mut header) => header.leap = leap,
-            NtpHeader::V5(ref mut header) => header.leap = leap,
+            NtpHeader::V3(header) => header.leap = leap,
+            NtpHeader::V4(header) => header.leap = leap,
+            NtpHeader::V5(header) => header.leap = leap,
         }
     }
 
     pub fn set_stratum(&mut self, stratum: u8) {
         match &mut self.header {
-            NtpHeader::V3(ref mut header) => header.stratum = stratum,
-            NtpHeader::V4(ref mut header) => header.stratum = stratum,
-            NtpHeader::V5(ref mut header) => header.stratum = stratum,
+            NtpHeader::V3(header) => header.stratum = stratum,
+            NtpHeader::V4(header) => header.stratum = stratum,
+            NtpHeader::V5(header) => header.stratum = stratum,
         }
     }
 
     pub fn set_reference_id(&mut self, reference_id: ReferenceId) {
         match &mut self.header {
-            NtpHeader::V3(ref mut header) => header.reference_id = reference_id,
-            NtpHeader::V4(ref mut header) => header.reference_id = reference_id,
+            NtpHeader::V3(header) => header.reference_id = reference_id,
+            NtpHeader::V4(header) => header.reference_id = reference_id,
             NtpHeader::V5(_header) => todo!("NTPv5 does not have reference IDs"),
         }
     }
 
     pub fn set_root_delay(&mut self, root_delay: NtpDuration) {
         match &mut self.header {
-            NtpHeader::V3(ref mut header) => header.root_delay = root_delay,
-            NtpHeader::V4(ref mut header) => header.root_delay = root_delay,
-            NtpHeader::V5(ref mut header) => header.root_delay = root_delay,
+            NtpHeader::V3(header) => header.root_delay = root_delay,
+            NtpHeader::V4(header) => header.root_delay = root_delay,
+            NtpHeader::V5(header) => header.root_delay = root_delay,
         }
     }
 
     pub fn set_root_dispersion(&mut self, root_dispersion: NtpDuration) {
         match &mut self.header {
-            NtpHeader::V3(ref mut header) => header.root_dispersion = root_dispersion,
-            NtpHeader::V4(ref mut header) => header.root_dispersion = root_dispersion,
-            NtpHeader::V5(ref mut header) => header.root_dispersion = root_dispersion,
+            NtpHeader::V3(header) => header.root_dispersion = root_dispersion,
+            NtpHeader::V4(header) => header.root_dispersion = root_dispersion,
+            NtpHeader::V5(header) => header.root_dispersion = root_dispersion,
         }
     }
 }
@@ -1941,18 +1937,20 @@ mod tests {
             &decoded,
             &keysetprovider.get(),
         );
-        assert!(response
-            .efdata
-            .authenticated
-            .iter()
-            .find_map(|f| {
-                if let ExtensionField::UniqueIdentifier(id) = f {
-                    Some(id.clone().into_owned())
-                } else {
-                    None
-                }
-            })
-            .is_none());
+        assert!(
+            response
+                .efdata
+                .authenticated
+                .iter()
+                .find_map(|f| {
+                    if let ExtensionField::UniqueIdentifier(id) = f {
+                        Some(id.clone().into_owned())
+                    } else {
+                        None
+                    }
+                })
+                .is_none()
+        );
         assert_eq!(
             response.receive_timestamp(),
             NtpTimestamp::from_fixed_int(0)
@@ -2144,18 +2142,20 @@ mod tests {
             &mut packet.efdata.untrusted,
         );
         let response = NtpPacket::nts_deny_response(packet);
-        assert!(response
-            .efdata
-            .authenticated
-            .iter()
-            .find_map(|f| {
-                if let ExtensionField::UniqueIdentifier(id) = f {
-                    Some(id.clone().into_owned())
-                } else {
-                    None
-                }
-            })
-            .is_none());
+        assert!(
+            response
+                .efdata
+                .authenticated
+                .iter()
+                .find_map(|f| {
+                    if let ExtensionField::UniqueIdentifier(id) = f {
+                        Some(id.clone().into_owned())
+                    } else {
+                        None
+                    }
+                })
+                .is_none()
+        );
         assert_eq!(response.new_cookies().count(), 0);
         assert!(response.is_kiss_deny());
     }
@@ -2274,18 +2274,20 @@ mod tests {
             &mut packet.efdata.untrusted,
         );
         let response = NtpPacket::nts_rate_limit_response(packet);
-        assert!(response
-            .efdata
-            .authenticated
-            .iter()
-            .find_map(|f| {
-                if let ExtensionField::UniqueIdentifier(id) = f {
-                    Some(id.clone().into_owned())
-                } else {
-                    None
-                }
-            })
-            .is_none());
+        assert!(
+            response
+                .efdata
+                .authenticated
+                .iter()
+                .find_map(|f| {
+                    if let ExtensionField::UniqueIdentifier(id) = f {
+                        Some(id.clone().into_owned())
+                    } else {
+                        None
+                    }
+                })
+                .is_none()
+        );
         assert_eq!(response.new_cookies().count(), 0);
         assert!(response.is_kiss_rate(PollIntervalLimits::default().min));
     }

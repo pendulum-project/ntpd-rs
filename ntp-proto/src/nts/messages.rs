@@ -95,7 +95,7 @@ impl Request<'_> {
                 }
                 // Unknown critical
                 NtsRecord::Unknown { critical: true, .. } => {
-                    return Err(NtsError::UnrecognizedCriticalRecord)
+                    return Err(NtsError::UnrecognizedCriticalRecord);
                 }
                 // Ignored
                 NtsRecord::Unknown { .. } | NtsRecord::Server { .. } | NtsRecord::Port { .. } => {}
@@ -319,7 +319,7 @@ impl KeyExchangeResponse<'_> {
                 },
                 // Unknown critical
                 NtsRecord::Unknown { critical: true, .. } => {
-                    return Err(NtsError::UnrecognizedCriticalRecord)
+                    return Err(NtsError::UnrecognizedCriticalRecord);
                 }
                 // Ignored
                 NtsRecord::Unknown { .. } => {}
@@ -579,59 +579,93 @@ mod tests {
 
     #[test]
     fn test_request_basic_reject_multiple() {
-        assert!(pwrap(
-            Request::parse,
-            &[0x80, 4, 0, 2, 0, 15, 0x80, 4, 0, 2, 0, 17, 0x80, 1, 0, 2, 0, 0, 0x80, 0, 0, 0]
-        )
-        .is_err());
+        assert!(
+            pwrap(
+                Request::parse,
+                &[
+                    0x80, 4, 0, 2, 0, 15, 0x80, 4, 0, 2, 0, 17, 0x80, 1, 0, 2, 0, 0, 0x80, 0, 0, 0
+                ]
+            )
+            .is_err()
+        );
 
-        assert!(pwrap(
-            Request::parse,
-            &[0x80, 4, 0, 2, 0, 15, 0x80, 1, 0, 2, 0, 0, 0x80, 1, 0, 2, 0x80, 1, 0x80, 0, 0, 0]
-        )
-        .is_err());
+        assert!(
+            pwrap(
+                Request::parse,
+                &[
+                    0x80, 4, 0, 2, 0, 15, 0x80, 1, 0, 2, 0, 0, 0x80, 1, 0, 2, 0x80, 1, 0x80, 0, 0,
+                    0
+                ]
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn test_request_basic_reject_problematic() {
-        assert!(pwrap(
-            Request::parse,
-            &[0x80, 4, 0, 2, 0, 15, 0x80, 1, 0, 2, 0, 0, 0xC0, 1, 0, 0, 0x80, 0, 0, 0]
-        )
-        .is_err());
+        assert!(
+            pwrap(
+                Request::parse,
+                &[
+                    0x80, 4, 0, 2, 0, 15, 0x80, 1, 0, 2, 0, 0, 0xC0, 1, 0, 0, 0x80, 0, 0, 0
+                ]
+            )
+            .is_err()
+        );
 
-        assert!(pwrap(
-            Request::parse,
-            &[0x80, 4, 0, 2, 0, 15, 0x80, 1, 0, 2, 0, 0, 0xC0, 4, 0, 0, 0x80, 0, 0, 0]
-        )
-        .is_err());
+        assert!(
+            pwrap(
+                Request::parse,
+                &[
+                    0x80, 4, 0, 2, 0, 15, 0x80, 1, 0, 2, 0, 0, 0xC0, 4, 0, 0, 0x80, 0, 0, 0
+                ]
+            )
+            .is_err()
+        );
 
-        assert!(pwrap(
-            Request::parse,
-            &[0x80, 4, 0, 2, 0, 15, 0x80, 1, 0, 2, 0, 0, 0x80, 2, 0, 2, 0, 0, 0x80, 0, 0, 0]
-        )
-        .is_err());
+        assert!(
+            pwrap(
+                Request::parse,
+                &[
+                    0x80, 4, 0, 2, 0, 15, 0x80, 1, 0, 2, 0, 0, 0x80, 2, 0, 2, 0, 0, 0x80, 0, 0, 0
+                ]
+            )
+            .is_err()
+        );
 
-        assert!(pwrap(
-            Request::parse,
-            &[0x80, 4, 0, 2, 0, 15, 0x80, 1, 0, 2, 0, 0, 0x80, 3, 0, 2, 0, 0, 0x80, 0, 0, 0]
-        )
-        .is_err());
+        assert!(
+            pwrap(
+                Request::parse,
+                &[
+                    0x80, 4, 0, 2, 0, 15, 0x80, 1, 0, 2, 0, 0, 0x80, 3, 0, 2, 0, 0, 0x80, 0, 0, 0
+                ]
+            )
+            .is_err()
+        );
 
-        assert!(pwrap(
-            Request::parse,
-            &[0x80, 4, 0, 2, 0, 15, 0x80, 1, 0, 2, 0, 0, 0, 5, 0, 4, 1, 2, 3, 4, 0x80, 0, 0, 0]
-        )
-        .is_err());
+        assert!(
+            pwrap(
+                Request::parse,
+                &[
+                    0x80, 4, 0, 2, 0, 15, 0x80, 1, 0, 2, 0, 0, 0, 5, 0, 4, 1, 2, 3, 4, 0x80, 0, 0,
+                    0
+                ]
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn test_request_basic_reject_unknown_critical() {
-        assert!(pwrap(
-            Request::parse,
-            &[0x80, 4, 0, 2, 0, 15, 0x80, 1, 0, 2, 0, 0, 0x80, 50, 0, 2, 0, 1, 0x80, 0, 0, 0]
-        )
-        .is_err());
+        assert!(
+            pwrap(
+                Request::parse,
+                &[
+                    0x80, 4, 0, 2, 0, 15, 0x80, 1, 0, 2, 0, 0, 0x80, 50, 0, 2, 0, 1, 0x80, 0, 0, 0
+                ]
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -770,7 +804,9 @@ mod tests {
         ));
         assert_eq!(
             buf,
-            [0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 4, 0, 17, 0, 15, 0x80, 0, 0, 0]
+            [
+                0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 4, 0, 17, 0, 15, 0x80, 0, 0, 0
+            ]
         );
     }
 
@@ -778,20 +814,24 @@ mod tests {
     #[test]
     fn test_request_basic_serialize_denied_servers() {
         let mut buf = vec![];
-        assert!(swrap(
-            Request::serialize,
-            Request::KeyExchange {
-                algorithms: [AeadAlgorithm::AeadAesSivCmac256].as_slice().into(),
-                protocols: [NextProtocol::NTPv4].as_slice().into(),
-                denied_servers: ["hi".into()].as_slice().into(),
-            },
-            &mut buf
-        )
-        .is_ok());
+        assert!(
+            swrap(
+                Request::serialize,
+                Request::KeyExchange {
+                    algorithms: [AeadAlgorithm::AeadAesSivCmac256].as_slice().into(),
+                    protocols: [NextProtocol::NTPv4].as_slice().into(),
+                    denied_servers: ["hi".into()].as_slice().into(),
+                },
+                &mut buf
+            )
+            .is_ok()
+        );
 
         assert_eq!(
             buf,
-            [0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x40, 3, 0, 2, b'h', b'i', 0x80, 0, 0, 0]
+            [
+                0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x40, 3, 0, 2, b'h', b'i', 0x80, 0, 0, 0
+            ]
         );
     }
 
@@ -911,145 +951,174 @@ mod tests {
     #[cfg(feature = "nts-pool")]
     #[test]
     fn test_request_fixedkey_reject_incomplete() {
-        assert!(pwrap(
-            Request::parse,
-            &[
-                0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-                19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
-                40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
-                61, 62, 63, 0x80, 4, 0, 2, 0, 15, 0x80, 0, 0, 0,
-            ],
-        )
-        .is_err());
-        assert!(pwrap(
-            Request::parse,
-            &[
-                0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-                19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
-                40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
-                61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 0, 0, 0,
-            ],
-        )
-        .is_err());
-        assert!(pwrap(
-            Request::parse,
-            &[
-                0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-                19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
-                40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
-                61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15,
-            ],
-        )
-        .is_err());
+        assert!(
+            pwrap(
+                Request::parse,
+                &[
+                    0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+                    18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
+                    38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
+                    58, 59, 60, 61, 62, 63, 0x80, 4, 0, 2, 0, 15, 0x80, 0, 0, 0,
+                ],
+            )
+            .is_err()
+        );
+        assert!(
+            pwrap(
+                Request::parse,
+                &[
+                    0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+                    18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
+                    38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
+                    58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 0, 0, 0,
+                ],
+            )
+            .is_err()
+        );
+        assert!(
+            pwrap(
+                Request::parse,
+                &[
+                    0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+                    18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
+                    38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
+                    58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15,
+                ],
+            )
+            .is_err()
+        );
     }
 
     #[cfg(feature = "nts-pool")]
     #[test]
     fn test_request_fixedkey_reject_multiple() {
-        assert!(pwrap(
-            Request::parse,
-            &[
-                0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-                19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
-                40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
-                61, 62, 63, 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
-                16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
-                37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
-                58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x80, 0, 0, 0,
-            ]
-        )
-        .is_err());
+        assert!(
+            pwrap(
+                Request::parse,
+                &[
+                    0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+                    18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
+                    38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
+                    58, 59, 60, 61, 62, 63, 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
+                    12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+                    32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51,
+                    52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4,
+                    0, 2, 0, 15, 0x80, 0, 0, 0,
+                ]
+            )
+            .is_err()
+        );
 
-        assert!(pwrap(
-            Request::parse,
-            &[
-                0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-                19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
-                40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
-                61, 62, 63, 0x80, 1, 0, 4, 0, 0, 0x80, 1, 0x80, 4, 0, 2, 0, 15, 0x80, 0, 0, 0,
-            ]
-        )
-        .is_err());
+        assert!(
+            pwrap(
+                Request::parse,
+                &[
+                    0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+                    18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
+                    38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
+                    58, 59, 60, 61, 62, 63, 0x80, 1, 0, 4, 0, 0, 0x80, 1, 0x80, 4, 0, 2, 0, 15,
+                    0x80, 0, 0, 0,
+                ]
+            )
+            .is_err()
+        );
 
-        assert!(pwrap(
-            Request::parse,
-            &[
-                0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-                19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
-                40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
-                61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 4, 0, 15, 0, 15, 0x80, 0, 0, 0,
-            ]
-        )
-        .is_err());
+        assert!(
+            pwrap(
+                Request::parse,
+                &[
+                    0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+                    18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
+                    38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
+                    58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 4, 0, 15, 0, 15, 0x80,
+                    0, 0, 0,
+                ]
+            )
+            .is_err()
+        );
     }
 
     #[cfg(feature = "nts-pool")]
     #[test]
     fn test_request_fixedkey_reject_wrong_size_keys() {
-        assert!(pwrap(
-            Request::parse,
-            &[0xC0, 2, 0, 4, 1, 2, 3, 4, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x80, 0, 0, 0]
-        )
-        .is_err());
+        assert!(
+            pwrap(
+                Request::parse,
+                &[
+                    0xC0, 2, 0, 4, 1, 2, 3, 4, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x80, 0,
+                    0, 0
+                ]
+            )
+            .is_err()
+        );
     }
 
     #[cfg(feature = "nts-pool")]
     #[test]
     fn test_request_fixedkey_reject_unknown_algorithm() {
-        assert!(pwrap(
-            Request::parse,
-            &[
-                0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-                19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
-                40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
-                61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 2, 0x80, 0, 0, 0,
-            ]
-        )
-        .is_err());
+        assert!(
+            pwrap(
+                Request::parse,
+                &[
+                    0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+                    18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
+                    38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
+                    58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 2, 0x80, 0, 0,
+                    0,
+                ]
+            )
+            .is_err()
+        );
     }
 
     #[cfg(feature = "nts-pool")]
     #[test]
     fn test_request_fixedkey_reject_problematic() {
-        assert!(pwrap(
-            Request::parse,
-            &[
-                0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-                19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
-                40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
-                61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0xC0, 1, 0, 0, 0x80, 0, 0,
-                0,
-            ],
-        )
-        .is_err());
+        assert!(
+            pwrap(
+                Request::parse,
+                &[
+                    0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+                    18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
+                    38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
+                    58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0xC0, 1, 0,
+                    0, 0x80, 0, 0, 0,
+                ],
+            )
+            .is_err()
+        );
 
-        assert!(pwrap(
-            Request::parse,
-            &[
-                0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-                19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
-                40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
-                61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0xC0, 4, 0, 0, 0x80, 0, 0,
-                0,
-            ],
-        )
-        .is_err());
+        assert!(
+            pwrap(
+                Request::parse,
+                &[
+                    0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+                    18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
+                    38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
+                    58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0xC0, 4, 0,
+                    0, 0x80, 0, 0, 0,
+                ],
+            )
+            .is_err()
+        );
     }
 
     #[cfg(feature = "nts-pool")]
     #[test]
     fn test_request_fixedkey_reject_unknown_critical() {
-        assert!(pwrap(
-            Request::parse,
-            &[
-                0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-                19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
-                40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
-                61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x80, 50, 0, 2, 1, 2, 0x80,
-                0, 0, 0,
-            ],
-        )
-        .is_err());
+        assert!(
+            pwrap(
+                Request::parse,
+                &[
+                    0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+                    18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
+                    38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
+                    58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x80, 50, 0,
+                    2, 1, 2, 0x80, 0, 0, 0,
+                ],
+            )
+            .is_err()
+        );
     }
 
     #[cfg(feature = "nts-pool")]
@@ -1278,61 +1347,91 @@ mod tests {
     #[cfg(feature = "nts-pool")]
     #[test]
     fn test_request_support_reject_multiple() {
-        assert!(pwrap(
-            Request::parse,
-            &[0xC0, 1, 0, 0, 0xC0, 1, 0, 0, 0x80, 0, 0, 0]
-        )
-        .is_err());
-        assert!(pwrap(
-            Request::parse,
-            &[0xC0, 4, 0, 0, 0xC0, 4, 0, 0, 0x80, 0, 0, 0]
-        )
-        .is_err());
+        assert!(
+            pwrap(
+                Request::parse,
+                &[0xC0, 1, 0, 0, 0xC0, 1, 0, 0, 0x80, 0, 0, 0]
+            )
+            .is_err()
+        );
+        assert!(
+            pwrap(
+                Request::parse,
+                &[0xC0, 4, 0, 0, 0xC0, 4, 0, 0, 0x80, 0, 0, 0]
+            )
+            .is_err()
+        );
     }
 
     #[cfg(feature = "nts-pool")]
     #[test]
     fn test_request_support_reject_problematic() {
-        assert!(pwrap(
-            Request::parse,
-            &[0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0xC0, 2, 0, 2, 1, 2, 0x80, 0, 0, 0]
-        )
-        .is_err());
-        assert!(pwrap(
-            Request::parse,
-            &[0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 2, 0, 2, 0, 0, 0x80, 0, 0, 0]
-        )
-        .is_err());
-        assert!(pwrap(
-            Request::parse,
-            &[0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 3, 0, 2, 0, 0, 0x80, 0, 0, 0]
-        )
-        .is_err());
-        assert!(pwrap(
-            Request::parse,
-            &[0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 1, 0, 2, 0, 0, 0x80, 0, 0, 0]
-        )
-        .is_err());
-        assert!(pwrap(
-            Request::parse,
-            &[0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x80, 0, 0, 0]
-        )
-        .is_err());
-        assert!(pwrap(
-            Request::parse,
-            &[0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 5, 0, 2, 1, 2, 0x80, 0, 0, 0]
-        )
-        .is_err());
+        assert!(
+            pwrap(
+                Request::parse,
+                &[
+                    0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0xC0, 2, 0, 2, 1, 2, 0x80, 0, 0, 0
+                ]
+            )
+            .is_err()
+        );
+        assert!(
+            pwrap(
+                Request::parse,
+                &[
+                    0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 2, 0, 2, 0, 0, 0x80, 0, 0, 0
+                ]
+            )
+            .is_err()
+        );
+        assert!(
+            pwrap(
+                Request::parse,
+                &[
+                    0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 3, 0, 2, 0, 0, 0x80, 0, 0, 0
+                ]
+            )
+            .is_err()
+        );
+        assert!(
+            pwrap(
+                Request::parse,
+                &[
+                    0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 1, 0, 2, 0, 0, 0x80, 0, 0, 0
+                ]
+            )
+            .is_err()
+        );
+        assert!(
+            pwrap(
+                Request::parse,
+                &[
+                    0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x80, 0, 0, 0
+                ]
+            )
+            .is_err()
+        );
+        assert!(
+            pwrap(
+                Request::parse,
+                &[
+                    0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 5, 0, 2, 1, 2, 0x80, 0, 0, 0
+                ]
+            )
+            .is_err()
+        );
     }
 
     #[cfg(feature = "nts-pool")]
     #[test]
     fn test_request_support_reject_unknown_critical() {
-        assert!(pwrap(
-            Request::parse,
-            &[0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 50, 0, 0, 0x80, 0, 0, 0]
-        )
-        .is_err());
+        assert!(
+            pwrap(
+                Request::parse,
+                &[0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 50, 0, 0, 0x80, 0, 0, 0]
+            )
+            .is_err()
+        );
     }
 
     #[cfg(feature = "nts-pool")]
@@ -1540,84 +1639,128 @@ mod tests {
 
     #[test]
     fn test_key_exchange_response_reject_incomplete() {
-        assert!(pwrap(
-            KeyExchangeResponse::parse,
-            &[0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 4]
-        )
-        .is_err());
-        assert!(pwrap(
-            KeyExchangeResponse::parse,
-            &[0x80, 1, 0, 2, 0, 0, 0x80, 0, 0, 0]
-        )
-        .is_err());
-        assert!(pwrap(
-            KeyExchangeResponse::parse,
-            &[0x80, 4, 0, 2, 0, 4, 0x80, 0, 0, 0]
-        )
-        .is_err());
+        assert!(
+            pwrap(
+                KeyExchangeResponse::parse,
+                &[0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 4]
+            )
+            .is_err()
+        );
+        assert!(
+            pwrap(
+                KeyExchangeResponse::parse,
+                &[0x80, 1, 0, 2, 0, 0, 0x80, 0, 0, 0]
+            )
+            .is_err()
+        );
+        assert!(
+            pwrap(
+                KeyExchangeResponse::parse,
+                &[0x80, 4, 0, 2, 0, 4, 0x80, 0, 0, 0]
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn test_key_exchange_response_reject_multiple() {
-        assert!(pwrap(
-            KeyExchangeResponse::parse,
-            &[0x80, 1, 0, 4, 0, 0, 0x80, 1, 0x80, 4, 0, 2, 0, 15, 0x80, 0, 0, 0]
-        )
-        .is_err());
+        assert!(
+            pwrap(
+                KeyExchangeResponse::parse,
+                &[
+                    0x80, 1, 0, 4, 0, 0, 0x80, 1, 0x80, 4, 0, 2, 0, 15, 0x80, 0, 0, 0
+                ]
+            )
+            .is_err()
+        );
 
-        assert!(pwrap(
-            KeyExchangeResponse::parse,
-            &[0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 4, 0, 15, 0, 17, 0x80, 0, 0, 0]
-        )
-        .is_err());
+        assert!(
+            pwrap(
+                KeyExchangeResponse::parse,
+                &[
+                    0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 4, 0, 15, 0, 17, 0x80, 0, 0, 0
+                ]
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn test_key_exchange_response_reject_repeated() {
-        assert!(pwrap(
-            KeyExchangeResponse::parse,
-            &[0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x80, 4, 0, 2, 0, 17, 0x80, 0, 0, 0]
-        )
-        .is_err());
+        assert!(
+            pwrap(
+                KeyExchangeResponse::parse,
+                &[
+                    0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x80, 4, 0, 2, 0, 17, 0x80, 0, 0, 0
+                ]
+            )
+            .is_err()
+        );
 
-        assert!(pwrap(
-            KeyExchangeResponse::parse,
-            &[0x80, 1, 0, 2, 0, 0, 0x80, 1, 0, 2, 0x80, 1, 0x80, 4, 0, 2, 0, 15, 0x80, 0, 0, 0]
-        )
-        .is_err());
+        assert!(
+            pwrap(
+                KeyExchangeResponse::parse,
+                &[
+                    0x80, 1, 0, 2, 0, 0, 0x80, 1, 0, 2, 0x80, 1, 0x80, 4, 0, 2, 0, 15, 0x80, 0, 0,
+                    0
+                ]
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn test_key_exchange_response_reject_problematic() {
-        assert!(pwrap(
-            KeyExchangeResponse::parse,
-            &[0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 4, 0xC0, 4, 0, 0, 0x80, 0, 0, 0]
-        )
-        .is_err());
-        assert!(pwrap(
-            KeyExchangeResponse::parse,
-            &[0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 4, 0xC0, 1, 0, 0, 0x80, 0, 0, 0]
-        )
-        .is_err());
-        assert!(pwrap(
-            KeyExchangeResponse::parse,
-            &[0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 4, 0xC0, 2, 0, 2, 1, 2, 0x80, 0, 0, 0]
-        )
-        .is_err());
-        assert!(pwrap(
-            KeyExchangeResponse::parse,
-            &[0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 4, 0xC0, 3, 0, 2, b'h', b'i', 0x80, 0, 0, 0]
-        )
-        .is_err());
+        assert!(
+            pwrap(
+                KeyExchangeResponse::parse,
+                &[
+                    0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 4, 0xC0, 4, 0, 0, 0x80, 0, 0, 0
+                ]
+            )
+            .is_err()
+        );
+        assert!(
+            pwrap(
+                KeyExchangeResponse::parse,
+                &[
+                    0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 4, 0xC0, 1, 0, 0, 0x80, 0, 0, 0
+                ]
+            )
+            .is_err()
+        );
+        assert!(
+            pwrap(
+                KeyExchangeResponse::parse,
+                &[
+                    0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 4, 0xC0, 2, 0, 2, 1, 2, 0x80, 0, 0, 0
+                ]
+            )
+            .is_err()
+        );
+        assert!(
+            pwrap(
+                KeyExchangeResponse::parse,
+                &[
+                    0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 4, 0xC0, 3, 0, 2, b'h', b'i', 0x80, 0,
+                    0, 0
+                ]
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn test_key_exchange_response_reject_unknown_critical() {
-        assert!(pwrap(
-            KeyExchangeResponse::parse,
-            &[0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 4, 0x80, 50, 0, 0, 0x80, 0, 0, 0]
-        )
-        .is_err());
+        assert!(
+            pwrap(
+                KeyExchangeResponse::parse,
+                &[
+                    0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 4, 0x80, 50, 0, 0, 0x80, 0, 0, 0
+                ]
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -1673,38 +1816,42 @@ mod tests {
     #[test]
     fn test_key_exchange_response_serialize() {
         let mut buf = vec![];
-        assert!(swrap(
-            KeyExchangeResponse::serialize,
-            KeyExchangeResponse {
-                protocol: NextProtocol::NTPv4,
-                algorithm: AeadAlgorithm::Unknown(4),
-                cookies: [].as_slice().into(),
-                server: None,
-                port: None
-            },
-            &mut buf
-        )
-        .is_ok());
+        assert!(
+            swrap(
+                KeyExchangeResponse::serialize,
+                KeyExchangeResponse {
+                    protocol: NextProtocol::NTPv4,
+                    algorithm: AeadAlgorithm::Unknown(4),
+                    cookies: [].as_slice().into(),
+                    server: None,
+                    port: None
+                },
+                &mut buf
+            )
+            .is_ok()
+        );
         assert_eq!(
             buf,
             [0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 4, 0x80, 0, 0, 0]
         );
 
         let mut buf = vec![];
-        assert!(swrap(
-            KeyExchangeResponse::serialize,
-            KeyExchangeResponse {
-                protocol: NextProtocol::NTPv4,
-                algorithm: AeadAlgorithm::Unknown(4),
-                cookies: [[1, 2, 3].as_slice().into(), [4, 5].as_slice().into()]
-                    .as_slice()
-                    .into(),
-                server: None,
-                port: None
-            },
-            &mut buf
-        )
-        .is_ok());
+        assert!(
+            swrap(
+                KeyExchangeResponse::serialize,
+                KeyExchangeResponse {
+                    protocol: NextProtocol::NTPv4,
+                    algorithm: AeadAlgorithm::Unknown(4),
+                    cookies: [[1, 2, 3].as_slice().into(), [4, 5].as_slice().into()]
+                        .as_slice()
+                        .into(),
+                    server: None,
+                    port: None
+                },
+                &mut buf
+            )
+            .is_ok()
+        );
         assert_eq!(
             buf,
             [
@@ -1714,56 +1861,66 @@ mod tests {
         );
 
         let mut buf = vec![];
-        assert!(swrap(
-            KeyExchangeResponse::serialize,
-            KeyExchangeResponse {
-                protocol: NextProtocol::NTPv4,
-                algorithm: AeadAlgorithm::Unknown(4),
-                cookies: [].as_slice().into(),
-                server: Some("hi".into()),
-                port: None
-            },
-            &mut buf
-        )
-        .is_ok());
+        assert!(
+            swrap(
+                KeyExchangeResponse::serialize,
+                KeyExchangeResponse {
+                    protocol: NextProtocol::NTPv4,
+                    algorithm: AeadAlgorithm::Unknown(4),
+                    cookies: [].as_slice().into(),
+                    server: Some("hi".into()),
+                    port: None
+                },
+                &mut buf
+            )
+            .is_ok()
+        );
         assert_eq!(
             buf,
-            [0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 4, 0x80, 6, 0, 2, b'h', b'i', 0x80, 0, 0, 0]
+            [
+                0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 4, 0x80, 6, 0, 2, b'h', b'i', 0x80, 0, 0, 0
+            ]
         );
 
         let mut buf = vec![];
-        assert!(swrap(
-            KeyExchangeResponse::serialize,
-            KeyExchangeResponse {
-                protocol: NextProtocol::NTPv4,
-                algorithm: AeadAlgorithm::Unknown(4),
-                cookies: [].as_slice().into(),
-                server: None,
-                port: Some(15)
-            },
-            &mut buf
-        )
-        .is_ok());
+        assert!(
+            swrap(
+                KeyExchangeResponse::serialize,
+                KeyExchangeResponse {
+                    protocol: NextProtocol::NTPv4,
+                    algorithm: AeadAlgorithm::Unknown(4),
+                    cookies: [].as_slice().into(),
+                    server: None,
+                    port: Some(15)
+                },
+                &mut buf
+            )
+            .is_ok()
+        );
         assert_eq!(
             buf,
-            [0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 4, 0x80, 7, 0, 2, 0, 15, 0x80, 0, 0, 0]
+            [
+                0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 4, 0x80, 7, 0, 2, 0, 15, 0x80, 0, 0, 0
+            ]
         );
 
         let mut buf = vec![];
-        assert!(swrap(
-            KeyExchangeResponse::serialize,
-            KeyExchangeResponse {
-                protocol: NextProtocol::NTPv4,
-                algorithm: AeadAlgorithm::Unknown(4),
-                cookies: [[1, 2, 3].as_slice().into(), [4, 5].as_slice().into()]
-                    .as_slice()
-                    .into(),
-                server: Some("hi".into()),
-                port: Some(15)
-            },
-            &mut buf
-        )
-        .is_ok());
+        assert!(
+            swrap(
+                KeyExchangeResponse::serialize,
+                KeyExchangeResponse {
+                    protocol: NextProtocol::NTPv4,
+                    algorithm: AeadAlgorithm::Unknown(4),
+                    cookies: [[1, 2, 3].as_slice().into(), [4, 5].as_slice().into()]
+                        .as_slice()
+                        .into(),
+                    server: Some("hi".into()),
+                    port: Some(15)
+                },
+                &mut buf
+            )
+            .is_ok()
+        );
         assert_eq!(
             buf,
             [
@@ -1777,73 +1934,85 @@ mod tests {
     #[test]
     fn test_support_response() {
         let mut buf = vec![];
-        assert!(swrap(
-            SupportsResponse::serialize,
-            SupportsResponse {
-                algorithms: Some(
-                    [AeadAlgorithm::AeadAesSivCmac256.description().unwrap()]
-                        .as_slice()
-                        .into()
-                ),
-                protocols: None
-            },
-            &mut buf
-        )
-        .is_ok());
+        assert!(
+            swrap(
+                SupportsResponse::serialize,
+                SupportsResponse {
+                    algorithms: Some(
+                        [AeadAlgorithm::AeadAesSivCmac256.description().unwrap()]
+                            .as_slice()
+                            .into()
+                    ),
+                    protocols: None
+                },
+                &mut buf
+            )
+            .is_ok()
+        );
         assert_eq!(buf, [0xC0, 1, 0, 4, 0, 15, 0, 32, 0x80, 0, 0, 0]);
 
         let mut buf = vec![];
-        assert!(swrap(
-            SupportsResponse::serialize,
-            SupportsResponse {
-                algorithms: Some(
-                    [AeadAlgorithm::AeadAesSivCmac256.description().unwrap()]
-                        .as_slice()
-                        .into()
-                ),
-                protocols: Some([NextProtocol::NTPv4].as_slice().into()),
-            },
-            &mut buf
-        )
-        .is_ok());
+        assert!(
+            swrap(
+                SupportsResponse::serialize,
+                SupportsResponse {
+                    algorithms: Some(
+                        [AeadAlgorithm::AeadAesSivCmac256.description().unwrap()]
+                            .as_slice()
+                            .into()
+                    ),
+                    protocols: Some([NextProtocol::NTPv4].as_slice().into()),
+                },
+                &mut buf
+            )
+            .is_ok()
+        );
         assert_eq!(
             buf,
-            [0xC0, 1, 0, 4, 0, 15, 0, 32, 0xC0, 4, 0, 2, 0, 0, 0x80, 0, 0, 0]
+            [
+                0xC0, 1, 0, 4, 0, 15, 0, 32, 0xC0, 4, 0, 2, 0, 0, 0x80, 0, 0, 0
+            ]
         );
 
         let mut buf = vec![];
-        assert!(swrap(
-            SupportsResponse::serialize,
-            SupportsResponse {
-                algorithms: None,
-                protocols: Some([NextProtocol::NTPv4].as_slice().into()),
-            },
-            &mut buf
-        )
-        .is_ok());
+        assert!(
+            swrap(
+                SupportsResponse::serialize,
+                SupportsResponse {
+                    algorithms: None,
+                    protocols: Some([NextProtocol::NTPv4].as_slice().into()),
+                },
+                &mut buf
+            )
+            .is_ok()
+        );
         assert_eq!(buf, [0xC0, 4, 0, 2, 0, 0, 0x80, 0, 0, 0]);
     }
 
     #[test]
     fn test_no_overlap_response() {
         let mut buf = vec![];
-        assert!(swrap(
-            NoOverlapResponse::serialize,
-            NoOverlapResponse::NoOverlappingAlgorithm {
-                protocol: NextProtocol::NTPv4
-            },
-            &mut buf
-        )
-        .is_ok());
+        assert!(
+            swrap(
+                NoOverlapResponse::serialize,
+                NoOverlapResponse::NoOverlappingAlgorithm {
+                    protocol: NextProtocol::NTPv4
+                },
+                &mut buf
+            )
+            .is_ok()
+        );
         assert_eq!(buf, [0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 0, 0x80, 0, 0, 0]);
 
         let mut buf = vec![];
-        assert!(swrap(
-            NoOverlapResponse::serialize,
-            NoOverlapResponse::NoOverlappingProtocol,
-            &mut buf
-        )
-        .is_ok());
+        assert!(
+            swrap(
+                NoOverlapResponse::serialize,
+                NoOverlapResponse::NoOverlappingProtocol,
+                &mut buf
+            )
+            .is_ok()
+        );
         assert_eq!(buf, [0x80, 1, 0, 0, 0x80, 0, 0, 0]);
     }
 }

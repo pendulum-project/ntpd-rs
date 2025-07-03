@@ -4,8 +4,8 @@ use tokio::sync::mpsc;
 use crate::daemon::config::SockSourceConfig;
 
 use super::{
-    standard::StandardSpawnError, SockSourceCreateParameters, SourceCreateParameters, SourceId,
-    SourceRemovalReason, SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId,
+    SockSourceCreateParameters, SourceCreateParameters, SourceId, SourceRemovalReason,
+    SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId, standard::StandardSpawnError,
 };
 
 pub struct SockSpawner {
@@ -84,7 +84,7 @@ mod tests {
     use crate::{
         daemon::{
             config::SockSourceConfig,
-            spawn::{sock::SockSpawner, SourceCreateParameters, SpawnAction, Spawner},
+            spawn::{SourceCreateParameters, SpawnAction, Spawner, sock::SockSpawner},
             system::MESSAGE_BUFFER_SIZE,
         },
         test::alloc_port,

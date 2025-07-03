@@ -7,11 +7,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-use serde::{de, Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, de};
 
 use crate::{
-    ipfilter::IpFilter, KeySet, NoCipher, NtpClock, NtpPacket, NtpTimestamp, NtpVersion,
-    PacketParsingError, SystemSnapshot,
+    KeySet, NoCipher, NtpClock, NtpPacket, NtpTimestamp, NtpVersion, PacketParsingError,
+    SystemSnapshot, ipfilter::IpFilter,
 };
 
 pub enum ServerAction<'a> {
@@ -426,8 +426,8 @@ mod tests {
     use std::net::{Ipv4Addr, Ipv6Addr};
 
     use crate::{
-        nts::AeadAlgorithm, packet::AesSivCmac256, Cipher, DecodedServerCookie, KeySetProvider,
-        NtpDuration, NtpLeapIndicator, PollIntervalLimits,
+        Cipher, DecodedServerCookie, KeySetProvider, NtpDuration, NtpLeapIndicator,
+        PollIntervalLimits, nts::AeadAlgorithm, packet::AesSivCmac256,
     };
 
     use super::*;

@@ -71,10 +71,6 @@ mod rustls23_shim {
         }
     }
 
-    pub use rustls23::pki_types::InvalidDnsNameError;
-    pub use rustls23::pki_types::ServerName;
-    pub use rustls23::server::NoClientAuth;
-    pub use rustls23::version::TLS13;
     pub use rustls23::ClientConfig;
     pub use rustls23::ClientConnection;
     pub use rustls23::ConnectionCommon;
@@ -82,6 +78,10 @@ mod rustls23_shim {
     pub use rustls23::RootCertStore;
     pub use rustls23::ServerConfig;
     pub use rustls23::ServerConnection;
+    pub use rustls23::pki_types::InvalidDnsNameError;
+    pub use rustls23::pki_types::ServerName;
+    pub use rustls23::server::NoClientAuth;
+    pub use rustls23::version::TLS13;
 
     pub type Certificate = rustls23::pki_types::CertificateDer<'static>;
     pub type PrivateKey = rustls23::pki_types::PrivateKeyDer<'static>;
@@ -90,7 +90,7 @@ mod rustls23_shim {
 
     pub mod pemfile {
         use rustls23::pki_types::{
-            pem::PemObject, CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer,
+            CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, pem::PemObject,
         };
 
         pub fn certs(
@@ -128,8 +128,8 @@ mod rustls23_shim {
 
     pub trait CloneKeyShim {}
 
-    pub fn client_config_builder(
-    ) -> rustls23::ConfigBuilder<rustls23::ClientConfig, rustls23::WantsVerifier> {
+    pub fn client_config_builder()
+    -> rustls23::ConfigBuilder<rustls23::ClientConfig, rustls23::WantsVerifier> {
         ClientConfig::builder()
     }
 
@@ -139,8 +139,8 @@ mod rustls23_shim {
         ClientConfig::builder_with_protocol_versions(versions)
     }
 
-    pub fn server_config_builder(
-    ) -> rustls23::ConfigBuilder<rustls23::ServerConfig, rustls23::WantsVerifier> {
+    pub fn server_config_builder()
+    -> rustls23::ConfigBuilder<rustls23::ServerConfig, rustls23::WantsVerifier> {
         ServerConfig::builder()
     }
 

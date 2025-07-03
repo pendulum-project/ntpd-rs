@@ -1,8 +1,8 @@
 use rand::{
-    distributions::{Distribution, Standard},
     Rng,
+    distributions::{Distribution, Standard},
 };
-use serde::{de::Unexpected, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::Unexpected};
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::time::{Duration, Instant};
 
@@ -130,7 +130,7 @@ impl NtpTimestamp {
 impl Distribution<NtpTimestamp> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> NtpTimestamp {
         NtpTimestamp {
-            timestamp: rng.gen(),
+            timestamp: rng.r#gen(),
         }
     }
 }

@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use aead::{generic_array::GenericArray, KeyInit};
+use aead::{KeyInit, generic_array::GenericArray};
 
 use crate::{
     nts::AeadAlgorithm,

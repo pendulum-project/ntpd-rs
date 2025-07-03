@@ -76,19 +76,20 @@
 use tracing::{debug, trace};
 
 use crate::{
+    ObservableSourceTimedata,
     algorithm::{KalmanControllerMessage, KalmanSourceMessage, SourceController},
     config::SourceConfig,
     source::Measurement,
     time_types::{NtpDuration, NtpTimestamp, PollInterval, PollIntervalLimits},
-    ObservableSourceTimedata,
 };
 
 use core::fmt::Debug;
 
 use super::{
+    SourceSnapshot,
     config::AlgorithmConfig,
     matrix::{Matrix, Vector},
-    sqr, SourceSnapshot,
+    sqr,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -522,8 +523,7 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
 
         trace!(
             stats.observe_probability,
-            stats.weight,
-            "Measurement absorbed"
+            stats.weight, "Measurement absorbed"
         );
 
         (stats.observe_probability, stats.weight, m_delta_t)
@@ -588,8 +588,7 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
         }
         trace!(
             precision_score = self.precision_score,
-            p,
-            "Wander estimate update"
+            p, "Wander estimate update"
         );
         if self.precision_score <= -algo_config.precision_hysteresis {
             self.clock_wander /= 4.0;
@@ -901,10 +900,10 @@ pub type TwoWayKalmanSourceController<SourceId> =
 pub type OneWayKalmanSourceController<SourceId> = KalmanSourceController<SourceId, (), f64>;
 
 impl<
-        SourceId: Copy,
-        D: Debug + Copy + Clone,
-        N: MeasurementNoiseEstimator<MeasurementDelay = D> + Clone,
-    > KalmanSourceController<SourceId, D, N>
+    SourceId: Copy,
+    D: Debug + Copy + Clone,
+    N: MeasurementNoiseEstimator<MeasurementDelay = D> + Clone,
+> KalmanSourceController<SourceId, D, N>
 {
     pub(super) fn new(
         index: SourceId,
@@ -924,10 +923,10 @@ impl<
 }
 
 impl<
-        SourceId: std::fmt::Debug + Copy + Send + 'static,
-        D: Debug + Copy + Clone + Send + 'static,
-        N: MeasurementNoiseEstimator<MeasurementDelay = D> + Clone + Send + 'static,
-    > SourceController for KalmanSourceController<SourceId, D, N>
+    SourceId: std::fmt::Debug + Copy + Send + 'static,
+    D: Debug + Copy + Clone + Send + 'static,
+    N: MeasurementNoiseEstimator<MeasurementDelay = D> + Clone + Send + 'static,
+> SourceController for KalmanSourceController<SourceId, D, N>
 {
     type ControllerMessage = KalmanControllerMessage;
     type SourceMessage = KalmanSourceMessage<SourceId>;
@@ -1244,14 +1243,15 @@ mod tests {
         );
 
         assert!(
-            dbg!((source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
-                .unwrap()
-                .state
-                .offset()
-                - 20e-3)
-                .abs())
-                < 1e-7
+            dbg!(
+                (source
+                    .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                    .unwrap()
+                    .state
+                    .offset()
+                    - 20e-3)
+                    .abs()
+            ) < 1e-7
         );
         assert!(
             (source
@@ -1321,14 +1321,15 @@ mod tests {
         );
 
         assert!(
-            dbg!((source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
-                .unwrap()
-                .state
-                .offset()
-                - -20e-3)
-                .abs())
-                < 1e-7
+            dbg!(
+                (source
+                    .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                    .unwrap()
+                    .state
+                    .offset()
+                    - -20e-3)
+                    .abs()
+            ) < 1e-7
         );
         assert!(
             (source
@@ -1492,9 +1493,11 @@ mod tests {
             data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
             next_idx: 0,
         });
-        assert!(source
-            .snapshot(0_usize, &AlgorithmConfig::default(), None)
-            .is_none());
+        assert!(
+            source
+                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .is_none()
+        );
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
@@ -1829,9 +1832,11 @@ mod tests {
         let base = NtpTimestamp::from_fixed_int(0);
         let basei = NtpInstant::now();
         let mut source = SourceState::new(noise_estimator);
-        assert!(source
-            .snapshot(0_usize, &AlgorithmConfig::default(), None)
-            .is_none());
+        assert!(
+            source
+                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .is_none()
+        );
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
@@ -2066,9 +2071,11 @@ mod tests {
         let base = NtpTimestamp::from_fixed_int(0);
         let basei = NtpInstant::now();
         let mut source = SourceState::new(AveragingBuffer::default());
-        assert!(source
-            .snapshot(0_usize, &AlgorithmConfig::default(), None)
-            .is_none());
+        assert!(
+            source
+                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .is_none()
+        );
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),

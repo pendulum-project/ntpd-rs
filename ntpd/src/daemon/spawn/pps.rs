@@ -4,8 +4,8 @@ use tokio::sync::mpsc;
 use crate::daemon::config::PpsSourceConfig;
 
 use super::{
-    standard::StandardSpawnError, PpsSourceCreateParameters, SourceCreateParameters, SourceId,
-    SourceRemovalReason, SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId,
+    PpsSourceCreateParameters, SourceCreateParameters, SourceId, SourceRemovalReason,
+    SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId, standard::StandardSpawnError,
 };
 
 pub struct PpsSpawner {
@@ -85,7 +85,7 @@ mod tests {
     use crate::{
         daemon::{
             config::PpsSourceConfig,
-            spawn::{pps::PpsSpawner, SourceCreateParameters, SpawnAction, Spawner},
+            spawn::{SourceCreateParameters, SpawnAction, Spawner, pps::PpsSpawner},
             system::MESSAGE_BUFFER_SIZE,
         },
         test::alloc_port,

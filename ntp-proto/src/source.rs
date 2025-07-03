@@ -1,4 +1,11 @@
 use crate::{
+    NtpVersion,
+    packet::{
+        ExtensionField, NtpHeader,
+        v5::server_reference_id::{BloomFilter, RemoteBloomFilter},
+    },
+};
+use crate::{
     algorithm::{ObservableSourceTimedata, SourceController},
     config::SourceConfig,
     cookiestash::CookieStash,
@@ -7,14 +14,7 @@ use crate::{
     system::{SystemSnapshot, SystemSourceUpdate},
     time_types::{NtpDuration, NtpInstant, NtpTimestamp, PollInterval},
 };
-use crate::{
-    packet::{
-        v5::server_reference_id::{BloomFilter, RemoteBloomFilter},
-        ExtensionField, NtpHeader,
-    },
-    NtpVersion,
-};
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
@@ -570,7 +570,9 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
                 );
                 // Defence in depth, ensure we can get at least 1 new cookie.
                 if new_cookies == 0 {
-                    warn!("NTS Cookie too large, resetting source. This may be a problem with the source");
+                    warn!(
+                        "NTS Cookie too large, resetting source. This may be a problem with the source"
+                    );
                     return actions![NtpSourceAction::Reset];
                 }
                 match self.protocol_version {
@@ -868,9 +870,9 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
 #[cfg(test)]
 mod test {
     use crate::{
+        NtpClock,
         packet::{AesSivCmac256, NoCipher},
         time_types::PollIntervalLimits,
-        NtpClock,
     };
 
     use super::*;

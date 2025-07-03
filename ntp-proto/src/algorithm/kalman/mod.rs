@@ -116,7 +116,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
             };
         }
         for (_, (state, _)) in self.sources.iter_mut() {
-            if let Some(ref mut snapshot) = state {
+            if let Some(snapshot) = state {
                 snapshot.state =
                     snapshot
                         .state
@@ -131,11 +131,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 .iter()
                 .filter_map(
                     |(_, (state, usable))| {
-                        if *usable {
-                            state.as_ref()
-                        } else {
-                            None
-                        }
+                        if *usable { state.as_ref() } else { None }
                     },
                 )
                 .cloned()
@@ -241,7 +237,9 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 .startup_step_panic_threshold
                 .is_within(change)
             {
-                error!("Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate. If the clock is significantly wrong, you can use `ntp-ctl force-sync` to correct it.");
+                error!(
+                    "Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate. If the clock is significantly wrong, you can use `ntp-ctl force-sync` to correct it."
+                );
                 #[cfg(not(test))]
                 std::process::exit(crate::exitcode::SOFTWARE);
                 #[cfg(test)]
@@ -259,7 +257,9 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                     .map(|v| self.timedata.accumulated_steps > v)
                     .unwrap_or(false)
             {
-                error!("Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate. If the clock is significantly wrong, you can use `ntp-ctl force-sync` to correct it.");
+                error!(
+                    "Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate. If the clock is significantly wrong, you can use `ntp-ctl force-sync` to correct it."
+                );
                 #[cfg(not(test))]
                 std::process::exit(crate::exitcode::SOFTWARE);
                 #[cfg(test)]
@@ -280,12 +280,15 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 .step_clock(NtpDuration::from_seconds(change))
                 .expect("Cannot adjust clock");
             for (state, _) in self.sources.values_mut() {
-                if let Some(ref mut state) = state {
+                if let Some(state) = state {
                     state.state = state.state.process_offset_steering(change, state.period);
                 }
             }
             if self.synchronization_config.warn_on_jump {
-                warn!("Jumped offset by {}ms. This may cause problems for other software. If this is not a problem for your system, you can reclassify this warning as an informative message through the `synchronization.warn_on_jump` setting in ntp.toml.", change * 1e3);
+                warn!(
+                    "Jumped offset by {}ms. This may cause problems for other software. If this is not a problem for your system, you can reclassify this warning as an informative message through the `synchronization.warn_on_jump` setting in ntp.toml.",
+                    change * 1e3
+                );
             } else {
                 info!("Jumped offset by {}ms", change * 1e3);
             }
@@ -337,7 +340,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
             .set_frequency(self.freq_offset)
             .expect("Cannot adjust clock");
         for (state, _) in self.sources.values_mut() {
-            if let Some(ref mut state) = state {
+            if let Some(state) = state {
                 state.state = state.state.process_frequency_steering(
                     freq_update,
                     actual_change,
@@ -468,10 +471,10 @@ mod tests {
 
     use matrix::{Matrix, Vector};
 
+    use crate::SourceController;
     use crate::config::StepThreshold;
     use crate::source::Measurement;
     use crate::time_types::NtpInstant;
-    use crate::SourceController;
 
     use super::*;
 

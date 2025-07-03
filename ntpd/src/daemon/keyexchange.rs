@@ -5,10 +5,10 @@ use std::{
 };
 
 use libc::{ECONNABORTED, EMFILE, ENFILE, ENOBUFS, ENOMEM};
-use ntp_proto::{tls_utils::Certificate, NtsServerConfig};
 use ntp_proto::{KeyExchangeServer, KeySet};
+use ntp_proto::{NtsServerConfig, tls_utils::Certificate};
 use tokio::{net::TcpListener, task::JoinHandle};
-use tracing::{debug, error, instrument, Instrument, Span};
+use tracing::{Instrument, Span, debug, error, instrument};
 
 use super::config::NtsKeConfig;
 use super::exitcode;
@@ -147,7 +147,10 @@ async fn run_key_exchange_server(
                         Some(ENFILE) | Some(EMFILE) | Some(ENOMEM) | Some(ENOBUFS)
                     ) =>
                 {
-                    error!("Out of resources in NTS-KE, consider raising limits or lowering max parallel connections: {}", e);
+                    error!(
+                        "Out of resources in NTS-KE, consider raising limits or lowering max parallel connections: {}",
+                        e
+                    );
                     tokio::time::sleep(timeout).await;
                     continue;
                 }

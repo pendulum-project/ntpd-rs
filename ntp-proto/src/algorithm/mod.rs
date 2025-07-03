@@ -1,14 +1,14 @@
 use std::{fmt::Debug, time::Duration};
 
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::{
+    PollInterval,
     clock::NtpClock,
     config::{SourceConfig, SynchronizationConfig},
     source::Measurement,
     system::TimeSnapshot,
     time_types::{NtpDuration, NtpTimestamp},
-    PollInterval,
 };
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -56,15 +56,15 @@ pub trait TimeSyncController: Sized + Send + 'static {
     type ControllerMessage: Debug + Clone + Send + 'static;
     type SourceMessage: Debug + Clone + Send + 'static;
     type NtpSourceController: SourceController<
-        ControllerMessage = Self::ControllerMessage,
-        SourceMessage = Self::SourceMessage,
-        MeasurementDelay = NtpDuration,
-    >;
+            ControllerMessage = Self::ControllerMessage,
+            SourceMessage = Self::SourceMessage,
+            MeasurementDelay = NtpDuration,
+        >;
     type OneWaySourceController: SourceController<
-        ControllerMessage = Self::ControllerMessage,
-        SourceMessage = Self::SourceMessage,
-        MeasurementDelay = (),
-    >;
+            ControllerMessage = Self::ControllerMessage,
+            SourceMessage = Self::SourceMessage,
+            MeasurementDelay = (),
+        >;
 
     /// Create a new clock controller controlling the given clock
     fn new(
@@ -127,6 +127,6 @@ pub trait SourceController: Sized + Send + 'static {
 mod kalman;
 
 pub use kalman::{
-    config::AlgorithmConfig, KalmanClockController, KalmanControllerMessage,
-    KalmanSourceController, KalmanSourceMessage, TwoWayKalmanSourceController,
+    KalmanClockController, KalmanControllerMessage, KalmanSourceController, KalmanSourceMessage,
+    TwoWayKalmanSourceController, config::AlgorithmConfig,
 };

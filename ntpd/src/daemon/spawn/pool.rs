@@ -138,8 +138,8 @@ mod tests {
     use crate::daemon::{
         config::{NormalizedAddress, PoolSourceConfig},
         spawn::{
-            pool::PoolSpawner, tests::get_ntp_create_params, SourceRemovalReason,
-            SourceRemovedEvent, Spawner,
+            SourceRemovalReason, SourceRemovedEvent, Spawner, pool::PoolSpawner,
+            tests::get_ntp_create_params,
         },
         system::MESSAGE_BUFFER_SIZE,
     };

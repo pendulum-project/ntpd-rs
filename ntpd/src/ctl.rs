@@ -1,7 +1,7 @@
 use std::{path::PathBuf, process::ExitCode};
 
 use crate::{
-    daemon::{config::CliArg, tracing::LogLevel, Config, ObservableState},
+    daemon::{Config, ObservableState, config::CliArg, tracing::LogLevel},
     force_sync,
 };
 use tokio::runtime::Builder;

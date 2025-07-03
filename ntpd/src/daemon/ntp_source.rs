@@ -10,9 +10,9 @@ use ntp_proto::{
 use timestamped_socket::socket::open_interface_udp;
 use timestamped_socket::{
     interface::InterfaceName,
-    socket::{connect_address, Connected, RecvResult, Socket},
+    socket::{Connected, RecvResult, Socket, connect_address},
 };
-use tracing::{debug, error, instrument, warn, Instrument, Span};
+use tracing::{Instrument, Span, debug, error, instrument, warn};
 
 use tokio::time::{Instant, Sleep};
 
@@ -409,14 +409,18 @@ fn accept_packet<'a, C: NtpClock>(
             timestamp,
             ..
         }) => {
-            let recv_timestamp = timestamp.map(convert_net_timestamp).unwrap_or_else(|| {
-                if let Ok(now) = clock.now() {
-                    debug!(?size, "received a packet without a timestamp, substituting");
-                    now
-                } else {
-                    panic!("Received packet without timestamp and couldn't substitute");
-                }
-            });
+            let recv_timestamp =
+                timestamp
+                    .map(convert_net_timestamp)
+                    .unwrap_or_else(|| match clock.now() {
+                        Ok(now) => {
+                            debug!(?size, "received a packet without a timestamp, substituting");
+                            now
+                        }
+                        _ => {
+                            panic!("Received packet without timestamp and couldn't substitute");
+                        }
+                    });
 
             // Note: packets are allowed to be bigger when including extensions.
             // we don't expect them, but the server may still send them. The
@@ -458,7 +462,7 @@ mod tests {
         NoCipher, NtpDuration, NtpLeapIndicator, NtpPacket, ProtocolVersion, SourceConfig,
         SynchronizationConfig, SystemSnapshot, TimeSnapshot, TwoWayKalmanSourceController,
     };
-    use timestamped_socket::socket::{open_ip, GeneralTimestampMode, Open};
+    use timestamped_socket::socket::{GeneralTimestampMode, Open, open_ip};
     use tokio::sync::{broadcast, mpsc};
 
     use crate::{daemon::util::EPOCH_OFFSET, test::alloc_port};

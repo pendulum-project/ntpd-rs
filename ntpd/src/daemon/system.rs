@@ -2,7 +2,7 @@
 use crate::daemon::pps_source::PpsSourceTask;
 use crate::daemon::{
     sock_source::SockSourceTask,
-    spawn::{spawner_task, SourceCreateParameters},
+    spawn::{SourceCreateParameters, spawner_task},
 };
 
 #[cfg(feature = "unstable_nts-pool")]
@@ -13,8 +13,8 @@ use super::{
     ntp_source::{MsgForSystem, SourceChannels, SourceTask, Wait},
     server::{ServerStats, ServerTask},
     spawn::{
-        nts::NtsSpawner, pool::PoolSpawner, sock::SockSpawner, standard::StandardSpawner, SourceId,
-        SourceRemovalReason, SpawnAction, SpawnEvent, Spawner, SpawnerId, SystemEvent,
+        SourceId, SourceRemovalReason, SpawnAction, SpawnEvent, Spawner, SpawnerId, SystemEvent,
+        nts::NtsSpawner, pool::PoolSpawner, sock::SockSpawner, standard::StandardSpawner,
     },
 };
 
@@ -216,11 +216,8 @@ struct SystemTask<
     interface: Option<InterfaceName>,
 }
 
-impl<
-        C: NtpClock + Sync,
-        Controller: TimeSyncController<Clock = C, SourceId = SourceId>,
-        T: Wait,
-    > SystemTask<C, Controller, T>
+impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C, SourceId = SourceId>, T: Wait>
+    SystemTask<C, Controller, T>
 {
     #[allow(clippy::too_many_arguments)]
     fn new(

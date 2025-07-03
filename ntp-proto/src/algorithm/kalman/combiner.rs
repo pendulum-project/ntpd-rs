@@ -1,6 +1,6 @@
 use crate::{packet::NtpLeapIndicator, time_types::NtpDuration};
 
-use super::{config::AlgorithmConfig, source::KalmanState, SourceSnapshot};
+use super::{SourceSnapshot, config::AlgorithmConfig, source::KalmanState};
 
 pub(super) struct Combine<Index: Copy> {
     pub estimate: KalmanState,
