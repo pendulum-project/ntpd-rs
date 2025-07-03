@@ -1,8 +1,8 @@
 use crate::io::NonBlockingWrite;
+use crate::packet::ExtensionField;
 use crate::packet::error::ParsingError;
 use crate::packet::extension_fields::ExtensionFieldTypeId;
 use crate::packet::v5::server_reference_id::BloomFilter;
-use crate::packet::ExtensionField;
 use std::borrow::Cow;
 use std::convert::Infallible;
 

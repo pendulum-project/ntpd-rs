@@ -6,7 +6,7 @@ use std::{
 
 use ntp_proto::{KeySet, KeySetProvider};
 use tokio::sync::watch;
-use tracing::{instrument, warn, Span};
+use tracing::{Span, instrument, warn};
 
 use super::config::KeysetConfig;
 
@@ -22,7 +22,9 @@ pub async fn spawn(config: KeysetConfig) -> watch::Receiver<Arc<KeySet>> {
                 if perm.mode() as libc::mode_t & (libc::S_IWOTH | libc::S_IROTH | libc::S_IXOTH)
                     != 0
                 {
-                    warn!("Keyset file permissions: Others can interact with it. This is a potential security issue.");
+                    warn!(
+                        "Keyset file permissions: Others can interact with it. This is a potential security issue."
+                    );
                 }
             }
 

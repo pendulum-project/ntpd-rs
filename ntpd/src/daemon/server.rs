@@ -1,7 +1,7 @@
 use std::{
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -10,9 +10,9 @@ use ntp_proto::{
     KeySet, NtpClock, Server, ServerReason, ServerResponse, ServerStatHandler, SystemSnapshot,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use timestamped_socket::socket::{open_ip, RecvResult};
+use timestamped_socket::socket::{RecvResult, open_ip};
 use tokio::task::JoinHandle;
-use tracing::{debug, instrument, warn, Instrument, Span};
+use tracing::{Instrument, Span, debug, instrument, warn};
 
 use super::{config::ServerConfig, util::convert_net_timestamp};
 

@@ -7,7 +7,7 @@ use crate::{io::NonBlockingWrite, keyset::DecodedServerCookie};
 
 use crate::packet::v5::extension_fields::{ReferenceIdRequest, ReferenceIdResponse};
 
-use super::{crypto::EncryptResult, error::ParsingError, Cipher, CipherProvider, Mac};
+use super::{Cipher, CipherProvider, Mac, crypto::EncryptResult, error::ParsingError};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) enum ExtensionFieldTypeId {
@@ -929,7 +929,9 @@ mod tests {
 
         assert_eq!(
             w,
-            &[1, 4, 0, 20, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+            &[
+                1, 4, 0, 20, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
+            ]
         );
     }
 
@@ -941,7 +943,9 @@ mod tests {
 
         assert_eq!(
             w,
-            &[2, 4, 0, 20, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+            &[
+                2, 4, 0, 20, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
+            ]
         );
     }
 
@@ -992,7 +996,9 @@ mod tests {
 
         assert_eq!(
             w,
-            &[0, 42, 0, 20, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+            &[
+                0, 42, 0, 20, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
+            ]
         );
     }
 
@@ -1214,9 +1220,10 @@ mod tests {
 
             let mut w = [0u8; 128];
             let mut cursor = Cursor::new(w.as_mut_slice());
-            assert!(data
-                .serialize(&mut cursor, &cipher, ExtensionHeaderVersion::V4)
-                .is_err());
+            assert!(
+                data.serialize(&mut cursor, &cipher, ExtensionHeaderVersion::V4)
+                    .is_err()
+            );
         }
 
         // but succeed when the cipher is not needed
@@ -1229,9 +1236,10 @@ mod tests {
 
             let mut w = [0u8; 128];
             let mut cursor = Cursor::new(w.as_mut_slice());
-            assert!(data
-                .serialize(&mut cursor, &cipher, ExtensionHeaderVersion::V4)
-                .is_ok());
+            assert!(
+                data.serialize(&mut cursor, &cipher, ExtensionHeaderVersion::V4)
+                    .is_ok()
+            );
         }
     }
 

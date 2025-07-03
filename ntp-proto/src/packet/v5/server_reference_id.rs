@@ -1,7 +1,7 @@
-use crate::packet::v5::extension_fields::{ReferenceIdRequest, ReferenceIdResponse};
 use crate::packet::v5::NtpClientCookie;
+use crate::packet::v5::extension_fields::{ReferenceIdRequest, ReferenceIdResponse};
 use rand::distributions::{Distribution, Standard};
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 use std::array::from_fn;
 use std::fmt::{Debug, Formatter};
 
@@ -51,7 +51,7 @@ impl ServerId {
         // FIXME: sort IDs so we access the filters predictably
         // FIXME: check for double rolls to reduce false positive rate
 
-        Self(from_fn(|_| rng.gen()))
+        Self(from_fn(|_| rng.r#gen()))
     }
 }
 

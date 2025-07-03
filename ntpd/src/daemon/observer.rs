@@ -9,7 +9,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 use std::{net::SocketAddr, time::Instant};
 use tokio::task::JoinHandle;
-use tracing::{debug, error, instrument, trace, warn, Instrument, Span};
+use tracing::{Instrument, Span, debug, error, instrument, trace, warn};
 
 use serde::{Deserialize, Serialize};
 

@@ -6,11 +6,11 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use ntp_proto::{tls_utils::Certificate, ProtocolVersion};
 use ntp_proto::{PollInterval, PollIntervalLimits, SourceConfig};
+use ntp_proto::{ProtocolVersion, tls_utils::Certificate};
 use serde::{
-    de::{self, Visitor},
     Deserialize, Deserializer,
+    de::{self, Visitor},
 };
 
 use super::super::keyexchange::certificates_from_file;
@@ -197,7 +197,9 @@ impl<'de> Deserialize<'de> for SockSourceConfig {
                             path = Some(map.next_value()?);
                         }
                         Field::MeasurementNoiseEstimate => {
-                            tracing::warn!("The measurement_noise_estimate field is deprecated. Please switch to using the precision field");
+                            tracing::warn!(
+                                "The measurement_noise_estimate field is deprecated. Please switch to using the precision field"
+                            );
                             if precision.is_some() {
                                 return Err(de::Error::duplicate_field(
                                     "measurement_noise_estimate",
@@ -333,7 +335,9 @@ impl<'de> Deserialize<'de> for PpsSourceConfig {
                             path = Some(map.next_value()?);
                         }
                         Field::MeasurementNoiseEstimate => {
-                            tracing::warn!("The measurement_noise_estimate field is deprecated. Please switch to using the precision field");
+                            tracing::warn!(
+                                "The measurement_noise_estimate field is deprecated. Please switch to using the precision field"
+                            );
                             if precision.is_some() {
                                 return Err(de::Error::duplicate_field(
                                     "measurement_noise_estimate",

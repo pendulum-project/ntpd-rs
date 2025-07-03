@@ -1,7 +1,7 @@
 #![warn(clippy::missing_const_for_fn)]
 use crate::{
-    io::NonBlockingWrite, NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, PollInterval,
-    SystemSnapshot,
+    NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, PollInterval, SystemSnapshot,
+    io::NonBlockingWrite,
 };
 use rand::random;
 

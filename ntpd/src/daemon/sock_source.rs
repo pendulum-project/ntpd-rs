@@ -6,7 +6,7 @@ use ntp_proto::{
     OneWaySourceSnapshot, OneWaySourceUpdate, ReferenceId, SourceController, SystemSourceUpdate,
 };
 use tracing::debug;
-use tracing::{error, instrument, Instrument, Span};
+use tracing::{Instrument, Span, error, instrument};
 
 use tokio::net::UnixDatagram;
 
@@ -251,7 +251,7 @@ mod tests {
     use crate::{
         daemon::{
             ntp_source::{MsgForSystem, SourceChannels},
-            sock_source::{create_socket, SampleError, SockSourceTask, SOCK_MAGIC},
+            sock_source::{SOCK_MAGIC, SampleError, SockSourceTask, create_socket},
             spawn::SourceId,
             util::EPOCH_OFFSET,
         },

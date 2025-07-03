@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use aes_siv::{siv::Aes128Siv, siv::Aes256Siv, Key, KeyInit};
+use aes_siv::{Key, KeyInit, siv::Aes128Siv, siv::Aes256Siv};
 use rand::Rng;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
@@ -193,7 +193,7 @@ impl Cipher for AesSivCmac256 {
         associated_data: &[u8],
     ) -> std::io::Result<EncryptResult> {
         let mut siv = Aes128Siv::new(&self.key);
-        let nonce: [u8; 16] = rand::thread_rng().gen();
+        let nonce: [u8; 16] = rand::thread_rng().r#gen();
 
         // Prepare the buffer for in place encryption by moving the plaintext
         // back, creating space for the nonce.
@@ -280,7 +280,7 @@ impl Cipher for AesSivCmac512 {
         associated_data: &[u8],
     ) -> std::io::Result<EncryptResult> {
         let mut siv = Aes256Siv::new(&self.key);
-        let nonce: [u8; 16] = rand::thread_rng().gen();
+        let nonce: [u8; 16] = rand::thread_rng().r#gen();
 
         // Prepare the buffer for in place encryption by moving the plaintext
         // back, creating space for the nonce.
@@ -418,13 +418,14 @@ mod tests {
             nonce_length,
             ciphertext_length,
         } = key.encrypt(&mut testvec, 16, &[1]).unwrap();
-        assert!(key
-            .decrypt(
+        assert!(
+            key.decrypt(
                 &testvec[..nonce_length],
                 &testvec[nonce_length..(nonce_length + ciphertext_length)],
                 &[2]
             )
-            .is_err());
+            .is_err()
+        );
         let result = key
             .decrypt(
                 &testvec[..nonce_length],
@@ -463,13 +464,14 @@ mod tests {
             nonce_length,
             ciphertext_length,
         } = key.encrypt(&mut testvec, 16, &[1]).unwrap();
-        assert!(key
-            .decrypt(
+        assert!(
+            key.decrypt(
                 &testvec[..nonce_length],
                 &testvec[nonce_length..(nonce_length + ciphertext_length)],
                 &[2]
             )
-            .is_err());
+            .is_err()
+        );
         let result = key
             .decrypt(
                 &testvec[..nonce_length],

@@ -144,8 +144,8 @@ mod tests {
     use crate::daemon::{
         config::{NormalizedAddress, StandardSource},
         spawn::{
-            standard::StandardSpawner, tests::get_ntp_create_params, SourceRemovalReason,
-            SourceRemovedEvent, SpawnAction, Spawner,
+            SourceRemovalReason, SourceRemovedEvent, SpawnAction, Spawner,
+            standard::StandardSpawner, tests::get_ntp_create_params,
         },
         system::MESSAGE_BUFFER_SIZE,
     };
