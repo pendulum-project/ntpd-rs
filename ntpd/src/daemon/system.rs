@@ -527,6 +527,7 @@ impl<
                 SockSourceTask::spawn(
                     source_id,
                     params.path.clone(),
+                    params.permissions,
                     self.clock.clone(),
                     SourceChannels {
                         msg_for_system_sender: self.msg_for_system_tx.clone(),

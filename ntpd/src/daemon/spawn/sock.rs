@@ -40,6 +40,7 @@ impl Spawner for SockSpawner {
                 SpawnAction::Create(SourceCreateParameters::Sock(SockSourceCreateParameters {
                     id: SourceId::new(),
                     path: self.config.path.clone(),
+                    permissions: self.config.permissions,
                     config: self.source_config,
                     noise_estimate: self.config.precision.powi(2),
                 })),
@@ -97,6 +98,7 @@ mod tests {
         let mut spawner = SockSpawner::new(
             SockSourceConfig {
                 path: socket_path.clone(),
+                permissions: 0o600,
                 precision,
             },
             SourceConfig::default(),

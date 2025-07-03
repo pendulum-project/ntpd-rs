@@ -1,5 +1,7 @@
+use std::fmt::Display;
+use std::fs::Permissions;
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
-use std::{fmt::Display, path::Path};
 
 use ntp_proto::{
     Measurement, NtpClock, NtpDuration, NtpInstant, NtpLeapIndicator, OneWaySource,
@@ -10,6 +12,7 @@ use tracing::{error, instrument, Instrument, Span};
 
 use tokio::net::UnixDatagram;
 
+use crate::daemon::sockets::create_datagram_socket_with_permissions;
 use crate::daemon::{exitcode, ntp_source::MsgForSystem};
 
 use super::{ntp_source::SourceChannels, spawn::SourceId};
@@ -89,17 +92,6 @@ pub(crate) struct SockSourceTask<
     path: PathBuf,
     channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
     source: OneWaySource<Controller>,
-}
-
-fn create_socket<T: AsRef<Path>>(path: T) -> std::io::Result<UnixDatagram> {
-    let path = path.as_ref();
-    if path.exists() {
-        debug!("Removing previous socket file");
-        std::fs::remove_file(path)?;
-    }
-    debug!("Creating socket at {:?}", path);
-    let socket = UnixDatagram::bind(path)?;
-    Ok(socket)
 }
 
 impl<C, Controller: SourceController<MeasurementDelay = ()>> SockSourceTask<C, Controller>
@@ -211,11 +203,16 @@ where
     pub fn spawn(
         index: SourceId,
         socket_path: PathBuf,
+        permissions: u32,
         clock: C,
         channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
         source: OneWaySource<Controller>,
     ) -> tokio::task::JoinHandle<()> {
-        let socket = create_socket(&socket_path).expect("Could not create socket");
+        let socket = create_datagram_socket_with_permissions(
+            &socket_path,
+            Permissions::from_mode(permissions),
+        )
+        .expect("Could not create socket");
         tokio::spawn(
             (async move {
                 let mut process = SockSourceTask {
@@ -238,7 +235,8 @@ where
 mod tests {
     use std::{
         collections::HashMap,
-        os::unix::net::UnixDatagram,
+        fs::Permissions,
+        os::unix::{fs::PermissionsExt, net::UnixDatagram},
         sync::{Arc, RwLock},
     };
 
@@ -251,7 +249,8 @@ mod tests {
     use crate::{
         daemon::{
             ntp_source::{MsgForSystem, SourceChannels},
-            sock_source::{create_socket, SampleError, SockSourceTask, SOCK_MAGIC},
+            sock_source::{SampleError, SockSourceTask, SOCK_MAGIC},
+            sockets::create_datagram_socket_with_permissions,
             spawn::SourceId,
             util::EPOCH_OFFSET,
         },
@@ -324,11 +323,14 @@ mod tests {
         .unwrap();
 
         let socket_path = std::env::temp_dir().join(format!("ntp-test-stream-{}", alloc_port()));
-        let _socket = create_socket(&socket_path).unwrap(); // should be overwritten by SockSource's own socket
+        let _socket =
+            create_datagram_socket_with_permissions(&socket_path, Permissions::from_mode(0o600))
+                .unwrap(); // should be overwritten by SockSource's own socket
 
         let handle = SockSourceTask::spawn(
             index,
             socket_path.clone(),
+            0o600,
             clock,
             SourceChannels {
                 msg_for_system_sender,

@@ -176,6 +176,7 @@ pub struct NtpSourceCreateParameters {
 pub struct SockSourceCreateParameters {
     pub id: SourceId,
     pub path: PathBuf,
+    pub permissions: u32,
     pub config: SourceConfig,
     pub noise_estimate: f64,
 }

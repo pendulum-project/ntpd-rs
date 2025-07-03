@@ -32,6 +32,56 @@ fn other_error<T>(msg: String) -> std::io::Result<T> {
     Err(Error::other(msg))
 }
 
+pub fn create_datagram_socket_with_permissions(
+    path: &Path,
+    permissions: Permissions,
+) -> std::io::Result<tokio::net::UnixDatagram> {
+    let listener = create_datagram_socket(path)?;
+
+    std::fs::set_permissions(path, permissions)?;
+
+    Ok(listener)
+}
+
+fn create_datagram_socket(path: &Path) -> std::io::Result<tokio::net::UnixDatagram> {
+    // must unlink path before the bind below (otherwise we get "address already in use")
+    if path.exists() {
+        use std::os::unix::fs::FileTypeExt;
+
+        let meta = std::fs::metadata(path)?;
+        if !meta.file_type().is_socket() {
+            return other_error(format!("path {path:?} exists but is not a socket"));
+        }
+
+        std::fs::remove_file(path)?;
+    }
+
+    // OS errors are terrible; let's try to do better
+    let error = match tokio::net::UnixDatagram::bind(path) {
+        Ok(listener) => return Ok(listener),
+        Err(e) => e,
+    };
+
+    // we don create parent directories
+    if let Some(parent) = path.parent() {
+        if !parent.exists() {
+            let msg = format!(
+                r"Could not create observe socket at {:?} because its parent directory does not exist",
+                &path
+            );
+            return other_error(msg);
+        }
+    }
+
+    // otherwise, just forward the OS error
+    let msg = format!(
+        "Could not create observe socket at {:?}: {:?}",
+        &path, error
+    );
+
+    other_error(msg)
+}
+
 pub fn create_unix_socket_with_permissions(
     path: &Path,
     permissions: Permissions,

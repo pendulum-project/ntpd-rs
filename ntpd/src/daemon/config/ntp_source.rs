@@ -157,6 +157,7 @@ pub struct NtsPoolSourceConfig {
 #[derive(Debug, PartialEq, Clone)]
 pub struct SockSourceConfig {
     pub path: PathBuf,
+    pub permissions: u32,
     pub precision: f64,
 }
 
@@ -169,6 +170,7 @@ impl<'de> Deserialize<'de> for SockSourceConfig {
         #[serde(field_identifier, rename_all = "snake_case")]
         enum Field {
             Path,
+            Permissions,
             Precision,
             MeasurementNoiseEstimate,
         }
@@ -187,6 +189,7 @@ impl<'de> Deserialize<'de> for SockSourceConfig {
                 V: serde::de::MapAccess<'de>,
             {
                 let mut path = None;
+                let mut permissions = None;
                 let mut precision = None;
                 while let Some(key) = map.next_key()? {
                     match key {
@@ -226,12 +229,23 @@ impl<'de> Deserialize<'de> for SockSourceConfig {
                             }
                             precision = Some(precision_raw);
                         }
+                        Field::Permissions => {
+                            if permissions.is_some() {
+                                return Err(de::Error::duplicate_field("permissions"));
+                            }
+                            permissions = Some(map.next_value()?);
+                        }
                     }
                 }
                 let path = path.ok_or_else(|| serde::de::Error::missing_field("path"))?;
                 let precision =
                     precision.ok_or_else(|| serde::de::Error::missing_field("precision"))?;
-                Ok(SockSourceConfig { path, precision })
+                let permissions = permissions.unwrap_or(0o660);
+                Ok(SockSourceConfig {
+                    path,
+                    precision,
+                    permissions,
+                })
             }
         }
 
