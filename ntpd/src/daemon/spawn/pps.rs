@@ -26,7 +26,6 @@ impl PpsSpawner {
     }
 }
 
-#[async_trait::async_trait]
 impl Spawner for PpsSpawner {
     type Error = StandardSpawnError;
 

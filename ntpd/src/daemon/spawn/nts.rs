@@ -76,7 +76,6 @@ impl NtsSpawner {
     }
 }
 
-#[async_trait::async_trait]
 impl Spawner for NtsSpawner {
     type Error = NtsSpawnError;
 
