@@ -4,6 +4,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 
 #[cfg(feature = "nts-pool")]
 use crate::nts::AlgorithmDescription;
+use crate::nts::DEFAULT_NUMBER_OF_COOKIES;
 #[cfg(feature = "nts-pool")]
 use crate::packet::Cipher;
 
@@ -296,7 +297,11 @@ impl KeyExchangeResponse<'_> {
                         _ => return Err(NtsError::Invalid),
                     }
                 }
-                NtsRecord::NewCookie { cookie_data } => cookies.push(cookie_data),
+                NtsRecord::NewCookie { cookie_data } => {
+                    if cookies.len() < DEFAULT_NUMBER_OF_COOKIES {
+                        cookies.push(cookie_data)
+                    }
+                }
                 NtsRecord::Server { name } => {
                     if server.is_some() {
                         return Err(NtsError::Invalid);
