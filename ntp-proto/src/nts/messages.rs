@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 
 #[cfg(feature = "nts-pool")]
 use crate::nts::AlgorithmDescription;
@@ -10,6 +10,9 @@ use crate::packet::Cipher;
 
 use super::record::NtsRecord;
 use super::{AeadAlgorithm, ErrorCode, NextProtocol, NtsError, WarningCode};
+
+// Defense-in-depth against oversized requests/responses
+const MAX_MESSAGE_SIZE: u64 = 4096;
 
 pub enum Request<'a> {
     KeyExchange {
@@ -35,7 +38,9 @@ pub enum Request<'a> {
 }
 
 impl Request<'_> {
-    pub async fn parse(mut reader: impl AsyncRead + Unpin) -> Result<Self, NtsError> {
+    pub async fn parse(reader: impl AsyncRead + Unpin) -> Result<Self, NtsError> {
+        let mut reader = reader.take(MAX_MESSAGE_SIZE);
+
         let mut protocols = None;
         let mut algorithms = None;
         #[cfg(feature = "nts-pool")]
@@ -263,7 +268,9 @@ pub struct KeyExchangeResponse<'a> {
 }
 
 impl KeyExchangeResponse<'_> {
-    pub async fn parse(mut reader: impl AsyncRead + Unpin) -> Result<Self, NtsError> {
+    pub async fn parse(reader: impl AsyncRead + Unpin) -> Result<Self, NtsError> {
+        let mut reader = reader.take(MAX_MESSAGE_SIZE);
+
         let mut protocol = None;
         let mut algorithm = None;
         let mut cookies = vec![];
