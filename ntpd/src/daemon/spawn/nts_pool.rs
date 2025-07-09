@@ -95,18 +95,19 @@ impl Spawner for NtsPoolSpawner {
                 }
             };
 
-            match self
-                .key_exchange_client
-                .exchange_keys(
+            match tokio::time::timeout(
+                super::NTS_TIMEOUT,
+                self.key_exchange_client.exchange_keys(
                     io,
                     self.config.addr.server_name.clone(),
                     self.current_sources
                         .iter()
                         .map(|source| Cow::Borrowed(source.remote.as_str())),
-                )
-                .await
+                ),
+            )
+            .await
             {
-                Ok(ke) if !self.contains_source(&ke.remote) => {
+                Ok(Ok(ke)) if !self.contains_source(&ke.remote) => {
                     if let Some(address) = resolve_addr((ke.remote.as_str(), ke.port)).await {
                         let id = SourceId::new();
                         self.current_sources.push(PoolSource {
@@ -128,13 +129,16 @@ impl Spawner for NtsPoolSpawner {
                             .await?;
                     }
                 }
-                Ok(_) => {
+                Ok(Ok(_)) => {
                     warn!("received an address from pool-ke that we already had, ignoring");
                     continue;
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     warn!(error = ?e, "error while attempting key exchange");
                     break;
+                }
+                Err(_) => {
+                    warn!("timeout while attempting key exchange");
                 }
             };
         }

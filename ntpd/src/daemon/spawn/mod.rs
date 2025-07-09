@@ -18,6 +18,8 @@ pub mod pps;
 pub mod sock;
 pub mod standard;
 
+const NTS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// Unique identifier for a spawner.
 /// This is used to identify which spawner was used to create a source
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
