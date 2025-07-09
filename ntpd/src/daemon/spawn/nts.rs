@@ -97,12 +97,14 @@ impl Spawner for NtsSpawner {
             }
         };
 
-        match self
-            .key_exchange_client
-            .exchange_keys(io, self.config.address.server_name.clone(), [])
-            .await
+        match tokio::time::timeout(
+            super::NTS_TIMEOUT,
+            self.key_exchange_client
+                .exchange_keys(io, self.config.address.server_name.clone(), []),
+        )
+        .await
         {
-            Ok(ke) => {
+            Ok(Ok(ke)) => {
                 if let Some(address) = resolve_addr((ke.remote.as_str(), ke.port)).await {
                     action_tx
                         .send(SpawnEvent::new(
@@ -120,8 +122,11 @@ impl Spawner for NtsSpawner {
                     self.has_spawned = true;
                 }
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 warn!(error = ?e, "error while attempting key exchange");
+            }
+            Err(_) => {
+                warn!("timeout while attempting key exchange");
             }
         }
 
