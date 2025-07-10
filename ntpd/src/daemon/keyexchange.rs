@@ -62,9 +62,9 @@ async fn run_nts_ke(
             .collect::<std::io::Result<Vec<Certificate>>>()?;
 
     #[cfg(feature = "unstable_nts-pool")]
-    let mut pool_certificates: Vec<Certificate> = Vec::new();
+    let mut pool_ca_certificates: Vec<Certificate> = Vec::new();
     #[cfg(feature = "unstable_nts-pool")]
-    for client_cert in &nts_ke_config.authorized_pool_server_certificates {
+    for client_cert in &nts_ke_config.additional_pool_ca_certificates {
         let pool_certificate_file = std::fs::File::open(client_cert).map_err(|e| {
             io_error(&format!(
                 "error reading authorized-pool-server-certificate at `{client_cert:?}`: {e:?}"
@@ -74,14 +74,7 @@ async fn run_nts_ke(
             pool_certificate_file,
         ))
         .collect::<std::io::Result<Vec<_>>>()?;
-        // forbid certificate chains at this point
-        if certs.len() == 1 {
-            pool_certificates.push(certs.pop().unwrap())
-        } else {
-            return Err(io_error(&format!(
-                "pool certificate file at `{client_cert:?}` should contain exactly one certificate"
-            )));
-        }
+        pool_ca_certificates.append(&mut certs);
     }
 
     let private_key =
@@ -94,7 +87,9 @@ async fn run_nts_ke(
         server: nts_ke_config.ntp_server.clone(),
         port: nts_ke_config.ntp_port,
         #[cfg(feature = "unstable_nts-pool")]
-        pool_certificates,
+        pool_ca_certificates,
+        #[cfg(feature = "unstable_nts-pool")]
+        pool_domains: nts_ke_config.accepted_pool_domains.clone(),
     })
     .map_err(std::io::Error::other)?;
 
@@ -253,7 +248,9 @@ mod tests {
             certificate_chain_path: PathBuf::from("test-keys/end.fullchain.pem"),
             private_key_path: PathBuf::from("test-keys/end.key"),
             #[cfg(feature = "unstable_nts-pool")]
-            authorized_pool_server_certificates: pool_certs.iter().map(PathBuf::from).collect(),
+            additional_pool_ca_certificates: pool_certs.iter().map(PathBuf::from).collect(),
+            #[cfg(feature = "unstable_nts-pool")]
+            accepted_pool_domains: vec![],
             key_exchange_timeout_ms: 10000,
             concurrent_connections: 1,
             listen: SocketAddr::new("0.0.0.0".parse().unwrap(), port),
@@ -338,7 +335,9 @@ mod tests {
             certificate_chain_path: PathBuf::from("test-keys/end.fullchain.pem"),
             private_key_path: PathBuf::from("test-keys/end.key"),
             #[cfg(feature = "unstable_nts-pool")]
-            authorized_pool_server_certificates: pool_certs.iter().map(PathBuf::from).collect(),
+            additional_pool_ca_certificates: pool_certs.iter().map(PathBuf::from).collect(),
+            #[cfg(feature = "unstable_nts-pool")]
+            accepted_pool_domains: vec![],
             key_exchange_timeout_ms: 1000,
             concurrent_connections: 512,
             listen: SocketAddr::new("0.0.0.0".parse().unwrap(), port),
@@ -369,39 +368,5 @@ mod tests {
 
         assert_eq!(result.remote, "jantje");
         assert_eq!(result.port, 568);
-    }
-
-    #[cfg(feature = "unstable_nts-pool")]
-    #[tokio::test]
-    async fn key_exchange_refusal_due_to_invalid_config() {
-        let port = alloc_port();
-
-        let cert_path = "testdata/certificates/nos-nl-chain.pem";
-        let certs = [cert_path];
-
-        let provider = KeySetProvider::new(1);
-        let keyset = provider.get();
-
-        let (_sender, keyset) = tokio::sync::watch::channel(keyset);
-        let nts_ke_config = NtsKeConfig {
-            certificate_chain_path: PathBuf::from("test-keys/end.fullchain.pem"),
-            private_key_path: PathBuf::from("test-keys/end.key"),
-            authorized_pool_server_certificates: certs.iter().map(PathBuf::from).collect(),
-            key_exchange_timeout_ms: 1000,
-            concurrent_connections: 512,
-            listen: SocketAddr::new("0.0.0.0".parse().unwrap(), port),
-            ntp_port: None,
-            ntp_server: None,
-            accept_ntp_versions: vec![NtpVersion::V4],
-        };
-
-        let Err(io_error) = run_nts_ke(nts_ke_config, keyset).await else {
-            panic!("nts server started normally, this should not happen");
-        };
-
-        let expected_error_msg = format!(
-            "pool certificate file at `\"{cert_path}\"` should contain exactly one certificate"
-        );
-        assert_eq!(io_error.to_string(), expected_error_msg);
     }
 }

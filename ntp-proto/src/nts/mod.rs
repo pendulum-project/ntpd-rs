@@ -435,7 +435,9 @@ pub struct NtsServerConfig {
     pub server: Option<String>,
     pub port: Option<u16>,
     #[cfg(feature = "nts-pool")]
-    pub pool_certificates: Vec<Certificate>,
+    pub pool_ca_certificates: Vec<Certificate>,
+    #[cfg(feature = "nts-pool")]
+    pub pool_domains: Vec<String>,
 }
 
 pub struct KeyExchangeServer {
@@ -445,8 +447,6 @@ pub struct KeyExchangeServer {
     algorithms: Box<[AlgorithmDescription]>,
     server: Option<String>,
     port: Option<u16>,
-    #[cfg(feature = "nts-pool")]
-    pool_certificates: Vec<Certificate>,
 }
 
 impl KeyExchangeServer {
@@ -459,7 +459,15 @@ impl KeyExchangeServer {
                 #[cfg(not(feature = "nts-pool"))]
                 tls_utils::NoClientAuth,
                 #[cfg(feature = "nts-pool")]
-                tls_utils::AllowAnyAnonymousOrCertificateBearingClient::new(&provider),
+                tls_utils::AnonymousOrCertificateForDomainVerifier::new(
+                    provider,
+                    config.pool_ca_certificates,
+                    config
+                        .pool_domains
+                        .into_iter()
+                        .map(ServerName::try_from)
+                        .collect::<Result<Vec<_>, _>>()?,
+                )?,
             ))
             .with_single_cert(config.certificate_chain, config.private_key)?;
         server_config.alpn_protocols = vec![b"ntske/1".to_vec()];
@@ -488,17 +496,12 @@ impl KeyExchangeServer {
             ]),
             server: config.server,
             port: config.port,
-            #[cfg(feature = "nts-pool")]
-            pool_certificates: config.pool_certificates,
         })
     }
 
     #[cfg(feature = "nts-pool")]
     fn is_priviliged<T>(&self, tls: &tls_utils::ConnectionCommon<T>) -> bool {
-        tls.peer_certificates()
-            .and_then(|cert_chain| cert_chain.first())
-            .map(|cert| self.pool_certificates.contains(cert))
-            .unwrap_or(false)
+        tls.peer_certificates().is_some()
     }
 
     pub async fn handle_connection(
@@ -760,7 +763,9 @@ mod tests {
                 server: None,
                 port: None,
                 #[cfg(feature = "nts-pool")]
-                pool_certificates: vec![],
+                pool_ca_certificates: vec![],
+                #[cfg(feature = "nts-pool")]
+                pool_domains: vec![],
             })
             .unwrap();
             let keyset = KeySet::new();
@@ -819,7 +824,9 @@ mod tests {
                 server: None,
                 port: None,
                 #[cfg(feature = "nts-pool")]
-                pool_certificates: vec![],
+                pool_ca_certificates: vec![],
+                #[cfg(feature = "nts-pool")]
+                pool_domains: vec![],
             })
             .unwrap();
             let keyset = KeySet::new();
@@ -878,7 +885,9 @@ mod tests {
                 server: None,
                 port: None,
                 #[cfg(feature = "nts-pool")]
-                pool_certificates: vec![],
+                pool_ca_certificates: vec![],
+                #[cfg(feature = "nts-pool")]
+                pool_domains: vec![],
             })
             .unwrap();
             let keyset = KeySet::new();
@@ -937,7 +946,9 @@ mod tests {
                 server: None,
                 port: None,
                 #[cfg(feature = "nts-pool")]
-                pool_certificates: vec![],
+                pool_ca_certificates: vec![],
+                #[cfg(feature = "nts-pool")]
+                pool_domains: vec![],
             })
             .unwrap();
             let keyset = KeySet::new();
@@ -994,7 +1005,9 @@ mod tests {
                 server: None,
                 port: None,
                 #[cfg(feature = "nts-pool")]
-                pool_certificates: vec![],
+                pool_ca_certificates: vec![],
+                #[cfg(feature = "nts-pool")]
+                pool_domains: vec![],
             })
             .unwrap();
             let keyset = KeySet::new();
@@ -1041,7 +1054,9 @@ mod tests {
                 server: None,
                 port: None,
                 #[cfg(feature = "nts-pool")]
-                pool_certificates: vec![],
+                pool_ca_certificates: vec![],
+                #[cfg(feature = "nts-pool")]
+                pool_domains: vec![],
             })
             .unwrap();
             let mut server = kex.acceptor.accept(server).await.unwrap();
@@ -1126,8 +1141,8 @@ mod tests {
                 &mut include_bytes!("../../test-keys/end.key").as_slice(),
             )
             .unwrap();
-            let pool_certificates = tls_utils::pemfile::certs(
-                &mut include_bytes!("../../test-keys/end.pem").as_slice(),
+            let pool_ca_certificates = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/testca.pem").as_slice(),
             )
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
@@ -1137,8 +1152,8 @@ mod tests {
                 accepted_versions: vec![NtpVersion::V4],
                 server: None,
                 port: None,
-                #[cfg(feature = "nts-pool")]
-                pool_certificates,
+                pool_ca_certificates,
+                pool_domains: vec!["localhost".into()],
             })
             .unwrap();
             let keyset = KeySet::new();
@@ -1223,7 +1238,7 @@ mod tests {
                 &mut include_bytes!("../../test-keys/end.key").as_slice(),
             )
             .unwrap();
-            let pool_certificates = tls_utils::pemfile::certs(
+            let pool_ca_certificates = tls_utils::pemfile::certs(
                 &mut include_bytes!("../../test-keys/end.pem").as_slice(),
             )
             .collect::<Result<Vec<_>, _>>()
@@ -1234,8 +1249,8 @@ mod tests {
                 accepted_versions: vec![NtpVersion::V4],
                 server: None,
                 port: None,
-                #[cfg(feature = "nts-pool")]
-                pool_certificates,
+                pool_ca_certificates,
+                pool_domains: vec!["localhost".into()],
             })
             .unwrap();
             let keyset = KeySet::new();
@@ -1309,8 +1324,8 @@ mod tests {
                 &mut include_bytes!("../../test-keys/end.key").as_slice(),
             )
             .unwrap();
-            let pool_certificates = tls_utils::pemfile::certs(
-                &mut include_bytes!("../../test-keys/end.pem").as_slice(),
+            let pool_ca_certificates = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/testca.pem").as_slice(),
             )
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
@@ -1320,8 +1335,8 @@ mod tests {
                 accepted_versions: vec![NtpVersion::V4],
                 server: None,
                 port: None,
-                #[cfg(feature = "nts-pool")]
-                pool_certificates,
+                pool_ca_certificates,
+                pool_domains: vec!["localhost".into()],
             })
             .unwrap();
             let keyset = KeySet::new();
@@ -1389,7 +1404,7 @@ mod tests {
                 &mut include_bytes!("../../test-keys/end.key").as_slice(),
             )
             .unwrap();
-            let pool_certificates = tls_utils::pemfile::certs(
+            let pool_ca_certificates = tls_utils::pemfile::certs(
                 &mut include_bytes!("../../test-keys/end.pem").as_slice(),
             )
             .collect::<Result<Vec<_>, _>>()
@@ -1400,8 +1415,8 @@ mod tests {
                 accepted_versions: vec![NtpVersion::V4],
                 server: None,
                 port: None,
-                #[cfg(feature = "nts-pool")]
-                pool_certificates,
+                pool_ca_certificates,
+                pool_domains: vec!["a.test".into()],
             })
             .unwrap();
             let keyset = KeySet::new();

@@ -1,51 +1,55 @@
 mod rustls23_shim {
-    /// The intent of this ClientCertVerifier is that it accepts any connections that are either
+    /// The intent of this AnonymousOrCertificateForDomainVerifier is that it accepts any client connections that are either
     /// a.) not presenting a client certificate
-    /// b.) are presenting a well-formed, but otherwise not checked (against a trust root) client certificate
-    ///
-    /// This is because RusTLS apparently doesn't accept every kind of self-signed certificate.
-    ///
-    /// The only goal of this ClientCertVerifier is to achieve that, if a client presents a TLS certificate,
-    /// this certificate shows up in the .peer_certificates() for that connection.
+    /// b.) are presenting a well-formed, valid certificate for one of the domains specified as acceptable.
     #[cfg(feature = "nts-pool")]
     #[derive(Debug)]
-    pub struct AllowAnyAnonymousOrCertificateBearingClient {
-        supported_algs: WebPkiSupportedAlgorithms,
+    pub struct AnonymousOrCertificateForDomainVerifier {
+        domains: Vec<ServerName<'static>>,
+        inner: rustls_platform_verifier::Verifier,
     }
 
     #[cfg(feature = "nts-pool")]
-    use rustls23::{
-        crypto::{CryptoProvider, WebPkiSupportedAlgorithms},
-        pki_types::CertificateDer,
-        server::danger::ClientCertVerified,
-    };
-
-    #[cfg(feature = "nts-pool")]
-    impl AllowAnyAnonymousOrCertificateBearingClient {
-        pub fn new(provider: &CryptoProvider) -> Self {
-            AllowAnyAnonymousOrCertificateBearingClient {
-                supported_algs: provider.signature_verification_algorithms,
-            }
+    impl AnonymousOrCertificateForDomainVerifier {
+        pub fn new(
+            provider: std::sync::Arc<rustls23::crypto::CryptoProvider>,
+            extra_roots: impl IntoIterator<Item = Certificate>,
+            domains: Vec<ServerName<'static>>,
+        ) -> Result<Self, rustls23::Error> {
+            Ok(Self {
+                domains,
+                inner: rustls_platform_verifier::Verifier::new_with_extra_roots(extra_roots)?
+                    .with_provider(provider),
+            })
         }
     }
 
     #[cfg(feature = "nts-pool")]
-    impl rustls23::server::danger::ClientCertVerifier for AllowAnyAnonymousOrCertificateBearingClient {
-        fn verify_client_cert(
-            &self,
-            _end_entity: &CertificateDer,
-            _intermediates: &[CertificateDer],
-            _now: rustls23::pki_types::UnixTime,
-        ) -> Result<ClientCertVerified, rustls23::Error> {
-            Ok(ClientCertVerified::assertion())
-        }
-
-        fn client_auth_mandatory(&self) -> bool {
-            false
-        }
-
+    impl rustls23::server::danger::ClientCertVerifier for AnonymousOrCertificateForDomainVerifier {
         fn root_hint_subjects(&self) -> &[rustls23::DistinguishedName] {
             &[]
+        }
+
+        fn verify_client_cert(
+            &self,
+            end_entity: &rustls23::pki_types::CertificateDer<'_>,
+            intermediates: &[rustls23::pki_types::CertificateDer<'_>],
+            now: rustls23::pki_types::UnixTime,
+        ) -> Result<rustls23::server::danger::ClientCertVerified, Error> {
+            use rustls23::client::danger::ServerCertVerifier;
+            for server in &self.domains {
+                if self
+                    .inner
+                    .verify_server_cert(end_entity, intermediates, server, &[], now)
+                    .is_ok()
+                {
+                    return Ok(rustls23::server::danger::ClientCertVerified::assertion());
+                }
+            }
+
+            Err(Error::InvalidCertificate(
+                rustls23::CertificateError::NotValidForName,
+            ))
         }
 
         fn verify_tls12_signature(
@@ -53,8 +57,9 @@ mod rustls23_shim {
             message: &[u8],
             cert: &rustls23::pki_types::CertificateDer<'_>,
             dss: &rustls23::DigitallySignedStruct,
-        ) -> Result<rustls23::client::danger::HandshakeSignatureValid, rustls23::Error> {
-            rustls23::crypto::verify_tls12_signature(message, cert, dss, &self.supported_algs)
+        ) -> Result<rustls23::client::danger::HandshakeSignatureValid, Error> {
+            use rustls23::client::danger::ServerCertVerifier;
+            self.inner.verify_tls12_signature(message, cert, dss)
         }
 
         fn verify_tls13_signature(
@@ -62,12 +67,18 @@ mod rustls23_shim {
             message: &[u8],
             cert: &rustls23::pki_types::CertificateDer<'_>,
             dss: &rustls23::DigitallySignedStruct,
-        ) -> Result<rustls23::client::danger::HandshakeSignatureValid, rustls23::Error> {
-            rustls23::crypto::verify_tls13_signature(message, cert, dss, &self.supported_algs)
+        ) -> Result<rustls23::client::danger::HandshakeSignatureValid, Error> {
+            use rustls23::client::danger::ServerCertVerifier;
+            self.inner.verify_tls13_signature(message, cert, dss)
         }
 
         fn supported_verify_schemes(&self) -> Vec<rustls23::SignatureScheme> {
-            self.supported_algs.supported_schemes()
+            use rustls23::client::danger::ServerCertVerifier;
+            self.inner.supported_verify_schemes()
+        }
+
+        fn client_auth_mandatory(&self) -> bool {
+            false
         }
     }
 
