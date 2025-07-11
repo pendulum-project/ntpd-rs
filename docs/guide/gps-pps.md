@@ -26,7 +26,7 @@ precision = 1e-3
 For socket sources such as a GPS device from gpsd, ntpd-rs is unable to estimate the uncertainty of the timing data. Therefore, you should provide an estimate (corresponding to 1 standard deviation) of this noise yourself through the `precision` field. For typical GPS receivers, an uncertainty somewhere in the range of 1 to 100 ms is reasonable.
 
 ### Setting up GPSd
-In order for GPSd to connect to ntpd-rs, GPSd must start after ntpd-rs and after the socket shim has been created. This is because ntpd-rs needs to create a socket which GPSd will only use if it exists when GPSd starts.
+In order for GPSd to connect to ntpd-rs, GPSd must start after ntpd-rs and after the socket shim has been created. This is because ntpd-rs needs to create the socket for GPSd, which can only find the socket if it exists at the moment GPSd starts.
 
 GPSd can be manually restarted using:
 ```sh
