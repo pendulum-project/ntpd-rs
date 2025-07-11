@@ -43,11 +43,13 @@ pub struct TimeSnapshot {
 impl TimeSnapshot {
     pub fn root_dispersion(&self, now: NtpTimestamp) -> NtpDuration {
         let t = (now - self.root_variance_base_time).to_seconds();
+        // Note: dispersion is the standard deviation, so we need a sqrt here.
         NtpDuration::from_seconds(
-            self.root_variance_base
+            (self.root_variance_base
                 + t * self.root_variance_linear
                 + t.powi(2) * self.root_variance_quadratic
-                + t.powi(3) * self.root_variance_cubic,
+                + t.powi(3) * self.root_variance_cubic)
+                .sqrt(),
         )
     }
 }
