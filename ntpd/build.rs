@@ -29,7 +29,7 @@ fn main() {
             .ok()
             .map(|rev| {
                 if is_dirty {
-                    format!("{}-dirty", rev)
+                    format!("{rev}-dirty")
                 } else {
                     rev
                 }

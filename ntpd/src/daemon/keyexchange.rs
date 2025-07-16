@@ -120,8 +120,7 @@ async fn run_nts_ke(
     for client_cert in &nts_ke_config.authorized_pool_server_certificates {
         let pool_certificate_file = std::fs::File::open(client_cert).map_err(|e| {
             io_error(&format!(
-                "error reading authorized-pool-server-certificate at `{:?}`: {:?}",
-                client_cert, e
+                "error reading authorized-pool-server-certificate at `{client_cert:?}`: {e:?}"
             ))
         })?;
         let mut certs: Vec<_> = ntp_proto::tls_utils::pemfile::certs(&mut std::io::BufReader::new(
@@ -133,8 +132,7 @@ async fn run_nts_ke(
             pool_certs.push(certs.pop().unwrap())
         } else {
             return Err(io_error(&format!(
-                "pool certificate file at `{:?}` should contain exactly one certificate",
-                client_cert
+                "pool certificate file at `{client_cert:?}` should contain exactly one certificate"
             )));
         }
     }

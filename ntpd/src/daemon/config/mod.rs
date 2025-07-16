@@ -116,7 +116,7 @@ impl CliArg {
                                 // short version of --help has no arguments
                                 processed.push(CliArg::Flag(flag));
                             } else {
-                                Err(format!("'-{}' expects an argument", char))?;
+                                Err(format!("'-{char}' expects an argument"))?;
                             }
                             break;
                         } else {
