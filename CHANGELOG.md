@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.6.1] - 2025-07-16
+
+### Fixed
+- Fixed mistake in the calculation of root dispersion used in serving and observability.
+
 ## [1.6.0] - 2025-06-26
 
 ### Added
@@ -301,6 +306,7 @@ process.
 - Fixed a bug in peer dispersion calculation which resulted in overly
   pessimistic dispersion estimates.
 
+[1.6.1]: https://github.com/pendulum-project/ntpd-rs/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.3.1...v1.4.0
