@@ -119,7 +119,7 @@ mod exports {
         AcceptSynchronizationError, Measurement, NtpSource, NtpSourceAction,
         NtpSourceActionIterator, NtpSourceSnapshot, NtpSourceUpdate, ObservableSourceState,
         OneWaySource, OneWaySourceSnapshot, OneWaySourceUpdate, ProtocolVersion, Reach,
-        SourceNtsData,
+        SourceNtsData, TwoWaySource,
     };
     pub use super::system::{
         System, SystemAction, SystemActionIterator, SystemSnapshot, SystemSourceUpdate,

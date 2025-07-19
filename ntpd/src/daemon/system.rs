@@ -3,8 +3,9 @@ use crate::daemon::pps_source::PpsSourceTask;
 use crate::daemon::{
     config::CsptpServerConfig,
     csptp_server::CsptpServerTask,
+    csptp_source::CsptpSourceTask,
     sock_source::SockSourceTask,
-    spawn::{SourceCreateParameters, spawner_task},
+    spawn::{SourceCreateParameters, csptp::CsptpSpawner, spawner_task},
 };
 
 use super::spawn::nts_pool::NtsPoolSpawner;
@@ -159,6 +160,9 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper, Sourc
             #[cfg(feature = "pps")]
             NtpSourceConfig::Pps(cfg) => {
                 system.add_spawner(PpsSpawner::new(cfg.clone(), source_defaults_config));
+            }
+            NtpSourceConfig::Csptp(cfg) => {
+                system.add_spawner(CsptpSpawner::new(cfg.clone(), source_defaults_config));
             }
         }
     }
@@ -551,6 +555,24 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C, SourceId = So
                     source_id,
                     params.path.clone(),
                     self.clock.clone(),
+                    SourceChannels {
+                        msg_for_system_sender: self.msg_for_system_tx.clone(),
+                        system_update_receiver: self.system_update_sender.subscribe(),
+                        source_snapshots: self.source_snapshots.clone(),
+                    },
+                    source,
+                );
+            }
+            SourceCreateParameters::Csptp(ref params) => {
+                let source = self.system.create_csptp_source(source_id, params.config)?;
+
+                CsptpSourceTask::spawn(
+                    source_id,
+                    params.normalized_addr.to_string(),
+                    params.addr,
+                    self.interface,
+                    self.clock.clone(),
+                    self.timestamp_mode,
                     SourceChannels {
                         msg_for_system_sender: self.msg_for_system_tx.clone(),
                         system_update_receiver: self.system_update_sender.subscribe(),

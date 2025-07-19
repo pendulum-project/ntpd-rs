@@ -177,6 +177,19 @@ impl<C: NtpClock> TimeSyncController for SingleShotController<C> {
         }
     }
 
+    fn add_two_way_source(
+        &mut self,
+        _id: Self::SourceId,
+        config: SourceConfig,
+    ) -> Self::NtpSourceController {
+        SingleShotSourceController::<NtpDuration> {
+            delay_type: PhantomData,
+            min_poll_interval: config.poll_interval_limits.min,
+            done: false,
+            ignore: false,
+        }
+    }
+
     fn remove_source(&mut self, id: Self::SourceId) {
         self.sources.remove(&id);
     }
