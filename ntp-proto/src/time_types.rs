@@ -92,6 +92,20 @@ impl NtpTimestamp {
         NtpTimestamp::from_seconds_nanos_since_ntp_era(seconds, statime.nanos)
     }
 
+    pub fn to_statime(&self) -> WireTimestamp {
+        const EPOCH_OFFSET: u64 = (70 * 365 + 17) * 86400;
+
+        // TODO: this is definitely not a constant
+        const TAI_OFFSET: u64 = 37;
+
+        let seconds = (self.timestamp >> 32)
+            .wrapping_sub(TAI_OFFSET)
+            .wrapping_sub(EPOCH_OFFSET);
+        let nanos = (((self.timestamp & 0xFFFFFFFF) * 1000000000) >> 32) as u32;
+
+        WireTimestamp { seconds, nanos }
+    }
+
     pub(crate) const fn to_bits(self) -> [u8; 8] {
         self.timestamp.to_be_bytes()
     }

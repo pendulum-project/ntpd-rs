@@ -1,6 +1,7 @@
-use std::{sync::Arc, time::Duration};
+use std::{io::Cursor, sync::Arc, time::Duration};
 
-use ntp_proto::{KeySet, NtpClock, SystemSnapshot};
+use ntp_proto::{CsptpPacket, KeySet, NtpClock, SystemSnapshot};
+use statime::datastructures::common::WireTimestamp;
 use timestamped_socket::socket::{RecvResult, open_ip};
 use tokio::task::JoinHandle;
 use tracing::{Instrument, Span, debug, instrument, warn};
@@ -86,12 +87,14 @@ impl<C: 'static + NtpClock + Send> CsptpServerTask<C> {
                 recv_res = socket.recv(&mut buf) => {
                     match recv_res {
                         Ok(RecvResult {
-                            bytes_read: _length,
-                            remote_addr: _source_addr,
-                            timestamp: Some(_timestamp),
+                            bytes_read: length,
+                            remote_addr: source_addr,
+                            timestamp: Some(timestamp),
                         }) => {
-                            let mut _send_buf = [0u8; MAX_PACKET_SIZE];
-                            // TODO: parse and respond
+                            let mut send_buf = [0u8; MAX_PACKET_SIZE];
+                            if let Some(buf) = self.server.respond(&mut send_buf, &buf[..length], timestamp) {
+                                let _ = socket.send_to(buf, source_addr).await;
+                            }
                         }
                         Ok(_) => {
                             debug!("received a packet without a timestamp");
@@ -155,5 +158,38 @@ impl<C> CsptpServer<C> {
     /// Provide the server with a new [`KeySet`]
     pub fn update_keyset(&mut self, keyset: Arc<KeySet>) {
         self.keyset = keyset;
+    }
+}
+
+impl<C: NtpClock> CsptpServer<C> {
+    fn respond<'a>(
+        &self,
+        buffer: &'a mut [u8],
+        request: &[u8],
+        timestamp: timestamped_socket::socket::Timestamp,
+    ) -> Option<&'a [u8]> {
+        let packet = CsptpPacket::deserialize(request).ok()?;
+        if packet.get_origin_timestamp().is_none() || packet.get_csptp_request_flags().is_none() {
+            return None;
+        }
+
+        let mut tlvbuffer = [0u8; MAX_PACKET_SIZE];
+        let receive_timestamp = WireTimestamp {
+            seconds: timestamp.seconds as _,
+            nanos: timestamp.nanos,
+        };
+        let send_time = self.clock.now().ok()?;
+        let send_timestamp = send_time.to_statime();
+        let response = CsptpPacket::timestamp_response(
+            &mut tlvbuffer,
+            packet,
+            receive_timestamp,
+            send_timestamp,
+        );
+
+        let mut cursor = Cursor::new(buffer);
+        response.serialize(&mut cursor).ok()?;
+        let size = cursor.position() as usize;
+        Some(&cursor.into_inner()[..size])
     }
 }

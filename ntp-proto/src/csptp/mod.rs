@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use statime::datastructures::{common::TlvSetBuilder, WireFormat};
+use statime::datastructures::{WireFormat, common::TlvSetBuilder};
 
 const CSPTP_REQUEST_TLV: u16 = 0xFF00;
 const CSPTP_RESPONSE_TLV: u16 = 0xFF01;
@@ -10,13 +10,13 @@ pub struct CsptpPacket<'a> {
 }
 
 impl<'a> CsptpPacket<'a> {
-    fn deserialize(data: &'a [u8]) -> Result<Self, statime::datastructures::WireFormatError> {
+    pub fn deserialize(data: &'a [u8]) -> Result<Self, statime::datastructures::WireFormatError> {
         Ok(CsptpPacket {
             inner: statime::datastructures::messages::Message::deserialize(data)?,
         })
     }
 
-    fn serialize(
+    pub fn serialize(
         &self,
         w: &mut Cursor<&mut [u8]>,
     ) -> Result<(), statime::datastructures::WireFormatError> {
@@ -122,13 +122,17 @@ impl<'a> CsptpPacket<'a> {
         send_timestamp: statime::datastructures::common::WireTimestamp,
     ) -> Self {
         let mut tlvs = TlvSetBuilder::new(buffer);
-        let mut innerbuf = [0u8;18];
+        let mut innerbuf = [0u8; 18];
         receive_timestamp.serialize(&mut innerbuf[0..10]).unwrap();
-        request.get_correction().serialize(&mut innerbuf[10..18]).unwrap();
+        request
+            .get_correction()
+            .serialize(&mut innerbuf[10..18])
+            .unwrap();
         tlvs.add(statime::datastructures::common::Tlv {
             tlv_type: statime::datastructures::common::TlvType::Reserved(CSPTP_RESPONSE_TLV),
             value: innerbuf.as_slice().into(),
-        }).unwrap();
+        })
+        .unwrap();
         Self {
             inner: statime::datastructures::messages::Message {
                 header: statime::datastructures::messages::Header {
