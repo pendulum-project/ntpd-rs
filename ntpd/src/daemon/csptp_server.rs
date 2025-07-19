@@ -175,7 +175,7 @@ impl<C: NtpClock> CsptpServer<C> {
 
         let mut tlvbuffer = [0u8; MAX_PACKET_SIZE];
         let receive_timestamp = WireTimestamp {
-            seconds: timestamp.seconds as _,
+            seconds: (timestamp.seconds + 37) as _,
             nanos: timestamp.nanos,
         };
         let send_time = self.clock.now().ok()?;

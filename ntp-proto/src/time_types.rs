@@ -87,7 +87,7 @@ impl NtpTimestamp {
         let seconds = statime
             .seconds
             .wrapping_add(EPOCH_OFFSET)
-            .wrapping_add(TAI_OFFSET) as u32;
+            .wrapping_sub(TAI_OFFSET) as u32;
 
         NtpTimestamp::from_seconds_nanos_since_ntp_era(seconds, statime.nanos)
     }
@@ -99,7 +99,7 @@ impl NtpTimestamp {
         const TAI_OFFSET: u64 = 37;
 
         let seconds = (self.timestamp >> 32)
-            .wrapping_sub(TAI_OFFSET)
+            .wrapping_add(TAI_OFFSET)
             .wrapping_sub(EPOCH_OFFSET);
         let nanos = (((self.timestamp & 0xFFFFFFFF) * 1000000000) >> 32) as u32;
 
