@@ -1,6 +1,8 @@
 #[cfg(feature = "pps")]
 use crate::daemon::pps_source::PpsSourceTask;
 use crate::daemon::{
+    config::CsptpServerConfig,
+    csptp_server::CsptpServerTask,
     sock_source::SockSourceTask,
     spawn::{SourceCreateParameters, spawner_task},
 };
@@ -99,6 +101,7 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper, Sourc
     clock_config: ClockConfig,
     source_configs: &[NtpSourceConfig],
     server_configs: &[ServerConfig],
+    csptp_server_configs: &[CsptpServerConfig],
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
 ) -> std::io::Result<(JoinHandle<std::io::Result<()>>, DaemonChannels)> {
     let ip_list = super::local_ip_provider::spawn()?;
@@ -164,6 +167,11 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper, Sourc
         system.add_server(server_config.to_owned()).await;
     }
 
+    for csptp_server_config in csptp_server_configs.iter() {
+        system
+            .add_csptp_server(csptp_server_config.to_owned())
+            .await;
+    }
     let handle = tokio::spawn(async move {
         let sleep =
             SingleshotSleep::new_disabled(tokio::time::sleep_until(tokio::time::Instant::now()));
@@ -202,6 +210,7 @@ struct SystemTask<
 
     sources: HashMap<SourceId, SourceState>,
     servers: Vec<ServerData>,
+    csptp_servers: Vec<CsptpServerData>,
     spawners: Vec<SystemSpawnerData>,
 
     clock: C,
@@ -273,6 +282,7 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C, SourceId = So
 
                 sources: Default::default(),
                 servers: Default::default(),
+                csptp_servers: Default::default(),
                 spawners: Default::default(),
                 clock,
                 timestamp_mode,
@@ -589,6 +599,19 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C, SourceId = So
         );
         let _ = self.server_data_sender.send(self.servers.clone());
     }
+
+    async fn add_csptp_server(&mut self, config: CsptpServerConfig) {
+        self.csptp_servers.push(CsptpServerData {
+            config: config.clone(),
+        });
+        CsptpServerTask::spawn(
+            config,
+            self.system_snapshot_sender.subscribe(),
+            self.keyset.clone(),
+            self.clock.clone(),
+            NETWORK_WAIT_PERIOD,
+        );
+    }
 }
 
 #[derive(Debug)]
@@ -601,4 +624,9 @@ struct SourceState {
 pub struct ServerData {
     pub stats: ServerStats,
     pub config: ServerConfig,
+}
+
+#[derive(Debug, Clone)]
+pub struct CsptpServerData {
+    pub config: CsptpServerConfig,
 }

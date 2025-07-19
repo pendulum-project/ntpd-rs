@@ -160,6 +160,7 @@ pub(crate) fn force_sync(config: Option<PathBuf>) -> std::io::Result<ExitCode> {
                 clock_config,
                 &config.sources,
                 &[], // No serving when operating in force sync mode
+                &[], // No serving when operating in force sync mode
                 keyset.clone(),
             )
             .await?;
