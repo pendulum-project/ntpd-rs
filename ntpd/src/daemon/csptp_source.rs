@@ -12,7 +12,7 @@ use timestamped_socket::{
     interface::InterfaceName,
     socket::{Connected, RecvResult, Socket, open_ip},
 };
-use tracing::{Instrument, Span, error, instrument, warn};
+use tracing::{error, info, instrument, warn, Instrument, Span};
 
 use crate::daemon::{
     config::TimestampMode,
@@ -154,6 +154,10 @@ impl<C: 'static + NtpClock + Send, Controller: SourceController<MeasurementDelay
 
             match selected {
                 SelectResult::Timer => {
+                    poll_wait
+                        .as_mut()
+                        .reset(tokio::time::Instant::now() + std::time::Duration::from_secs(1));
+
                     if matches!(self.setup_socket().await, SocketResult::Abort) {
                         self.channels
                             .msg_for_system_sender
@@ -301,10 +305,6 @@ impl<C: 'static + NtpClock + Send, Controller: SourceController<MeasurementDelay
                                 self.index,
                             ),
                         );
-
-                    poll_wait
-                        .as_mut()
-                        .reset(tokio::time::Instant::now() + std::time::Duration::from_secs(1));
                 }
                 SelectResult::Recv(Err(_)) => { /* ignore for now */ }
                 SelectResult::SystemUpdate(Ok(update)) => {
