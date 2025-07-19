@@ -12,6 +12,7 @@ mod algorithm;
 mod clock;
 mod config;
 mod cookiestash;
+mod csptp;
 mod identifiers;
 mod io;
 mod ipfilter;
@@ -118,7 +119,7 @@ mod exports {
         AcceptSynchronizationError, Measurement, NtpSource, NtpSourceAction,
         NtpSourceActionIterator, NtpSourceSnapshot, NtpSourceUpdate, ObservableSourceState,
         OneWaySource, OneWaySourceSnapshot, OneWaySourceUpdate, ProtocolVersion, Reach,
-        SourceNtsData,
+        SourceNtsData, TwoWaySource,
     };
     pub use super::system::{
         System, SystemAction, SystemActionIterator, SystemSnapshot, SystemSourceUpdate,
@@ -146,6 +147,7 @@ mod exports {
         pub use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
     }
 
+    pub use super::csptp::{CsptpPacket, CsptpRequestFlags, CsptpResponseData};
     pub use super::generic::NtpVersion;
 }
 
