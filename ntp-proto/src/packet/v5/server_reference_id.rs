@@ -34,7 +34,7 @@ impl TryFrom<u16> for U12 {
     type Error = ();
 
     fn try_from(value: u16) -> Result<Self, Self::Error> {
-        if value > Self::MAX.into() {
+        if value > <U12 as Into<u16>>::into(Self::MAX) {
             Err(())
         } else {
             Ok(Self(value))
