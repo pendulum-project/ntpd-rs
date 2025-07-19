@@ -1056,7 +1056,7 @@ dependencies = [
 [[package]]
 name = "statime"
 version = "0.4.0"
-source = "git+https://github.com/pendulum-project/statime.git?branch=csptp-hackathon#ca1a4354850582251752c2d3d76151f5b9099205"
+source = "git+https://github.com/pendulum-project/statime.git?branch=csptp-hackathon#224a6d7f7e18a2dbbc42796164c0de80664c1c04"
 dependencies = [
  "arrayvec",
  "az",
