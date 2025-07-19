@@ -449,6 +449,7 @@ impl Config {
                 NtpSourceConfig::Sock(_) => count += 1,
                 #[cfg(feature = "pps")]
                 NtpSourceConfig::Pps(_) => {} // PPS sources don't count
+                NtpSourceConfig::Csptp(_) => count += 1,
             }
         }
         count
@@ -483,6 +484,7 @@ impl Config {
         if self.sources.iter().any(|config| match config {
             NtpSourceConfig::Sock(_) => false,
             NtpSourceConfig::Pps(_) => false,
+            NtpSourceConfig::Csptp(_) => false,
             NtpSourceConfig::Standard(config) => {
                 matches!(config.first.ntp_version, ProtocolVersion::V5)
             }
