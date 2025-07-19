@@ -14,7 +14,7 @@ pub use error::V5Error;
 
 use super::RequestIdentifier;
 
-pub(crate) const DRAFT_VERSION: &str = "draft-ietf-ntp-ntpv5-04";
+pub(crate) const DRAFT_VERSION: &str = "draft-ietf-ntp-ntpv5-05";
 pub(crate) const UPGRADE_TIMESTAMP: NtpTimestamp = NtpTimestamp::from_bits(*b"NTP5DRFT");
 
 #[repr(u8)]
