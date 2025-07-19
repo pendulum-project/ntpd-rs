@@ -147,6 +147,7 @@ mod exports {
         pub use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
     }
 
+    pub use super::csptp::{CsptpPacket, CsptpRequestFlags, CsptpResponseData};
     pub use super::generic::NtpVersion;
 }
 
