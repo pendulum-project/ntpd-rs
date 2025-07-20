@@ -15,7 +15,7 @@ WORKDIR /build
 COPY . /build
 
 ARG NTPDRS_BUILD_FEATURES=""
-ENV NTPDRS_BUILD_FEATURES=${BUILD_FEATURES}
+ENV NTPDRS_BUILD_FEATURES="${NTPDRS_BUILD_FEATURES}"
 
 # Run the build command.
 # Note that this mounts several cache directories to speed up subsequent builds.
