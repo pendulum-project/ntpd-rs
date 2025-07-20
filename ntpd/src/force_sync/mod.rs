@@ -69,42 +69,9 @@ fn try_date_display(offset: NtpDuration) -> Option<String> {
 impl<C: NtpClock> SingleShotController<C> {
     fn offer_clock_change(&self, offset: NtpDuration) {
         let offset_ms = offset.to_seconds();
-        if offset.abs() < NtpDuration::from_seconds(1.0) {
-            println!("Your clock is already within 1s of the correct time");
-            return;
-        }
-
-        if let Some(s) = try_date_display(NtpDuration::ZERO) {
-            println!("The current local time is: {s}");
-        }
 
         if let Some(s) = try_date_display(offset) {
-            println!("It looks like the time should be: {s}");
-        }
-
-        if offset < NtpDuration::ZERO {
-            println!(
-                "It looks like your clock is ahead by {}",
-                human_readable_duration(-offset_ms)
-            );
-        } else {
-            println!(
-                "It looks like your clock is behind by {}",
-                human_readable_duration(offset_ms)
-            );
-        }
-        println!("Please validate externally that this offset is correct");
-        print!("Do you want to update your local clock? [y/N] ");
-        std::io::stdout().flush().unwrap();
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input).unwrap();
-        if input.trim().to_lowercase() == "y" || input.trim().to_lowercase() == "yes" {
-            match self.clock.step_clock(offset) {
-                Ok(_) => println!("Time updated successfully"),
-                Err(_) => println!("Could not update clock, do you have the right permissions?"),
-            }
-        } else {
-            println!("Time not updated");
+            println!("It thinks the time is {s}");
         }
     }
 }
@@ -121,7 +88,7 @@ pub(crate) fn force_sync(config: Option<PathBuf>) -> std::io::Result<ExitCode> {
         return Ok(ExitCode::FAILURE);
     }
 
-    println!("Determining current time...");
+    println!("Getting server from pool...");
 
     Builder::new_current_thread()
         .enable_all()

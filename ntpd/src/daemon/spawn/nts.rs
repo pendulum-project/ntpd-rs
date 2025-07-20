@@ -105,6 +105,7 @@ impl Spawner for NtsSpawner {
         {
             Ok(Ok(ke)) => {
                 if let Some(address) = resolve_addr((ke.remote.as_str(), ke.port)).await {
+                    println!("Got server {} ({})", ke.remote.as_str(), address.to_string());
                     action_tx
                         .send(SpawnEvent::new(
                             self.id,

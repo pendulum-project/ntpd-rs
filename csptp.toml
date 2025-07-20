@@ -6,8 +6,8 @@ observation-path = "/var/run/ntpd-rs/observe"
 # Pool servers from ntppool.org. See http://www.pool.ntp.org/join.html
 # for more information
 [[source]]
-mode = "nts"
-address = "ke.experimental.ntspool.trifectatech.org"
+mode = "csptp"
+address = "51.15.196.238:319"
 
 # Alternative configuration for IPv6 only machines
 #[[source]]
