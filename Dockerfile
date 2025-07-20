@@ -14,6 +14,9 @@ RUN apt update \
 WORKDIR /build
 COPY . /build
 
+ARG NTPDRS_BUILD_FEATURES=""
+ENV NTPDRS_BUILD_FEATURES=${BUILD_FEATURES}
+
 # Run the build command.
 # Note that this mounts several cache directories to speed up subsequent builds.
 # After build, we move the binaries out of the target directory because that directory
@@ -21,7 +24,7 @@ COPY . /build
 RUN --mount=type=cache,target=/usr/local/cargo/git/db \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/target/ \
-    cargo build --locked --release \
+    cargo build --locked --release --features="${NTPDRS_BUILD_FEATURES}" \
     && mkdir -p /build/artifacts \
     && cp target/release/ntp-daemon /build/artifacts \
     && cp target/release/ntp-ctl /build/artifacts \
