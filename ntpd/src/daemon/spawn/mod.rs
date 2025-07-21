@@ -9,6 +9,7 @@ use tokio::{
 
 use super::{config::NormalizedAddress, system::NETWORK_WAIT_PERIOD};
 
+pub mod csptp;
 pub mod nts;
 #[cfg(feature = "unstable_nts-pool")]
 pub mod nts_pool;
@@ -142,6 +143,7 @@ pub enum SourceCreateParameters {
     Sock(SockSourceCreateParameters),
     #[cfg(feature = "pps")]
     Pps(PpsSourceCreateParameters),
+    Csptp(CsptpSourceCreateParameters),
 }
 
 impl SourceCreateParameters {
@@ -151,6 +153,7 @@ impl SourceCreateParameters {
             Self::Sock(params) => params.id,
             #[cfg(feature = "pps")]
             Self::Pps(params) => params.id,
+            Self::Csptp(params) => params.id,
         }
     }
 
@@ -160,6 +163,7 @@ impl SourceCreateParameters {
             Self::Sock(params) => params.path.display().to_string(),
             #[cfg(feature = "pps")]
             Self::Pps(params) => params.path.display().to_string(),
+            Self::Csptp(params) => params.addr.to_string(),
         }
     }
 }
@@ -190,6 +194,15 @@ pub struct PpsSourceCreateParameters {
     pub config: SourceConfig,
     pub noise_estimate: f64,
     pub period: f64,
+}
+
+#[derive(Debug)]
+pub struct CsptpSourceCreateParameters {
+    pub id: SourceId,
+    pub addr: SocketAddr,
+    pub normalized_addr: NormalizedAddress,
+    pub config: SourceConfig,
+    pub nts: Option<Box<SourceNtsData>>,
 }
 
 pub trait Spawner {
