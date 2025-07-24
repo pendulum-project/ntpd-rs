@@ -388,7 +388,13 @@ impl KeyExchangeClient {
             .connect(ServerName::try_from(server_name.clone())?, io)
             .await?;
 
-        request.serialize(&mut io).await?;
+        // Serialize request first to a buffer to ensure it is most likely to be sent as a
+        // single packet, which ntpsec needs.
+        let mut req_buf = vec![];
+        request.serialize(&mut req_buf).await?;
+        io.write_all(req_buf.as_slice()).await?;
+
+        io.flush().await?;
 
         let response = KeyExchangeResponse::parse(&mut io).await?;
 
@@ -601,7 +607,11 @@ impl KeyExchangeServer {
                             port: self.port,
                         };
 
-                        response.serialize(&mut io).await?;
+                        // Serialize response first to a buffer to ensure it is most likely to be sent as a
+                        // single packet, which ntpsec needs.
+                        let mut req_buf = vec![];
+                        response.serialize(&mut req_buf).await?;
+                        io.write_all(&req_buf).await?;
 
                         Ok(())
                     }
