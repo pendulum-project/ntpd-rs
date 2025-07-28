@@ -85,11 +85,11 @@ jobs:
         with:
           target: ${{ matrix.target }}
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@7b20dfd705618832f20d29066e34aa2f2f6194c2
+        uses: taiki-e/install-action@a416ddeedbd372e614cc1386e8b642692f66865e
         with:
           tool: cargo-llvm-cov
       - name: Rust cache
-        uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6
+        uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0
         with:
           shared-key: "${{matrix.rust}}-${{matrix.target}}"
       - name: cargo build
@@ -122,7 +122,7 @@ jobs:
         with:
           toolchain: nightly
       - name: Install udeps
-        uses: taiki-e/install-action@7b20dfd705618832f20d29066e34aa2f2f6194c2
+        uses: taiki-e/install-action@a416ddeedbd372e614cc1386e8b642692f66865e
         with:
           tool: cargo-udeps
       - name: cargo udeps
@@ -216,20 +216,20 @@ jobs:
           targets: ${{matrix.target}}
 
       - name: Setup tools for cross compilation
-        uses: awalsh128/cache-apt-pkgs-action@7ca5f46d061ad9aa95863cd9b214dd48edef361d # v1.5.0
+        uses: awalsh128/cache-apt-pkgs-action@4c82c3ccdc1344ee11e9775dbdbdf43aa8a5614e # v1.5.1
         with:
           packages: musl-tools qemu-user-static crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386
           version: 1
         if: ${{matrix.runs_on == 'ubuntu-latest'}}
 
       - name: Install bindgen-cli
-        uses: taiki-e/install-action@7b20dfd705618832f20d29066e34aa2f2f6194c2
+        uses: taiki-e/install-action@a416ddeedbd372e614cc1386e8b642692f66865e
         with:
           tool: bindgen-cli
         if: ${{matrix.runs_on == 'ubuntu-latest'}}
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6
+        uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0
         with:
           shared-key: "stable-${{matrix.target}}"
 
@@ -280,7 +280,7 @@ jobs:
             features: ''
     steps:
       - name: Checkout sources
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
       - name: Install nightly toolchain
@@ -289,7 +289,7 @@ jobs:
           toolchain: nightly
           components: llvm-tools-preview
       - name: Install cargo fuzz & rustfilt
-        uses: taiki-e/install-action@56ab7930c591507f833cbaed864d201386d518a8
+        uses: taiki-e/install-action@a416ddeedbd372e614cc1386e8b642692f66865e
         with:
           tool: cargo-fuzz,rustfilt
       - name: Run `cargo fuzz`
@@ -308,7 +308,7 @@ jobs:
               --format=lcov \
               -ignore-filename-regex="\.cargo|\.rustup" > lcov.info
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@eaaf4bedf32dbdc6b720b63067d99c4d77d6047d
+        uses: codecov/codecov-action@18283e04ce6e62d37312384ff67231eb8fd56d24
         with:
           files: ./lcov.info
           fail_ci_if_error: false
@@ -321,10 +321,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - uses: EmbarkStudios/cargo-deny-action@34899fc7ba81ca6268d5947a7a16b4649013fea1
+      - uses: EmbarkStudios/cargo-deny-action@30f817c6f72275c6d54dc744fbca09ebc958599f
         with:
           arguments: --workspace --all-features
-      - uses: EmbarkStudios/cargo-deny-action@34899fc7ba81ca6268d5947a7a16b4649013fea1
+      - uses: EmbarkStudios/cargo-deny-action@30f817c6f72275c6d54dc744fbca09ebc958599f
         with:
           manifest-path: ./fuzz/Cargo.toml
           arguments: --all-features
