@@ -21,7 +21,7 @@ jobs:
           - i686-unknown-linux-gnu
     steps:
       - name: Setup packaging tools for cross compiled artifacts
-        uses: awalsh128/cache-apt-pkgs-action@7ca5f46d061ad9aa95863cd9b214dd48edef361d # v1.5.0
+        uses: awalsh128/cache-apt-pkgs-action@4c82c3ccdc1344ee11e9775dbdbdf43aa8a5614e # v1.5.1
         with:
           packages: musl-tools qemu-user-static crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386
           version: 1
@@ -33,7 +33,7 @@ jobs:
           components: "llvm-tools"
 
       - name: Install cross, cargo-deb and cargo-generate-rpm
-        uses: taiki-e/install-action@7b20dfd705618832f20d29066e34aa2f2f6194c2
+        uses: taiki-e/install-action@6064345e6658255e90e9500fdf9a06ab77e6909c
         with:
           tool: cross, cargo-deb, cargo-generate-rpm
 
