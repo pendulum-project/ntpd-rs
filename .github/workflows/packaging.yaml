@@ -21,7 +21,7 @@ jobs:
           - i686-unknown-linux-gnu
     steps:
       - name: Setup packaging tools for cross compiled artifacts
-        uses: awalsh128/cache-apt-pkgs-action@7ca5f46d061ad9aa95863cd9b214dd48edef361d # v1.5.0
+        uses: awalsh128/cache-apt-pkgs-action@4c82c3ccdc1344ee11e9775dbdbdf43aa8a5614e # v1.5.1
         with:
           packages: musl-tools qemu-user-static crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386
           version: 1
@@ -33,7 +33,7 @@ jobs:
           components: "llvm-tools"
 
       - name: Install cross, cargo-deb and cargo-generate-rpm
-        uses: taiki-e/install-action@7b20dfd705618832f20d29066e34aa2f2f6194c2
+        uses: taiki-e/install-action@aa2649f25ee7099207734772f5393fd30167cb73
         with:
           tool: cross, cargo-deb, cargo-generate-rpm
 
@@ -55,7 +55,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           pattern: release-binaries-*
           path: target/pkg/
@@ -87,7 +87,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Download artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           name: release-binaries
           path: target/pkg/
