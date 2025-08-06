@@ -292,7 +292,7 @@ jobs:
           toolchain: nightly
           components: llvm-tools-preview
       - name: Install cargo fuzz & rustfilt
-        uses: taiki-e/install-action@56ab7930c591507f833cbaed864d201386d518a8
+        uses: taiki-e/install-action@6064345e6658255e90e9500fdf9a06ab77e6909c
         with:
           tool: cargo-fuzz,rustfilt
       - name: Run `cargo fuzz`
@@ -301,12 +301,12 @@ jobs:
           # prevents `cargo fuzz coverage` from rebuilding everything
           RUSTFLAGS: "-C instrument-coverage"
         run: |
-          cargo fuzz run ${{matrix.features}} ${{matrix.fuzz_target}} ${{matrix.corpus}} -- -max_total_time=10
+          cargo fuzz run --target $(rustc --print host-tuple) ${{matrix.features}} ${{matrix.fuzz_target}} ${{matrix.corpus}} -- -max_total_time=10
       - name: Fuzz codecov
         run: |
-          cargo fuzz coverage ${{matrix.features}} ${{matrix.fuzz_target}} ${{matrix.corpus}}
+          cargo fuzz coverage --target $(rustc --print host-tuple) ${{matrix.features}} ${{matrix.fuzz_target}} ${{matrix.corpus}}
           $(rustc --print sysroot)/lib/rustlib/$(rustc --print host-tuple)/bin/llvm-cov export -Xdemangler=rustfilt \
-              target/$(rustc --print host-tuple)/coverage/$(rustc --print host-tuple)/release/${{matrix.fuzz_target}} \
+              target/x86_64-unknown-linux-musl/coverage/$(rustc --print host-tuple)/release/${{matrix.fuzz_target}} \
               -instr-profile=fuzz/coverage/${{matrix.fuzz_target}}/coverage.profdata \
               --format=lcov \
               -ignore-filename-regex="\.cargo|\.rustup" > lcov.info
