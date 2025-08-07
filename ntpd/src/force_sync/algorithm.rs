@@ -107,7 +107,7 @@ impl<C: NtpClock> SingleShotController<C> {
             let mut sum = 0.0;
             let mut count = 0;
             for source in self.sources.values() {
-                if source.get_offset().abs_diff(peak_offset) < Self::ASSUMED_UNCERTAINTY {
+                if source.get_offset().abs_diff(peak_offset) <= Self::ASSUMED_UNCERTAINTY {
                     count += 1;
                     sum += source.get_offset().to_seconds()
                 }
