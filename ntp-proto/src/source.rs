@@ -96,6 +96,44 @@ pub struct NtpSource<Controller: SourceController<MeasurementDelay = NtpDuration
     bloom_filter: RemoteBloomFilter,
 }
 
+pub struct TwoWaySource<Controller: SourceController<MeasurementDelay = NtpDuration>> {
+    controller: Controller,
+}
+
+impl<Controller: SourceController<MeasurementDelay = NtpDuration>> TwoWaySource<Controller> {
+    pub(crate) fn new(controller: Controller) -> TwoWaySource<Controller> {
+        TwoWaySource { controller }
+    }
+
+    pub fn handle_measurement(
+        &mut self,
+        measurement: Measurement<NtpDuration>,
+    ) -> Option<Controller::SourceMessage> {
+        self.controller.handle_measurement(measurement)
+    }
+
+    pub fn handle_message(&mut self, message: Controller::ControllerMessage) {
+        self.controller.handle_message(message)
+    }
+
+    pub fn observe<SourceId>(
+        &self,
+        name: String,
+        address: String,
+        id: SourceId,
+    ) -> ObservableSourceState<SourceId> {
+        ObservableSourceState {
+            timedata: self.controller.observe(),
+            unanswered_polls: 0,
+            poll_interval: crate::time_types::PollInterval::from_byte(0),
+            nts_cookies: None,
+            name,
+            address,
+            id,
+        }
+    }
+}
+
 pub struct OneWaySource<Controller: SourceController<MeasurementDelay = ()>> {
     controller: Controller,
 }
