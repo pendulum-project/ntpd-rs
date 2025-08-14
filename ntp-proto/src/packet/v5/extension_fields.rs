@@ -28,7 +28,7 @@ impl ReferenceIdRequest {
         })
     }
 
-    pub fn to_response(self, filter: &BloomFilter) -> Option<ReferenceIdResponse> {
+    pub fn to_response(self, filter: &BloomFilter) -> Option<ReferenceIdResponse<'_>> {
         let offset = usize::from(self.offset);
         let payload_len = usize::from(self.payload_len);
 

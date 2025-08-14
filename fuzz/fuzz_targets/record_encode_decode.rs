@@ -7,7 +7,7 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
-fn parse(data: &[u8]) -> Result<NtsRecord, std::io::Error> {
+fn parse(data: &[u8]) -> Result<NtsRecord<'_>, std::io::Error> {
     let Poll::Ready(result) =
         pin!(NtsRecord::parse(data)).poll(&mut Context::from_waker(Waker::noop()))
     else {

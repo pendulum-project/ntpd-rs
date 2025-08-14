@@ -9,7 +9,7 @@ use std::{
 use libfuzzer_sys::fuzz_target;
 use ntp_proto::{KeyExchangeResponse, NtsError};
 
-fn parse(data: &[u8]) -> Result<KeyExchangeResponse, NtsError> {
+fn parse(data: &[u8]) -> Result<KeyExchangeResponse<'_>, NtsError> {
     let Poll::Ready(result) =
         pin!(KeyExchangeResponse::parse(data)).poll(&mut Context::from_waker(Waker::noop()))
     else {
