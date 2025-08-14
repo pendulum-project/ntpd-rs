@@ -383,7 +383,7 @@ mod tests {
 
     use super::*;
 
-    fn parse(buf: &[u8]) -> Result<NtsRecord, Error> {
+    fn parse(buf: &[u8]) -> Result<NtsRecord<'_>, Error> {
         let Poll::Ready(result) =
             pin!(NtsRecord::parse(buf)).poll(&mut Context::from_waker(Waker::noop()))
         else {

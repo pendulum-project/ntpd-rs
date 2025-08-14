@@ -1222,11 +1222,11 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
-    pub fn untrusted_extension_fields(&self) -> impl Iterator<Item = &ExtensionField> {
+    pub fn untrusted_extension_fields(&self) -> impl Iterator<Item = &ExtensionField<'_>> {
         self.efdata.untrusted.iter()
     }
 
-    pub fn authenticated_extension_fields(&self) -> impl Iterator<Item = &ExtensionField> {
+    pub fn authenticated_extension_fields(&self) -> impl Iterator<Item = &ExtensionField<'_>> {
         self.efdata.authenticated.iter()
     }
 
