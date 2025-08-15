@@ -1,6 +1,5 @@
 mod ntp_source;
 mod server;
-pub mod subnet;
 
 use clock_steering::unix::UnixClock;
 use ntp_proto::{

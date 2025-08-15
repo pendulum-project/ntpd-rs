@@ -19,15 +19,18 @@ impl Display for DecryptError {
 
 impl std::error::Error for DecryptError {}
 
+#[cfg(feature = "nts-pool")]
 #[derive(Debug)]
 pub struct KeyError;
 
+#[cfg(feature = "nts-pool")]
 impl Display for KeyError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Invalid key")
     }
 }
 
+#[cfg(feature = "nts-pool")]
 impl std::error::Error for KeyError {}
 
 struct Buffer<'a> {
