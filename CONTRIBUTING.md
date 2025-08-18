@@ -73,5 +73,35 @@ rustfmt (i.e. using `cargo fmt`) before you create a pull request. For non-Rust
 files (such as our documentation) we ask that you follow the conventions from
 other files, but we have no strict requirements.
 
+## Expectations for contributors
+
+### Respect free software/open source licenses
+
+Since ntpd-rs is licensed very permissively (Apache 2.0 or MIT), for every
+contribution you make, you have to ensure that it is either your original work, 
+or a derived work from software that falls under a free software/open source 
+license that allows its inclusion in our repository. In the latter case your
+contribution must have clear attributions so we can review whether we can 
+include it in our project.
+
+### Make your code easy to review
+
+The ntpd-rs team has a limited amount of time to review contributions. You can 
+help us by structuring your pull request in atomic commits, using the commentary
+field to explain what you are doing, and making an effort yourself to pass our 
+CI checks. In short, you are the first reviewer of your contribution.
+
+### Use of generative artificial intelligence
+
+Contributions clearly showing heavy use of generative AI, so-called "vibe 
+coding", will be dismissed out of hand.
+
+There's nothing *inherently wrong* with using tool assistance while coding, 
+including tools based on generative AI. But when using AI to generate whole
+subroutines (or more) only based on prompts, it becomes very hard to guarantee
+the previous two points: first, it is hard to tell whose original work the
+contribution is; secondly, you are less able to perform a 'first review' of any 
+code you didn't write yourself.
+
 [security policy]: ./SECURITY.md
 [discussions]: https://github.com/pendulum-project/ntpd-rs/discussions
