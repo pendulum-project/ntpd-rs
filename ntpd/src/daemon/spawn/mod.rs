@@ -15,7 +15,6 @@ pub mod nts_pool;
 pub mod pool;
 #[cfg(feature = "pps")]
 pub mod pps;
-pub mod ptp;
 #[cfg(feature = "ptp")]
 pub mod ptp;
 pub mod sock;
