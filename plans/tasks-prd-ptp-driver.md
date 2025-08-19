@@ -1,23 +1,26 @@
 ## Relevant Files
 
-- `ntpd/src/daemon/spawn/ptp.rs` - Main spawner implementation for PTP driver
-- `ntpd/src/daemon/ptp_source.rs` - Source task implementation with dual-threading model
-- `ntpd/src/daemon/system.rs` - System coordinator integration
 - `ntp-proto/src/config.rs` - Configuration type definitions
+- `ntpd/src/daemon/config/mod.rs` - Main configuration module
+- `ntpd/src/daemon/config/ntp_source.rs` - NTP source configuration data structures and parsing
 - `ntpd/src/daemon/pps_source.rs` - Reference implementation for dual-task threading pattern
+- `ntpd/src/daemon/ptp_source.rs` - Source task implementation with dual-threading model
 - `ntpd/src/daemon/sock_source.rs` - Reference for one-way communication pattern
+- `ntpd/src/daemon/spawn/mod.rs` - System spawning controllers and data structures
 - `ntpd/src/daemon/spawn/pps.rs` - Reference spawner for dual-task pattern
+- `ntpd/src/daemon/spawn/ptp.rs` - Main spawner implementation for PTP driver
 - `ntpd/src/daemon/spawn/sock.rs` - Reference spawner for one-way pattern
+- `ntpd/src/daemon/system.rs` - System coordinator integration
 
 ## Tasks
 
-- [ ] 1. Create PTP Driver Spawner
-  - [ ] 1.1 Implement `PtpSourceSpawner` struct with device path and polling interval configuration
-  - [ ] 1.2 Implement `Spawner` trait methods for PTP driver (try_spawn, is_complete, etc.)
-  - [ ] 1.3 Add PTP source configuration to `NtpSourceConfig` enum
+- [x] 1. Create PTP Driver Spawner
+  - [x] 1.1 Implement `PtpSourceSpawner` struct with device path and polling interval configuration
+  - [x] 1.2 Implement `Spawner` trait methods for PTP driver (try_spawn, is_complete, etc.)
+  - [x] 1.3 Add PTP source configuration to `NtpSourceConfig` enum
   - [x] 1.4 Integrate PTP spawner creation in system coordinator
-  - [ ] 1.5 Create unit tests for spawner lifecycle management
-  - [ ] 1.6 Run unit tests for spawner and fix any problems encountered.
+  - [x] 1.5 Create unit tests for spawner lifecycle management
+  - [x] 1.6 Run unit tests for spawner and fix any problems encountered.
 - [ ] 2. Implement PTP Source Task with Dual-Thread Architecture
   - [ ] 2.1 Create `PtpSourceTask` struct with blocking thread channel communication
   - [ ] 2.2 Implement blocking I/O thread for PTP device access using ptp-time crate
