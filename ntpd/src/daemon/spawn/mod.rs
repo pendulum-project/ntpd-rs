@@ -15,6 +15,9 @@ pub mod nts_pool;
 pub mod pool;
 #[cfg(feature = "pps")]
 pub mod pps;
+pub mod ptp;
+#[cfg(feature = "ptp")]
+pub mod ptp;
 pub mod sock;
 pub mod standard;
 
@@ -142,6 +145,8 @@ pub enum SourceCreateParameters {
     Sock(SockSourceCreateParameters),
     #[cfg(feature = "pps")]
     Pps(PpsSourceCreateParameters),
+    #[cfg(feature = "ptp")]
+    Ptp(PtpSourceCreateParameters),
 }
 
 impl SourceCreateParameters {
@@ -160,6 +165,8 @@ impl SourceCreateParameters {
             Self::Sock(params) => params.path.display().to_string(),
             #[cfg(feature = "pps")]
             Self::Pps(params) => params.path.display().to_string(),
+            #[cfg(feature = "ptp")]
+            Self::Ptp(params) => params.path.display().to_string(),
         }
     }
 }
@@ -185,6 +192,16 @@ pub struct SockSourceCreateParameters {
 #[cfg(feature = "pps")]
 #[derive(Debug)]
 pub struct PpsSourceCreateParameters {
+    pub id: SourceId,
+    pub path: PathBuf,
+    pub config: SourceConfig,
+    pub noise_estimate: f64,
+    pub period: f64,
+}
+
+#[cfg(feature = "ptp")]
+#[derive(Debug)]
+pub struct PtpSourceCreateParameters {
     pub id: SourceId,
     pub path: PathBuf,
     pub config: SourceConfig,

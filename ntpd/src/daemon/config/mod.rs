@@ -1,4 +1,5 @@
 mod ntp_source;
+mod ptp;
 mod server;
 
 use clock_steering::unix::UnixClock;
@@ -34,6 +35,9 @@ const HELP_MSG: &str = "Options:
   -l, --log-level=LOG_LEVEL     change the log level
   -h, --help                    display this help text
   -v, --version                 display version information";
+
+#[cfg(feature = "ptp")]
+pub mod ptp;
 
 pub fn long_help_message() -> String {
     format!("{DESCRIPTOR}\n\n{USAGE_MSG}\n\n{HELP_MSG}")

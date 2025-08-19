@@ -23,6 +23,7 @@ libc.workspace = true
 timestamped-socket.workspace = true
 clock-steering.workspace = true
 pps-time = { workspace = true, optional = true }
+ptp-time = { workspace = true, optional = true }
 
 serde.workspace = true
 serde_json.workspace = true

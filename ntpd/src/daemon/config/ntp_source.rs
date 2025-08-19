@@ -296,6 +296,14 @@ pub struct PpsSourceConfig {
     pub period: f64,
 }
 
+#[cfg(feature = "ptp")]
+#[derive(Debug, PartialEq, Clone)]
+pub struct PtpSourceConfig {
+    pub path: PathBuf,
+    pub precision: f64,
+    pub period: f64,
+}
+
 impl<'de> Deserialize<'de> for PpsSourceConfig {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -415,6 +423,9 @@ pub enum NtpSourceConfig {
     #[cfg(feature = "pps")]
     #[serde(rename = "pps")]
     Pps(PpsSourceConfig),
+    #[cfg(feature = "ptp")]
+    #[serde(rename = "ptp")]
+    Ptp(PtpSourceConfig),
 }
 
 /// A normalized address has a host and a port part. However, the host may be
