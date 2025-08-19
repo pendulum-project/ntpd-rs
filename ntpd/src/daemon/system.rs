@@ -159,6 +159,10 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper, Sourc
             NtpSourceConfig::Pps(cfg) => {
                 system.add_spawner(PpsSpawner::new(cfg.clone(), source_defaults_config));
             }
+            #[cfg(feature = "ptp")]
+            NtpSourceConfig::Ptp(cfg) => {
+                system.add_spawner(PtpSpawner::new(cfg.clone(), source_defaults_config));
+            }
         }
     }
 
@@ -542,6 +546,25 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C, SourceId = So
                     params.period,
                 )?;
                 PpsSourceTask::spawn(
+                    source_id,
+                    params.path.clone(),
+                    self.clock.clone(),
+                    SourceChannels {
+                        msg_for_system_sender: self.msg_for_system_tx.clone(),
+                        system_update_receiver: self.system_update_sender.subscribe(),
+                        source_snapshots: self.source_snapshots.clone(),
+                    },
+                    source,
+                );
+            }
+            #[cfg(feature = "ptp")]
+            SourceCreateParameters::Ptp(ref params) => {
+                let source = self.system.create_sock_source(
+                    source_id,
+                    params.config,
+                    params.noise_estimate,
+                )?;
+                SockSourceTask::spawn(
                     source_id,
                     params.path.clone(),
                     self.clock.clone(),
