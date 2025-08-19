@@ -8,6 +8,7 @@ use super::{
     SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId, standard::StandardSpawnError,
 };
 
+#[cfg(feature = "ptp")]
 pub struct PtpSpawner {
     config: PtpSourceConfig,
     source_config: SourceConfig,
@@ -15,6 +16,7 @@ pub struct PtpSpawner {
     has_spawned: bool,
 }
 
+#[cfg(feature = "ptp")]
 impl PtpSpawner {
     pub fn new(config: PtpSourceConfig, source_config: SourceConfig) -> PtpSpawner {
         PtpSpawner {
@@ -26,6 +28,7 @@ impl PtpSpawner {
     }
 }
 
+#[cfg(feature = "ptp")]
 impl Spawner for PtpSpawner {
     type Error = StandardSpawnError;
 

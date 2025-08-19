@@ -1,17 +1,3 @@
-## Relevant Files
-
-- `ntp-proto/src/config.rs` - Configuration type definitions
-- `ntpd/src/daemon/config/mod.rs` - Main configuration module
-- `ntpd/src/daemon/config/ntp_source.rs` - NTP source configuration data structures and parsing
-- `ntpd/src/daemon/pps_source.rs` - Reference implementation for dual-task threading pattern
-- `ntpd/src/daemon/ptp_source.rs` - Source task implementation with dual-threading model
-- `ntpd/src/daemon/sock_source.rs` - Reference for one-way communication pattern
-- `ntpd/src/daemon/spawn/mod.rs` - System spawning controllers and data structures
-- `ntpd/src/daemon/spawn/pps.rs` - Reference spawner for dual-task pattern
-- `ntpd/src/daemon/spawn/ptp.rs` - Main spawner implementation for PTP driver
-- `ntpd/src/daemon/spawn/sock.rs` - Reference spawner for one-way pattern
-- `ntpd/src/daemon/system.rs` - System coordinator integration
-
 ## Tasks
 
 - [x] 1. Create PTP Driver Spawner
@@ -21,14 +7,14 @@
   - [x] 1.4 Integrate PTP spawner creation in system coordinator
   - [x] 1.5 Create unit tests for spawner lifecycle management
   - [x] 1.6 Run unit tests for spawner and fix any problems encountered.
-- [ ] 2. Implement PTP Source Task with Dual-Thread Architecture
-  - [ ] 2.1 Create `PtpSourceTask` struct with blocking thread channel communication
-  - [ ] 2.2 Implement blocking I/O thread for PTP device access using ptp-time crate
-  - [ ] 2.3 Implement async coordinator task that manages polling timer
-  - [ ] 2.4 Implement timestamp capability detection at initialization only
-  - [ ] 2.5 Implement measurement reporting via `OneWaySourceUpdate`
-  - [ ] 2.6 Create integration tests for dual-thread communication pattern
-  - [ ] 2.7 Run integration tests and fix any problems encountered.
+- [x] 2. Implement PTP Source Task with Dual-Thread Architecture
+  - [x] 2.1 Create `PtpSourceTask` struct with blocking thread channel communication
+  - [x] 2.2 Implement blocking I/O thread for PTP device access using ptp-time crate
+  - [x] 2.3 Implement async coordinator task that manages polling timer
+  - [x] 2.4 Implement timestamp capability detection at initialization only
+  - [x] 2.5 Implement measurement reporting via `OneWaySourceUpdate`
+  - [x] 2.6 Create integration tests for dual-thread communication pattern
+  - [x] 2.7 Run integration tests and fix any problems encountered.
 - [ ] 3. Add Configuration Support and Error Handling
   - [ ] 3.1 Implement PTP configuration parsing from ntpd-rs config files
   - [ ] 3.2 Add validation for polling interval bounds (0.5s to 64s)
@@ -47,3 +33,17 @@
   - [ ] 5.2 Review the patterns and techniques used elsewhere in the codebase
   - [ ] 5.3 Create comprehensive integration tests covering all scenarios
   - [ ] 5.4 Run the integration tests and fix any problems encountered.
+
+## Relevant Files
+
+- `ntp-proto/src/config.rs` - Configuration type definitions
+- `ntpd/src/daemon/config/mod.rs` - Main configuration module
+- `ntpd/src/daemon/config/ntp_source.rs` - NTP source configuration data structures and parsing
+- `ntpd/src/daemon/pps_source.rs` - Reference implementation for dual-task threading pattern
+- `ntpd/src/daemon/ptp_source.rs` - Source task implementation with dual-threading model
+- `ntpd/src/daemon/sock_source.rs` - Reference for one-way communication pattern
+- `ntpd/src/daemon/spawn/mod.rs` - System spawning controllers and data structures
+- `ntpd/src/daemon/spawn/pps.rs` - Reference spawner for dual-task pattern
+- `ntpd/src/daemon/spawn/ptp.rs` - Main spawner implementation for PTP driver
+- `ntpd/src/daemon/spawn/sock.rs` - Reference spawner for one-way pattern
+- `ntpd/src/daemon/system.rs` - System coordinator integration
