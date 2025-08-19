@@ -559,12 +559,13 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C, SourceId = So
             }
             #[cfg(feature = "ptp")]
             SourceCreateParameters::Ptp(ref params) => {
-                let source = self.system.create_sock_source(
+                let source = self.system.create_ptp_source(
                     source_id,
                     params.config,
                     params.noise_estimate,
+                    params.period,
                 )?;
-                SockSourceTask::spawn(
+                PtpSourceTask::spawn(
                     source_id,
                     params.path.clone(),
                     self.clock.clone(),
