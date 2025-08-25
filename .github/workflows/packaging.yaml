@@ -27,13 +27,13 @@ jobs:
           version: 1
 
       - name: Install toolchain
-        uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
         with:
           toolchain: "stable"
           components: "llvm-tools"
 
       - name: Install cross, cargo-deb and cargo-generate-rpm
-        uses: taiki-e/install-action@ad95d4e02e061d4390c4b66ef5ed56c7fee3d2ce
+        uses: taiki-e/install-action@f63c33fd96cc1e69a29bafd06541cf28588b43a4
         with:
           tool: cross, cargo-deb, cargo-generate-rpm
 
@@ -93,7 +93,7 @@ jobs:
           path: target/pkg/
 
       - name: Install toolchain
-        uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
         with:
           toolchain: "stable"
           components: "llvm-tools"
