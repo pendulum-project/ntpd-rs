@@ -7,6 +7,7 @@ use ntp_proto::{
 };
 use ptp_time::PtpDevice;
 use tokio::sync::mpsc;
+use tokio::time::Instant;
 use tracing::{Instrument, Span, debug, error, instrument, warn};
 
 use crate::daemon::{exitcode, ntp_source::MsgForSystem};
@@ -15,22 +16,28 @@ use super::{ntp_source::SourceChannels, spawn::SourceId};
 
 struct PtpDeviceFetchTask {
     ptp: PtpDevice,
-    fetch_sender: mpsc::Sender<ptp_time::PtpData>,
+    fetch_sender: mpsc::Sender<Result<ptp_time::PtpData, String>>,
+    poll_receiver: mpsc::Receiver<()>,
 }
 
 impl PtpDeviceFetchTask {
-    fn run(&self) {
+    fn run(&mut self) {
         loop {
+            // Wait for poll request from coordinator
+            if self.poll_receiver.blocking_recv().is_none() {
+                break; // Channel closed, exit
+            }
+
             match self.ptp.fetch_blocking() {
                 Err(e) => {
-                    error!("PTP device error: {}", e);
-                    // Send an error message to the system coordinator
-                    // This will allow the system to handle device unavailability properly
-                    break;
+                    let error_msg = format!("PTP device error: {}", e);
+                    error!("{}", error_msg);
+                    if self.fetch_sender.blocking_send(Err(error_msg)).is_err() {
+                        break;
+                    }
                 }
                 Ok(data) => {
-                    if let Err(e) = self.fetch_sender.blocking_send(data) {
-                        error!("Failed to send PTP data: {}", e);
+                    if self.fetch_sender.blocking_send(Ok(data)).is_err() {
                         break;
                     }
                 }
@@ -48,7 +55,9 @@ pub(crate) struct PtpSourceTask<
     channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
     path: PathBuf,
     source: OneWaySource<Controller>,
-    fetch_receiver: mpsc::Receiver<ptp_time::PtpData>,
+    fetch_receiver: mpsc::Receiver<Result<ptp_time::PtpData, String>>,
+    poll_sender: mpsc::Sender<()>,
+    // Removed fixed poll_interval - now using controller-driven adaptive polling
 }
 
 impl<C, Controller: SourceController<MeasurementDelay = ()>> PtpSourceTask<C, Controller>
@@ -56,9 +65,15 @@ where
     C: 'static + NtpClock + Send + Sync,
 {
     async fn run(&mut self) {
+        // Use minimum poll interval (0.5s) for PTP polling
+        let poll_interval = Duration::from_millis(500); // 2^-1 = 0.5s minimum
+        let mut poll_timer = tokio::time::interval(poll_interval);
+        poll_timer.tick().await; // Skip first immediate tick
+
         loop {
             enum SelectResult<Controller: SourceController> {
-                PtpRecv(Option<ptp_time::PtpData>),
+                Timer,
+                PtpRecv(Option<Result<ptp_time::PtpData, String>>),
                 SystemUpdate(
                     Result<
                         SystemSourceUpdate<Controller::ControllerMessage>,
@@ -68,6 +83,9 @@ where
             }
 
             let selected: SelectResult<Controller> = tokio::select! {
+                _ = poll_timer.tick() => {
+                    SelectResult::Timer
+                },
                 result = self.fetch_receiver.recv() => {
                     SelectResult::PtpRecv(result)
                 },
@@ -77,16 +95,27 @@ where
             };
 
             match selected {
+                SelectResult::Timer => {
+                    debug!("PTP poll timer triggered");
+                    // Send poll request to blocking thread
+                    if self.poll_sender.send(()).await.is_err() {
+                        warn!("PTP device fetch task terminated, attempting to restart source");
+                        self.channels
+                            .msg_for_system_sender
+                            .send(MsgForSystem::NetworkIssue(self.index))
+                            .await
+                            .ok();
+                        break;
+                    }
+                }
                 SelectResult::PtpRecv(result) => match result {
-                    Some(data) => {
+                    Some(Ok(data)) => {
                         debug!("received {:?}", data);
 
                         let time = match self.clock.now() {
                             Ok(time) => time,
                             Err(e) => {
                                 error!(error = ?e, "There was an error retrieving the current time");
-                                // For time retrieval errors, we should try to continue rather than exit
-                                // This allows for graceful degradation if clock access has issues
                                 continue;
                             }
                         };
@@ -94,8 +123,6 @@ where
                         // Convert PTP timestamp to NTP duration (seconds)
                         let offset_seconds = match data.timestamp() {
                             Some(ts) => {
-                                // Calculate offset from PTP timestamp to local time
-                                // For PTP, we typically want the offset from the reference clock
                                 let ptp_time = ts.to_seconds();
                                 let local_time = time.to_seconds();
                                 local_time - ptp_time
@@ -111,7 +138,6 @@ where
                             offset: NtpDuration::from_seconds(offset_seconds),
                             localtime: time,
                             monotime: NtpInstant::now(),
-
                             stratum: 0,
                             root_delay: NtpDuration::ZERO,
                             root_dispersion: NtpDuration::ZERO,
@@ -148,18 +174,22 @@ where
                                 ),
                             );
                     }
-                    None => {
-                        // Channel closed - this indicates the PTP device fetch task has terminated
-                        warn!("PTP device fetch task terminated, attempting to restart source");
-
-                        // Send a NetworkIssue message to trigger system coordinator recovery
+                    Some(Err(error_msg)) => {
+                        error!("PTP device error: {}", error_msg);
                         self.channels
                             .msg_for_system_sender
                             .send(MsgForSystem::NetworkIssue(self.index))
                             .await
                             .ok();
-
-                        // Break out of the loop to terminate this task
+                        break;
+                    }
+                    None => {
+                        warn!("PTP device fetch task terminated, attempting to restart source");
+                        self.channels
+                            .msg_for_system_sender
+                            .send(MsgForSystem::NetworkIssue(self.index))
+                            .await
+                            .ok();
                         break;
                     }
                 },
@@ -217,9 +247,14 @@ where
         }
 
         let (fetch_sender, fetch_receiver) = mpsc::channel(1);
+        let (poll_sender, poll_receiver) = mpsc::channel(1);
 
-        tokio::task::spawn_blocking(|| {
-            let process = PtpDeviceFetchTask { ptp, fetch_sender };
+        tokio::task::spawn_blocking(move || {
+            let mut process = PtpDeviceFetchTask { 
+                ptp, 
+                fetch_sender,
+                poll_receiver,
+            };
 
             process.run();
         });
@@ -233,6 +268,7 @@ where
                     path: device_path,
                     source,
                     fetch_receiver,
+                    poll_sender,
                 };
 
                 process.run().await;

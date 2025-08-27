@@ -15,9 +15,16 @@
   - [x] 2.5 Implement measurement reporting via `OneWaySourceUpdate`
   - [x] 2.6 Create integration tests for dual-thread communication pattern
   - [x] 2.7 Run integration tests and fix any problems encountered.
+- [ ] 2.8 Enhance PTP Polling with NTP-Style Adaptive Intervals
+  - [x] 2.8.1 Replace fixed polling interval with controller-driven adaptive polling
+  - [ ] 2.8.2 Eliminate use of `desired_poll_interval()` method
+  - [ ] 2.8.3 Set PTP-specific poll interval limits: min=2^-1 (0.5s), max=2^6 (64s)
+  - [ ] 2.8.4 Add poll interval randomization (1.01-1.05x) to prevent synchronized polling
+  - [ ] 2.8.5 Remove server-requested rate limiting (not applicable for PTP hardware)
+  - [ ] 2.8.6 Update timer management to use controller-determined intervals
+  - [ ] 2.8.7 Test adaptive polling behavior under various measurement conditions
 - [ ] 3. Add Configuration Support and Error Handling
   - [ ] 3.1 Implement PTP configuration parsing from ntpd-rs config files
-  - [ ] 3.2 Add validation for polling interval bounds (0.5s to 64s)
   - [ ] 3.3 Implement graceful error handling for device unavailability
   - [ ] 3.4 Add recovery mechanisms for transient hardware issues
   - [ ] 3.5 Test configuration loading and error scenarios
@@ -26,8 +33,9 @@
   - [ ] 4.1 Implement `MsgForSystem::OneWaySourceUpdate` communication pattern
   - [ ] 4.2 Follow established error handling patterns (NetworkIssue, Unreachable)
   - [ ] 4.3 Ensure compatibility with existing source management architecture
-  - [ ] 4.4 Test system integration and message passing
-  - [ ] 4.5 Run system integration tests and fix any problems encountered.
+  - [ ] 4.4 Verify adaptive polling integrates properly with system coordinator
+  - [ ] 4.5 Test system integration and message passing
+  - [ ] 4.6 Run system integration tests and fix any problems encountered.
 - [ ] 5. Create Integration Tests for PTP Driver Implementation
   - [ ] 5.1 Review the changes made in tasks 1-4
   - [ ] 5.2 Review the patterns and techniques used elsewhere in the codebase
@@ -47,3 +55,4 @@
 - `ntpd/src/daemon/spawn/ptp.rs` - Main spawner implementation for PTP driver
 - `ntpd/src/daemon/spawn/sock.rs` - Reference spawner for one-way pattern
 - `ntpd/src/daemon/system.rs` - System coordinator integration
+- `ntpd/src/daemon/ptp_source.rs` - Updated to use fixed minimum poll interval (0.5s) instead of controller-driven adaptive polling
