@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::time::Duration;
 
 use ntp_proto::{
     Measurement, NtpClock, NtpDuration, NtpInstant, NtpLeapIndicator, OneWaySource,
@@ -21,8 +22,18 @@ impl PtpDeviceFetchTask {
     fn run(&self) {
         loop {
             match self.ptp.fetch_blocking() {
-                Err(e) => error!("PTP error: {}", e),
-                Ok(data) => self.fetch_sender.blocking_send(data).unwrap(),
+                Err(e) => {
+                    error!("PTP device error: {}", e);
+                    // Send an error message to the system coordinator
+                    // This will allow the system to handle device unavailability properly
+                    break;
+                }
+                Ok(data) => {
+                    if let Err(e) = self.fetch_sender.blocking_send(data) {
+                        error!("Failed to send PTP data: {}", e);
+                        break;
+                    }
+                }
             }
         }
     }
@@ -74,7 +85,9 @@ where
                             Ok(time) => time,
                             Err(e) => {
                                 error!(error = ?e, "There was an error retrieving the current time");
-                                std::process::exit(exitcode::NOPERM);
+                                // For time retrieval errors, we should try to continue rather than exit
+                                // This allows for graceful degradation if clock access has issues
+                                continue;
                             }
                         };
 
@@ -136,8 +149,18 @@ where
                             );
                     }
                     None => {
-                        warn!("Did not receive any new PTP data");
-                        continue;
+                        // Channel closed - this indicates the PTP device fetch task has terminated
+                        warn!("PTP device fetch task terminated, attempting to restart source");
+
+                        // Send a NetworkIssue message to trigger system coordinator recovery
+                        self.channels
+                            .msg_for_system_sender
+                            .send(MsgForSystem::NetworkIssue(self.index))
+                            .await
+                            .ok();
+
+                        // Break out of the loop to terminate this task
+                        break;
                     }
                 },
                 SelectResult::SystemUpdate(result) => match result {
@@ -161,11 +184,36 @@ where
         channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
         source: OneWaySource<Controller>,
     ) -> tokio::task::JoinHandle<()> {
-        let ptp = PtpDevice::new(device_path.clone()).expect("Could not open PTP device");
+        // Handle device opening errors gracefully
+        let ptp = match PtpDevice::new(device_path.clone()) {
+            Ok(ptp) => ptp,
+            Err(e) => {
+                error!(error = ?e, "Failed to open PTP device at {:?}", device_path);
+                // Send a NetworkIssue message to trigger system coordinator recovery
+                tokio::spawn(async move {
+                    channels
+                        .msg_for_system_sender
+                        .send(MsgForSystem::NetworkIssue(index))
+                        .await
+                        .ok();
+                });
+                // Return immediately without spawning the task, so it can be restarted by the system
+                return tokio::spawn(async {});
+            }
+        };
 
         // Check capabilities - we want to ensure it supports blocking calls
         if !ptp.can_wait() {
-            panic!("PTP device does not support blocking calls")
+            error!("PTP device at {:?} does not support blocking calls", device_path);
+            // Send a NetworkIssue message to trigger system coordinator recovery
+            tokio::spawn(async move {
+                channels
+                    .msg_for_system_sender
+                    .send(MsgForSystem::NetworkIssue(index))
+                    .await
+                    .ok();
+            });
+            return tokio::spawn(async {});
         }
 
         let (fetch_sender, fetch_receiver) = mpsc::channel(1);

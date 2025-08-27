@@ -304,6 +304,23 @@ pub struct PtpSourceConfig {
     pub period: f64,
 }
 
+impl PtpSourceConfig {
+    /// Validates the PTP source configuration
+    pub fn validate(&self) -> Result<(), String> {
+        // Validate polling interval
+        if self.period <= 0.0 {
+            return Err("PTP polling interval must be positive".to_string());
+        }
+
+        // Validate precision (should be positive)
+        if self.precision <= 0.0 {
+            return Err("PTP source precision must be positive".to_string());
+        }
+
+        Ok(())
+    }
+}
+
 impl<'de> Deserialize<'de> for PpsSourceConfig {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
