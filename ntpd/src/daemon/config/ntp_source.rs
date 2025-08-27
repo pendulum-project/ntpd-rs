@@ -304,6 +304,7 @@ pub struct PtpSourceConfig {
     pub period: f64,
 }
 
+#[cfg(feature = "ptp")]
 impl PtpSourceConfig {
     /// Validates the PTP source configuration
     pub fn validate(&self) -> Result<(), String> {
@@ -697,6 +698,8 @@ mod tests {
             NtpSourceConfig::Sock(_c) => "".to_string(),
             #[cfg(feature = "pps")]
             NtpSourceConfig::Pps(_c) => "".to_string(),
+            #[cfg(feature = "ptp")]
+            NtpSourceConfig::Ptp(_c) => "".to_string(),
         }
     }
 

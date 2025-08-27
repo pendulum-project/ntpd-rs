@@ -250,8 +250,8 @@ where
         let (poll_sender, poll_receiver) = mpsc::channel(1);
 
         tokio::task::spawn_blocking(move || {
-            let mut process = PtpDeviceFetchTask { 
-                ptp, 
+            let mut process = PtpDeviceFetchTask {
+                ptp,
                 fetch_sender,
                 poll_receiver,
             };

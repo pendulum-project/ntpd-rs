@@ -20,6 +20,10 @@ use super::{
 
 #[cfg(feature = "pps")]
 use super::spawn::pps::PpsSpawner;
+#[cfg(feature = "ptp")]
+use super::spawn::ptp::PtpSpawner;
+#[cfg(feature = "ptp")]
+use crate::daemon::ptp_source::PtpSourceTask;
 
 use std::{
     collections::HashMap,
