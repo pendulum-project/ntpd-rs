@@ -322,6 +322,90 @@ impl PtpSourceConfig {
     }
 }
 
+#[cfg(feature = "ptp")]
+impl<'de> Deserialize<'de> for PtpSourceConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(field_identifier, rename_all = "snake_case")]
+        enum Field {
+            Path,
+            Precision,
+            Period,
+        }
+
+        struct PtpSourceConfigVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for PtpSourceConfigVisitor {
+            type Value = PtpSourceConfig;
+
+            fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
+                formatter.write_str("struct PtpSourceConfig")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<PtpSourceConfig, V::Error>
+            where
+                V: serde::de::MapAccess<'de>,
+            {
+                let mut path = None;
+                let mut precision = None;
+                let mut period = None;
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        Field::Path => {
+                            if path.is_some() {
+                                return Err(de::Error::duplicate_field("path"));
+                            }
+                            path = Some(map.next_value()?);
+                        }
+                        Field::Precision => {
+                            if precision.is_some() {
+                                return Err(de::Error::duplicate_field("precision"));
+                            }
+                            let precision_raw: f64 = map.next_value()?;
+                            if precision_raw.partial_cmp(&0.0) != Some(core::cmp::Ordering::Greater)
+                            {
+                                return Err(de::Error::invalid_value(
+                                    serde::de::Unexpected::Float(precision_raw),
+                                    &"precision should be positive",
+                                ));
+                            }
+                            precision = Some(precision_raw);
+                        }
+                        Field::Period => {
+                            if period.is_some() {
+                                return Err(de::Error::duplicate_field("period"));
+                            }
+                            let period_raw: f64 = map.next_value()?;
+                            if period_raw.partial_cmp(&0.0) != Some(core::cmp::Ordering::Greater) {
+                                return Err(de::Error::invalid_value(
+                                    serde::de::Unexpected::Float(period_raw),
+                                    &"period should be positive",
+                                ));
+                            }
+                            period = Some(period_raw);
+                        }
+                    }
+                }
+                let path = path.ok_or_else(|| serde::de::Error::missing_field("path"))?;
+                let precision =
+                    precision.ok_or_else(|| serde::de::Error::missing_field("precision"))?;
+                let period = period.unwrap_or(1.0);
+                Ok(PtpSourceConfig {
+                    path,
+                    precision,
+                    period,
+                })
+            }
+        }
+
+        const FIELDS: &[&str] = &["path", "precision", "period"];
+        deserializer.deserialize_struct("PtpSourceConfig", FIELDS, PtpSourceConfigVisitor)
+    }
+}
+
 impl<'de> Deserialize<'de> for PpsSourceConfig {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
