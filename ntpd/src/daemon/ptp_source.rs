@@ -57,7 +57,7 @@ pub(crate) struct PtpSourceTask<
     source: OneWaySource<Controller>,
     fetch_receiver: mpsc::Receiver<Result<ptp_time::PtpData, String>>,
     poll_sender: mpsc::Sender<()>,
-    // Removed fixed poll_interval - now using controller-driven adaptive polling
+    poll_interval: Duration,
 }
 
 impl<C, Controller: SourceController<MeasurementDelay = ()>> PtpSourceTask<C, Controller>
@@ -65,9 +65,7 @@ where
     C: 'static + NtpClock + Send + Sync,
 {
     async fn run(&mut self) {
-        // Use minimum poll interval (0.5s) for PTP polling
-        let poll_interval = Duration::from_millis(500); // 2^-1 = 0.5s minimum
-        let mut poll_timer = tokio::time::interval(poll_interval);
+        let mut poll_timer = tokio::time::interval(self.poll_interval);
         poll_timer.tick().await; // Skip first immediate tick
 
         loop {
@@ -210,6 +208,7 @@ where
     pub fn spawn(
         index: SourceId,
         device_path: PathBuf,
+        poll_interval: Duration,
         clock: C,
         channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
         source: OneWaySource<Controller>,
@@ -269,6 +268,7 @@ where
                     source,
                     fetch_receiver,
                     poll_sender,
+                    poll_interval,
                 };
 
                 process.run().await;
