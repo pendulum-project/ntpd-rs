@@ -18,7 +18,6 @@
 - [ ] 3. Add Configuration Support and Error Handling
   - [x] 3.1 Implement PTP configuration parsing from ntpd-rs config files
   - [x] 3.3 Implement graceful error handling for device unavailability
-  - [ ] 3.4 Add recovery mechanisms for transient hardware issues
   - [ ] 3.5 Test configuration loading and error scenarios
   - [ ] 3.6 Run configuration tests and fix any problems encountered.
 - [ ] 4. Integrate with System Coordinator and Communication Patterns

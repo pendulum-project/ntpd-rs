@@ -390,8 +390,7 @@ impl<'de> Deserialize<'de> for PtpSourceConfig {
                     }
                 }
                 let path = path.ok_or_else(|| serde::de::Error::missing_field("path"))?;
-                let precision =
-                    precision.ok_or_else(|| serde::de::Error::missing_field("precision"))?;
+                let precision = precision.unwrap_or(0.000000001); // Default to 1 nanosecond
                 let period = period.unwrap_or(1.0);
                 Ok(PtpSourceConfig {
                     path,
@@ -1300,15 +1299,23 @@ mod tests {
         );
         assert!(test.is_err());
 
-        // Test validation - missing precision should fail
-        let test: Result<TestConfig, _> = toml::from_str(
+        // Test with default precision (1 nanosecond)
+        let TestConfig {
+            source: NtpSourceConfig::Ptp(test),
+        } = toml::from_str(
             r#"
             [source]
             mode = "ptp"
             path = "/dev/ptp0"
             "#,
-        );
-        assert!(test.is_err());
+        )
+        .unwrap()
+        else {
+            panic!("Unexpected source type");
+        };
+        assert_eq!(test.path, PathBuf::from("/dev/ptp0"));
+        assert_eq!(test.precision, 0.000000001); // Default precision (1 nanosecond)
+        assert_eq!(test.period, 1.0); // Default period
 
         // Test validation - negative precision should fail
         let test: Result<TestConfig, _> = toml::from_str(
