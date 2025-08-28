@@ -8,9 +8,9 @@ use ntp_proto::{
 use ptp_time::PtpDevice;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
-use tracing::{Instrument, Span, debug, error, instrument, warn};
+use tracing::{Instrument, Span, debug, error, info, instrument, warn};
 
-use crate::daemon::{exitcode, ntp_source::MsgForSystem};
+use crate::daemon::ntp_source::MsgForSystem;
 
 use super::{ntp_source::SourceChannels, spawn::SourceId};
 
@@ -18,13 +18,17 @@ struct PtpDeviceFetchTask {
     ptp: PtpDevice,
     fetch_sender: mpsc::Sender<Result<ptp_time::PtpData, String>>,
     poll_receiver: mpsc::Receiver<()>,
+    device_path: PathBuf,
 }
 
 impl PtpDeviceFetchTask {
     fn run(&mut self) {
+        info!("PTP device fetch task started for {:?}", self.device_path);
+
         loop {
             // Wait for poll request from coordinator
             if self.poll_receiver.blocking_recv().is_none() {
+                info!("PTP device fetch task terminating: coordinator disconnected");
                 break; // Channel closed, exit
             }
 
@@ -33,16 +37,20 @@ impl PtpDeviceFetchTask {
                     let error_msg = format!("PTP device error: {}", e);
                     error!("{}", error_msg);
                     if self.fetch_sender.blocking_send(Err(error_msg)).is_err() {
+                        info!("PTP device fetch task terminating: coordinator disconnected");
                         break;
                     }
                 }
                 Ok(data) => {
                     if self.fetch_sender.blocking_send(Ok(data)).is_err() {
+                        info!("PTP device fetch task terminating: coordinator disconnected");
                         break;
                     }
                 }
             }
         }
+
+        info!("PTP device fetch task terminated for {:?}", self.device_path);
     }
 }
 
@@ -215,7 +223,10 @@ where
     ) -> tokio::task::JoinHandle<()> {
         // Handle device opening errors gracefully
         let ptp = match PtpDevice::new(device_path.clone()) {
-            Ok(ptp) => ptp,
+            Ok(ptp) => {
+                info!("Successfully opened PTP device at {:?}", device_path);
+                ptp
+            }
             Err(e) => {
                 error!(error = ?e, "Failed to open PTP device at {:?}", device_path);
                 // Send a NetworkIssue message to trigger system coordinator recovery
@@ -226,33 +237,23 @@ where
                         .await
                         .ok();
                 });
-                // Return immediately without spawning the task, so it can be restarted by the system
-                return tokio::spawn(async {});
+                // Return a dummy task that completes immediately
+                return tokio::spawn(async {
+                    info!("PTP source task terminated due to device unavailability");
+                });
             }
         };
 
-        // Check capabilities - we want to ensure it supports blocking calls
-        if !ptp.can_wait() {
-            error!("PTP device at {:?} does not support blocking calls", device_path);
-            // Send a NetworkIssue message to trigger system coordinator recovery
-            tokio::spawn(async move {
-                channels
-                    .msg_for_system_sender
-                    .send(MsgForSystem::NetworkIssue(index))
-                    .await
-                    .ok();
-            });
-            return tokio::spawn(async {});
-        }
-
         let (fetch_sender, fetch_receiver) = mpsc::channel(1);
         let (poll_sender, poll_receiver) = mpsc::channel(1);
+        let device_path_clone = device_path.clone();
 
         tokio::task::spawn_blocking(move || {
             let mut process = PtpDeviceFetchTask {
                 ptp,
                 fetch_sender,
                 poll_receiver,
+                device_path: device_path_clone,
             };
 
             process.run();
