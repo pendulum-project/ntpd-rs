@@ -5,9 +5,8 @@ use ntp_proto::{
     Measurement, NtpClock, NtpDuration, NtpInstant, NtpLeapIndicator, OneWaySource,
     OneWaySourceSnapshot, OneWaySourceUpdate, ReferenceId, SourceController, SystemSourceUpdate,
 };
-use ptp_time::PtpDevice;
+use ptp_time::{PtpDevice, ptp::ptp_sys_offset_precise};
 use tokio::sync::mpsc;
-use tokio::time::Instant;
 use tracing::{Instrument, Span, debug, error, info, instrument, warn};
 
 use crate::daemon::ntp_source::MsgForSystem;
@@ -16,7 +15,7 @@ use super::{ntp_source::SourceChannels, spawn::SourceId};
 
 struct PtpDeviceFetchTask {
     ptp: PtpDevice,
-    fetch_sender: mpsc::Sender<Result<ptp_time::PtpData, String>>,
+    fetch_sender: mpsc::Sender<Result<ptp_sys_offset_precise, String>>,
     poll_receiver: mpsc::Receiver<()>,
     device_path: PathBuf,
 }
@@ -32,7 +31,7 @@ impl PtpDeviceFetchTask {
                 break; // Channel closed, exit
             }
 
-            match self.ptp.fetch_blocking() {
+            match self.ptp.get_sys_offset_precise() {
                 Err(e) => {
                     let error_msg = format!("PTP device error: {}", e);
                     error!("{}", error_msg);
@@ -63,7 +62,7 @@ pub(crate) struct PtpSourceTask<
     channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
     path: PathBuf,
     source: OneWaySource<Controller>,
-    fetch_receiver: mpsc::Receiver<Result<ptp_time::PtpData, String>>,
+    fetch_receiver: mpsc::Receiver<Result<ptp_sys_offset_precise, String>>,
     poll_sender: mpsc::Sender<()>,
     poll_interval: Duration,
 }
@@ -79,7 +78,7 @@ where
         loop {
             enum SelectResult<Controller: SourceController> {
                 Timer,
-                PtpRecv(Option<Result<ptp_time::PtpData, String>>),
+                PtpRecv(Option<Result<ptp_sys_offset_precise, String>>),
                 SystemUpdate(
                     Result<
                         SystemSourceUpdate<Controller::ControllerMessage>,
@@ -127,17 +126,9 @@ where
                         };
 
                         // Convert PTP timestamp to NTP duration (seconds)
-                        let offset_seconds = match data.timestamp() {
-                            Some(ts) => {
-                                let ptp_time = ts.to_seconds();
-                                let local_time = time.to_seconds();
-                                local_time - ptp_time
-                            }
-                            None => {
-                                warn!("PTP device returned no timestamp");
-                                continue;
-                            }
-                        };
+                        let ptp_device_time = data.device.sec as f64 + (data.device.nsec as f64 / 1_000_000_000.0);
+                        let sys_realtime = data.sys_realtime.sec as f64 + (data.sys_realtime.nsec as f64 / 1_000_000_000.0);
+                        let offset_seconds = sys_realtime - ptp_device_time;
 
                         let measurement = Measurement {
                             delay: (),
