@@ -16,7 +16,7 @@
   - [x] 2.6 Create integration tests for dual-thread communication pattern
   - [x] 2.7 Run integration tests and fix any problems encountered.
 - [ ] 3. Add Configuration Support and Error Handling
-  - [ ] 3.1 Implement PTP configuration parsing from ntpd-rs config files
+  - [x] 3.1 Implement PTP configuration parsing from ntpd-rs config files
   - [ ] 3.3 Implement graceful error handling for device unavailability
   - [ ] 3.4 Add recovery mechanisms for transient hardware issues
   - [ ] 3.5 Test configuration loading and error scenarios
@@ -47,3 +47,4 @@
 - `ntpd/src/daemon/spawn/sock.rs` - Reference spawner for one-way pattern
 - `ntpd/src/daemon/system.rs` - System coordinator integration
 - `ntpd/src/daemon/ptp_source.rs` - Updated to use fixed poll interval from configuration instead of adaptive polling
+- `ntpd/src/daemon/config/ntp_source.rs` - Added comprehensive PTP configuration parsing test

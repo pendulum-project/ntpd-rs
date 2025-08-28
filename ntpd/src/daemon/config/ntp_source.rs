@@ -1249,6 +1249,126 @@ mod tests {
         assert!(test.is_err());
     }
 
+    #[cfg(feature = "ptp")]
+    #[test]
+    fn test_ptp_config_parsing() {
+        let TestConfig {
+            source: NtpSourceConfig::Ptp(test),
+        } = toml::from_str(
+            r#"
+            [source]
+            mode = "ptp"
+            path = "/dev/ptp0"
+            precision = 0.000001
+            period = 2.0
+            "#,
+        )
+        .unwrap()
+        else {
+            panic!("Unexpected source type");
+        };
+        assert_eq!(test.path, PathBuf::from("/dev/ptp0"));
+        assert_eq!(test.precision, 0.000001);
+        assert_eq!(test.period, 2.0);
+
+        // Test with default period
+        let TestConfig {
+            source: NtpSourceConfig::Ptp(test),
+        } = toml::from_str(
+            r#"
+            [source]
+            mode = "ptp"
+            path = "/dev/ptp1"
+            precision = 0.000005
+            "#,
+        )
+        .unwrap()
+        else {
+            panic!("Unexpected source type");
+        };
+        assert_eq!(test.path, PathBuf::from("/dev/ptp1"));
+        assert_eq!(test.precision, 0.000005);
+        assert_eq!(test.period, 1.0); // Default period
+
+        // Test validation - missing path should fail
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "ptp"
+            precision = 0.000001
+            "#,
+        );
+        assert!(test.is_err());
+
+        // Test validation - missing precision should fail
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "ptp"
+            path = "/dev/ptp0"
+            "#,
+        );
+        assert!(test.is_err());
+
+        // Test validation - negative precision should fail
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "ptp"
+            path = "/dev/ptp0"
+            precision = -0.000001
+            "#,
+        );
+        assert!(test.is_err());
+
+        // Test validation - negative period should fail
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "ptp"
+            path = "/dev/ptp0"
+            precision = 0.000001
+            period = -1.0
+            "#,
+        );
+        assert!(test.is_err());
+
+        // Test validation - zero precision should fail
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "ptp"
+            path = "/dev/ptp0"
+            precision = 0.0
+            "#,
+        );
+        assert!(test.is_err());
+
+        // Test validation - zero period should fail
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "ptp"
+            path = "/dev/ptp0"
+            precision = 0.000001
+            period = 0.0
+            "#,
+        );
+        assert!(test.is_err());
+
+        // Test validation - unknown field should fail
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "ptp"
+            path = "/dev/ptp0"
+            precision = 0.000001
+            unknown_field = 5
+            "#,
+        );
+        assert!(test.is_err());
+    }
+
     #[test]
     fn test_normalize_addr() {
         let addr = NormalizedAddress::from_string_ntp("[::1]:456".into()).unwrap();

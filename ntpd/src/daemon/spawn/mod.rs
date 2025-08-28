@@ -155,6 +155,8 @@ impl SourceCreateParameters {
             Self::Sock(params) => params.id,
             #[cfg(feature = "pps")]
             Self::Pps(params) => params.id,
+            #[cfg(feature = "ptp")]
+            Self::Ptp(params) => params.id,
         }
     }
 

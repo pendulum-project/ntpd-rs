@@ -136,6 +136,8 @@ pub(crate) fn force_sync(config: Option<PathBuf>) -> std::io::Result<ExitCode> {
                     | config::NtpSourceConfig::Sock(_) => total_sources += 1,
                     #[cfg(feature = "pps")]
                     config::NtpSourceConfig::Pps(_) => {} // PPS sources don't count
+                    #[cfg(feature = "ptp")]
+                    config::NtpSourceConfig::Ptp(_) => total_sources += 1,
                     config::NtpSourceConfig::Pool(cfg) => total_sources += cfg.first.count,
                     #[cfg(feature = "unstable_nts-pool")]
                     config::NtpSourceConfig::NtsPool(cfg) => total_sources += cfg.first.count,

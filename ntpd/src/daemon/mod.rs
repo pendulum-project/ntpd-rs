@@ -7,6 +7,8 @@ pub mod nts_key_provider;
 pub mod observer;
 #[cfg(feature = "pps")]
 mod pps_source;
+#[cfg(feature = "ptp")]
+mod ptp_source;
 mod server;
 mod sock_source;
 pub mod sockets;
