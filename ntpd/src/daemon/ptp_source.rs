@@ -5,7 +5,7 @@ use ntp_proto::{
     Measurement, NtpClock, NtpDuration, NtpInstant, NtpLeapIndicator, OneWaySource,
     OneWaySourceSnapshot, OneWaySourceUpdate, ReferenceId, SourceController, SystemSourceUpdate,
 };
-use ptp_time::{PtpDevice, ptp::ptp_sys_offset_precise};
+use ptp_time::{PtpDevice, ptp::{ptp_sys_offset_precise, ptp_sys_offset_extended, ptp_sys_offset}};
 use tokio::sync::mpsc;
 use tracing::{Instrument, Span, debug, error, info, instrument, warn};
 
@@ -13,11 +13,26 @@ use crate::daemon::ntp_source::MsgForSystem;
 
 use super::{ntp_source::SourceChannels, spawn::SourceId};
 
+#[derive(Debug, Clone)]
+enum TimestampCapability {
+    Precise,
+    Extended,
+    Standard,
+}
+
+#[derive(Debug)]
+enum PtpTimestamp {
+    Precise(ptp_sys_offset_precise),
+    Extended(ptp_sys_offset_extended),
+    Standard(ptp_sys_offset),
+}
+
 struct PtpDeviceFetchTask {
     ptp: PtpDevice,
-    fetch_sender: mpsc::Sender<Result<ptp_sys_offset_precise, String>>,
+    fetch_sender: mpsc::Sender<Result<PtpTimestamp, String>>,
     poll_receiver: mpsc::Receiver<()>,
     device_path: PathBuf,
+    capability: TimestampCapability,
 }
 
 impl PtpDeviceFetchTask {
@@ -31,7 +46,19 @@ impl PtpDeviceFetchTask {
                 break; // Channel closed, exit
             }
 
-            match self.ptp.get_sys_offset_precise() {
+            let result = match self.capability {
+                TimestampCapability::Precise => {
+                    self.ptp.get_sys_offset_precise().map(PtpTimestamp::Precise)
+                }
+                TimestampCapability::Extended => {
+                    self.ptp.get_sys_offset_extended().map(PtpTimestamp::Extended)
+                }
+                TimestampCapability::Standard => {
+                    self.ptp.get_sys_offset().map(PtpTimestamp::Standard)
+                }
+            };
+
+            match result {
                 Err(e) => {
                     let error_msg = format!("PTP device error: {}", e);
                     error!("{}", error_msg);
@@ -62,7 +89,7 @@ pub(crate) struct PtpSourceTask<
     channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
     path: PathBuf,
     source: OneWaySource<Controller>,
-    fetch_receiver: mpsc::Receiver<Result<ptp_sys_offset_precise, String>>,
+    fetch_receiver: mpsc::Receiver<Result<PtpTimestamp, String>>,
     poll_sender: mpsc::Sender<()>,
     poll_interval: Duration,
 }
@@ -78,7 +105,7 @@ where
         loop {
             enum SelectResult<Controller: SourceController> {
                 Timer,
-                PtpRecv(Option<Result<ptp_sys_offset_precise, String>>),
+                PtpRecv(Option<Result<PtpTimestamp, String>>),
                 SystemUpdate(
                     Result<
                         SystemSourceUpdate<Controller::ControllerMessage>,
@@ -126,9 +153,33 @@ where
                         };
 
                         // Convert PTP timestamp to NTP duration (seconds)
-                        let ptp_device_time = data.device.sec as f64 + (data.device.nsec as f64 / 1_000_000_000.0);
-                        let sys_realtime = data.sys_realtime.sec as f64 + (data.sys_realtime.nsec as f64 / 1_000_000_000.0);
-                        let offset_seconds = sys_realtime - ptp_device_time;
+                        let offset_seconds = match &data {
+                            PtpTimestamp::Precise(precise) => {
+                                let ptp_time = precise.device.sec as f64 + (precise.device.nsec as f64 / 1_000_000_000.0);
+                                let sys_time = precise.sys_realtime.sec as f64 + (precise.sys_realtime.nsec as f64 / 1_000_000_000.0);
+                                sys_time - ptp_time
+                            }
+                            PtpTimestamp::Extended(extended) => {
+                                if extended.n_samples > 0 {
+                                    let ptp_time = extended.ts[0][1].sec as f64 + (extended.ts[0][1].nsec as f64 / 1_000_000_000.0);
+                                    let sys_time = extended.ts[0][0].sec as f64 + (extended.ts[0][0].nsec as f64 / 1_000_000_000.0);
+                                    sys_time - ptp_time
+                                } else {
+                                    warn!("Extended timestamp has no samples");
+                                    continue;
+                                }
+                            }
+                            PtpTimestamp::Standard(standard) => {
+                                if standard.n_samples > 0 {
+                                    let ptp_time = standard.ts[1].sec as f64 + (standard.ts[1].nsec as f64 / 1_000_000_000.0);
+                                    let sys_time = standard.ts[0].sec as f64 + (standard.ts[0].nsec as f64 / 1_000_000_000.0);
+                                    sys_time - ptp_time
+                                } else {
+                                    warn!("Standard timestamp has no samples");
+                                    continue;
+                                }
+                            }
+                        };
 
                         let measurement = Measurement {
                             delay: (),
@@ -235,6 +286,9 @@ where
             }
         };
 
+        // Detect timestamp capabilities at initialization
+        let capability = detect_timestamp_capability(&ptp);
+
         let (fetch_sender, fetch_receiver) = mpsc::channel(1);
         let (poll_sender, poll_receiver) = mpsc::channel(1);
         let device_path_clone = device_path.clone();
@@ -245,6 +299,7 @@ where
                 fetch_sender,
                 poll_receiver,
                 device_path: device_path_clone,
+                capability,
             };
 
             process.run();
@@ -268,4 +323,22 @@ where
             .instrument(Span::current()),
         )
     }
+}
+
+fn detect_timestamp_capability(ptp: &PtpDevice) -> TimestampCapability {
+    // Try precise timestamps first
+    if ptp.get_sys_offset_precise().is_ok() {
+        info!("PTP device supports precise timestamps");
+        return TimestampCapability::Precise;
+    }
+
+    // Fall back to extended timestamps
+    if ptp.get_sys_offset_extended().is_ok() {
+        info!("PTP device supports extended timestamps");
+        return TimestampCapability::Extended;
+    }
+
+    // Fall back to standard timestamps
+    info!("PTP device using standard timestamps");
+    TimestampCapability::Standard
 }
