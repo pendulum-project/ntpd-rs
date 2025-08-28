@@ -43,7 +43,6 @@ impl Spawner for PtpSpawner {
                     id: SourceId::new(),
                     path: self.config.path.clone(),
                     config: self.source_config,
-                    noise_estimate: self.config.precision.powi(2),
                     period: self.config.period,
                 })),
             ))
@@ -120,7 +119,6 @@ mod tests {
             panic!("did not receive PTP source create parameters!");
         };
         assert_eq!(params.path, socket_path);
-        assert!((params.noise_estimate - precision.powi(2)).abs() < 1e-9);
 
         // Should be complete after spawning
         assert!(spawner.is_complete());

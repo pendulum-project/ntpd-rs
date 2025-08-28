@@ -206,7 +206,6 @@ pub struct PtpSourceCreateParameters {
     pub id: SourceId,
     pub path: PathBuf,
     pub config: SourceConfig,
-    pub noise_estimate: f64,
     pub period: f64,
 }
 
