@@ -188,7 +188,18 @@ impl<C: NtpClock> Server<C> {
 
         // Try and parse the message
         let (packet, cookie) = match NtpPacket::deserialize(message, self.keyset.as_ref()) {
-            Ok(packet) => packet,
+            Ok((packet, cookie)) => match packet.mode() {
+                crate::NtpAssociationMode::Client => (packet, cookie),
+                _ => {
+                    stats_handler.register(
+                        fallback_message_version(message),
+                        false,
+                        ServerReason::ParseError,
+                        ServerResponse::Ignore,
+                    );
+                    return ServerAction::Ignore;
+                }
+            },
             Err(PacketParsingError::DecryptError(packet)) => {
                 // Don't care about decryption errors when denying anyway
                 if action != ServerResponse::Deny {
@@ -906,6 +917,61 @@ mod tests {
             packet.transmit_timestamp(),
             NtpTimestamp::from_fixed_int(200)
         );
+    }
+
+    #[test]
+    fn test_server_ignores_non_request() {
+        let config = ServerConfig {
+            denylist: FilterList {
+                filter: vec![],
+                action: FilterAction::Deny,
+            },
+            allowlist: FilterList {
+                filter: vec!["0.0.0.0/0".parse().unwrap()],
+                action: FilterAction::Ignore,
+            },
+            rate_limiting_cutoff: Duration::from_millis(100),
+            rate_limiting_cache_size: 0,
+            require_nts: None,
+            accepted_versions: vec![NtpVersion::V4],
+        };
+        let clock = TestClock {
+            cur: NtpTimestamp::from_fixed_int(200),
+        };
+        let mut stats = TestStatHandler::default();
+
+        let mut server = Server::new(
+            config,
+            clock,
+            SystemSnapshot::default(),
+            KeySetProvider::new(1).get(),
+        );
+
+        let (packet, _) = NtpPacket::poll_message(PollIntervalLimits::default().min);
+        let mut serialized = serialize_packet_unencrypted(&packet);
+
+        for version in 0..8 {
+            for mode in 0..8 {
+                if mode == 3 {
+                    // Client mode should be able to get responses
+                    continue;
+                }
+
+                serialized[0] = (serialized[0] & 0xC0) | (version << 3) | mode;
+
+                let mut buf = [0; 48];
+                let response = server.handle(
+                    "127.0.0.1".parse().unwrap(),
+                    NtpTimestamp::from_fixed_int(100),
+                    &serialized,
+                    &mut buf,
+                    &mut stats,
+                );
+                stats.last_register.take();
+
+                assert!(matches!(response, ServerAction::Ignore));
+            }
+        }
     }
 
     #[test]
