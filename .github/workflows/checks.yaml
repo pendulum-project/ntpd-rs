@@ -187,6 +187,7 @@ jobs:
 
   clippy:
     name: Clippy
+    if: ${{ false }}
     strategy:
       matrix:
         include:

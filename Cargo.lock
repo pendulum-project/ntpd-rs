@@ -573,7 +573,7 @@ dependencies = [
 
 [[package]]
 name = "ntp-proto"
-version = "1.6.1"
+version = "1.6.2"
 dependencies = [
  "aead",
  "aes-siv",
@@ -590,7 +590,7 @@ dependencies = [
 
 [[package]]
 name = "ntpd"
-version = "1.6.1"
+version = "1.6.2"
 dependencies = [
  "async-trait",
  "clock-steering",
