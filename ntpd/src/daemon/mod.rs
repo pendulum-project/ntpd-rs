@@ -1,5 +1,7 @@
 mod clock;
 pub mod config;
+mod csptp_server;
+mod csptp_source;
 pub mod keyexchange;
 mod local_ip_provider;
 mod ntp_source;
@@ -83,11 +85,13 @@ pub(crate) fn initialize_logging_parse_config(
 fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
     let config = initialize_logging_parse_config(options.log_level, options.config);
 
-    let runtime = if config.servers.is_empty() && config.nts_ke.is_empty() {
-        Builder::new_current_thread().enable_all().build()?
-    } else {
-        Builder::new_multi_thread().enable_all().build()?
-    };
+    let runtime =
+        if config.servers.is_empty() && config.nts_ke.is_empty() && config.csptp_servers.is_empty()
+        {
+            Builder::new_current_thread().enable_all().build()?
+        } else {
+            Builder::new_multi_thread().enable_all().build()?
+        };
 
     runtime.block_on(async {
         // give the user a warning that we use the command line option
@@ -117,6 +121,7 @@ fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
             clock_config,
             &config.sources,
             &config.servers,
+            &config.csptp_servers,
             keyset.clone(),
         )
         .await?;

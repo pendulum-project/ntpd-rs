@@ -43,6 +43,12 @@ fn default_stale_key_count() -> usize {
 
 #[derive(Debug, PartialEq, Eq, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct CsptpServerConfig {
+    pub listen: SocketAddr,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ServerConfig {
     pub listen: SocketAddr,
     #[serde(default = "default_denylist")]
