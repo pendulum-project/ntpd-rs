@@ -20,7 +20,7 @@ mod tests {
     async fn test_ptp_spawner_system_integration() {
         // Create a temporary path for testing
         let test_path = std::env::temp_dir().join("test_ptp_device");
-        
+
         // Create PTP spawner
         let mut spawner = PtpSpawner::new(
             PtpSourceConfig {
@@ -59,7 +59,7 @@ mod tests {
     #[tokio::test]
     async fn test_ptp_spawner_source_removal_handling() {
         let test_path = std::env::temp_dir().join("test_ptp_device_removal");
-        
+
         let mut spawner = PtpSpawner::new(
             PtpSourceConfig {
                 path: test_path,
@@ -70,11 +70,11 @@ mod tests {
         );
 
         let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
-        
+
         // Spawn a source
         spawner.try_spawn(&action_tx).await.unwrap();
         assert!(spawner.is_complete());
-        
+
         // Consume the spawn event
         let _spawn_event = action_rx.try_recv().unwrap();
 
@@ -91,7 +91,7 @@ mod tests {
         // Test demobilized removal (should not allow respawn)
         spawner.try_spawn(&action_tx).await.unwrap();
         assert!(spawner.is_complete());
-        
+
         // Consume the second spawn event
         let _spawn_event2 = action_rx.try_recv().unwrap();
 
@@ -140,7 +140,7 @@ mod tests {
 
         // Test NetworkIssue error pattern
         msg_tx.send(MsgForSystem::NetworkIssue(source_id)).await.unwrap();
-        
+
         let received_msg = msg_rx.try_recv().unwrap();
         match received_msg {
             MsgForSystem::NetworkIssue(id) => {
@@ -151,7 +151,7 @@ mod tests {
 
         // Test Unreachable error pattern
         msg_tx.send(MsgForSystem::Unreachable(source_id)).await.unwrap();
-        
+
         let received_msg = msg_rx.try_recv().unwrap();
         match received_msg {
             MsgForSystem::Unreachable(id) => {
@@ -192,7 +192,7 @@ mod tests {
     #[tokio::test]
     async fn test_ptp_spawner_lifecycle() {
         let test_path = std::env::temp_dir().join("test_ptp_lifecycle");
-        
+
         let mut spawner = PtpSpawner::new(
             PtpSourceConfig {
                 path: test_path.clone(),

@@ -12,7 +12,7 @@ mod tests {
         config::PtpSourceConfig,
         ntp_source::{MsgForSystem, SourceChannels},
         ptp_source::PtpSourceTask,
-        spawn::{SourceId, ptp::PtpSpawner, Spawner, SpawnEvent},
+        spawn::{SourceId, ptp::PtpSpawner, Spawner},
         util::EPOCH_OFFSET,
     };
 
