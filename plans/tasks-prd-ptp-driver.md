@@ -15,16 +15,16 @@
   - [x] 2.5 Implement measurement reporting via `OneWaySourceUpdate`
   - [x] 2.6 Create integration tests for dual-thread communication pattern
   - [x] 2.7 Run integration tests and fix any problems encountered.
-- [ ] 3. Add Configuration Support and Error Handling
+- [x] 3. Add Configuration Support and Error Handling
   - [x] 3.1 Implement PTP configuration parsing from ntpd-rs config files
   - [x] 3.3 Implement graceful error handling for device unavailability
   - [x] 3.5 Test configuration loading and error scenarios
   - [x] 3.6 Run configuration tests and fix any problems encountered.
 - [ ] 4. Integrate with System Coordinator and Communication Patterns
-  - [ ] 4.1 Implement `MsgForSystem::OneWaySourceUpdate` communication pattern
-  - [ ] 4.2 Follow established error handling patterns (NetworkIssue, Unreachable)
-  - [ ] 4.3 Ensure compatibility with existing source management architecture
-  - [ ] 4.4 Test system integration and message passing
+  - [x] 4.1 Implement `MsgForSystem::OneWaySourceUpdate` communication pattern
+  - [x] 4.2 Follow established error handling patterns (NetworkIssue, Unreachable)
+  - [x] 4.3 Ensure compatibility with existing source management architecture
+  - [x] 4.4 Test system integration and message passing
   - [ ] 4.5 Run system integration tests and fix any problems encountered.
 - [ ] 5. Create Integration Tests for PTP Driver Implementation
   - [ ] 5.1 Review the changes made in tasks 1-4
@@ -48,3 +48,6 @@
 - `ntpd/src/daemon/ptp_source.rs` - Updated to use fixed poll interval from configuration instead of adaptive polling
 - `ntpd/src/daemon/config/ntp_source.rs` - Added comprehensive PTP configuration parsing test
 - `ntpd/src/daemon/ptp_source.rs` - Enhanced error handling with consecutive error tracking, recovery detection, and proper NetworkIssue/Unreachable patterns
+- `ntpd/src/daemon/ptp_source_integration_test.rs` - Comprehensive integration tests for PTP driver system integration and message passing patterns
+- `ntpd/src/daemon/ptp_integration_test.rs` - Existing integration tests for PTP spawner and source task behavior
+- `ntpd/src/daemon/mod.rs` - Added PTP integration test modules

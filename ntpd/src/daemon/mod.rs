@@ -9,6 +9,10 @@ pub mod observer;
 mod pps_source;
 #[cfg(feature = "ptp")]
 mod ptp_source;
+#[cfg(feature = "ptp")]
+mod ptp_integration_test;
+#[cfg(feature = "ptp")]
+mod ptp_source_integration_test;
 mod server;
 mod sock_source;
 pub mod sockets;
