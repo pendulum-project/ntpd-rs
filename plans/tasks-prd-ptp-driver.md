@@ -18,8 +18,8 @@
 - [ ] 3. Add Configuration Support and Error Handling
   - [x] 3.1 Implement PTP configuration parsing from ntpd-rs config files
   - [x] 3.3 Implement graceful error handling for device unavailability
-  - [ ] 3.5 Test configuration loading and error scenarios
-  - [ ] 3.6 Run configuration tests and fix any problems encountered.
+  - [x] 3.5 Test configuration loading and error scenarios
+  - [x] 3.6 Run configuration tests and fix any problems encountered.
 - [ ] 4. Integrate with System Coordinator and Communication Patterns
   - [ ] 4.1 Implement `MsgForSystem::OneWaySourceUpdate` communication pattern
   - [ ] 4.2 Follow established error handling patterns (NetworkIssue, Unreachable)
@@ -29,7 +29,7 @@
 - [ ] 5. Create Integration Tests for PTP Driver Implementation
   - [ ] 5.1 Review the changes made in tasks 1-4
   - [ ] 5.2 Review the patterns and techniques used elsewhere in the codebase
-  - [ ] 5.3 Create comprehensive integration tests covering all scenarios
+  - [ ] 5.3 Create comprehensive integration tests for the PTP driver
   - [ ] 5.4 Run the integration tests and fix any problems encountered.
 
 ## Relevant Files
