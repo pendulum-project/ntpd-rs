@@ -359,7 +359,14 @@ impl<'de> Deserialize<'de> for PtpSourceConfig {
                             if interval.is_some() {
                                 return Err(de::Error::duplicate_field("interval"));
                             }
-                            interval = Some(map.next_value()?);
+                            let interval_value: PollInterval = map.next_value()?;
+                            if interval_value.as_log() < 0 || interval_value.as_log() > 17 {
+                                return Err(de::Error::invalid_value(
+                                    serde::de::Unexpected::Signed(interval_value.as_log() as i64),
+                                    &"interval should be between 0 and 17",
+                                ));
+                            }
+                            interval = Some(interval_value);
                         }
                         Field::Path => {
                             if path.is_some() {
