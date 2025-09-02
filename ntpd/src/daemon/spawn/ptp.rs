@@ -44,6 +44,8 @@ impl Spawner for PtpSpawner {
                     path: self.config.path.clone(),
                     config: self.source_config,
                     period: self.config.period,
+                    stratum: self.config.stratum,
+                    delay: self.config.delay,
                 })),
             ))
             .await?;
@@ -101,6 +103,8 @@ mod tests {
                 path: socket_path.clone(),
                 precision,
                 period: 1.,
+                stratum: 0,
+                delay: 0.0,
             },
             SourceConfig::default(),
         );

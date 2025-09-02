@@ -207,6 +207,8 @@ pub struct PtpSourceCreateParameters {
     pub path: PathBuf,
     pub config: SourceConfig,
     pub period: f64,
+    pub stratum: u8,
+    pub delay: f64,
 }
 
 pub trait Spawner {

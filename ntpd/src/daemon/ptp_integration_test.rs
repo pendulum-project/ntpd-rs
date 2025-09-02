@@ -67,9 +67,11 @@ mod tests {
         let device_path = PathBuf::from("/dev/ptp0");
         let mut spawner = PtpSpawner::new(
             PtpSourceConfig {
+                delay: 0.0,
                 path: device_path.clone(),
-                precision: 1e-9,
                 period: 1.0,
+                precision: 1e-9,
+                stratum: 0,
             },
             SourceConfig::default(),
         );
@@ -134,6 +136,8 @@ mod tests {
                 source_snapshots: Arc::new(RwLock::new(HashMap::new())),
             },
             source,
+            0,
+            0.0,
         );
 
         // Should receive NetworkIssue message due to device unavailability

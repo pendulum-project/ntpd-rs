@@ -24,9 +24,11 @@ mod tests {
         // Create PTP spawner
         let mut spawner = PtpSpawner::new(
             PtpSourceConfig {
+                delay: 0.0,
                 path: test_path.clone(),
-                precision: 1e-6,
                 period: 1.0,
+                precision: 1e-6,
+                stratum: 0,
             },
             SourceConfig::default(),
         );
@@ -62,9 +64,11 @@ mod tests {
 
         let mut spawner = PtpSpawner::new(
             PtpSourceConfig {
+                delay: 0.0,
                 path: test_path,
-                precision: 1e-6,
                 period: 2.0,
+                precision: 1e-6,
+                stratum: 0,
             },
             SourceConfig::default(),
         );
@@ -173,6 +177,8 @@ mod tests {
             path: test_path.clone(),
             config,
             period,
+            stratum: 0,
+            delay: 0.0,
         });
 
         // Test parameter accessors
@@ -195,9 +201,11 @@ mod tests {
 
         let mut spawner = PtpSpawner::new(
             PtpSourceConfig {
+                delay: 0.0,
                 path: test_path.clone(),
-                precision: 1e-9,
                 period: 4.0,
+                precision: 1e-9,
+                stratum: 0,
             },
             SourceConfig::default(),
         );

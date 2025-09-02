@@ -579,6 +579,8 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C, SourceId = So
                         source_snapshots: self.source_snapshots.clone(),
                     },
                     source,
+                    params.stratum,
+                    params.delay,
                 );
             }
         };

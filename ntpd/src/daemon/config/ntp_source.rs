@@ -299,9 +299,11 @@ pub struct PpsSourceConfig {
 #[cfg(feature = "ptp")]
 #[derive(Debug, PartialEq, Clone)]
 pub struct PtpSourceConfig {
+    pub delay: f64,
     pub path: PathBuf,
-    pub precision: f64,
     pub period: f64,
+    pub precision: f64,
+    pub stratum: u8,
 }
 
 #[cfg(feature = "ptp")]
@@ -313,9 +315,11 @@ impl<'de> Deserialize<'de> for PtpSourceConfig {
         #[derive(Deserialize)]
         #[serde(field_identifier, rename_all = "snake_case")]
         enum Field {
+            Delay,
             Path,
-            Precision,
             Period,
+            Precision,
+            Stratum,
         }
 
         struct PtpSourceConfigVisitor;
@@ -331,16 +335,44 @@ impl<'de> Deserialize<'de> for PtpSourceConfig {
             where
                 V: serde::de::MapAccess<'de>,
             {
+                let mut delay = None;
                 let mut path = None;
-                let mut precision = None;
                 let mut period = None;
+                let mut precision = None;
+                let mut stratum = None;
                 while let Some(key) = map.next_key()? {
                     match key {
+                        Field::Delay => {
+                            if delay.is_some() {
+                                return Err(de::Error::duplicate_field("delay"));
+                            }
+                            let delay_raw: f64 = map.next_value()?;
+                            if delay_raw.partial_cmp(&0.0) != Some(core::cmp::Ordering::Greater) || delay_raw >= 16.0 {
+                                return Err(de::Error::invalid_value(
+                                    serde::de::Unexpected::Float(delay_raw),
+                                    &"delay should be positive and less than 16",
+                                ));
+                            }
+                            delay = Some(delay_raw);
+                        }
                         Field::Path => {
                             if path.is_some() {
                                 return Err(de::Error::duplicate_field("path"));
                             }
                             path = Some(map.next_value()?);
+                        }
+                        Field::Period => {
+                            if period.is_some() {
+                                return Err(de::Error::duplicate_field("period"));
+                            }
+                            let period_raw: f64 = map.next_value()?;
+                            if period_raw.partial_cmp(&0.0) != Some(core::cmp::Ordering::Greater) {
+                                return Err(de::Error::invalid_value(
+                                    serde::de::Unexpected::Float(period_raw),
+                                    &"period should be positive",
+                                ));
+                            }
+                            period = Some(period_raw);
                         }
                         Field::Precision => {
                             if precision.is_some() {
@@ -356,33 +388,37 @@ impl<'de> Deserialize<'de> for PtpSourceConfig {
                             }
                             precision = Some(precision_raw);
                         }
-                        Field::Period => {
-                            if period.is_some() {
-                                return Err(de::Error::duplicate_field("period"));
+                        Field::Stratum => {
+                            if stratum.is_some() {
+                                return Err(de::Error::duplicate_field("stratum"));
                             }
-                            let period_raw: f64 = map.next_value()?;
-                            if period_raw.partial_cmp(&0.0) != Some(core::cmp::Ordering::Greater) {
+                            let stratum_raw: u8 = map.next_value()?;
+                            if stratum_raw >= 16 {
                                 return Err(de::Error::invalid_value(
-                                    serde::de::Unexpected::Float(period_raw),
-                                    &"period should be positive",
+                                    serde::de::Unexpected::Unsigned(stratum_raw as u64),
+                                    &"stratum should be less than 16",
                                 ));
                             }
-                            period = Some(period_raw);
+                            stratum = Some(stratum_raw);
                         }
                     }
                 }
+                let delay = delay.unwrap_or(0.0);
                 let path = path.ok_or_else(|| serde::de::Error::missing_field("path"))?;
-                let precision = precision.unwrap_or(0.000000001); // Default to 1 nanosecond
                 let period = period.unwrap_or(1.0);
+                let precision = precision.unwrap_or(0.000000001); // Default to 1 nanosecond
+                let stratum = stratum.unwrap_or(0);
                 Ok(PtpSourceConfig {
+                    delay,
                     path,
-                    precision,
                     period,
+                    precision,
+                    stratum,
                 })
             }
         }
 
-        const FIELDS: &[&str] = &["path", "precision", "period"];
+        const FIELDS: &[&str] = &["delay", "path", "period", "precision", "stratum"];
         deserializer.deserialize_struct("PtpSourceConfig", FIELDS, PtpSourceConfigVisitor)
     }
 }
@@ -1248,9 +1284,11 @@ mod tests {
         else {
             panic!("Unexpected source type");
         };
+        assert_eq!(test.delay, 0.0);
         assert_eq!(test.path, PathBuf::from("/dev/ptp0"));
-        assert_eq!(test.precision, 0.000001);
         assert_eq!(test.period, 2.0);
+        assert_eq!(test.precision, 0.000001);
+        assert_eq!(test.stratum, 0);
 
         // Test with default period
         let TestConfig {
@@ -1268,8 +1306,8 @@ mod tests {
             panic!("Unexpected source type");
         };
         assert_eq!(test.path, PathBuf::from("/dev/ptp1"));
-        assert_eq!(test.precision, 0.000005);
         assert_eq!(test.period, 1.0); // Default period
+        assert_eq!(test.precision, 0.000005);
 
         // Test validation - missing path should fail
         let test: Result<TestConfig, _> = toml::from_str(
@@ -1296,8 +1334,8 @@ mod tests {
             panic!("Unexpected source type");
         };
         assert_eq!(test.path, PathBuf::from("/dev/ptp0"));
-        assert_eq!(test.precision, 0.000000001); // Default precision (1 nanosecond)
         assert_eq!(test.period, 1.0); // Default period
+        assert_eq!(test.precision, 0.000000001); // Default precision (1 nanosecond)
 
         // Test validation - negative precision should fail
         let test: Result<TestConfig, _> = toml::from_str(
@@ -1353,6 +1391,72 @@ mod tests {
             path = "/dev/ptp0"
             precision = 0.000001
             unknown_field = 5
+            "#,
+        );
+        assert!(test.is_err());
+
+        // Test validation - stratum >= 16 should fail
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "ptp"
+            path = "/dev/ptp0"
+            stratum = 16
+            "#,
+        );
+        assert!(test.is_err());
+
+        // Test validation - non-integral stratum should fail
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "ptp"
+            path = "/dev/ptp0"
+            stratum = 4.972
+            "#,
+        );
+        assert!(test.is_err());
+
+        // Test validation - non-numeric stratum should fail
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "ptp"
+            path = "/dev/ptp0"
+            stratum = teststratum
+            "#,
+        );
+        assert!(test.is_err());
+
+        // Test validation - stratum < 0 should fail
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "ptp"
+            path = "/dev/ptp0"
+            stratum = -3
+            "#,
+        );
+        assert!(test.is_err());
+
+        // Test validation - negative delay should fail
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "ptp"
+            path = "/dev/ptp0"
+            delay = -1.0
+            "#,
+        );
+        assert!(test.is_err());
+
+        // Test validation - delay >= 16 should fail
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "ptp"
+            path = "/dev/ptp0"
+            delay = 16.0
             "#,
         );
         assert!(test.is_err());

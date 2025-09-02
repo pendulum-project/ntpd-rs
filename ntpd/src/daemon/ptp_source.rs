@@ -92,6 +92,8 @@ pub(crate) struct PtpSourceTask<
     fetch_receiver: mpsc::Receiver<Result<PtpTimestamp, String>>,
     poll_sender: mpsc::Sender<()>,
     poll_interval: Duration,
+    stratum: u8,
+    delay: f64,
 }
 
 impl<C, Controller: SourceController<MeasurementDelay = ()>> PtpSourceTask<C, Controller>
@@ -181,13 +183,15 @@ where
                             }
                         };
 
+                        debug!("Measured offset: {:.9}s", offset_seconds);
+
                         let measurement = Measurement {
                             delay: (),
                             offset: NtpDuration::from_seconds(offset_seconds),
                             localtime: time,
                             monotime: NtpInstant::now(),
-                            stratum: 0,
-                            root_delay: NtpDuration::ZERO,
+                            stratum: self.stratum,
+                            root_delay: NtpDuration::from_seconds(self.delay),
                             root_dispersion: NtpDuration::ZERO,
                             leap: NtpLeapIndicator::NoWarning,
                             precision: 0,
@@ -198,7 +202,7 @@ where
                         let update = OneWaySourceUpdate {
                             snapshot: OneWaySourceSnapshot {
                                 source_id: ReferenceId::PTP,
-                                stratum: 0,
+                                stratum: self.stratum,
                             },
                             message: controller_message,
                         };
@@ -262,6 +266,8 @@ where
         clock: C,
         channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
         source: OneWaySource<Controller>,
+        stratum: u8,
+        delay: f64,
     ) -> tokio::task::JoinHandle<()> {
         // Handle device opening errors gracefully
         let ptp = match PtpDevice::new(device_path.clone()) {
@@ -316,6 +322,8 @@ where
                     fetch_receiver,
                     poll_sender,
                     poll_interval,
+                    stratum,
+                    delay,
                 };
 
                 process.run().await;
