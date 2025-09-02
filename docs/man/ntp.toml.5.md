@@ -52,6 +52,12 @@ with any of these options:
     assumed to send a pulse every rounded second. As these devices only
     provide periodic data, they do not count towards `minimum-agreeing-sources`.
 
+`ptp`
+:   A PTP source connects to a Precision Time Protocol device, which may be
+    polled like an NTP source.  Common PTP devices include the KVM, Hyper-V,
+    and AWS Nitro hypervisor PHC devices.  Multiple PTP sources may be
+    configured provided that they use different paths.
+
 # CONFIGURATION
 
 ## `[source-defaults]`
@@ -82,8 +88,8 @@ sources.
 
 `mode` = *mode*
 :   Specify one of the source modes that ntpd-rs supports: `server`, `pool`,
-    `nts`, `sock` or `pps`. For a description of the different source modes, see
-    the *SOURCE MODES* section.
+    `nts`, `sock`, `pps`, or `ptp`. For a description of the different source
+    modes, see the *SOURCE MODES* section.
 
 `address` = *address*
 :   Specify the remote address of the source. For server sources this will be
@@ -111,27 +117,13 @@ sources.
 :   `pool` mode only. Specifies a list of IP addresses of servers in the pool
     which should not be used. For example: `["127.0.0.1"]`. Empty by default.
 
-`measurement_noise_estimate` = *Noise variance (seconds squared)*
-:   `pps` and `sock` mode only. Deprecated, use `precision` instead.
-
-`precision` = *Noise standard deviation (seconds)*
-:   `pps` and `sock` mode only. Precision of the source. This should be an estimate
-    of the size of the expected measurement noise. Technically defined as the
-    1-standard deviation bound on the measurement error. This is needed as
-    `sock` and `pps` sources don't have a good way to estimate their own error.
-
-`poll-interval-limits` = { `min` = *min*, `max` = *max* } (defaults from `[source-defaults]`)
-:   Specifies the limit on how often a source is queried for a new time. For
-    most instances the defaults will be adequate. The min and max are given as
-    the log2 of the number of seconds (i.e. two to the power of the interval).
-    An interval of 4 equates to 16 seconds, 10 results in an interval of 1024
-    seconds. If only one of the two boundaries is specified, the other is
-    inherited from `[source-defaults]`
-
 `initial-poll-interval` = *interval* (defaults from `[source-defaults]`)
 :   Initial poll interval used on startup. The value is given as the log2 of
     the number of seconds (i.e. two to the power of the interval). The default
     value of 4 results in an interval of 16 seconds.
+
+`measurement_noise_estimate` = *Noise variance (seconds squared)*
+:   `pps` and `sock` mode only. Deprecated, use `precision` instead.
 
 `ntp-version` = `4` | `5` | `"auto"` (**4**)
 :   Which NTP version to use for this source. By default this uses NTP version
@@ -142,6 +134,23 @@ sources.
     draft NTPv5 version if the source also supports the same draft version.
     NTPv5 support is currently in beta and can still change in a backwards
     incompatible way.
+
+`path` = *file path*
+:   `pps`, `ptp` and `sock` mode only.  The path to the device file or socket.
+
+`poll-interval-limits` = { `min` = *min*, `max` = *max* } (defaults from `[source-defaults]`)
+:   Specifies the limit on how often a source is queried for a new time. For
+    most instances the defaults will be adequate. The min and max are given as
+    the log2 of the number of seconds (i.e. two to the power of the interval).
+    An interval of 4 equates to 16 seconds, 10 results in an interval of 1024
+    seconds. If only one of the two boundaries is specified, the other is
+    inherited from `[source-defaults]`
+
+`precision` = *Noise standard deviation (seconds)*
+:   `pps`, `ptp` and `sock` mode only. Precision of the source. This should be an
+    estimate of the size of the expected measurement noise. Technically defined
+    as the 1-standard deviation bound on the measurement error. This is needed
+    because these sources don't have a good way to estimate their own error.
 
 ## `[[server]]`
 The NTP daemon can be configured to distribute time via any number of

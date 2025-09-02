@@ -14,8 +14,9 @@ ntpd-rs is split into several crates with three goals in mind:
    straightforward to verify.
 
 The main `ntp-proto` and `ntpd` crates are set up such that neither contains any
-unsafe code. Unsafe code is limited to the (external) `timestamped-socket`, `clock-steering` and `pps-time` crates,
-which are purposefully kept small and only offer a safe API.
+unsafe code. Unsafe code is limited to the (external) `timestamped-socket`,
+`clock-steering`, `pps-time`, and `ptp-time` crates, which are purposefully kept
+small and only offer a safe API.
 
 ### ntp-proto
 
@@ -46,6 +47,11 @@ clock. Touching the system clock uses `libc` and is inherently unsafe.
 
 The [`pps-time` crate](https://github.com/pendulum-project/pps-time) wraps the system calls needed to interact with a PPS device. To
 interact with PPS devices ioctl system calls are used, which uses `libc` and is inherently unsafe.
+
+### ptp-time
+
+The [`ptp-time` crate](https://github.com/paulgear/ptp-time) wraps the system calls needed to interact with a PTP device. To
+interact with PTP devices ioctl system calls are used, which uses `libc` and is inherently unsafe.
 
 ### ntpd
 
@@ -140,4 +146,3 @@ an example of how to interact with this socket.
 
 Because this task reads from its socket, it is advised to restrict the
 permissions on this socket.
-
