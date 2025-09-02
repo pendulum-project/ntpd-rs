@@ -206,7 +206,7 @@ pub struct PtpSourceCreateParameters {
     pub id: SourceId,
     pub path: PathBuf,
     pub config: SourceConfig,
-    pub period: f64,
+    pub interval: ntp_proto::PollInterval,
     pub stratum: u8,
     pub delay: f64,
 }

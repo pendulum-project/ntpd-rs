@@ -566,12 +566,12 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C, SourceId = So
                 let source = self.system.create_ptp_source(
                     source_id,
                     params.config,
-                    params.period,
+                    params.interval.as_duration().to_seconds(),
                 )?;
                 PtpSourceTask::spawn(
                     source_id,
                     params.path.clone(),
-                    std::time::Duration::from_secs_f64(params.period),
+                    params.interval,
                     self.clock.clone(),
                     SourceChannels {
                         msg_for_system_sender: self.msg_for_system_tx.clone(),

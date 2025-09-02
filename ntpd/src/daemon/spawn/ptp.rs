@@ -43,7 +43,7 @@ impl Spawner for PtpSpawner {
                     id: SourceId::new(),
                     path: self.config.path.clone(),
                     config: self.source_config,
-                    period: self.config.period,
+                    interval: self.config.interval,
                     stratum: self.config.stratum,
                     delay: self.config.delay,
                 })),
@@ -102,7 +102,7 @@ mod tests {
             PtpSourceConfig {
                 path: socket_path.clone(),
                 precision,
-                period: 1.,
+                interval: ntp_proto::PollInterval::from_byte(0),
                 stratum: 0,
                 delay: 0.0,
             },

@@ -25,8 +25,8 @@ mod tests {
         let mut spawner = PtpSpawner::new(
             PtpSourceConfig {
                 delay: 0.0,
+                interval: ntp_proto::PollInterval::from_byte(0),
                 path: test_path.clone(),
-                period: 1.0,
                 precision: 1e-6,
                 stratum: 0,
             },
@@ -55,7 +55,7 @@ mod tests {
         };
 
         assert_eq!(ptp_params.path, test_path);
-        assert_eq!(ptp_params.period, 1.0);
+        assert_eq!(ptp_params.interval, ntp_proto::PollInterval::from_byte(0));
     }
 
     #[tokio::test]
@@ -65,8 +65,8 @@ mod tests {
         let mut spawner = PtpSpawner::new(
             PtpSourceConfig {
                 delay: 0.0,
+                interval: ntp_proto::PollInterval::from_byte(1),
                 path: test_path,
-                period: 2.0,
                 precision: 1e-6,
                 stratum: 0,
             },
@@ -170,13 +170,13 @@ mod tests {
         let test_path = PathBuf::from("/dev/ptp0");
         let source_id = SourceId::new();
         let config = SourceConfig::default();
-        let period = 0.5;
+        let interval = ntp_proto::PollInterval::from_byte(0);
 
         let params = SourceCreateParameters::Ptp(crate::daemon::spawn::PtpSourceCreateParameters {
             id: source_id,
             path: test_path.clone(),
             config,
-            period,
+            interval,
             stratum: 0,
             delay: 0.0,
         });
@@ -192,7 +192,7 @@ mod tests {
 
         assert_eq!(ptp_params.id, source_id);
         assert_eq!(ptp_params.path, test_path);
-        assert_eq!(ptp_params.period, period);
+        assert_eq!(ptp_params.interval, interval);
     }
 
     #[tokio::test]
@@ -202,8 +202,8 @@ mod tests {
         let mut spawner = PtpSpawner::new(
             PtpSourceConfig {
                 delay: 0.0,
+                interval: ntp_proto::PollInterval::from_byte(2),
                 path: test_path.clone(),
-                period: 4.0,
                 precision: 1e-9,
                 stratum: 0,
             },
@@ -226,7 +226,7 @@ mod tests {
         };
 
         assert_eq!(params.path, test_path);
-        assert_eq!(params.period, 4.0);
+        assert_eq!(params.interval, ntp_proto::PollInterval::from_byte(2));
 
         // Test that spawner doesn't spawn again when complete
         let result = timeout(Duration::from_millis(100), action_rx.recv()).await;

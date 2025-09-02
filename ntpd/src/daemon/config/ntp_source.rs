@@ -300,8 +300,8 @@ pub struct PpsSourceConfig {
 #[derive(Debug, PartialEq, Clone)]
 pub struct PtpSourceConfig {
     pub delay: f64,
+    pub interval: PollInterval,
     pub path: PathBuf,
-    pub period: f64,
     pub precision: f64,
     pub stratum: u8,
 }
@@ -316,8 +316,8 @@ impl<'de> Deserialize<'de> for PtpSourceConfig {
         #[serde(field_identifier, rename_all = "snake_case")]
         enum Field {
             Delay,
+            Interval,
             Path,
-            Period,
             Precision,
             Stratum,
         }
@@ -336,8 +336,8 @@ impl<'de> Deserialize<'de> for PtpSourceConfig {
                 V: serde::de::MapAccess<'de>,
             {
                 let mut delay = None;
+                let mut interval = None;
                 let mut path = None;
-                let mut period = None;
                 let mut precision = None;
                 let mut stratum = None;
                 while let Some(key) = map.next_key()? {
@@ -355,24 +355,17 @@ impl<'de> Deserialize<'de> for PtpSourceConfig {
                             }
                             delay = Some(delay_raw);
                         }
+                        Field::Interval => {
+                            if interval.is_some() {
+                                return Err(de::Error::duplicate_field("interval"));
+                            }
+                            interval = Some(map.next_value()?);
+                        }
                         Field::Path => {
                             if path.is_some() {
                                 return Err(de::Error::duplicate_field("path"));
                             }
                             path = Some(map.next_value()?);
-                        }
-                        Field::Period => {
-                            if period.is_some() {
-                                return Err(de::Error::duplicate_field("period"));
-                            }
-                            let period_raw: f64 = map.next_value()?;
-                            if period_raw.partial_cmp(&0.0) != Some(core::cmp::Ordering::Greater) {
-                                return Err(de::Error::invalid_value(
-                                    serde::de::Unexpected::Float(period_raw),
-                                    &"period should be positive",
-                                ));
-                            }
-                            period = Some(period_raw);
                         }
                         Field::Precision => {
                             if precision.is_some() {
@@ -404,21 +397,21 @@ impl<'de> Deserialize<'de> for PtpSourceConfig {
                     }
                 }
                 let delay = delay.unwrap_or(0.0);
+                let interval = interval.unwrap_or(PollInterval::from_byte(0)); // Default to 1 second
                 let path = path.ok_or_else(|| serde::de::Error::missing_field("path"))?;
-                let period = period.unwrap_or(1.0);
                 let precision = precision.unwrap_or(0.000000001); // Default to 1 nanosecond
                 let stratum = stratum.unwrap_or(0);
                 Ok(PtpSourceConfig {
                     delay,
+                    interval,
                     path,
-                    period,
                     precision,
                     stratum,
                 })
             }
         }
 
-        const FIELDS: &[&str] = &["delay", "path", "period", "precision", "stratum"];
+        const FIELDS: &[&str] = &["delay", "interval", "path", "precision", "stratum"];
         deserializer.deserialize_struct("PtpSourceConfig", FIELDS, PtpSourceConfigVisitor)
     }
 }
@@ -1274,10 +1267,10 @@ mod tests {
         } = toml::from_str(
             r#"
             [source]
+            interval = 1
             mode = "ptp"
             path = "/dev/ptp0"
             precision = 0.000001
-            period = 2.0
             "#,
         )
         .unwrap()
@@ -1285,12 +1278,12 @@ mod tests {
             panic!("Unexpected source type");
         };
         assert_eq!(test.delay, 0.0);
+        assert_eq!(test.interval, ntp_proto::PollInterval::from_byte(1));
         assert_eq!(test.path, PathBuf::from("/dev/ptp0"));
-        assert_eq!(test.period, 2.0);
         assert_eq!(test.precision, 0.000001);
         assert_eq!(test.stratum, 0);
 
-        // Test with default period
+        // Test with default interval
         let TestConfig {
             source: NtpSourceConfig::Ptp(test),
         } = toml::from_str(
@@ -1305,8 +1298,8 @@ mod tests {
         else {
             panic!("Unexpected source type");
         };
+        assert_eq!(test.interval, ntp_proto::PollInterval::from_byte(0)); // Default interval
         assert_eq!(test.path, PathBuf::from("/dev/ptp1"));
-        assert_eq!(test.period, 1.0); // Default period
         assert_eq!(test.precision, 0.000005);
 
         // Test validation - missing path should fail
@@ -1333,8 +1326,8 @@ mod tests {
         else {
             panic!("Unexpected source type");
         };
+        assert_eq!(test.interval, ntp_proto::PollInterval::from_byte(0)); // Default interval
         assert_eq!(test.path, PathBuf::from("/dev/ptp0"));
-        assert_eq!(test.period, 1.0); // Default period
         assert_eq!(test.precision, 0.000000001); // Default precision (1 nanosecond)
 
         // Test validation - negative precision should fail
@@ -1348,14 +1341,14 @@ mod tests {
         );
         assert!(test.is_err());
 
-        // Test validation - negative period should fail
+        // Test validation - negative interval should fail
         let test: Result<TestConfig, _> = toml::from_str(
             r#"
             [source]
             mode = "ptp"
             path = "/dev/ptp0"
             precision = 0.000001
-            period = -1.0
+            interval = -1
             "#,
         );
         assert!(test.is_err());
@@ -1371,14 +1364,14 @@ mod tests {
         );
         assert!(test.is_err());
 
-        // Test validation - zero period should fail
+        // Test validation - interval too high should fail
         let test: Result<TestConfig, _> = toml::from_str(
             r#"
             [source]
+            interval = 100
             mode = "ptp"
             path = "/dev/ptp0"
             precision = 0.000001
-            period = 0.0
             "#,
         );
         assert!(test.is_err());

@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::time::Duration;
 
 use ntp_proto::{
     Measurement, NtpClock, NtpDuration, NtpInstant, NtpLeapIndicator, OneWaySource,
@@ -152,7 +151,7 @@ pub(crate) struct PtpSourceTask<
     source: OneWaySource<Controller>,
     fetch_receiver: mpsc::Receiver<Result<PtpTimestamp, String>>,
     poll_sender: mpsc::Sender<()>,
-    poll_interval: Duration,
+    poll_interval: ntp_proto::PollInterval,
     stratum: u8,
     delay: f64,
 }
@@ -162,7 +161,7 @@ where
     C: 'static + NtpClock + Send + Sync,
 {
     async fn run(&mut self) {
-        let mut poll_timer = tokio::time::interval(self.poll_interval);
+        let mut poll_timer = tokio::time::interval(self.poll_interval.as_system_duration());
         poll_timer.tick().await; // Skip first immediate tick
 
         loop {
@@ -251,18 +250,19 @@ where
                             .await
                             .ok();
 
+                        // Create custom ObservableSourceState with correct poll interval
+                        let mut observable_state = self.source.observe(
+                            "PTP device".to_string(),
+                            self.path.display().to_string(),
+                            self.index,
+                        );
+                        observable_state.poll_interval = self.poll_interval;
+
                         self.channels
                             .source_snapshots
                             .write()
                             .expect("Unexpected poisoned mutex")
-                            .insert(
-                                self.index,
-                                self.source.observe(
-                                    "PTP device".to_string(),
-                                    self.path.display().to_string(),
-                                    self.index,
-                                ),
-                            );
+                            .insert(self.index, observable_state);
                     }
                     Some(Err(error_msg)) => {
                         error!("PTP device error: {}", error_msg);
@@ -300,7 +300,7 @@ where
     pub fn spawn(
         index: SourceId,
         device_path: PathBuf,
-        poll_interval: Duration,
+        poll_interval: ntp_proto::PollInterval,
         clock: C,
         channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
         source: OneWaySource<Controller>,

@@ -68,8 +68,8 @@ mod tests {
         let mut spawner = PtpSpawner::new(
             PtpSourceConfig {
                 delay: 0.0,
+                interval: ntp_proto::PollInterval::from_byte(0),
                 path: device_path.clone(),
-                period: 1.0,
                 precision: 1e-9,
                 stratum: 0,
             },
@@ -97,7 +97,7 @@ mod tests {
                 crate::daemon::spawn::SourceCreateParameters::Ptp(params)
             ) => {
                 assert_eq!(params.path, device_path);
-                assert_eq!(params.period, 1.0);
+                assert_eq!(params.interval, ntp_proto::PollInterval::from_byte(0));
             }
             _ => panic!("Expected PTP source create parameters"),
         }
@@ -128,7 +128,7 @@ mod tests {
         let handle = PtpSourceTask::spawn(
             index,
             device_path,
-            Duration::from_secs(1),
+            ntp_proto::PollInterval::from_byte(0),
             clock,
             SourceChannels {
                 msg_for_system_sender,
