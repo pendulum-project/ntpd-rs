@@ -20,11 +20,72 @@ enum TimestampCapability {
     Standard,
 }
 
-#[derive(Debug)]
 enum PtpTimestamp {
     Precise(ptp_sys_offset_precise),
     Extended(ptp_sys_offset_extended),
     Standard(ptp_sys_offset),
+}
+
+impl PtpTimestamp {
+    // Convert PTP timestamp to NTP duration (seconds)
+    fn calculate_offset(&self) -> Option<f64> {
+        match self {
+            PtpTimestamp::Precise(precise) => {
+                let ptp_time = precise.device.sec as f64 + (precise.device.nsec as f64 / 1_000_000_000.0);
+                let sys_time = precise.sys_realtime.sec as f64 + (precise.sys_realtime.nsec as f64 / 1_000_000_000.0);
+                Some(sys_time - ptp_time)
+            }
+            PtpTimestamp::Extended(extended) => {
+                if extended.n_samples > 0 {
+                    let ptp_time = extended.ts[0][1].sec as f64 + (extended.ts[0][1].nsec as f64 / 1_000_000_000.0);
+                    let sys_time = extended.ts[0][0].sec as f64 + (extended.ts[0][0].nsec as f64 / 1_000_000_000.0);
+                    Some(sys_time - ptp_time)
+                } else {
+                    None
+                }
+            }
+            PtpTimestamp::Standard(standard) => {
+                if standard.n_samples > 0 {
+                    let ptp_time = standard.ts[1].sec as f64 + (standard.ts[1].nsec as f64 / 1_000_000_000.0);
+                    let sys_time = standard.ts[0].sec as f64 + (standard.ts[0].nsec as f64 / 1_000_000_000.0);
+                    Some(sys_time - ptp_time)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
+
+impl std::fmt::Debug for PtpTimestamp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PtpTimestamp::Precise(precise) => {
+                f.debug_struct("Precise")
+                    .field("offset", &format_args!("{:.9}s", self.calculate_offset().unwrap_or(0.0)))
+                    .field("device", &format_args!("{}.{:09}", precise.device.sec, precise.device.nsec))
+                    .field("sys_realtime", &format_args!("{}.{:09}", precise.sys_realtime.sec, precise.sys_realtime.nsec))
+                    .finish()
+            }
+            PtpTimestamp::Extended(extended) => {
+                f.debug_struct("Extended")
+                    .field("offset", &format_args!("{:.9}s", self.calculate_offset().unwrap_or(0.0)))
+                    .field("n_samples", &extended.n_samples)
+                    .field("samples", &extended.ts.iter().take(extended.n_samples as usize).map(|ts|
+                        format!("sys:{}.{:09} dev:{}.{:09}", ts[0].sec, ts[0].nsec, ts[1].sec, ts[1].nsec)
+                    ).collect::<Vec<_>>())
+                    .finish()
+            }
+            PtpTimestamp::Standard(standard) => {
+                f.debug_struct("Standard")
+                    .field("offset", &format_args!("{:.9}s", self.calculate_offset().unwrap_or(0.0)))
+                    .field("n_samples", &standard.n_samples)
+                    .field("sys_time", &format_args!("{}.{:09}", standard.ts[0].sec, standard.ts[0].nsec))
+                    .field("dev_time", &format_args!("{}.{:09}", standard.ts[1].sec, standard.ts[1].nsec))
+                    .finish()
+            }
+        }
+    }
 }
 
 struct PtpDeviceFetchTask {
@@ -154,36 +215,13 @@ where
                             }
                         };
 
-                        // Convert PTP timestamp to NTP duration (seconds)
-                        let offset_seconds = match &data {
-                            PtpTimestamp::Precise(precise) => {
-                                let ptp_time = precise.device.sec as f64 + (precise.device.nsec as f64 / 1_000_000_000.0);
-                                let sys_time = precise.sys_realtime.sec as f64 + (precise.sys_realtime.nsec as f64 / 1_000_000_000.0);
-                                sys_time - ptp_time
-                            }
-                            PtpTimestamp::Extended(extended) => {
-                                if extended.n_samples > 0 {
-                                    let ptp_time = extended.ts[0][1].sec as f64 + (extended.ts[0][1].nsec as f64 / 1_000_000_000.0);
-                                    let sys_time = extended.ts[0][0].sec as f64 + (extended.ts[0][0].nsec as f64 / 1_000_000_000.0);
-                                    sys_time - ptp_time
-                                } else {
-                                    warn!("Extended timestamp has no samples");
-                                    continue;
-                                }
-                            }
-                            PtpTimestamp::Standard(standard) => {
-                                if standard.n_samples > 0 {
-                                    let ptp_time = standard.ts[1].sec as f64 + (standard.ts[1].nsec as f64 / 1_000_000_000.0);
-                                    let sys_time = standard.ts[0].sec as f64 + (standard.ts[0].nsec as f64 / 1_000_000_000.0);
-                                    sys_time - ptp_time
-                                } else {
-                                    warn!("Standard timestamp has no samples");
-                                    continue;
-                                }
+                        let offset_seconds = match data.calculate_offset() {
+                            Some(offset) => offset,
+                            None => {
+                                warn!("Timestamp has no samples");
+                                continue;
                             }
                         };
-
-                        debug!("Measured offset: {:.9}s", offset_seconds);
 
                         let measurement = Measurement {
                             delay: (),
