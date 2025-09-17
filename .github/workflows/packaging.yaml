@@ -33,7 +33,7 @@ jobs:
           components: "llvm-tools"
 
       - name: Install cross, cargo-deb and cargo-generate-rpm
-        uses: taiki-e/install-action@f63c33fd96cc1e69a29bafd06541cf28588b43a4
+        uses: taiki-e/install-action@2fdc5fd6ac805b0f8256893bd4c807bcb666af00
         with:
           tool: cross, cargo-deb, cargo-generate-rpm
 
@@ -132,7 +132,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Create a draft release
-        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
+        uses: softprops/action-gh-release@6cbd405e2c4e67a21c47fa9e383d020e4e28b836 # v2.3.3
         with:
           draft: true
           fail_on_unmatched_files: true
