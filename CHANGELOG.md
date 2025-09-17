@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.6.2] - 2025-08-29
+
+### Fixed
+- Fixed bug that could cause a message to pingpong between two servers indefinitely.
+
 ## [1.6.1] - 2025-07-16
 
 ### Fixed
@@ -306,6 +311,7 @@ process.
 - Fixed a bug in peer dispersion calculation which resulted in overly
   pessimistic dispersion estimates.
 
+[1.6.2]: https://github.com/pendulum-project/ntpd-rs/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/pendulum-project/ntpd-rs/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.4.0...v1.5.0
