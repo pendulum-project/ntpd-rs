@@ -221,12 +221,11 @@ daemon. Currently, the daemon can be observed either through the logs or by
 retrieving several key metrics either through ntp-ctl(8) or through
 ntp-metrics-exporter(8).
 
-`log-level` = `"trace"` | `"debug"` | `"info"` | `"warn"` | `"error"` (**unset**)
+`log-level` = `"trace"` | `"debug"` | `"info"` | `"warn"` | `"error"` (**info**)
 :   Set the logging level for messages printed to stdout. The lowest level
     `trace` gives very detailed information about anything going on in the
     daemon, whereas the highest level `error` only logs error conditions in the
-    daemon. Levels higher than the given log level are logged as well. If not
-    set (the default), then logging will be completely disabled.
+    daemon. Levels higher than the given log level are logged as well.
 
 `ansi-colors` = `true` | `false` (**true**)
 :   Can be used to disable ANSI escape codes in logs. By default, ANSI escape
