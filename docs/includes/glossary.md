@@ -1,13 +1,15 @@
-*[NTS-KE]: NTS Key Exchange
-*[NTP]: Network Time Protocol
-*[NTS]: Network Time Security
-*[TLS]: Transport Layer Security
-*[TCP]: Transmission Control Protocol
-*[UDP]: User Datagram Protocol
 *[CA]: Certificate Authority
-*[OS]: Operating System
-*[DNS]: Domain Name System
 *[CIDR]: Classless Inter-Domain Routing
+*[DNS]: Domain Name System
 *[GPS]: Global Positioning System
+*[NTP]: Network Time Protocol
+*[NTS-KE]: NTS Key Exchange
+*[NTS]: Network Time Security
+*[OS]: Operating System
+*[PHC]: PTP Hardware Clock
 *[PPS]: Pulse Per Second
+*[PTP]: Precision Time Protocol
+*[TCP]: Transmission Control Protocol
+*[TLS]: Transport Layer Security
+*[UDP]: User Datagram Protocol
 *[ioctl]: input/output control

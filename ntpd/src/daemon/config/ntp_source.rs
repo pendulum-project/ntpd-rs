@@ -296,6 +296,133 @@ pub struct PpsSourceConfig {
     pub period: f64,
 }
 
+#[cfg(feature = "ptp")]
+#[derive(Debug, PartialEq, Clone)]
+pub struct PtpSourceConfig {
+    pub delay: f64,
+    pub interval: PollInterval,
+    pub path: PathBuf,
+    pub precision: f64,
+    pub stratum: u8,
+}
+
+#[cfg(feature = "ptp")]
+impl<'de> Deserialize<'de> for PtpSourceConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(field_identifier, rename_all = "snake_case")]
+        enum Field {
+            Delay,
+            Interval,
+            Path,
+            Precision,
+            Stratum,
+        }
+
+        struct PtpSourceConfigVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for PtpSourceConfigVisitor {
+            type Value = PtpSourceConfig;
+
+            fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
+                formatter.write_str("struct PtpSourceConfig")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<PtpSourceConfig, V::Error>
+            where
+                V: serde::de::MapAccess<'de>,
+            {
+                let mut delay = None;
+                let mut interval = None;
+                let mut path = None;
+                let mut precision = None;
+                let mut stratum = None;
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        Field::Delay => {
+                            if delay.is_some() {
+                                return Err(de::Error::duplicate_field("delay"));
+                            }
+                            let delay_raw: f64 = map.next_value()?;
+                            if delay_raw.partial_cmp(&0.0) != Some(core::cmp::Ordering::Greater) || delay_raw >= 16.0 {
+                                return Err(de::Error::invalid_value(
+                                    serde::de::Unexpected::Float(delay_raw),
+                                    &"delay should be positive and less than 16",
+                                ));
+                            }
+                            delay = Some(delay_raw);
+                        }
+                        Field::Interval => {
+                            if interval.is_some() {
+                                return Err(de::Error::duplicate_field("interval"));
+                            }
+                            let interval_value: PollInterval = map.next_value()?;
+                            if interval_value.as_log() < 0 || interval_value.as_log() > 17 {
+                                return Err(de::Error::invalid_value(
+                                    serde::de::Unexpected::Signed(interval_value.as_log() as i64),
+                                    &"interval should be between 0 and 17",
+                                ));
+                            }
+                            interval = Some(interval_value);
+                        }
+                        Field::Path => {
+                            if path.is_some() {
+                                return Err(de::Error::duplicate_field("path"));
+                            }
+                            path = Some(map.next_value()?);
+                        }
+                        Field::Precision => {
+                            if precision.is_some() {
+                                return Err(de::Error::duplicate_field("precision"));
+                            }
+                            let precision_raw: f64 = map.next_value()?;
+                            if precision_raw.partial_cmp(&0.0) != Some(core::cmp::Ordering::Greater)
+                            {
+                                return Err(de::Error::invalid_value(
+                                    serde::de::Unexpected::Float(precision_raw),
+                                    &"precision should be positive",
+                                ));
+                            }
+                            precision = Some(precision_raw);
+                        }
+                        Field::Stratum => {
+                            if stratum.is_some() {
+                                return Err(de::Error::duplicate_field("stratum"));
+                            }
+                            let stratum_raw: u8 = map.next_value()?;
+                            if stratum_raw >= 16 {
+                                return Err(de::Error::invalid_value(
+                                    serde::de::Unexpected::Unsigned(stratum_raw as u64),
+                                    &"stratum should be less than 16",
+                                ));
+                            }
+                            stratum = Some(stratum_raw);
+                        }
+                    }
+                }
+                let delay = delay.unwrap_or(0.0);
+                let interval = interval.unwrap_or(PollInterval::from_byte(0)); // Default to 1 second
+                let path = path.ok_or_else(|| serde::de::Error::missing_field("path"))?;
+                let precision = precision.unwrap_or(0.000000001); // Default to 1 nanosecond
+                let stratum = stratum.unwrap_or(0);
+                Ok(PtpSourceConfig {
+                    delay,
+                    interval,
+                    path,
+                    precision,
+                    stratum,
+                })
+            }
+        }
+
+        const FIELDS: &[&str] = &["delay", "interval", "path", "precision", "stratum"];
+        deserializer.deserialize_struct("PtpSourceConfig", FIELDS, PtpSourceConfigVisitor)
+    }
+}
+
 impl<'de> Deserialize<'de> for PpsSourceConfig {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -415,6 +542,9 @@ pub enum NtpSourceConfig {
     #[cfg(feature = "pps")]
     #[serde(rename = "pps")]
     Pps(PpsSourceConfig),
+    #[cfg(feature = "ptp")]
+    #[serde(rename = "ptp")]
+    Ptp(PtpSourceConfig),
 }
 
 /// A normalized address has a host and a port part. However, the host may be
@@ -669,6 +799,8 @@ mod tests {
             NtpSourceConfig::Sock(_c) => "".to_string(),
             #[cfg(feature = "pps")]
             NtpSourceConfig::Pps(_c) => "".to_string(),
+            #[cfg(feature = "ptp")]
+            NtpSourceConfig::Ptp(_c) => "".to_string(),
         }
     }
 
@@ -1129,6 +1261,202 @@ mod tests {
             path = "/test/path"
             precision = 0.25
             period = 0.0
+            "#,
+        );
+        assert!(test.is_err());
+    }
+
+    #[cfg(feature = "ptp")]
+    #[test]
+    fn test_ptp_config_parsing() {
+        let TestConfig {
+            source: NtpSourceConfig::Ptp(test),
+        } = toml::from_str(
+            r#"
+            [source]
+            interval = 1
+            mode = "ptp"
+            path = "/dev/ptp0"
+            precision = 0.000001
+            "#,
+        )
+        .unwrap()
+        else {
+            panic!("Unexpected source type");
+        };
+        assert_eq!(test.delay, 0.0);
+        assert_eq!(test.interval, ntp_proto::PollInterval::from_byte(1));
+        assert_eq!(test.path, PathBuf::from("/dev/ptp0"));
+        assert_eq!(test.precision, 0.000001);
+        assert_eq!(test.stratum, 0);
+
+        // Test with default interval
+        let TestConfig {
+            source: NtpSourceConfig::Ptp(test),
+        } = toml::from_str(
+            r#"
+            [source]
+            mode = "ptp"
+            path = "/dev/ptp1"
+            precision = 0.000005
+            "#,
+        )
+        .unwrap()
+        else {
+            panic!("Unexpected source type");
+        };
+        assert_eq!(test.interval, ntp_proto::PollInterval::from_byte(0)); // Default interval
+        assert_eq!(test.path, PathBuf::from("/dev/ptp1"));
+        assert_eq!(test.precision, 0.000005);
+
+        // Test validation - missing path should fail
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "ptp"
+            precision = 0.000001
+            "#,
+        );
+        assert!(test.is_err());
+
+        // Test with default precision (1 nanosecond)
+        let TestConfig {
+            source: NtpSourceConfig::Ptp(test),
+        } = toml::from_str(
+            r#"
+            [source]
+            mode = "ptp"
+            path = "/dev/ptp0"
+            "#,
+        )
+        .unwrap()
+        else {
+            panic!("Unexpected source type");
+        };
+        assert_eq!(test.interval, ntp_proto::PollInterval::from_byte(0)); // Default interval
+        assert_eq!(test.path, PathBuf::from("/dev/ptp0"));
+        assert_eq!(test.precision, 0.000000001); // Default precision (1 nanosecond)
+
+        // Test validation - negative precision should fail
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "ptp"
+            path = "/dev/ptp0"
+            precision = -0.000001
+            "#,
+        );
+        assert!(test.is_err());
+
+        // Test validation - negative interval should fail
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "ptp"
+            path = "/dev/ptp0"
+            precision = 0.000001
+            interval = -1
+            "#,
+        );
+        assert!(test.is_err());
+
+        // Test validation - zero precision should fail
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "ptp"
+            path = "/dev/ptp0"
+            precision = 0.0
+            "#,
+        );
+        assert!(test.is_err());
+
+        // Test validation - interval too high should fail
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            interval = 100
+            mode = "ptp"
+            path = "/dev/ptp0"
+            precision = 0.000001
+            "#,
+        );
+        assert!(test.is_err());
+
+        // Test validation - unknown field should fail
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "ptp"
+            path = "/dev/ptp0"
+            precision = 0.000001
+            unknown_field = 5
+            "#,
+        );
+        assert!(test.is_err());
+
+        // Test validation - stratum >= 16 should fail
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "ptp"
+            path = "/dev/ptp0"
+            stratum = 16
+            "#,
+        );
+        assert!(test.is_err());
+
+        // Test validation - non-integral stratum should fail
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "ptp"
+            path = "/dev/ptp0"
+            stratum = 4.972
+            "#,
+        );
+        assert!(test.is_err());
+
+        // Test validation - non-numeric stratum should fail
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "ptp"
+            path = "/dev/ptp0"
+            stratum = teststratum
+            "#,
+        );
+        assert!(test.is_err());
+
+        // Test validation - stratum < 0 should fail
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "ptp"
+            path = "/dev/ptp0"
+            stratum = -3
+            "#,
+        );
+        assert!(test.is_err());
+
+        // Test validation - negative delay should fail
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "ptp"
+            path = "/dev/ptp0"
+            delay = -1.0
+            "#,
+        );
+        assert!(test.is_err());
+
+        // Test validation - delay >= 16 should fail
+        let test: Result<TestConfig, _> = toml::from_str(
+            r#"
+            [source]
+            mode = "ptp"
+            path = "/dev/ptp0"
+            delay = 16.0
             "#,
         );
         assert!(test.is_err());

@@ -297,6 +297,26 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         Ok(OneWaySource::new(controller))
     }
 
+    pub fn create_ptp_source(
+        &mut self,
+        id: SourceId,
+        source_config: SourceConfig,
+        period: f64,
+    ) -> Result<
+        OneWaySource<Controller::OneWaySourceController>,
+        <Controller::Clock as NtpClock>::Error,
+    > {
+        self.ensure_controller_control()?;
+        let controller = self.controller.add_one_way_source(
+            id,
+            source_config,
+            0.0, // Assume no noise from PTP sources for now
+            Some(period),
+        );
+        self.sources.insert(id, None);
+        Ok(OneWaySource::new(controller))
+    }
+
     #[allow(clippy::type_complexity)]
     pub fn create_ntp_source(
         &mut self,

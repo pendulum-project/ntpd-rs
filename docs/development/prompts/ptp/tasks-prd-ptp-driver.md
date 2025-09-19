@@ -1,0 +1,53 @@
+## Tasks
+
+- [x] 1. Create PTP Driver Spawner
+  - [x] 1.1 Implement `PtpSourceSpawner` struct with device path and polling interval configuration
+  - [x] 1.2 Implement `Spawner` trait methods for PTP driver (try_spawn, is_complete, etc.)
+  - [x] 1.3 Add PTP source configuration to `NtpSourceConfig` enum
+  - [x] 1.4 Integrate PTP spawner creation in system coordinator
+  - [x] 1.5 Create unit tests for spawner lifecycle management
+  - [x] 1.6 Run unit tests for spawner and fix any problems encountered.
+- [x] 2. Implement PTP Source Task with Dual-Thread Architecture
+  - [x] 2.1 Create `PtpSourceTask` struct with blocking thread channel communication
+  - [x] 2.2 Implement blocking I/O thread for PTP device access using ptp-time crate
+  - [x] 2.3 Implement async coordinator task that manages polling timer
+  - [x] 2.4 Implement timestamp capability detection at initialization only
+  - [x] 2.5 Implement measurement reporting via `OneWaySourceUpdate`
+  - [x] 2.6 Create integration tests for dual-thread communication pattern
+  - [x] 2.7 Run integration tests and fix any problems encountered.
+- [x] 3. Add Configuration Support and Error Handling
+  - [x] 3.1 Implement PTP configuration parsing from ntpd-rs config files
+  - [x] 3.3 Implement graceful error handling for device unavailability
+  - [x] 3.5 Test configuration loading and error scenarios
+  - [x] 3.6 Run configuration tests and fix any problems encountered.
+- [x] 4. Integrate with System Coordinator and Communication Patterns
+  - [x] 4.1 Implement `MsgForSystem::OneWaySourceUpdate` communication pattern
+  - [x] 4.2 Follow established error handling patterns (NetworkIssue, Unreachable)
+  - [x] 4.3 Ensure compatibility with existing source management architecture
+  - [x] 4.4 Test system integration and message passing
+  - [x] 4.5 Run system integration tests and fix any problems encountered.
+- [x] 5. Create Integration Tests for PTP Driver Implementation
+  - [x] 5.1 Review the changes made in tasks 1-4
+  - [x] 5.2 Review the patterns and techniques used elsewhere in the codebase
+  - [x] 5.3 Create comprehensive integration tests for the PTP driver
+  - [x] 5.4 Run the integration tests and fix any problems encountered.
+
+## Relevant Files
+
+- `ntp-proto/src/config.rs` - Configuration type definitions
+- `ntpd/src/daemon/config/mod.rs` - Main configuration module
+- `ntpd/src/daemon/config/ntp_source.rs` - NTP source configuration data structures and parsing
+- `ntpd/src/daemon/pps_source.rs` - Reference implementation for dual-task threading pattern
+- `ntpd/src/daemon/ptp_source.rs` - Source task implementation with dual-threading model
+- `ntpd/src/daemon/sock_source.rs` - Reference for one-way communication pattern
+- `ntpd/src/daemon/spawn/mod.rs` - System spawning controllers and data structures
+- `ntpd/src/daemon/spawn/pps.rs` - Reference spawner for dual-task pattern
+- `ntpd/src/daemon/spawn/ptp.rs` - Main spawner implementation for PTP driver
+- `ntpd/src/daemon/spawn/sock.rs` - Reference spawner for one-way pattern
+- `ntpd/src/daemon/system.rs` - System coordinator integration
+- `ntpd/src/daemon/ptp_source.rs` - Updated to use fixed poll interval from configuration instead of adaptive polling
+- `ntpd/src/daemon/config/ntp_source.rs` - Added comprehensive PTP configuration parsing test
+- `ntpd/src/daemon/ptp_source.rs` - Enhanced error handling with consecutive error tracking, recovery detection, and proper NetworkIssue/Unreachable patterns
+- `ntpd/src/daemon/ptp_source_integration_test.rs` - Comprehensive integration tests for PTP driver system integration and message passing patterns
+- `ntpd/src/daemon/ptp_integration_test.rs` - Existing integration tests for PTP spawner and source task behavior
+- `ntpd/src/daemon/mod.rs` - Added PTP integration test modules

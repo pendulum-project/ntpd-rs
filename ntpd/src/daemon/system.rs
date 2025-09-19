@@ -20,6 +20,10 @@ use super::{
 
 #[cfg(feature = "pps")]
 use super::spawn::pps::PpsSpawner;
+#[cfg(feature = "ptp")]
+use super::spawn::ptp::PtpSpawner;
+#[cfg(feature = "ptp")]
+use crate::daemon::ptp_source::PtpSourceTask;
 
 use std::{
     collections::HashMap,
@@ -158,6 +162,10 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper, Sourc
             #[cfg(feature = "pps")]
             NtpSourceConfig::Pps(cfg) => {
                 system.add_spawner(PpsSpawner::new(cfg.clone(), source_defaults_config));
+            }
+            #[cfg(feature = "ptp")]
+            NtpSourceConfig::Ptp(cfg) => {
+                system.add_spawner(PtpSpawner::new(cfg.clone(), source_defaults_config));
             }
         }
     }
@@ -551,6 +559,28 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C, SourceId = So
                         source_snapshots: self.source_snapshots.clone(),
                     },
                     source,
+                );
+            }
+            #[cfg(feature = "ptp")]
+            SourceCreateParameters::Ptp(ref params) => {
+                let source = self.system.create_ptp_source(
+                    source_id,
+                    params.config,
+                    params.interval.as_duration().to_seconds(),
+                )?;
+                PtpSourceTask::spawn(
+                    source_id,
+                    params.path.clone(),
+                    params.interval,
+                    self.clock.clone(),
+                    SourceChannels {
+                        msg_for_system_sender: self.msg_for_system_tx.clone(),
+                        system_update_receiver: self.system_update_sender.subscribe(),
+                        source_snapshots: self.source_snapshots.clone(),
+                    },
+                    source,
+                    params.stratum,
+                    params.delay,
                 );
             }
         };

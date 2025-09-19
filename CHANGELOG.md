@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Support for PTP devices as sources (subject to the "ptp" compile flag, enabled by default).  See docs/guide/ptp.md for details.
+
 ## [1.6.1] - 2025-07-16
 
 ### Fixed

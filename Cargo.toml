@@ -43,6 +43,7 @@ toml = { version = ">=0.6.0,<0.9.0", default-features = false, features = ["pars
 timestamped-socket = "0.2.2"
 clock-steering = "0.2.1"
 pps-time = "0.2.3"
+ptp-time = "0.1.0"
 
 # TLS
 rustls23 = { package = "rustls", version = "0.23.16", features = ["logging", "std"] }
