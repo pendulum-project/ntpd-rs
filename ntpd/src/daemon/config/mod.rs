@@ -479,6 +479,7 @@ impl Config {
 
         if self.sources.iter().any(|config| match config {
             NtpSourceConfig::Sock(_) => false,
+            #[cfg(feature = "pps")]
             NtpSourceConfig::Pps(_) => false,
             NtpSourceConfig::Standard(config) => {
                 matches!(config.first.ntp_version, ProtocolVersion::V5)
