@@ -1,9 +1,11 @@
+#[cfg(test)]
+use std::sync::Mutex;
 use std::{
     fmt,
     net::{IpAddr, SocketAddr},
     ops::Deref,
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
 use ntp_proto::{PollInterval, PollIntervalLimits, SourceConfig};
@@ -438,6 +440,7 @@ impl PartialEq for NormalizedAddress {
     }
 }
 
+#[cfg(test)]
 #[derive(Deserialize, Debug, Clone, Default)]
 struct HardcodedDnsResolve {
     #[cfg_attr(not(test), allow(unused))]
@@ -445,6 +448,7 @@ struct HardcodedDnsResolve {
     addresses: Arc<Mutex<Vec<SocketAddr>>>,
 }
 
+#[cfg(test)]
 impl From<Vec<SocketAddr>> for HardcodedDnsResolve {
     fn from(value: Vec<SocketAddr>) -> Self {
         Self {
