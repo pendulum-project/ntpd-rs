@@ -67,9 +67,7 @@ impl KeySetProvider {
     pub fn dangerous_new_deterministic(history: usize) -> Self {
         KeySetProvider {
             current: Arc::new(KeySet {
-                keys: vec![AesSivCmac512::new(
-                    std::array::from_fn(|i| (i as u8)).into(),
-                )],
+                keys: vec![AesSivCmac512::new(std::array::from_fn(|i| i as u8).into())],
                 id_offset: 0,
                 primary: 0,
             }),
