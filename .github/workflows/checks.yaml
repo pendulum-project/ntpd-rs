@@ -85,11 +85,11 @@ jobs:
         with:
           target: ${{ matrix.target }}
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@2fdc5fd6ac805b0f8256893bd4c807bcb666af00
+        uses: taiki-e/install-action@ea0eda622640ac23a17ba349cf09e2709d58f5e1
         with:
           tool: cargo-llvm-cov
       - name: Rust cache
-        uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1
         with:
           shared-key: "${{matrix.rust}}-${{matrix.target}}"
       - name: cargo build
@@ -122,7 +122,7 @@ jobs:
         with:
           toolchain: nightly
       - name: Install udeps
-        uses: taiki-e/install-action@2fdc5fd6ac805b0f8256893bd4c807bcb666af00
+        uses: taiki-e/install-action@ea0eda622640ac23a17ba349cf09e2709d58f5e1
         with:
           tool: cargo-udeps
       - name: cargo udeps
@@ -223,13 +223,13 @@ jobs:
         if: ${{matrix.runs_on == 'ubuntu-latest'}}
 
       - name: Install bindgen-cli
-        uses: taiki-e/install-action@2fdc5fd6ac805b0f8256893bd4c807bcb666af00
+        uses: taiki-e/install-action@ea0eda622640ac23a17ba349cf09e2709d58f5e1
         with:
           tool: bindgen-cli
         if: ${{matrix.runs_on == 'ubuntu-latest'}}
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1
         with:
           shared-key: "stable-${{matrix.target}}"
 
@@ -289,7 +289,7 @@ jobs:
           toolchain: nightly
           components: llvm-tools-preview
       - name: Install cargo fuzz & rustfilt
-        uses: taiki-e/install-action@2fdc5fd6ac805b0f8256893bd4c807bcb666af00
+        uses: taiki-e/install-action@ea0eda622640ac23a17ba349cf09e2709d58f5e1
         with:
           tool: cargo-fuzz,rustfilt
       - name: Run `cargo fuzz`
