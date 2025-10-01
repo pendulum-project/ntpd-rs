@@ -821,7 +821,7 @@ impl<'a> RawExtensionField<'a> {
         }
 
         // In NTPv4: padding is up to a multiple of 4 bytes, so a valid field length is divisible by 4
-        if version == ExtensionHeaderVersion::V4 && field_length % 4 != 0 {
+        if version == ExtensionHeaderVersion::V4 && !field_length.is_multiple_of(4) {
             return Err(IncorrectLength);
         }
 

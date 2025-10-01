@@ -240,11 +240,9 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C, SourceId = So
             std::process::exit(70);
         };
 
-        if have_sources {
-            if let Err(e) = system.check_clock_access() {
-                tracing::error!("Could not control clock: {}", e);
-                std::process::exit(70);
-            }
+        if have_sources && let Err(e) = system.check_clock_access() {
+            tracing::error!("Could not control clock: {}", e);
+            std::process::exit(70);
         }
 
         // Create communication channels

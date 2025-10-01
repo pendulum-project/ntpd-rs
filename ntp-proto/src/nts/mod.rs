@@ -441,9 +441,7 @@ pub struct NtsServerConfig {
     pub server: Option<String>,
     pub port: Option<u16>,
     #[cfg(feature = "nts-pool")]
-    pub pool_ca_certificates: Vec<Certificate>,
-    #[cfg(feature = "nts-pool")]
-    pub pool_domains: Vec<String>,
+    pub pool_authentication_tokens: Vec<String>,
 }
 
 pub struct KeyExchangeServer {
@@ -451,30 +449,16 @@ pub struct KeyExchangeServer {
     protocols: Box<[NextProtocol]>,
     #[cfg(feature = "nts-pool")]
     algorithms: Box<[AlgorithmDescription]>,
+    #[cfg(feature = "nts-pool")]
+    pool_authentication_tokens: Box<[String]>,
     server: Option<String>,
     port: Option<u16>,
 }
 
 impl KeyExchangeServer {
     pub fn new(config: NtsServerConfig) -> Result<Self, NtsError> {
-        let builder = tls_utils::server_config_builder_with_protocol_versions(&[&TLS13]);
-        #[cfg(feature = "nts-pool")]
-        let provider = builder.crypto_provider().clone();
-        let mut server_config = builder
-            .with_client_cert_verifier(Arc::new(
-                #[cfg(not(feature = "nts-pool"))]
-                tls_utils::NoClientAuth,
-                #[cfg(feature = "nts-pool")]
-                tls_utils::AnonymousOrCertificateForDomainVerifier::new(
-                    provider,
-                    config.pool_ca_certificates,
-                    config
-                        .pool_domains
-                        .into_iter()
-                        .map(ServerName::try_from)
-                        .collect::<Result<Vec<_>, _>>()?,
-                )?,
-            ))
+        let mut server_config = tls_utils::server_config_builder_with_protocol_versions(&[&TLS13])
+            .with_no_client_auth()
             .with_single_cert(config.certificate_chain, config.private_key)?;
         server_config.alpn_protocols = vec![b"ntske/1".to_vec()];
 
@@ -500,14 +484,11 @@ impl KeyExchangeServer {
                     .description()
                     .expect("Missing description for AEAD algorithm"),
             ]),
+            #[cfg(feature = "nts-pool")]
+            pool_authentication_tokens: config.pool_authentication_tokens.into(),
             server: config.server,
             port: config.port,
         })
-    }
-
-    #[cfg(feature = "nts-pool")]
-    fn is_priviliged<T>(&self, tls: &tls_utils::ConnectionCommon<T>) -> bool {
-        tls.peer_certificates().is_some()
     }
 
     pub async fn handle_connection(
@@ -527,6 +508,16 @@ impl KeyExchangeServer {
                 .await?;
                 io.shutdown().await?;
                 return Err(NtsError::Invalid);
+            }
+            #[cfg(feature = "nts-pool")]
+            Err(NtsError::NotPermitted) => {
+                ErrorResponse {
+                    errorcode: ErrorCode::BadRequest,
+                }
+                .serialize(&mut io)
+                .await?;
+                io.shutdown().await?;
+                return Err(NtsError::NotPermitted);
             }
             Err(NtsError::UnrecognizedCriticalRecord) => {
                 ErrorResponse {
@@ -622,11 +613,16 @@ impl KeyExchangeServer {
             }
             #[cfg(feature = "nts-pool")]
             Request::FixedKey {
+                authentication,
                 c2s_key,
                 s2c_key,
                 algorithm,
                 protocol,
-            } if self.is_priviliged(io.get_ref().1) => {
+            } if self
+                .pool_authentication_tokens
+                .iter()
+                .any(|v| v == authentication.as_ref()) =>
+            {
                 let cookie = DecodedServerCookie {
                     algorithm,
                     s2c: s2c_key,
@@ -653,21 +649,15 @@ impl KeyExchangeServer {
                 Ok(())
             }
             #[cfg(feature = "nts-pool")]
-            Request::FixedKey { .. } => {
-                ErrorResponse {
-                    errorcode: ErrorCode::BadRequest,
-                }
-                .serialize(&mut io)
-                .await?;
-                io.shutdown().await?;
-
-                Err(NtsError::NotPermitted)
-            }
-            #[cfg(feature = "nts-pool")]
             Request::Support {
+                authentication,
                 wants_protocols,
                 wants_algorithms,
-            } if self.is_priviliged(io.get_ref().1) => {
+            } if self
+                .pool_authentication_tokens
+                .iter()
+                .any(|v| v == authentication.as_ref()) =>
+            {
                 use crate::nts::messages::SupportsResponse;
                 use std::ops::Deref;
 
@@ -690,14 +680,13 @@ impl KeyExchangeServer {
                 Ok(())
             }
             #[cfg(feature = "nts-pool")]
-            Request::Support { .. } => {
+            Request::FixedKey { .. } | Request::Support { .. } => {
                 ErrorResponse {
                     errorcode: ErrorCode::BadRequest,
                 }
                 .serialize(&mut io)
                 .await?;
                 io.shutdown().await?;
-
                 Err(NtsError::NotPermitted)
             }
         }
@@ -773,9 +762,7 @@ mod tests {
                 server: None,
                 port: None,
                 #[cfg(feature = "nts-pool")]
-                pool_ca_certificates: vec![],
-                #[cfg(feature = "nts-pool")]
-                pool_domains: vec![],
+                pool_authentication_tokens: vec![],
             })
             .unwrap();
             let keyset = KeySet::new();
@@ -834,9 +821,7 @@ mod tests {
                 server: None,
                 port: None,
                 #[cfg(feature = "nts-pool")]
-                pool_ca_certificates: vec![],
-                #[cfg(feature = "nts-pool")]
-                pool_domains: vec![],
+                pool_authentication_tokens: vec![],
             })
             .unwrap();
             let keyset = KeySet::new();
@@ -895,9 +880,7 @@ mod tests {
                 server: None,
                 port: None,
                 #[cfg(feature = "nts-pool")]
-                pool_ca_certificates: vec![],
-                #[cfg(feature = "nts-pool")]
-                pool_domains: vec![],
+                pool_authentication_tokens: vec![],
             })
             .unwrap();
             let keyset = KeySet::new();
@@ -956,9 +939,7 @@ mod tests {
                 server: None,
                 port: None,
                 #[cfg(feature = "nts-pool")]
-                pool_ca_certificates: vec![],
-                #[cfg(feature = "nts-pool")]
-                pool_domains: vec![],
+                pool_authentication_tokens: vec![],
             })
             .unwrap();
             let keyset = KeySet::new();
@@ -1015,9 +996,7 @@ mod tests {
                 server: None,
                 port: None,
                 #[cfg(feature = "nts-pool")]
-                pool_ca_certificates: vec![],
-                #[cfg(feature = "nts-pool")]
-                pool_domains: vec![],
+                pool_authentication_tokens: vec![],
             })
             .unwrap();
             let keyset = KeySet::new();
@@ -1064,9 +1043,7 @@ mod tests {
                 server: None,
                 port: None,
                 #[cfg(feature = "nts-pool")]
-                pool_ca_certificates: vec![],
-                #[cfg(feature = "nts-pool")]
-                pool_domains: vec![],
+                pool_authentication_tokens: vec![],
             })
             .unwrap();
             let mut server = kex.acceptor.accept(server).await.unwrap();
@@ -1129,11 +1106,11 @@ mod tests {
 
             client
                 .write_all(&[
-                    0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
-                    18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
-                    38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
-                    58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x80, 0, 0,
-                    0,
+                    0x40, 5, 0, 2, b'h', b'i', 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+                    11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
+                    31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50,
+                    51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80,
+                    4, 0, 2, 0, 15, 0x80, 0, 0, 0,
                 ])
                 .await
                 .unwrap();
@@ -1151,19 +1128,13 @@ mod tests {
                 &mut include_bytes!("../../test-keys/end.key").as_slice(),
             )
             .unwrap();
-            let pool_ca_certificates = tls_utils::pemfile::certs(
-                &mut include_bytes!("../../test-keys/testca.pem").as_slice(),
-            )
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap();
             let kex = KeyExchangeServer::new(NtsServerConfig {
                 certificate_chain,
                 private_key,
                 accepted_versions: vec![NtpVersion::V4],
                 server: None,
                 port: None,
-                pool_ca_certificates,
-                pool_domains: vec!["localhost".into()],
+                pool_authentication_tokens: vec!["hi".into()],
             })
             .unwrap();
             let keyset = KeySet::new();
@@ -1226,11 +1197,11 @@ mod tests {
 
             client
                 .write_all(&[
-                    0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
-                    18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
-                    38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
-                    58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x80, 0, 0,
-                    0,
+                    0x40, 5, 0, 2, b'n', b'o', 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+                    11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
+                    31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50,
+                    51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80,
+                    4, 0, 2, 0, 15, 0x80, 0, 0, 0,
                 ])
                 .await
                 .unwrap();
@@ -1248,19 +1219,13 @@ mod tests {
                 &mut include_bytes!("../../test-keys/end.key").as_slice(),
             )
             .unwrap();
-            let pool_ca_certificates = tls_utils::pemfile::certs(
-                &mut include_bytes!("../../test-keys/end.pem").as_slice(),
-            )
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap();
             let kex = KeyExchangeServer::new(NtsServerConfig {
                 certificate_chain,
                 private_key,
                 accepted_versions: vec![NtpVersion::V4],
                 server: None,
                 port: None,
-                pool_ca_certificates,
-                pool_domains: vec!["localhost".into()],
+                pool_authentication_tokens: vec!["hi".into()],
             })
             .unwrap();
             let keyset = KeySet::new();
@@ -1315,7 +1280,9 @@ mod tests {
                 .unwrap();
 
             client
-                .write_all(&[0xC0, 4, 0, 0, 0xC0, 1, 0, 0, 0x80, 0, 0, 0])
+                .write_all(&[
+                    0x40, 5, 0, 2, b'h', b'i', 0xC0, 4, 0, 0, 0xC0, 1, 0, 0, 0x80, 0, 0, 0,
+                ])
                 .await
                 .unwrap();
 
@@ -1334,19 +1301,13 @@ mod tests {
                 &mut include_bytes!("../../test-keys/end.key").as_slice(),
             )
             .unwrap();
-            let pool_ca_certificates = tls_utils::pemfile::certs(
-                &mut include_bytes!("../../test-keys/testca.pem").as_slice(),
-            )
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap();
             let kex = KeyExchangeServer::new(NtsServerConfig {
                 certificate_chain,
                 private_key,
                 accepted_versions: vec![NtpVersion::V4],
                 server: None,
                 port: None,
-                pool_ca_certificates,
-                pool_domains: vec!["localhost".into()],
+                pool_authentication_tokens: vec!["hi".into()],
             })
             .unwrap();
             let keyset = KeySet::new();
@@ -1395,7 +1356,9 @@ mod tests {
                 .unwrap();
 
             client
-                .write_all(&[0xC0, 4, 0, 0, 0xC0, 1, 0, 0, 0x80, 0, 0, 0])
+                .write_all(&[
+                    0x40, 5, 0, 2, b'n', b'o', 0xC0, 4, 0, 0, 0xC0, 1, 0, 0, 0x80, 0, 0, 0,
+                ])
                 .await
                 .unwrap();
 
@@ -1414,19 +1377,13 @@ mod tests {
                 &mut include_bytes!("../../test-keys/end.key").as_slice(),
             )
             .unwrap();
-            let pool_ca_certificates = tls_utils::pemfile::certs(
-                &mut include_bytes!("../../test-keys/end.pem").as_slice(),
-            )
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap();
             let kex = KeyExchangeServer::new(NtsServerConfig {
                 certificate_chain,
                 private_key,
                 accepted_versions: vec![NtpVersion::V4],
                 server: None,
                 port: None,
-                pool_ca_certificates,
-                pool_domains: vec!["a.test".into()],
+                pool_authentication_tokens: vec!["hi".into()],
             })
             .unwrap();
             let keyset = KeySet::new();

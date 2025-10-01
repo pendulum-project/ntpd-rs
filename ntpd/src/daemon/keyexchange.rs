@@ -61,22 +61,6 @@ async fn run_nts_ke(
         ntp_proto::tls_utils::pemfile::certs(&mut std::io::BufReader::new(certificate_chain_file))
             .collect::<std::io::Result<Vec<Certificate>>>()?;
 
-    #[cfg(feature = "unstable_nts-pool")]
-    let mut pool_ca_certificates: Vec<Certificate> = Vec::new();
-    #[cfg(feature = "unstable_nts-pool")]
-    for client_cert in &nts_ke_config.additional_pool_ca_certificates {
-        let pool_certificate_file = std::fs::File::open(client_cert).map_err(|e| {
-            io_error(&format!(
-                "error reading authorized-pool-server-certificate at `{client_cert:?}`: {e:?}"
-            ))
-        })?;
-        let mut certs: Vec<_> = ntp_proto::tls_utils::pemfile::certs(&mut std::io::BufReader::new(
-            pool_certificate_file,
-        ))
-        .collect::<std::io::Result<Vec<_>>>()?;
-        pool_ca_certificates.append(&mut certs);
-    }
-
     let private_key =
         ntp_proto::tls_utils::pemfile::private_key(&mut std::io::BufReader::new(private_key_file))?;
 
@@ -87,9 +71,7 @@ async fn run_nts_ke(
         server: nts_ke_config.ntp_server.clone(),
         port: nts_ke_config.ntp_port,
         #[cfg(feature = "unstable_nts-pool")]
-        pool_ca_certificates,
-        #[cfg(feature = "unstable_nts-pool")]
-        pool_domains: nts_ke_config.accepted_pool_domains.clone(),
+        pool_authentication_tokens: nts_ke_config.accepted_pool_authentication_tokens.clone(),
     })
     .map_err(std::io::Error::other)?;
 
@@ -240,17 +222,13 @@ mod tests {
 
         let provider = KeySetProvider::new(1);
         let keyset = provider.get();
-        #[cfg(feature = "unstable_nts-pool")]
-        let pool_certs = ["testdata/certificates/nos-nl.pem"];
 
         let (_sender, keyset) = tokio::sync::watch::channel(keyset);
         let nts_ke_config = NtsKeConfig {
             certificate_chain_path: PathBuf::from("test-keys/end.fullchain.pem"),
             private_key_path: PathBuf::from("test-keys/end.key"),
             #[cfg(feature = "unstable_nts-pool")]
-            additional_pool_ca_certificates: pool_certs.iter().map(PathBuf::from).collect(),
-            #[cfg(feature = "unstable_nts-pool")]
-            accepted_pool_domains: vec![],
+            accepted_pool_authentication_tokens: vec![],
             key_exchange_timeout_ms: 10000,
             concurrent_connections: 1,
             listen: SocketAddr::new("0.0.0.0".parse().unwrap(), port),
@@ -327,17 +305,13 @@ mod tests {
 
         let provider = KeySetProvider::new(1);
         let keyset = provider.get();
-        #[cfg(feature = "unstable_nts-pool")]
-        let pool_certs = ["testdata/certificates/nos-nl.pem"];
 
         let (_sender, keyset) = tokio::sync::watch::channel(keyset);
         let nts_ke_config = NtsKeConfig {
             certificate_chain_path: PathBuf::from("test-keys/end.fullchain.pem"),
             private_key_path: PathBuf::from("test-keys/end.key"),
             #[cfg(feature = "unstable_nts-pool")]
-            additional_pool_ca_certificates: pool_certs.iter().map(PathBuf::from).collect(),
-            #[cfg(feature = "unstable_nts-pool")]
-            accepted_pool_domains: vec![],
+            accepted_pool_authentication_tokens: vec![],
             key_exchange_timeout_ms: 1000,
             concurrent_connections: 512,
             listen: SocketAddr::new("0.0.0.0".parse().unwrap(), port),
