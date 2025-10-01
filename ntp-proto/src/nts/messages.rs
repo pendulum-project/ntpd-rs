@@ -24,6 +24,7 @@ pub enum Request<'a> {
     },
     #[cfg(feature = "nts-pool")]
     FixedKey {
+        authentication: Cow<'a, str>,
         c2s_key: Box<dyn Cipher>,
         s2c_key: Box<dyn Cipher>,
         algorithm: AeadAlgorithm,
@@ -32,6 +33,7 @@ pub enum Request<'a> {
     },
     #[cfg(feature = "nts-pool")]
     Support {
+        authentication: Cow<'a, str>,
         wants_protocols: bool,
         wants_algorithms: bool,
     },
@@ -43,6 +45,8 @@ impl Request<'_> {
 
         let mut protocols = None;
         let mut algorithms = None;
+        #[cfg(feature = "nts-pool")]
+        let mut authentication = None;
         #[cfg(feature = "nts-pool")]
         let mut denied_servers = vec![];
         #[cfg(feature = "nts-pool")]
@@ -99,6 +103,14 @@ impl Request<'_> {
                 NtsRecord::NtpServerDeny { denied } => {
                     denied_servers.push(denied);
                 }
+                #[cfg(feature = "nts-pool")]
+                NtsRecord::Authentication { key } => {
+                    if authentication.is_some() {
+                        return Err(NtsError::Invalid);
+                    }
+
+                    authentication = Some(key)
+                }
                 // Unknown critical
                 NtsRecord::Unknown { critical: true, .. } => {
                     return Err(NtsError::UnrecognizedCriticalRecord);
@@ -116,16 +128,23 @@ impl Request<'_> {
 
         #[cfg(feature = "nts-pool")]
         if wants_algorithms || wants_protocols {
-            if key_bytes.is_some() || protocols.is_some() || algorithms.is_some() {
+            if let Some(authentication) = authentication
+                && key_bytes.is_none()
+                && protocols.is_none()
+                && algorithms.is_none()
+            {
+                return Ok(Request::Support {
+                    authentication,
+                    wants_protocols,
+                    wants_algorithms,
+                });
+            } else {
                 return Err(NtsError::Invalid);
             }
-
-            return Ok(Request::Support {
-                wants_protocols,
-                wants_algorithms,
-            });
         } else if let Some(key_bytes) = key_bytes {
-            return if let (Some(protocols), Some(algorithms)) = (protocols, algorithms) {
+            return if let (Some(authentication), Some(protocols), Some(algorithms)) =
+                (authentication, protocols, algorithms)
+            {
                 use crate::packet::{AesSivCmac256, AesSivCmac512};
 
                 if protocols.len() != 1 || algorithms.len() != 1 {
@@ -151,6 +170,7 @@ impl Request<'_> {
                 };
 
                 Ok(Request::FixedKey {
+                    authentication,
                     c2s_key,
                     s2c_key,
                     algorithm: algorithms[0],
@@ -208,11 +228,17 @@ impl Request<'_> {
             }
             #[cfg(feature = "nts-pool")]
             Request::FixedKey {
+                authentication,
                 c2s_key,
                 s2c_key,
                 algorithm,
                 protocol,
             } => {
+                NtsRecord::Authentication {
+                    key: authentication,
+                }
+                .serialize(&mut writer)
+                .await?;
                 NtsRecord::FixedKeyRequest {
                     c2s: c2s_key.key_bytes().into(),
                     s2c: s2c_key.key_bytes().into(),
@@ -233,9 +259,15 @@ impl Request<'_> {
             }
             #[cfg(feature = "nts-pool")]
             Request::Support {
+                authentication,
                 wants_protocols,
                 wants_algorithms,
             } => {
+                NtsRecord::Authentication {
+                    key: authentication,
+                }
+                .serialize(&mut writer)
+                .await?;
                 if wants_protocols {
                     NtsRecord::SupportedNextProtocolList {
                         supported_protocols: [].as_slice().into(),
@@ -336,7 +368,7 @@ impl KeyExchangeResponse<'_> {
                 // Ignored
                 NtsRecord::Unknown { .. } => {}
                 #[cfg(feature = "nts-pool")]
-                NtsRecord::KeepAlive => {}
+                NtsRecord::KeepAlive | NtsRecord::Authentication { .. } => {}
                 // Not allowed
                 #[cfg(feature = "nts-pool")]
                 NtsRecord::NtpServerDeny { .. }
@@ -765,6 +797,27 @@ mod tests {
             #[allow(unreachable_patterns)]
             _ => panic!("Unexpected misparse of message"),
         }
+
+        let Ok(request) = pwrap(
+            Request::parse,
+            &[
+                0x40, 5, 0, 2, b'h', b'i', 0x80, 4, 0, 2, 0, 15, 0x80, 1, 0, 2, 0, 0, 0x80, 0, 0, 0,
+            ],
+        ) else {
+            panic!("Expected parse");
+        };
+        match request {
+            Request::KeyExchange {
+                algorithms,
+                protocols,
+                ..
+            } => {
+                assert_eq!(algorithms, [AeadAlgorithm::AeadAesSivCmac256].as_slice());
+                assert_eq!(protocols, [NextProtocol::NTPv4].as_slice());
+            }
+            #[allow(unreachable_patterns)]
+            _ => panic!("Unexpected misparse of message"),
+        }
     }
 
     #[cfg(feature = "nts-pool")]
@@ -773,7 +826,8 @@ mod tests {
         let Ok(request) = pwrap(
             Request::parse,
             &[
-                0x80, 4, 0, 2, 0, 15, 0x80, 1, 0, 2, 0, 0, 0x40, 3, 0, 2, b'h', b'i', 0x80, 0, 0, 0,
+                0x40, 5, 0, 1, b'a', 0x80, 4, 0, 2, 0, 15, 0x80, 1, 0, 2, 0, 0, 0x40, 3, 0, 2,
+                b'h', b'i', 0x80, 0, 0, 0,
             ],
         ) else {
             panic!("Expected parse");
@@ -851,6 +905,7 @@ mod tests {
     #[test]
     fn test_request_fixedkey() {
         let Ok(Request::FixedKey {
+            authentication,
             c2s_key,
             s2c_key,
             algorithm,
@@ -858,15 +913,17 @@ mod tests {
         }) = pwrap(
             Request::parse,
             &[
-                0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-                19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
-                40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
-                61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x80, 0, 0, 0,
+                0x40, 5, 0, 1, b'a', 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+                14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+                35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55,
+                56, 57, 58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x80, 0,
+                0, 0,
             ],
         )
         else {
             panic!("Expected parse as fixedkey");
         };
+        assert_eq!(authentication, "a");
         assert_eq!(
             c2s_key.key_bytes(),
             [
@@ -885,6 +942,7 @@ mod tests {
         assert_eq!(protocol, NextProtocol::NTPv4);
 
         let Ok(Request::FixedKey {
+            authentication,
             c2s_key,
             s2c_key,
             algorithm,
@@ -892,19 +950,20 @@ mod tests {
         }) = pwrap(
             Request::parse,
             &[
-                0xC0, 2, 0, 128, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-                19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
-                40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
-                61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81,
-                82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101,
-                102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117,
-                118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0,
-                2, 0, 17, 0x80, 0, 0, 0,
+                0x40, 5, 0, 1, b'a', 0xC0, 2, 0, 128, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+                14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+                35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55,
+                56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76,
+                77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97,
+                98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114,
+                115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 0x80, 1, 0, 2, 0,
+                0, 0x80, 4, 0, 2, 0, 17, 0x80, 0, 0, 0,
             ],
         )
         else {
             panic!("Expected parse as fixedkey");
         };
+        assert_eq!(authentication, "a");
         assert_eq!(
             c2s_key.key_bytes(),
             [
@@ -926,6 +985,7 @@ mod tests {
         assert_eq!(protocol, NextProtocol::NTPv4);
 
         let Ok(Request::FixedKey {
+            authentication,
             c2s_key,
             s2c_key,
             algorithm,
@@ -933,15 +993,17 @@ mod tests {
         }) = pwrap(
             Request::parse,
             &[
-                0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7,
-                8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28,
-                29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
-                50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 0x80, 0, 0, 0,
+                0x40, 5, 0, 1, b'a', 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0xC0, 2, 0, 64, 0,
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+                24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44,
+                45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 0x80,
+                0, 0, 0,
             ],
         )
         else {
             panic!("Expected parse as fixedkey");
         };
+        assert_eq!(authentication, "a");
         assert_eq!(
             c2s_key.key_bytes(),
             [
@@ -962,15 +1024,34 @@ mod tests {
 
     #[cfg(feature = "nts-pool")]
     #[test]
+    fn test_request_fixedkey_reject_unauthenticated() {
+        assert!(
+            pwrap(
+                Request::parse,
+                &[
+                    0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6,
+                    7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+                    27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+                    47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 0x80, 0, 0,
+                    0,
+                ],
+            )
+            .is_err()
+        );
+    }
+
+    #[cfg(feature = "nts-pool")]
+    #[test]
     fn test_request_fixedkey_reject_incomplete() {
         assert!(
             pwrap(
                 Request::parse,
                 &[
-                    0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
-                    18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
-                    38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
-                    58, 59, 60, 61, 62, 63, 0x80, 4, 0, 2, 0, 15, 0x80, 0, 0, 0,
+                    0x40, 5, 0, 1, b'a', 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+                    13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+                    33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52,
+                    53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 0x80, 4, 0, 2, 0, 15, 0x80, 0, 0,
+                    0,
                 ],
             )
             .is_err()
@@ -979,10 +1060,10 @@ mod tests {
             pwrap(
                 Request::parse,
                 &[
-                    0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
-                    18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
-                    38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
-                    58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 0, 0, 0,
+                    0x40, 5, 0, 1, b'a', 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+                    13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+                    33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52,
+                    53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 0, 0, 0,
                 ],
             )
             .is_err()
@@ -991,10 +1072,11 @@ mod tests {
             pwrap(
                 Request::parse,
                 &[
-                    0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
-                    18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
-                    38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
-                    58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15,
+                    0x40, 5, 0, 1, b'a', 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+                    13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+                    33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52,
+                    53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2,
+                    0, 15,
                 ],
             )
             .is_err()
@@ -1008,14 +1090,14 @@ mod tests {
             pwrap(
                 Request::parse,
                 &[
-                    0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
-                    18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
-                    38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
-                    58, 59, 60, 61, 62, 63, 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
-                    12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
-                    32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51,
-                    52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4,
-                    0, 2, 0, 15, 0x80, 0, 0, 0,
+                    0x40, 5, 0, 1, b'a', 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+                    13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+                    33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52,
+                    53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5,
+                    6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+                    27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+                    47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 0x80, 1, 0,
+                    2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x80, 0, 0, 0,
                 ]
             )
             .is_err()
@@ -1025,11 +1107,11 @@ mod tests {
             pwrap(
                 Request::parse,
                 &[
-                    0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
-                    18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
-                    38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
-                    58, 59, 60, 61, 62, 63, 0x80, 1, 0, 4, 0, 0, 0x80, 1, 0x80, 4, 0, 2, 0, 15,
-                    0x80, 0, 0, 0,
+                    0x40, 5, 0, 1, b'a', 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+                    13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+                    33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52,
+                    53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 0x80, 1, 0, 4, 0, 0, 0x80, 1, 0x80,
+                    4, 0, 2, 0, 15, 0x80, 0, 0, 0,
                 ]
             )
             .is_err()
@@ -1039,11 +1121,11 @@ mod tests {
             pwrap(
                 Request::parse,
                 &[
-                    0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
-                    18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
-                    38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
-                    58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 4, 0, 15, 0, 15, 0x80,
-                    0, 0, 0,
+                    0x40, 5, 0, 1, b'a', 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+                    13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+                    33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52,
+                    53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 4,
+                    0, 15, 0, 15, 0x80, 0, 0, 0,
                 ]
             )
             .is_err()
@@ -1057,8 +1139,8 @@ mod tests {
             pwrap(
                 Request::parse,
                 &[
-                    0xC0, 2, 0, 4, 1, 2, 3, 4, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x80, 0,
-                    0, 0
+                    0x40, 5, 0, 1, b'a', 0xC0, 2, 0, 4, 1, 2, 3, 4, 0x80, 1, 0, 2, 0, 0, 0x80, 4,
+                    0, 2, 0, 15, 0x80, 0, 0, 0
                 ]
             )
             .is_err()
@@ -1072,11 +1154,11 @@ mod tests {
             pwrap(
                 Request::parse,
                 &[
-                    0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
-                    18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
-                    38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
-                    58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 2, 0x80, 0, 0,
-                    0,
+                    0x40, 5, 0, 1, b'a', 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+                    13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+                    33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52,
+                    53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2,
+                    0, 2, 0x80, 0, 0, 0,
                 ]
             )
             .is_err()
@@ -1090,11 +1172,11 @@ mod tests {
             pwrap(
                 Request::parse,
                 &[
-                    0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
-                    18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
-                    38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
-                    58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0xC0, 1, 0,
-                    0, 0x80, 0, 0, 0,
+                    0x40, 5, 0, 1, b'a', 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+                    13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+                    33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52,
+                    53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2,
+                    0, 15, 0xC0, 1, 0, 0, 0x80, 0, 0, 0,
                 ],
             )
             .is_err()
@@ -1104,11 +1186,11 @@ mod tests {
             pwrap(
                 Request::parse,
                 &[
-                    0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
-                    18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
-                    38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
-                    58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0xC0, 4, 0,
-                    0, 0x80, 0, 0, 0,
+                    0x40, 5, 0, 1, b'a', 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+                    13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+                    33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52,
+                    53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2,
+                    0, 15, 0xC0, 4, 0, 0, 0x80, 0, 0, 0,
                 ],
             )
             .is_err()
@@ -1122,11 +1204,11 @@ mod tests {
             pwrap(
                 Request::parse,
                 &[
-                    0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
-                    18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
-                    38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
-                    58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x80, 50, 0,
-                    2, 1, 2, 0x80, 0, 0, 0,
+                    0x40, 5, 0, 1, b'a', 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+                    13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+                    33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52,
+                    53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2,
+                    0, 15, 0x80, 50, 0, 2, 1, 2, 0x80, 0, 0, 0,
                 ],
             )
             .is_err()
@@ -1137,6 +1219,7 @@ mod tests {
     #[test]
     fn test_request_fixedkey_ignore() {
         let Ok(Request::FixedKey {
+            authentication,
             c2s_key,
             s2c_key,
             algorithm,
@@ -1144,16 +1227,17 @@ mod tests {
         }) = pwrap(
             Request::parse,
             &[
-                0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-                19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
-                40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
-                61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x80, 6, 0, 2, b'h', b'i',
-                0x80, 0, 0, 0,
+                0x40, 5, 0, 1, b'a', 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+                14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+                35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55,
+                56, 57, 58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x80, 6,
+                0, 2, b'h', b'i', 0x80, 0, 0, 0,
             ],
         )
         else {
             panic!("Expected parse as fixedkey");
         };
+        assert_eq!(authentication, "a");
         assert_eq!(
             c2s_key.key_bytes(),
             [
@@ -1172,6 +1256,7 @@ mod tests {
         assert_eq!(protocol, NextProtocol::NTPv4);
 
         let Ok(Request::FixedKey {
+            authentication,
             c2s_key,
             s2c_key,
             algorithm,
@@ -1179,16 +1264,17 @@ mod tests {
         }) = pwrap(
             Request::parse,
             &[
-                0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-                19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
-                40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
-                61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x80, 7, 0, 2, 0, 124, 0x80,
-                0, 0, 0,
+                0x40, 5, 0, 1, b'a', 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+                14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+                35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55,
+                56, 57, 58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x80, 7,
+                0, 2, 0, 124, 0x80, 0, 0, 0,
             ],
         )
         else {
             panic!("Expected parse as fixedkey");
         };
+        assert_eq!(authentication, "a");
         assert_eq!(
             c2s_key.key_bytes(),
             [
@@ -1207,6 +1293,7 @@ mod tests {
         assert_eq!(protocol, NextProtocol::NTPv4);
 
         let Ok(Request::FixedKey {
+            authentication,
             c2s_key,
             s2c_key,
             algorithm,
@@ -1214,16 +1301,17 @@ mod tests {
         }) = pwrap(
             Request::parse,
             &[
-                0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-                19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
-                40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
-                61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x40, 3, 0, 2, b'h', b'i',
-                0x80, 0, 0, 0,
+                0x40, 5, 0, 1, b'a', 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+                14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+                35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55,
+                56, 57, 58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x40, 3,
+                0, 2, b'h', b'i', 0x80, 0, 0, 0,
             ],
         )
         else {
             panic!("Expected parse as fixedkey");
         };
+        assert_eq!(authentication, "a");
         assert_eq!(
             c2s_key.key_bytes(),
             [
@@ -1242,6 +1330,7 @@ mod tests {
         assert_eq!(protocol, NextProtocol::NTPv4);
 
         let Ok(Request::FixedKey {
+            authentication,
             c2s_key,
             s2c_key,
             algorithm,
@@ -1249,16 +1338,17 @@ mod tests {
         }) = pwrap(
             Request::parse,
             &[
-                0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-                19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
-                40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
-                61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0, 50, 0, 2, 1, 2, 0x80, 0,
-                0, 0,
+                0x40, 5, 0, 1, b'a', 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+                14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+                35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55,
+                56, 57, 58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0, 50,
+                0, 2, 1, 2, 0x80, 0, 0, 0,
             ],
         )
         else {
             panic!("Expected parse as fixedkey");
         };
+        assert_eq!(authentication, "a");
         assert_eq!(
             c2s_key.key_bytes(),
             [
@@ -1287,6 +1377,7 @@ mod tests {
             swrap(
                 Request::serialize,
                 Request::FixedKey {
+                    authentication: "a".into(),
                     c2s_key: Box::new(AesSivCmac256::new(
                         [
                             0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
@@ -1311,10 +1402,11 @@ mod tests {
         assert_eq!(
             buf,
             [
-                0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-                19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
-                40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
-                61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x80, 0, 0, 0
+                0x40, 5, 0, 1, b'a', 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+                14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+                35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55,
+                56, 57, 58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x80, 0,
+                0, 0
             ]
         );
     }
@@ -1323,37 +1415,65 @@ mod tests {
     #[test]
     fn test_request_support() {
         let Ok(Request::Support {
-            wants_protocols,
-            wants_algorithms,
-        }) = pwrap(Request::parse, &[0xC0, 1, 0, 0, 0x80, 0, 0, 0])
-        else {
-            panic!("Parse problem");
-        };
-        assert!(wants_algorithms);
-        assert!(!wants_protocols);
-
-        let Ok(Request::Support {
-            wants_protocols,
-            wants_algorithms,
-        }) = pwrap(Request::parse, &[0xC0, 4, 0, 0, 0x80, 0, 0, 0])
-        else {
-            panic!("Parse problem");
-        };
-        assert!(!wants_algorithms);
-        assert!(wants_protocols);
-
-        let Ok(Request::Support {
+            authentication,
             wants_protocols,
             wants_algorithms,
         }) = pwrap(
             Request::parse,
-            &[0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 0, 0, 0],
+            &[0x40, 5, 0, 1, b'a', 0xC0, 1, 0, 0, 0x80, 0, 0, 0],
         )
         else {
             panic!("Parse problem");
         };
+        assert_eq!(authentication, "a");
+        assert!(wants_algorithms);
+        assert!(!wants_protocols);
+
+        let Ok(Request::Support {
+            authentication,
+            wants_protocols,
+            wants_algorithms,
+        }) = pwrap(
+            Request::parse,
+            &[0x40, 5, 0, 1, b'a', 0xC0, 4, 0, 0, 0x80, 0, 0, 0],
+        )
+        else {
+            panic!("Parse problem");
+        };
+        assert_eq!(authentication, "a");
+        assert!(!wants_algorithms);
+        assert!(wants_protocols);
+
+        let Ok(Request::Support {
+            authentication,
+            wants_protocols,
+            wants_algorithms,
+        }) = pwrap(
+            Request::parse,
+            &[
+                0x40, 5, 0, 1, b'a', 0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 0, 0, 0,
+            ],
+        )
+        else {
+            panic!("Parse problem");
+        };
+        assert_eq!(authentication, "a");
         assert!(wants_algorithms);
         assert!(wants_protocols);
+    }
+
+    #[cfg(feature = "nts-pool")]
+    #[test]
+    fn test_request_support_reject_unauthenticated() {
+        assert!(pwrap(Request::parse, &[0xC0, 1, 0, 0, 0x80, 0, 0, 0],).is_err());
+        assert!(pwrap(Request::parse, &[0xC0, 4, 0, 0, 0x80, 0, 0, 0],).is_err());
+        assert!(
+            pwrap(
+                Request::parse,
+                &[0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 0, 0, 0,],
+            )
+            .is_err()
+        );
     }
 
     #[cfg(feature = "nts-pool")]
@@ -1362,14 +1482,18 @@ mod tests {
         assert!(
             pwrap(
                 Request::parse,
-                &[0xC0, 1, 0, 0, 0xC0, 1, 0, 0, 0x80, 0, 0, 0]
+                &[
+                    0x40, 5, 0, 1, b'a', 0xC0, 1, 0, 0, 0xC0, 1, 0, 0, 0x80, 0, 0, 0
+                ]
             )
             .is_err()
         );
         assert!(
             pwrap(
                 Request::parse,
-                &[0xC0, 4, 0, 0, 0xC0, 4, 0, 0, 0x80, 0, 0, 0]
+                &[
+                    0x40, 5, 0, 1, b'a', 0xC0, 4, 0, 0, 0xC0, 4, 0, 0, 0x80, 0, 0, 0
+                ]
             )
             .is_err()
         );
@@ -1382,7 +1506,8 @@ mod tests {
             pwrap(
                 Request::parse,
                 &[
-                    0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0xC0, 2, 0, 2, 1, 2, 0x80, 0, 0, 0
+                    0x40, 5, 0, 1, b'a', 0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0xC0, 2, 0, 2, 1, 2, 0x80,
+                    0, 0, 0
                 ]
             )
             .is_err()
@@ -1391,7 +1516,8 @@ mod tests {
             pwrap(
                 Request::parse,
                 &[
-                    0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 2, 0, 2, 0, 0, 0x80, 0, 0, 0
+                    0x40, 5, 0, 1, b'a', 0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 2, 0, 2, 0, 0, 0x80,
+                    0, 0, 0
                 ]
             )
             .is_err()
@@ -1400,7 +1526,8 @@ mod tests {
             pwrap(
                 Request::parse,
                 &[
-                    0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 3, 0, 2, 0, 0, 0x80, 0, 0, 0
+                    0x40, 5, 0, 1, b'a', 0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 3, 0, 2, 0, 0, 0x80,
+                    0, 0, 0
                 ]
             )
             .is_err()
@@ -1409,7 +1536,8 @@ mod tests {
             pwrap(
                 Request::parse,
                 &[
-                    0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 1, 0, 2, 0, 0, 0x80, 0, 0, 0
+                    0x40, 5, 0, 1, b'a', 0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 1, 0, 2, 0, 0, 0x80,
+                    0, 0, 0
                 ]
             )
             .is_err()
@@ -1418,7 +1546,8 @@ mod tests {
             pwrap(
                 Request::parse,
                 &[
-                    0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x80, 0, 0, 0
+                    0x40, 5, 0, 1, b'a', 0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x80,
+                    0, 0, 0
                 ]
             )
             .is_err()
@@ -1427,7 +1556,8 @@ mod tests {
             pwrap(
                 Request::parse,
                 &[
-                    0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 5, 0, 2, 1, 2, 0x80, 0, 0, 0
+                    0x40, 5, 0, 1, b'a', 0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 5, 0, 2, 1, 2, 0x80,
+                    0, 0, 0
                 ]
             )
             .is_err()
@@ -1440,7 +1570,10 @@ mod tests {
         assert!(
             pwrap(
                 Request::parse,
-                &[0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 50, 0, 0, 0x80, 0, 0, 0]
+                &[
+                    0x40, 5, 0, 1, b'a', 0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 50, 0, 0, 0x80, 0, 0,
+                    0
+                ]
             )
             .is_err()
         );
@@ -1450,60 +1583,73 @@ mod tests {
     #[test]
     fn test_request_support_ignore() {
         let Ok(Request::Support {
+            authentication,
             wants_protocols,
             wants_algorithms,
         }) = pwrap(
             Request::parse,
             &[
-                0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 6, 0, 2, b'h', b'i', 0x80, 0, 0, 0,
+                0x40, 5, 0, 1, b'a', 0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 6, 0, 2, b'h', b'i', 0x80,
+                0, 0, 0,
             ],
         )
         else {
             panic!("Parse problem");
         };
+        assert_eq!(authentication, "a");
         assert!(wants_algorithms);
         assert!(wants_protocols);
 
         let Ok(Request::Support {
+            authentication,
             wants_protocols,
             wants_algorithms,
         }) = pwrap(
             Request::parse,
             &[
-                0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 7, 0, 2, 0, 124, 0x80, 0, 0, 0,
+                0x40, 5, 0, 1, b'a', 0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x80, 7, 0, 2, 0, 124, 0x80, 0,
+                0, 0,
             ],
         )
         else {
             panic!("Parse problem");
         };
+        assert_eq!(authentication, "a");
         assert!(wants_algorithms);
         assert!(wants_protocols);
 
         let Ok(Request::Support {
+            authentication,
             wants_protocols,
             wants_algorithms,
         }) = pwrap(
             Request::parse,
             &[
-                0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x40, 3, 0, 2, b'h', b'i', 0x80, 0, 0, 0,
+                0x40, 5, 0, 1, b'a', 0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x40, 3, 0, 2, b'h', b'i', 0x80,
+                0, 0, 0,
             ],
         )
         else {
             panic!("Parse problem");
         };
+        assert_eq!(authentication, "a");
         assert!(wants_algorithms);
         assert!(wants_protocols);
 
         let Ok(Request::Support {
+            authentication,
             wants_protocols,
             wants_algorithms,
         }) = pwrap(
             Request::parse,
-            &[0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x40, 0, 0, 0, 0x80, 0, 0, 0],
+            &[
+                0x40, 5, 0, 1, b'a', 0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x40, 0, 0, 0, 0x80, 0, 0, 0,
+            ],
         )
         else {
             panic!("Parse problem");
         };
+        assert_eq!(authentication, "a");
         assert!(wants_algorithms);
         assert!(wants_protocols);
     }
@@ -1516,6 +1662,7 @@ mod tests {
             swrap(
                 Request::serialize,
                 Request::Support {
+                    authentication: "a".into(),
                     wants_algorithms: false,
                     wants_protocols: false
                 },
@@ -1523,13 +1670,14 @@ mod tests {
             ),
             Ok(())
         ));
-        assert_eq!(buf, [0x80, 0, 0, 0]);
+        assert_eq!(buf, [0x40, 5, 0, 1, b'a', 0x80, 0, 0, 0]);
 
         let mut buf = vec![];
         assert!(matches!(
             swrap(
                 Request::serialize,
                 Request::Support {
+                    authentication: "a".into(),
                     wants_algorithms: true,
                     wants_protocols: false
                 },
@@ -1537,13 +1685,14 @@ mod tests {
             ),
             Ok(())
         ));
-        assert_eq!(buf, [0xC0, 1, 0, 0, 0x80, 0, 0, 0]);
+        assert_eq!(buf, [0x40, 5, 0, 1, b'a', 0xC0, 1, 0, 0, 0x80, 0, 0, 0]);
 
         let mut buf = vec![];
         assert!(matches!(
             swrap(
                 Request::serialize,
                 Request::Support {
+                    authentication: "a".into(),
                     wants_algorithms: false,
                     wants_protocols: true
                 },
@@ -1551,13 +1700,14 @@ mod tests {
             ),
             Ok(())
         ));
-        assert_eq!(buf, [0xC0, 4, 0, 0, 0x80, 0, 0, 0]);
+        assert_eq!(buf, [0x40, 5, 0, 1, b'a', 0xC0, 4, 0, 0, 0x80, 0, 0, 0]);
 
         let mut buf = vec![];
         assert!(matches!(
             swrap(
                 Request::serialize,
                 Request::Support {
+                    authentication: "a".into(),
                     wants_algorithms: true,
                     wants_protocols: true
                 },
@@ -1565,7 +1715,12 @@ mod tests {
             ),
             Ok(())
         ));
-        assert_eq!(buf, [0xC0, 4, 0, 0, 0xC0, 1, 0, 0, 0x80, 0, 0, 0]);
+        assert_eq!(
+            buf,
+            [
+                0x40, 5, 0, 1, b'a', 0xC0, 4, 0, 0, 0xC0, 1, 0, 0, 0x80, 0, 0, 0
+            ]
+        );
     }
 
     #[test]

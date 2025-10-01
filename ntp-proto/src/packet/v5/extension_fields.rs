@@ -14,7 +14,7 @@ pub struct ReferenceIdRequest {
 
 impl ReferenceIdRequest {
     pub const fn new(payload_len: u16, offset: u16) -> Option<Self> {
-        if payload_len % 4 != 0 {
+        if !payload_len.is_multiple_of(4) {
             return None;
         }
 
@@ -91,7 +91,7 @@ pub struct ReferenceIdResponse<'a> {
 
 impl<'a> ReferenceIdResponse<'a> {
     pub const fn new(bytes: &'a [u8]) -> Option<Self> {
-        if bytes.len() % 4 != 0 {
+        if !bytes.len().is_multiple_of(4) {
             return None;
         }
 

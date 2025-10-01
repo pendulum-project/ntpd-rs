@@ -156,7 +156,7 @@ impl RemoteBloomFilter {
     /// * divide 512 without remainder
     /// * between `4..=512`
     pub const fn new(chunk_size: u16) -> Option<Self> {
-        if chunk_size % 4 != 0 {
+        if !chunk_size.is_multiple_of(4) {
             return None;
         }
 

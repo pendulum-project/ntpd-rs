@@ -61,6 +61,10 @@ pub enum NtsRecord<'a> {
     NtpServerDeny {
         denied: Cow<'a, str>,
     },
+    #[cfg(feature = "nts-pool")]
+    Authentication {
+        key: Cow<'a, str>,
+    },
 }
 
 impl NtsRecord<'_> {
@@ -91,6 +95,8 @@ impl NtsRecord<'_> {
             0x4002 => Self::parse_fixed_key_request(body).await,
             #[cfg(feature = "nts-pool")]
             0x4003 => Self::parse_ntp_server_deny(body).await,
+            #[cfg(feature = "nts-pool")]
+            0x4005 => Self::parse_authentication(body).await,
             _ => {
                 let mut data = vec![0; size.into()];
                 body.read_exact(&mut data).await?;
@@ -258,6 +264,16 @@ impl NtsRecord<'_> {
         })
     }
 
+    #[cfg(feature = "nts-pool")]
+    async fn parse_authentication(mut reader: Take<impl AsyncRead + Unpin>) -> Result<Self, Error> {
+        let mut key = String::new();
+        reader.read_to_string(&mut key).await?;
+        if reader.limit() != 0 {
+            return Err(ErrorKind::UnexpectedEof.into());
+        }
+        Ok(Self::Authentication { key: key.into() })
+    }
+
     pub async fn serialize(&self, mut writer: impl AsyncWrite + Unpin) -> Result<(), Error> {
         writer.write_u16(self.record_type()).await?;
         let size: u16 = self
@@ -309,6 +325,8 @@ impl NtsRecord<'_> {
             }
             #[cfg(feature = "nts-pool")]
             NtsRecord::NtpServerDeny { denied } => writer.write_all(denied.as_bytes()).await?,
+            #[cfg(feature = "nts-pool")]
+            NtsRecord::Authentication { key } => writer.write_all(key.as_bytes()).await?,
         }
         Ok(())
     }
@@ -340,6 +358,8 @@ impl NtsRecord<'_> {
             NtsRecord::FixedKeyRequest { .. } => 0x4002 | CRITICAL_BIT,
             #[cfg(feature = "nts-pool")]
             NtsRecord::NtpServerDeny { .. } => 0x4003,
+            #[cfg(feature = "nts-pool")]
+            NtsRecord::Authentication { .. } => 0x4005,
         }
     }
 
@@ -368,6 +388,8 @@ impl NtsRecord<'_> {
             NtsRecord::FixedKeyRequest { c2s, s2c } => c2s.len() + s2c.len(),
             #[cfg(feature = "nts-pool")]
             NtsRecord::NtpServerDeny { denied } => denied.len(),
+            #[cfg(feature = "nts-pool")]
+            NtsRecord::Authentication { key } => key.len(),
         }
     }
 }

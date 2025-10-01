@@ -198,10 +198,7 @@ pub struct NtsKeConfig {
     pub private_key_path: PathBuf,
     #[serde(default)]
     #[cfg(feature = "unstable_nts-pool")]
-    pub additional_pool_ca_certificates: Vec<PathBuf>,
-    #[serde(default)]
-    #[cfg(feature = "unstable_nts-pool")]
-    pub accepted_pool_domains: Vec<String>,
+    pub accepted_pool_authentication_tokens: Vec<String>,
     #[serde(default = "default_nts_ke_timeout")]
     pub key_exchange_timeout_ms: u64,
     #[serde(default = "default_concurrent_connections")]
@@ -416,19 +413,13 @@ mod tests {
             listen = "0.0.0.0:4460"
             certificate-chain-path = "/foo/bar/baz.pem"
             private-key-path = "spam.der"
-            additional-pool-ca-certificates = [ "foo.pem", "bar.pem" ]
-            accepted-pool-domains = ["a.test", "b.test"]
+            accepted-pool-authentication-tokens = ["a.test", "b.test"]
             "#,
         )
         .unwrap();
 
         assert_eq!(
-            test.nts_ke_server.additional_pool_ca_certificates,
-            vec![PathBuf::from("foo.pem"), PathBuf::from("bar.pem")]
-        );
-
-        assert_eq!(
-            test.nts_ke_server.accepted_pool_domains,
+            test.nts_ke_server.accepted_pool_authentication_tokens,
             vec!["a.test".to_string(), "b.test".to_string()]
         );
     }

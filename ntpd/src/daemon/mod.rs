@@ -67,10 +67,10 @@ pub(crate) fn initialize_logging_parse_config(
         }
     });
 
-    if let Some(config_log_level) = config.observability.log_level {
-        if initial_log_level.is_none() {
-            log_level = config_log_level;
-        }
+    if let Some(config_log_level) = config.observability.log_level
+        && initial_log_level.is_none()
+    {
+        log_level = config_log_level;
     }
 
     // set a default global subscriber from now on

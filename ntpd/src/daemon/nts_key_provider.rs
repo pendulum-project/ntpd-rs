@@ -63,8 +63,8 @@ pub async fn spawn(config: KeysetConfig) -> watch::Receiver<Arc<KeySet>> {
         let _enter = span.enter();
         loop {
             // First save, then sleep. Ensures new sets created at boot are also saved.
-            if let Some(path) = &config.key_storage_path {
-                if let Err(e) = (|| -> std::io::Result<()> {
+            if let Some(path) = &config.key_storage_path
+                && let Err(e) = (|| -> std::io::Result<()> {
                     let mut output = OpenOptions::new()
                         .create(true)
                         .truncate(true)
@@ -72,14 +72,14 @@ pub async fn spawn(config: KeysetConfig) -> watch::Receiver<Arc<KeySet>> {
                         .mode(0o600)
                         .open(path)?;
                     provider.store(&mut output)
-                })() {
-                    if e.kind() == std::io::ErrorKind::NotFound
-                        || e.kind() == std::io::ErrorKind::PermissionDenied
-                    {
-                        warn!(error = ?e, "Could not store nts server keys, parent directory does not exist or has insufficient permissions");
-                    } else {
-                        warn!(error = ?e, "Could not store nts server keys");
-                    }
+                })()
+            {
+                if e.kind() == std::io::ErrorKind::NotFound
+                    || e.kind() == std::io::ErrorKind::PermissionDenied
+                {
+                    warn!(error = ?e, "Could not store nts server keys, parent directory does not exist or has insufficient permissions");
+                } else {
+                    warn!(error = ?e, "Could not store nts server keys");
                 }
             }
             if tx.send(provider.get()).is_err() {
