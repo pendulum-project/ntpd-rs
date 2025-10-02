@@ -356,6 +356,8 @@ pub struct Config {
     pub sources: Vec<NtpSourceConfig>,
     #[serde(rename = "server", default)]
     pub servers: Vec<ServerConfig>,
+    #[serde(rename = "csptp-server", default)]
+    pub csptp_servers: Vec<CsptpServerConfig>,
     #[serde(rename = "nts-ke-server", default)]
     pub nts_ke: Vec<NtsKeConfig>,
     #[serde(default)]
@@ -446,6 +448,7 @@ impl Config {
                 NtpSourceConfig::Sock(_) => count += 1,
                 #[cfg(feature = "pps")]
                 NtpSourceConfig::Pps(_) => {} // PPS sources don't count
+                NtpSourceConfig::Csptp(_) => count += 1,
             }
         }
         count
@@ -481,6 +484,7 @@ impl Config {
             NtpSourceConfig::Sock(_) => false,
             #[cfg(feature = "pps")]
             NtpSourceConfig::Pps(_) => false,
+            NtpSourceConfig::Csptp(_) => false,
             NtpSourceConfig::Standard(config) => {
                 matches!(config.first.ntp_version, ProtocolVersion::V5)
             }
