@@ -441,7 +441,6 @@ impl Config {
                 NtpSourceConfig::Standard(_) => count += 1,
                 NtpSourceConfig::Nts(_) => count += 1,
                 NtpSourceConfig::Pool(config) => count += config.first.count,
-                #[cfg(feature = "unstable_nts-pool")]
                 NtpSourceConfig::NtsPool(config) => count += config.first.count,
                 NtpSourceConfig::Sock(_) => count += 1,
                 #[cfg(feature = "pps")]
@@ -490,7 +489,6 @@ impl Config {
             NtpSourceConfig::Pool(config) => {
                 matches!(config.first.ntp_version, ProtocolVersion::V5)
             }
-            #[cfg(feature = "unstable_nts-pool")]
             NtpSourceConfig::NtsPool(config) => {
                 matches!(config.first.ntp_version, ProtocolVersion::V5)
             }

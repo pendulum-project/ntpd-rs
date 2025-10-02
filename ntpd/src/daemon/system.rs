@@ -5,7 +5,6 @@ use crate::daemon::{
     spawn::{SourceCreateParameters, spawner_task},
 };
 
-#[cfg(feature = "unstable_nts-pool")]
 use super::spawn::nts_pool::NtsPoolSpawner;
 use super::{
     clock::NtpClockWrapper,
@@ -140,7 +139,6 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper, Sourc
                     cfg.second.clone().with_defaults(source_defaults_config),
                 ));
             }
-            #[cfg(feature = "unstable_nts-pool")]
             NtpSourceConfig::NtsPool(cfg) => {
                 NtsPoolSpawner::new(
                     cfg.first.clone(),

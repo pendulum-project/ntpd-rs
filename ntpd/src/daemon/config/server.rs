@@ -197,7 +197,6 @@ pub struct NtsKeConfig {
     pub certificate_chain_path: PathBuf,
     pub private_key_path: PathBuf,
     #[serde(default)]
-    #[cfg(feature = "unstable_nts-pool")]
     pub accepted_pool_authentication_tokens: Vec<String>,
     #[serde(default = "default_nts_ke_timeout")]
     pub key_exchange_timeout_ms: u64,
@@ -398,7 +397,6 @@ mod tests {
         assert_eq!(test.nts_ke_server.listen, "0.0.0.0:4460".parse().unwrap(),);
     }
 
-    #[cfg(feature = "unstable_nts-pool")]
     #[test]
     fn test_deserialize_nts_ke_pool_member() {
         #[derive(Deserialize, Debug)]

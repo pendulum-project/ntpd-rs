@@ -6,7 +6,6 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Take};
 
 use crate::nts::{AeadAlgorithm, NextProtocol};
 
-#[cfg(feature = "nts-pool")]
 use super::AlgorithmDescription;
 use super::{ErrorCode, WarningCode};
 
@@ -40,28 +39,22 @@ pub enum NtsRecord<'a> {
         critical: bool,
         data: Cow<'a, [u8]>,
     },
-    #[cfg(feature = "nts-pool")]
     KeepAlive,
-    #[cfg(feature = "nts-pool")]
     SupportedNextProtocolList {
         #[cfg_attr(feature = "__internal-fuzz", allow(private_interfaces))]
         supported_protocols: Cow<'a, [NextProtocol]>,
     },
-    #[cfg(feature = "nts-pool")]
     SupportedAlgorithmList {
         #[cfg_attr(feature = "__internal-fuzz", allow(private_interfaces))]
         supported_algorithms: Cow<'a, [AlgorithmDescription]>,
     },
-    #[cfg(feature = "nts-pool")]
     FixedKeyRequest {
         c2s: Cow<'a, [u8]>,
         s2c: Cow<'a, [u8]>,
     },
-    #[cfg(feature = "nts-pool")]
     NtpServerDeny {
         denied: Cow<'a, str>,
     },
-    #[cfg(feature = "nts-pool")]
     Authentication {
         key: Cow<'a, str>,
     },
@@ -85,17 +78,11 @@ impl NtsRecord<'_> {
             5 => Self::parse_new_cookie(body).await,
             6 => Self::parse_server(body).await,
             7 => Self::parse_port(body).await,
-            #[cfg(feature = "nts-pool")]
             0x4000 => Self::parse_keep_alive(body).await,
-            #[cfg(feature = "nts-pool")]
             0x4004 => Self::parse_supported_next_protocol_list(body).await,
-            #[cfg(feature = "nts-pool")]
             0x4001 => Self::parse_supported_algorithm_list(body).await,
-            #[cfg(feature = "nts-pool")]
             0x4002 => Self::parse_fixed_key_request(body).await,
-            #[cfg(feature = "nts-pool")]
             0x4003 => Self::parse_ntp_server_deny(body).await,
-            #[cfg(feature = "nts-pool")]
             0x4005 => Self::parse_authentication(body).await,
             _ => {
                 let mut data = vec![0; size.into()];
@@ -188,7 +175,6 @@ impl NtsRecord<'_> {
         }
     }
 
-    #[cfg(feature = "nts-pool")]
     async fn parse_keep_alive(mut reader: Take<impl AsyncRead + Unpin>) -> Result<Self, Error> {
         let mut buf = [0; 512];
         while reader.read(&mut buf).await? != 0 {}
@@ -199,7 +185,6 @@ impl NtsRecord<'_> {
         }
     }
 
-    #[cfg(feature = "nts-pool")]
     async fn parse_supported_next_protocol_list(
         mut reader: Take<impl AsyncRead + Unpin>,
     ) -> Result<Self, Error> {
@@ -213,7 +198,6 @@ impl NtsRecord<'_> {
         })
     }
 
-    #[cfg(feature = "nts-pool")]
     async fn parse_supported_algorithm_list(
         mut reader: Take<impl AsyncRead + Unpin>,
     ) -> Result<Self, Error> {
@@ -231,7 +215,6 @@ impl NtsRecord<'_> {
         })
     }
 
-    #[cfg(feature = "nts-pool")]
     async fn parse_fixed_key_request(
         mut reader: Take<impl AsyncRead + Unpin>,
     ) -> Result<Self, Error> {
@@ -250,7 +233,6 @@ impl NtsRecord<'_> {
         }
     }
 
-    #[cfg(feature = "nts-pool")]
     async fn parse_ntp_server_deny(
         mut reader: Take<impl AsyncRead + Unpin>,
     ) -> Result<Self, Error> {
@@ -264,7 +246,6 @@ impl NtsRecord<'_> {
         })
     }
 
-    #[cfg(feature = "nts-pool")]
     async fn parse_authentication(mut reader: Take<impl AsyncRead + Unpin>) -> Result<Self, Error> {
         let mut key = String::new();
         reader.read_to_string(&mut key).await?;
@@ -299,9 +280,7 @@ impl NtsRecord<'_> {
             NtsRecord::Server { name } => writer.write_all(name.as_bytes()).await?,
             NtsRecord::Port { port } => writer.write_u16(*port).await?,
             NtsRecord::Unknown { data, .. } => writer.write_all(data).await?,
-            #[cfg(feature = "nts-pool")]
             NtsRecord::KeepAlive => {}
-            #[cfg(feature = "nts-pool")]
             NtsRecord::SupportedNextProtocolList {
                 supported_protocols,
             } => {
@@ -309,7 +288,6 @@ impl NtsRecord<'_> {
                     writer.write_u16(id.into()).await?;
                 }
             }
-            #[cfg(feature = "nts-pool")]
             NtsRecord::SupportedAlgorithmList {
                 supported_algorithms,
             } => {
@@ -318,14 +296,11 @@ impl NtsRecord<'_> {
                     writer.write_u16(desc.keysize).await?;
                 }
             }
-            #[cfg(feature = "nts-pool")]
             NtsRecord::FixedKeyRequest { c2s, s2c } => {
                 writer.write_all(c2s).await?;
                 writer.write_all(s2c).await?
             }
-            #[cfg(feature = "nts-pool")]
             NtsRecord::NtpServerDeny { denied } => writer.write_all(denied.as_bytes()).await?,
-            #[cfg(feature = "nts-pool")]
             NtsRecord::Authentication { key } => writer.write_all(key.as_bytes()).await?,
         }
         Ok(())
@@ -348,17 +323,11 @@ impl NtsRecord<'_> {
                 critical,
                 ..
             } => record_type | if *critical { CRITICAL_BIT } else { 0 },
-            #[cfg(feature = "nts-pool")]
             NtsRecord::KeepAlive => 0x4000,
-            #[cfg(feature = "nts-pool")]
             NtsRecord::SupportedNextProtocolList { .. } => 0x4004 | CRITICAL_BIT,
-            #[cfg(feature = "nts-pool")]
             NtsRecord::SupportedAlgorithmList { .. } => 0x4001 | CRITICAL_BIT,
-            #[cfg(feature = "nts-pool")]
             NtsRecord::FixedKeyRequest { .. } => 0x4002 | CRITICAL_BIT,
-            #[cfg(feature = "nts-pool")]
             NtsRecord::NtpServerDeny { .. } => 0x4003,
-            #[cfg(feature = "nts-pool")]
             NtsRecord::Authentication { .. } => 0x4005,
         }
     }
@@ -374,21 +343,15 @@ impl NtsRecord<'_> {
             NtsRecord::Server { name } => name.len(),
             NtsRecord::Port { .. } => size_of::<u16>(),
             NtsRecord::Unknown { data, .. } => data.len(),
-            #[cfg(feature = "nts-pool")]
             NtsRecord::KeepAlive => 0,
-            #[cfg(feature = "nts-pool")]
             NtsRecord::SupportedNextProtocolList {
                 supported_protocols,
             } => supported_protocols.len() * size_of::<u16>(),
-            #[cfg(feature = "nts-pool")]
             NtsRecord::SupportedAlgorithmList {
                 supported_algorithms,
             } => supported_algorithms.len() * 2 * size_of::<u16>(),
-            #[cfg(feature = "nts-pool")]
             NtsRecord::FixedKeyRequest { c2s, s2c } => c2s.len() + s2c.len(),
-            #[cfg(feature = "nts-pool")]
             NtsRecord::NtpServerDeny { denied } => denied.len(),
-            #[cfg(feature = "nts-pool")]
             NtsRecord::Authentication { key } => key.len(),
         }
     }
@@ -711,7 +674,6 @@ mod tests {
         assert_eq!(buf, [0x80, 7, 0, 2, 0, 123]);
     }
 
-    #[cfg(feature = "nts-pool")]
     #[test]
     fn test_keep_alive() {
         assert!(matches!(parse(&[0x40, 0, 0, 0]), Ok(NtsRecord::KeepAlive)));
@@ -730,7 +692,6 @@ mod tests {
         assert_eq!(buf, [0x40, 0, 0, 0]);
     }
 
-    #[cfg(feature = "nts-pool")]
     #[test]
     fn test_supported_next_protocol_list() {
         let Ok(NtsRecord::SupportedNextProtocolList {
@@ -787,7 +748,6 @@ mod tests {
         assert_eq!(buf, [0xC0, 4, 0, 0]);
     }
 
-    #[cfg(feature = "nts-pool")]
     #[test]
     fn test_supported_algorithm_list() {
         let Ok(NtsRecord::SupportedAlgorithmList {
@@ -864,7 +824,6 @@ mod tests {
         assert_eq!(buf, [0xc0, 1, 0, 4, 0, 17, 0, 64]);
     }
 
-    #[cfg(feature = "nts-pool")]
     #[test]
     fn test_fixed_key_request() {
         let Ok(NtsRecord::FixedKeyRequest { c2s, s2c }) = parse(&[0xC0, 2, 0, 0]) else {
@@ -894,7 +853,6 @@ mod tests {
         assert_eq!(buf, [0xc0, 2, 0, 4, 5, 6, 7, 8]);
     }
 
-    #[cfg(feature = "nts-pool")]
     #[test]
     fn test_server_deny() {
         let Ok(NtsRecord::NtpServerDeny { denied }) =

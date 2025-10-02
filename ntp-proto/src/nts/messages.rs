@@ -2,10 +2,8 @@ use std::borrow::Cow;
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 
-#[cfg(feature = "nts-pool")]
 use crate::nts::AlgorithmDescription;
 use crate::nts::DEFAULT_NUMBER_OF_COOKIES;
-#[cfg(feature = "nts-pool")]
 use crate::packet::Cipher;
 
 use super::record::NtsRecord;
@@ -19,10 +17,8 @@ pub enum Request<'a> {
         algorithms: Cow<'a, [AeadAlgorithm]>,
         #[cfg_attr(feature = "__internal-fuzz", allow(private_interfaces))]
         protocols: Cow<'a, [NextProtocol]>,
-        #[cfg(feature = "nts-pool")]
         denied_servers: Cow<'a, [Cow<'a, str>]>,
     },
-    #[cfg(feature = "nts-pool")]
     FixedKey {
         authentication: Cow<'a, str>,
         c2s_key: Box<dyn Cipher>,
@@ -31,7 +27,6 @@ pub enum Request<'a> {
         #[cfg_attr(feature = "__internal-fuzz", allow(private_interfaces))]
         protocol: NextProtocol,
     },
-    #[cfg(feature = "nts-pool")]
     Support {
         authentication: Cow<'a, str>,
         wants_protocols: bool,
@@ -45,15 +40,10 @@ impl Request<'_> {
 
         let mut protocols = None;
         let mut algorithms = None;
-        #[cfg(feature = "nts-pool")]
         let mut authentication = None;
-        #[cfg(feature = "nts-pool")]
         let mut denied_servers = vec![];
-        #[cfg(feature = "nts-pool")]
         let mut wants_protocols = false;
-        #[cfg(feature = "nts-pool")]
         let mut wants_algorithms = false;
-        #[cfg(feature = "nts-pool")]
         let mut key_bytes = None;
 
         loop {
@@ -75,7 +65,6 @@ impl Request<'_> {
 
                     algorithms = Some(algorithm_ids);
                 }
-                #[cfg(feature = "nts-pool")]
                 NtsRecord::FixedKeyRequest { c2s, s2c } => {
                     if key_bytes.is_some() {
                         return Err(NtsError::Invalid);
@@ -83,7 +72,6 @@ impl Request<'_> {
 
                     key_bytes = Some((c2s, s2c));
                 }
-                #[cfg(feature = "nts-pool")]
                 NtsRecord::SupportedAlgorithmList { .. } => {
                     if wants_algorithms {
                         return Err(NtsError::Invalid);
@@ -91,7 +79,6 @@ impl Request<'_> {
 
                     wants_algorithms = true;
                 }
-                #[cfg(feature = "nts-pool")]
                 NtsRecord::SupportedNextProtocolList { .. } => {
                     if wants_protocols {
                         return Err(NtsError::Invalid);
@@ -99,11 +86,9 @@ impl Request<'_> {
 
                     wants_protocols = true;
                 }
-                #[cfg(feature = "nts-pool")]
                 NtsRecord::NtpServerDeny { denied } => {
                     denied_servers.push(denied);
                 }
-                #[cfg(feature = "nts-pool")]
                 NtsRecord::Authentication { key } => {
                     if authentication.is_some() {
                         return Err(NtsError::Invalid);
@@ -117,7 +102,6 @@ impl Request<'_> {
                 }
                 // Ignored
                 NtsRecord::Unknown { .. } | NtsRecord::Server { .. } | NtsRecord::Port { .. } => {}
-                #[cfg(feature = "nts-pool")]
                 NtsRecord::KeepAlive => {}
                 // not allowed
                 NtsRecord::Error { .. }
@@ -126,7 +110,6 @@ impl Request<'_> {
             }
         }
 
-        #[cfg(feature = "nts-pool")]
         if wants_algorithms || wants_protocols {
             if let Some(authentication) = authentication
                 && key_bytes.is_none()
@@ -185,7 +168,6 @@ impl Request<'_> {
             Ok(Request::KeyExchange {
                 algorithms,
                 protocols,
-                #[cfg(feature = "nts-pool")]
                 denied_servers: denied_servers.into(),
             })
         } else {
@@ -201,7 +183,6 @@ impl Request<'_> {
             Request::KeyExchange {
                 algorithms,
                 protocols,
-                #[cfg(feature = "nts-pool")]
                 denied_servers,
             } => {
                 NtsRecord::NextProtocol {
@@ -214,7 +195,6 @@ impl Request<'_> {
                 }
                 .serialize(&mut writer)
                 .await?;
-                #[cfg(feature = "nts-pool")]
                 for denied in denied_servers.iter() {
                     use std::ops::Deref;
 
@@ -226,7 +206,6 @@ impl Request<'_> {
                 }
                 NtsRecord::EndOfMessage.serialize(&mut writer).await?;
             }
-            #[cfg(feature = "nts-pool")]
             Request::FixedKey {
                 authentication,
                 c2s_key,
@@ -257,7 +236,6 @@ impl Request<'_> {
                 .await?;
                 NtsRecord::EndOfMessage.serialize(&mut writer).await?;
             }
-            #[cfg(feature = "nts-pool")]
             Request::Support {
                 authentication,
                 wants_protocols,
@@ -367,10 +345,8 @@ impl KeyExchangeResponse<'_> {
                 }
                 // Ignored
                 NtsRecord::Unknown { .. } => {}
-                #[cfg(feature = "nts-pool")]
                 NtsRecord::KeepAlive | NtsRecord::Authentication { .. } => {}
                 // Not allowed
-                #[cfg(feature = "nts-pool")]
                 NtsRecord::NtpServerDeny { .. }
                 | NtsRecord::FixedKeyRequest { .. }
                 | NtsRecord::SupportedAlgorithmList { .. }
@@ -482,13 +458,11 @@ impl ErrorResponse {
     }
 }
 
-#[cfg(feature = "nts-pool")]
 pub struct SupportsResponse<'a> {
     pub algorithms: Option<Cow<'a, [AlgorithmDescription]>>,
     pub protocols: Option<Cow<'a, [NextProtocol]>>,
 }
 
-#[cfg(feature = "nts-pool")]
 impl SupportsResponse<'_> {
     pub async fn serialize(
         self,
@@ -820,7 +794,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "nts-pool")]
     #[test]
     fn test_request_basic_denied_servers() {
         let Ok(request) = pwrap(
@@ -861,7 +834,6 @@ mod tests {
                     .as_slice()
                     .into(),
                     protocols: [NextProtocol::NTPv4].as_slice().into(),
-                    #[cfg(feature = "nts-pool")]
                     denied_servers: vec![].into(),
                 },
                 &mut buf
@@ -876,7 +848,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "nts-pool")]
     #[test]
     fn test_request_basic_serialize_denied_servers() {
         let mut buf = vec![];
@@ -901,7 +872,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "nts-pool")]
     #[test]
     fn test_request_fixedkey() {
         let Ok(Request::FixedKey {
@@ -1022,7 +992,6 @@ mod tests {
         assert_eq!(protocol, NextProtocol::NTPv4);
     }
 
-    #[cfg(feature = "nts-pool")]
     #[test]
     fn test_request_fixedkey_reject_unauthenticated() {
         assert!(
@@ -1040,7 +1009,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "nts-pool")]
     #[test]
     fn test_request_fixedkey_reject_incomplete() {
         assert!(
@@ -1083,7 +1051,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "nts-pool")]
     #[test]
     fn test_request_fixedkey_reject_multiple() {
         assert!(
@@ -1132,7 +1099,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "nts-pool")]
     #[test]
     fn test_request_fixedkey_reject_wrong_size_keys() {
         assert!(
@@ -1147,7 +1113,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "nts-pool")]
     #[test]
     fn test_request_fixedkey_reject_unknown_algorithm() {
         assert!(
@@ -1165,7 +1130,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "nts-pool")]
     #[test]
     fn test_request_fixedkey_reject_problematic() {
         assert!(
@@ -1197,7 +1161,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "nts-pool")]
     #[test]
     fn test_request_fixedkey_reject_unknown_critical() {
         assert!(
@@ -1215,7 +1178,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "nts-pool")]
     #[test]
     fn test_request_fixedkey_ignore() {
         let Ok(Request::FixedKey {
@@ -1367,7 +1329,6 @@ mod tests {
         assert_eq!(protocol, NextProtocol::NTPv4);
     }
 
-    #[cfg(feature = "nts-pool")]
     #[test]
     fn test_request_fixedkey_serialize() {
         use crate::packet::AesSivCmac256;
@@ -1411,7 +1372,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "nts-pool")]
     #[test]
     fn test_request_support() {
         let Ok(Request::Support {
@@ -1462,7 +1422,6 @@ mod tests {
         assert!(wants_protocols);
     }
 
-    #[cfg(feature = "nts-pool")]
     #[test]
     fn test_request_support_reject_unauthenticated() {
         assert!(pwrap(Request::parse, &[0xC0, 1, 0, 0, 0x80, 0, 0, 0],).is_err());
@@ -1476,7 +1435,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "nts-pool")]
     #[test]
     fn test_request_support_reject_multiple() {
         assert!(
@@ -1499,7 +1457,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "nts-pool")]
     #[test]
     fn test_request_support_reject_problematic() {
         assert!(
@@ -1564,7 +1521,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "nts-pool")]
     #[test]
     fn test_request_support_reject_unknown_critical() {
         assert!(
@@ -1579,7 +1535,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "nts-pool")]
     #[test]
     fn test_request_support_ignore() {
         let Ok(Request::Support {
@@ -1654,7 +1609,6 @@ mod tests {
         assert!(wants_protocols);
     }
 
-    #[cfg(feature = "nts-pool")]
     #[test]
     fn test_request_support_serialize() {
         let mut buf = vec![];
@@ -2097,7 +2051,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "nts-pool")]
     #[test]
     fn test_support_response() {
         let mut buf = vec![];
