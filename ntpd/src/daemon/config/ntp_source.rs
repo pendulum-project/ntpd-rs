@@ -135,7 +135,6 @@ fn max_sources_default() -> usize {
     4
 }
 
-#[cfg(feature = "unstable_nts-pool")]
 #[derive(Deserialize, Debug, PartialEq, Clone)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct NtsPoolSourceConfig {
@@ -409,7 +408,6 @@ pub enum NtpSourceConfig {
     Nts(FlattenedPair<NtsSourceConfig, PartialSourceConfig>),
     #[serde(rename = "pool")]
     Pool(FlattenedPair<PoolSourceConfig, PartialSourceConfig>),
-    #[cfg(feature = "unstable_nts-pool")]
     #[serde(rename = "nts-pool")]
     NtsPool(FlattenedPair<NtsPoolSourceConfig, PartialSourceConfig>),
     #[serde(rename = "sock")]
@@ -668,7 +666,6 @@ mod tests {
             NtpSourceConfig::Standard(c) => c.first.address.to_string(),
             NtpSourceConfig::Nts(c) => c.first.address.to_string(),
             NtpSourceConfig::Pool(c) => c.first.addr.to_string(),
-            #[cfg(feature = "unstable_nts-pool")]
             NtpSourceConfig::NtsPool(c) => c.first.addr.to_string(),
             NtpSourceConfig::Sock(_c) => "".to_string(),
             #[cfg(feature = "pps")]
@@ -751,7 +748,6 @@ mod tests {
         assert!(matches!(test.source, NtpSourceConfig::Nts(_)));
         assert_eq!(source_addr(&test.source), "example.com:4460");
 
-        #[cfg(feature = "unstable_nts-pool")]
         {
             let test: TestConfig = toml::from_str(
                 r#"

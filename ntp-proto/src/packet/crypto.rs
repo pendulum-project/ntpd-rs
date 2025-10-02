@@ -19,18 +19,15 @@ impl Display for DecryptError {
 
 impl std::error::Error for DecryptError {}
 
-#[cfg(feature = "nts-pool")]
 #[derive(Debug)]
 pub struct KeyError;
 
-#[cfg(feature = "nts-pool")]
 impl Display for KeyError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Invalid key")
     }
 }
 
-#[cfg(feature = "nts-pool")]
 impl std::error::Error for KeyError {}
 
 struct Buffer<'a> {
@@ -168,13 +165,11 @@ impl AesSivCmac256 {
         AesSivCmac256 { key }
     }
 
-    #[cfg(feature = "nts-pool")]
     pub fn key_size() -> usize {
         // prefer trust in compiler optimisation over trust in mental arithmetic
         Self::new(Default::default()).key.len()
     }
 
-    #[cfg(feature = "nts-pool")]
     pub fn from_key_bytes(key_bytes: &[u8]) -> Result<Self, KeyError> {
         (key_bytes.len() == Self::key_size())
             .then(|| Self::new(*aead::Key::<Aes128Siv>::from_slice(key_bytes)))
@@ -253,13 +248,11 @@ impl AesSivCmac512 {
         AesSivCmac512 { key }
     }
 
-    #[cfg(feature = "nts-pool")]
     pub fn key_size() -> usize {
         // prefer trust in compiler optimisation over trust in mental arithmetic
         Self::new(Default::default()).key.len()
     }
 
-    #[cfg(feature = "nts-pool")]
     pub fn from_key_bytes(key_bytes: &[u8]) -> Result<Self, KeyError> {
         (key_bytes.len() == Self::key_size())
             .then(|| Self::new(*aead::Key::<Aes256Siv>::from_slice(key_bytes)))
@@ -485,7 +478,6 @@ mod tests {
         assert_eq!(result, (0..16).collect::<Vec<u8>>());
     }
 
-    #[cfg(feature = "nts-pool")]
     #[test]
     fn key_functions_correctness() {
         use aead::KeySizeUser;

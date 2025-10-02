@@ -70,7 +70,6 @@ async fn run_nts_ke(
         accepted_versions: nts_ke_config.accept_ntp_versions.clone(),
         server: nts_ke_config.ntp_server.clone(),
         port: nts_ke_config.ntp_port,
-        #[cfg(feature = "unstable_nts-pool")]
         pool_authentication_tokens: nts_ke_config.accepted_pool_authentication_tokens.clone(),
     })
     .map_err(std::io::Error::other)?;
@@ -227,7 +226,6 @@ mod tests {
         let nts_ke_config = NtsKeConfig {
             certificate_chain_path: PathBuf::from("test-keys/end.fullchain.pem"),
             private_key_path: PathBuf::from("test-keys/end.key"),
-            #[cfg(feature = "unstable_nts-pool")]
             accepted_pool_authentication_tokens: vec![],
             key_exchange_timeout_ms: 10000,
             concurrent_connections: 1,
@@ -310,7 +308,6 @@ mod tests {
         let nts_ke_config = NtsKeConfig {
             certificate_chain_path: PathBuf::from("test-keys/end.fullchain.pem"),
             private_key_path: PathBuf::from("test-keys/end.key"),
-            #[cfg(feature = "unstable_nts-pool")]
             accepted_pool_authentication_tokens: vec![],
             key_exchange_timeout_ms: 1000,
             concurrent_connections: 512,

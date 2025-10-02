@@ -150,14 +150,12 @@ impl NtsKeys {
     }
 }
 
-#[cfg(feature = "nts-pool")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct AlgorithmDescription {
     id: AeadAlgorithm,
     keysize: u16,
 }
 
-#[cfg(feature = "nts-pool")]
 impl AeadAlgorithm {
     fn description(self) -> Option<AlgorithmDescription> {
         use crate::packet::{AesSivCmac256, AesSivCmac512};
@@ -253,11 +251,8 @@ pub enum NtsError {
     NoOverlappingAlgorithm,
     UnknownWarning(u16),
     Error(ErrorCode),
-    #[cfg(feature = "nts-pool")]
     AeadNotSupported(u16),
-    #[cfg(feature = "nts-pool")]
     IncorrectSizedKey,
-    #[cfg(feature = "nts-pool")]
     NotPermitted,
 }
 
@@ -296,15 +291,12 @@ impl std::fmt::Display for NtsError {
                 write!(f, "Received unknown warning from remote: {code}")
             }
             NtsError::Error(error) => write!(f, "Received error from remote: {error}"),
-            #[cfg(feature = "nts-pool")]
             NtsError::AeadNotSupported(v) => {
                 write!(f, "Received fixed key request using unknown AEAD({v})")
             }
-            #[cfg(feature = "nts-pool")]
             NtsError::IncorrectSizedKey => {
                 write!(f, "Received fix key request with incorrectly sized key(s)")
             }
-            #[cfg(feature = "nts-pool")]
             NtsError::NotPermitted => write!(f, "Request not permitted without authentication"),
         }
     }
@@ -372,14 +364,11 @@ impl KeyExchangeClient {
         &self,
         io: impl AsyncRead + AsyncWrite + Unpin,
         server_name: String,
-        #[cfg_attr(not(feature = "nts-pool"), allow(unused))] denied_servers: impl IntoIterator<
-            Item = Cow<'_, str>,
-        >,
+        denied_servers: impl IntoIterator<Item = Cow<'_, str>>,
     ) -> Result<KeyExchangeResult, NtsError> {
         let request = Request::KeyExchange {
             algorithms: self.algorithms.as_ref().into(),
             protocols: self.protocols.as_ref().into(),
-            #[cfg(feature = "nts-pool")]
             denied_servers: denied_servers.into_iter().collect::<Vec<_>>().into(),
         };
 
@@ -440,16 +429,13 @@ pub struct NtsServerConfig {
     pub accepted_versions: Vec<NtpVersion>,
     pub server: Option<String>,
     pub port: Option<u16>,
-    #[cfg(feature = "nts-pool")]
     pub pool_authentication_tokens: Vec<String>,
 }
 
 pub struct KeyExchangeServer {
     acceptor: TlsAcceptor,
     protocols: Box<[NextProtocol]>,
-    #[cfg(feature = "nts-pool")]
     algorithms: Box<[AlgorithmDescription]>,
-    #[cfg(feature = "nts-pool")]
     pool_authentication_tokens: Box<[String]>,
     server: Option<String>,
     port: Option<u16>,
@@ -475,7 +461,6 @@ impl KeyExchangeServer {
         Ok(KeyExchangeServer {
             acceptor: TlsAcceptor::from(Arc::new(server_config)),
             protocols,
-            #[cfg(feature = "nts-pool")]
             algorithms: Box::new([
                 AeadAlgorithm::AeadAesSivCmac256
                     .description()
@@ -484,7 +469,6 @@ impl KeyExchangeServer {
                     .description()
                     .expect("Missing description for AEAD algorithm"),
             ]),
-            #[cfg(feature = "nts-pool")]
             pool_authentication_tokens: config.pool_authentication_tokens.into(),
             server: config.server,
             port: config.port,
@@ -509,7 +493,6 @@ impl KeyExchangeServer {
                 io.shutdown().await?;
                 return Err(NtsError::Invalid);
             }
-            #[cfg(feature = "nts-pool")]
             Err(NtsError::NotPermitted) => {
                 ErrorResponse {
                     errorcode: ErrorCode::BadRequest,
@@ -611,7 +594,6 @@ impl KeyExchangeServer {
 
                 result
             }
-            #[cfg(feature = "nts-pool")]
             Request::FixedKey {
                 authentication,
                 c2s_key,
@@ -648,7 +630,6 @@ impl KeyExchangeServer {
 
                 Ok(())
             }
-            #[cfg(feature = "nts-pool")]
             Request::Support {
                 authentication,
                 wants_protocols,
@@ -679,7 +660,6 @@ impl KeyExchangeServer {
 
                 Ok(())
             }
-            #[cfg(feature = "nts-pool")]
             Request::FixedKey { .. } | Request::Support { .. } => {
                 ErrorResponse {
                     errorcode: ErrorCode::BadRequest,
@@ -761,7 +741,6 @@ mod tests {
                 accepted_versions: vec![NtpVersion::V4],
                 server: None,
                 port: None,
-                #[cfg(feature = "nts-pool")]
                 pool_authentication_tokens: vec![],
             })
             .unwrap();
@@ -820,7 +799,6 @@ mod tests {
                 accepted_versions: vec![NtpVersion::V5],
                 server: None,
                 port: None,
-                #[cfg(feature = "nts-pool")]
                 pool_authentication_tokens: vec![],
             })
             .unwrap();
@@ -879,7 +857,6 @@ mod tests {
                 accepted_versions: vec![NtpVersion::V4, NtpVersion::V5],
                 server: None,
                 port: None,
-                #[cfg(feature = "nts-pool")]
                 pool_authentication_tokens: vec![],
             })
             .unwrap();
@@ -938,7 +915,6 @@ mod tests {
                 accepted_versions: vec![NtpVersion::V4],
                 server: None,
                 port: None,
-                #[cfg(feature = "nts-pool")]
                 pool_authentication_tokens: vec![],
             })
             .unwrap();
@@ -995,7 +971,6 @@ mod tests {
                 accepted_versions: vec![NtpVersion::V4],
                 server: None,
                 port: None,
-                #[cfg(feature = "nts-pool")]
                 pool_authentication_tokens: vec![],
             })
             .unwrap();
@@ -1042,7 +1017,6 @@ mod tests {
                 accepted_versions: vec![NtpVersion::V4],
                 server: None,
                 port: None,
-                #[cfg(feature = "nts-pool")]
                 pool_authentication_tokens: vec![],
             })
             .unwrap();
@@ -1065,7 +1039,6 @@ mod tests {
         assert!(matches!(kexresult, Err(NtsError::NoCookie)));
     }
 
-    #[cfg(feature = "nts-pool")]
     #[tokio::test]
     async fn test_keyexchange_roundtrip_fixed_key() {
         let (client, server) = tokio::io::duplex(2048);
@@ -1166,7 +1139,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "nts-pool")]
     #[tokio::test]
     async fn test_keyexchange_fixed_key_no_permission() {
         let (client, server) = tokio::io::duplex(2048);
@@ -1238,7 +1210,6 @@ mod tests {
         assert!(kexerror.is_err());
     }
 
-    #[cfg(feature = "nts-pool")]
     #[tokio::test]
     async fn test_keyexchange_roundtrip_supports() {
         let (client, server) = tokio::io::duplex(2048);
@@ -1324,7 +1295,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "nts-pool")]
     #[tokio::test]
     async fn test_keyexchange_supports_no_permission() {
         let (client, server) = tokio::io::duplex(2048);

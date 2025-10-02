@@ -10,7 +10,6 @@ use tokio::{
 use super::{config::NormalizedAddress, system::NETWORK_WAIT_PERIOD};
 
 pub mod nts;
-#[cfg(feature = "unstable_nts-pool")]
 pub mod nts_pool;
 pub mod pool;
 #[cfg(feature = "pps")]

@@ -53,7 +53,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           file: Dockerfile
-          build-args: "NTPDRS_BUILD_FEATURES=unstable_nts-pool"
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
