@@ -14,7 +14,7 @@ pub use error::V5Error;
 
 use super::RequestIdentifier;
 
-pub(crate) const DRAFT_VERSION: &str = "draft-ietf-ntp-ntpv5-05";
+pub(crate) const DRAFT_VERSION: &str = "draft-ietf-ntp-ntpv5-06";
 pub(crate) const UPGRADE_TIMESTAMP: NtpTimestamp = NtpTimestamp::from_bits(*b"NTP5DRFT");
 
 #[repr(u8)]
@@ -286,11 +286,11 @@ impl NtpHeaderV5 {
                 stratum: data[1],
                 poll: PollInterval::from_byte(data[2]),
                 precision: data[3] as i8,
-                timescale: NtpTimescale::from_bits(data[4])?,
-                era: NtpEra(data[5]),
-                flags: NtpFlags::from_bits(data[6..8].try_into().unwrap())?,
-                root_delay: NtpDuration::from_bits_time32(data[8..12].try_into().unwrap()),
-                root_dispersion: NtpDuration::from_bits_time32(data[12..16].try_into().unwrap()),
+                root_delay: NtpDuration::from_bits_time32(data[4..8].try_into().unwrap()),
+                root_dispersion: NtpDuration::from_bits_time32(data[8..12].try_into().unwrap()),
+                timescale: NtpTimescale::from_bits(data[12])?,
+                era: NtpEra(data[13]),
+                flags: NtpFlags::from_bits(data[14..16].try_into().unwrap())?,
                 server_cookie: NtpServerCookie(data[16..24].try_into().unwrap()),
                 client_cookie: NtpClientCookie(data[24..32].try_into().unwrap()),
                 receive_timestamp: NtpTimestamp::from_bits(data[32..40].try_into().unwrap()),
@@ -304,11 +304,11 @@ impl NtpHeaderV5 {
     pub(crate) fn serialize(&self, mut w: impl NonBlockingWrite) -> std::io::Result<()> {
         w.write_all(&[(self.leap.to_bits() << 6) | (Self::VERSION << 3) | self.mode.to_bits()])?;
         w.write_all(&[self.stratum, self.poll.as_byte(), self.precision as u8])?;
+        w.write_all(&self.root_delay.to_bits_time32())?;
+        w.write_all(&self.root_dispersion.to_bits_time32())?;
         w.write_all(&[self.timescale.to_bits()])?;
         w.write_all(&[self.era.0])?;
         w.write_all(&self.flags.as_bits())?;
-        w.write_all(&self.root_delay.to_bits_time32())?;
-        w.write_all(&self.root_dispersion.to_bits_time32())?;
         w.write_all(&self.server_cookie.0)?;
         w.write_all(&self.client_cookie.0)?;
         w.write_all(&self.receive_timestamp.to_bits())?;
@@ -386,6 +386,10 @@ mod tests {
             0x05,
             // Precision
             0x00,
+            // Root Delay
+            0x00, 0x00, 0x00, 0x00,
+            // Root Dispersion
+            0x00, 0x00, 0x00, 0x00,
             // Timescale (0: UTC, 1: TAI, 2: UT1, 3: Leap-smeared UTC)
             0x02,
             // Era
@@ -393,10 +397,6 @@ mod tests {
             // Flags
             0x00,
             0b0000_00_1_0,
-            // Root Delay
-            0x00, 0x00, 0x00, 0x00,
-            // Root Dispersion
-            0x00, 0x00, 0x00, 0x00,
             // Server Cookie
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             // Client Cookie
@@ -450,6 +450,10 @@ mod tests {
             0x05,
             // Precision
             0x06,
+            // Root Delay
+            0x10, 0x00, 0x00, 0x00,
+            // Root Dispersion
+            0x20, 0x00, 0x00, 0x00,
             // Timescale (0: UTC, 1: TAI, 2: UT1, 3: Leap-smeared UTC)
             0x01,
             // Era
@@ -457,10 +461,6 @@ mod tests {
             // Flags
             0x00,
             0b0000_00_1_1,
-            // Root Delay
-            0x10, 0x00, 0x00, 0x00,
-            // Root Dispersion
-            0x20, 0x00, 0x00, 0x00,
             // Server Cookie
             0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
             // Client Cookie
@@ -523,6 +523,10 @@ mod tests {
             0x05,
             // Precision
             0x06,
+            // Root Delay
+            0x10, 0x00, 0x00, 0x00,
+            // Root Dispersion
+            0x20, 0x00, 0x00, 0x00,
             // Timescale (0: UTC, 1: TAI, 2: UT1, 3: Leap-smeared UTC)
             0x01,
             // Era
@@ -530,10 +534,6 @@ mod tests {
             // Flags
             0x00,
             0b0000_00_1_0,
-            // Root Delay
-            0x10, 0x00, 0x00, 0x00,
-            // Root Dispersion
-            0x20, 0x00, 0x00, 0x00,
             // Server Cookie
             0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
             // Client Cookie
