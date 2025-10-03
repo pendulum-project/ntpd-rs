@@ -1,5 +1,5 @@
 <!-- ---
-title: NTP.TOML(5) ntpd-rs 1.6.2 | ntpd-rs
+title: NTP.TOML(5) ntpd-rs 1.7.0-alpha.20251003 | ntpd-rs
 --- -->
 
 # NAME

@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.7.0-alpha.20251003]
+
+### Added
+- Support for the experimental NTS pool is now possible with configuration changes.
+
+### Changed
+- NTPv5 draft support now targets draft 6.
+- Reworked NTS parsing to be easier to maintain.
+- Updated dependencies.
+
+### Fixed
+- Fixed bug that caused force-sync to fail when only a single server was configured.
+
 ## [1.6.2] - 2025-08-29
 
 ### Fixed
@@ -311,6 +324,7 @@ process.
 - Fixed a bug in peer dispersion calculation which resulted in overly
   pessimistic dispersion estimates.
 
+[1.7.0-alpha.20251003]: https://github.com/pendulum-project/ntpd-rs/compare/v1.6.2...1.7.0-alpha.20251003
 [1.6.2]: https://github.com/pendulum-project/ntpd-rs/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/pendulum-project/ntpd-rs/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.5.0...v1.6.0
