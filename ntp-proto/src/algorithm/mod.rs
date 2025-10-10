@@ -90,6 +90,12 @@ pub trait TimeSyncController: Sized + Send + 'static {
         measurement_noise_estimate: f64,
         period: Option<f64>,
     ) -> Self::OneWaySourceController;
+    /// Create a new two way source with given identity (used e.g. with CSPTP sources)
+    fn add_two_way_source(
+        &mut self,
+        id: Self::SourceId,
+        source_config: SourceConfig,
+    ) -> Self::NtpSourceController;
     /// Notify the controller that a previous source has gone
     fn remove_source(&mut self, id: Self::SourceId);
     /// Notify the controller that the status of a source (whether

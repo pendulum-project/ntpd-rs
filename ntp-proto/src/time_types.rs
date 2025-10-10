@@ -3,6 +3,7 @@ use rand::{
     distributions::{Distribution, Standard},
 };
 use serde::{Deserialize, Serialize, de::Unexpected};
+use statime::datastructures::common::{TimeInterval, WireTimestamp};
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::time::{Duration, Instant};
 
@@ -74,6 +75,35 @@ impl NtpTimestamp {
         NtpTimestamp {
             timestamp: u64::from_be_bytes(bits),
         }
+    }
+
+    pub fn from_statime(statime: &WireTimestamp) -> Self {
+        const EPOCH_OFFSET: u64 = (70 * 365 + 17) * 86400;
+
+        // TODO: this is definitely not a constant
+        const TAI_OFFSET: u64 = 37;
+
+        // add epoch and tai offset to get to NTP timescale
+        let seconds = statime
+            .seconds
+            .wrapping_add(EPOCH_OFFSET)
+            .wrapping_sub(TAI_OFFSET) as u32;
+
+        NtpTimestamp::from_seconds_nanos_since_ntp_era(seconds, statime.nanos)
+    }
+
+    pub fn to_statime(&self) -> WireTimestamp {
+        const EPOCH_OFFSET: u64 = (70 * 365 + 17) * 86400;
+
+        // TODO: this is definitely not a constant
+        const TAI_OFFSET: u64 = 37;
+
+        let seconds = (self.timestamp >> 32)
+            .wrapping_add(TAI_OFFSET)
+            .wrapping_sub(EPOCH_OFFSET);
+        let nanos = (((self.timestamp & 0xFFFFFFFF) * 1000000000) >> 32) as u32;
+
+        WireTimestamp { seconds, nanos }
     }
 
     pub(crate) const fn to_bits(self) -> [u8; 8] {
@@ -216,6 +246,10 @@ impl std::fmt::Debug for NtpDuration {
 impl NtpDuration {
     pub const ZERO: Self = Self { duration: 0 };
     pub const MAX: Self = Self { duration: i64::MAX };
+
+    pub fn from_statime(statime: &TimeInterval) -> Self {
+        Self::from_seconds(statime.to_nanos() / 1_000_000f64)
+    }
 
     pub(crate) const fn from_bits(bits: [u8; 8]) -> Self {
         Self {

@@ -435,6 +435,21 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug + Send + 'static> TimeSyncC
         )
     }
 
+    fn add_two_way_source(
+        &mut self,
+        id: Self::SourceId,
+        source_config: SourceConfig,
+    ) -> Self::NtpSourceController {
+        self.sources.insert(id, (None, false));
+        KalmanSourceController::new(
+            id,
+            self.algo_config,
+            None,
+            source_config,
+            AveragingBuffer::default(),
+        )
+    }
+
     fn remove_source(&mut self, id: SourceId) {
         self.sources.remove(&id);
     }

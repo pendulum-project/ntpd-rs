@@ -6,7 +6,7 @@ use std::time::Duration;
 use std::{fmt::Debug, hash::Hash};
 
 use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
-use crate::source::{NtpSourceUpdate, SourceSnapshot};
+use crate::source::{NtpSourceUpdate, SourceSnapshot, TwoWaySource};
 use crate::{NtpTimestamp, OneWaySource, OneWaySourceUpdate};
 use crate::{
     algorithm::{StateUpdate, TimeSyncController},
@@ -322,6 +322,19 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
             controller,
             nts,
         ))
+    }
+
+    #[allow(clippy::type_complexity)]
+    pub fn create_csptp_source(
+        &mut self,
+        id: SourceId,
+        source_config: SourceConfig,
+    ) -> Result<TwoWaySource<Controller::NtpSourceController>, <Controller::Clock as NtpClock>::Error>
+    {
+        self.ensure_controller_control()?;
+        let controller = self.controller.add_two_way_source(id, source_config);
+        self.sources.insert(id, None);
+        Ok(TwoWaySource::new(controller))
     }
 
     pub fn handle_source_remove(

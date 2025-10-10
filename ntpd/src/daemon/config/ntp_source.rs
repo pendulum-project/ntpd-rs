@@ -399,6 +399,12 @@ impl<'de> Deserialize<'de> for PpsSourceConfig {
     }
 }
 
+#[derive(Deserialize, Debug, PartialEq, Clone)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct CsptpSourceConfig {
+    pub address: CsptpAddress,
+}
+
 #[derive(Debug, Deserialize, PartialEq, Clone)]
 #[serde(tag = "mode")]
 pub enum NtpSourceConfig {
@@ -415,6 +421,8 @@ pub enum NtpSourceConfig {
     #[cfg(feature = "pps")]
     #[serde(rename = "pps")]
     Pps(PpsSourceConfig),
+    #[serde(rename = "csptp")]
+    Csptp(CsptpSourceConfig),
 }
 
 /// A normalized address has a host and a port part. However, the host may be
@@ -461,6 +469,9 @@ pub struct NtpAddress(pub NormalizedAddress);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NtsKeAddress(pub NormalizedAddress);
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CsptpAddress(pub NormalizedAddress);
+
 impl<'de> Deserialize<'de> for NtpAddress {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -485,6 +496,18 @@ impl<'de> Deserialize<'de> for NtsKeAddress {
     }
 }
 
+impl<'de> Deserialize<'de> for CsptpAddress {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(NormalizedAddress::from_string_csptp(s)
+            .map_err(serde::de::Error::custom)?
+            .into())
+    }
+}
+
 impl From<NormalizedAddress> for NtpAddress {
     fn from(addr: NormalizedAddress) -> Self {
         Self(addr)
@@ -492,6 +515,12 @@ impl From<NormalizedAddress> for NtpAddress {
 }
 
 impl From<NormalizedAddress> for NtsKeAddress {
+    fn from(addr: NormalizedAddress) -> Self {
+        Self(addr)
+    }
+}
+
+impl From<NormalizedAddress> for CsptpAddress {
     fn from(addr: NormalizedAddress) -> Self {
         Self(addr)
     }
@@ -513,9 +542,18 @@ impl Deref for NtpAddress {
     }
 }
 
+impl Deref for CsptpAddress {
+    type Target = NormalizedAddress;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 impl NormalizedAddress {
     const NTP_DEFAULT_PORT: u16 = 123;
     const NTS_KE_DEFAULT_PORT: u16 = 4460;
+    const CSPTP_DEFAULT_PORT: u16 = 319;
 
     /// Specifically, this adds the `:123` port if no port is specified
     pub(crate) fn from_string_ntp(address: String) -> std::io::Result<Self> {
@@ -533,6 +571,19 @@ impl NormalizedAddress {
     /// Specifically, this adds the `:4460` port if no port is specified
     fn from_string_nts_ke(address: String) -> std::io::Result<Self> {
         let (server_name, port) = Self::from_string_help(address, Self::NTS_KE_DEFAULT_PORT)?;
+
+        Ok(Self {
+            server_name,
+            port,
+
+            #[cfg(test)]
+            hardcoded_dns_resolve: HardcodedDnsResolve::default(),
+        })
+    }
+
+    /// Specifically, this adds the `:319` port if no port is specified
+    pub(crate) fn from_string_csptp(address: String) -> std::io::Result<Self> {
+        let (server_name, port) = Self::from_string_help(address, Self::CSPTP_DEFAULT_PORT)?;
 
         Ok(Self {
             server_name,
@@ -670,6 +721,7 @@ mod tests {
             NtpSourceConfig::Sock(_c) => "".to_string(),
             #[cfg(feature = "pps")]
             NtpSourceConfig::Pps(_c) => "".to_string(),
+            NtpSourceConfig::Csptp(c) => c.address.to_string(),
         }
     }
 
