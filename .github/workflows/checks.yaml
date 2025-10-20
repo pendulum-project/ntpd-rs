@@ -85,7 +85,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@f355b1dcaf1a1c56ccead97cc540a259faf4bd5a
+        uses: taiki-e/install-action@e43a5023a747770bfcb71ae048541a681714b951
         with:
           tool: cargo-llvm-cov
       - name: Rust cache
@@ -122,7 +122,7 @@ jobs:
         with:
           toolchain: nightly
       - name: Install udeps
-        uses: taiki-e/install-action@f355b1dcaf1a1c56ccead97cc540a259faf4bd5a
+        uses: taiki-e/install-action@e43a5023a747770bfcb71ae048541a681714b951
         with:
           tool: cargo-udeps
       - name: cargo udeps
@@ -216,14 +216,14 @@ jobs:
           targets: ${{matrix.target}}
 
       - name: Setup tools for cross compilation
-        uses: awalsh128/cache-apt-pkgs-action@2c09a5e66da6c8016428a2172bd76e5e4f14bb17 # v1.5.3
+        uses: awalsh128/cache-apt-pkgs-action@acb598e5ddbc6f68a970c5da0688d2f3a9f04d05 # v1.6.0
         with:
           packages: musl-tools qemu-user-static crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386
           version: 1
         if: ${{matrix.runs_on == 'ubuntu-latest'}}
 
       - name: Install bindgen-cli
-        uses: taiki-e/install-action@f355b1dcaf1a1c56ccead97cc540a259faf4bd5a
+        uses: taiki-e/install-action@e43a5023a747770bfcb71ae048541a681714b951
         with:
           tool: bindgen-cli
         if: ${{matrix.runs_on == 'ubuntu-latest'}}
@@ -289,7 +289,7 @@ jobs:
           toolchain: nightly
           components: llvm-tools-preview
       - name: Install cargo fuzz & rustfilt
-        uses: taiki-e/install-action@f355b1dcaf1a1c56ccead97cc540a259faf4bd5a
+        uses: taiki-e/install-action@e43a5023a747770bfcb71ae048541a681714b951
         with:
           tool: cargo-fuzz,rustfilt
       - name: Run `cargo fuzz`

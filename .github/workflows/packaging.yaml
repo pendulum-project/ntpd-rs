@@ -21,7 +21,7 @@ jobs:
           - i686-unknown-linux-gnu
     steps:
       - name: Setup packaging tools for cross compiled artifacts
-        uses: awalsh128/cache-apt-pkgs-action@2c09a5e66da6c8016428a2172bd76e5e4f14bb17 # v1.5.3
+        uses: awalsh128/cache-apt-pkgs-action@acb598e5ddbc6f68a970c5da0688d2f3a9f04d05 # v1.6.0
         with:
           packages: musl-tools qemu-user-static crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386
           version: 1
@@ -33,7 +33,7 @@ jobs:
           components: "llvm-tools"
 
       - name: Install cross, cargo-deb and cargo-generate-rpm
-        uses: taiki-e/install-action@f355b1dcaf1a1c56ccead97cc540a259faf4bd5a
+        uses: taiki-e/install-action@e43a5023a747770bfcb71ae048541a681714b951
         with:
           tool: cross, cargo-deb, cargo-generate-rpm
 
@@ -132,7 +132,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Create a draft release
-        uses: softprops/action-gh-release@62c96d0c4e8a889135c1f3a25910db8dbe0e85f7 # v2.3.4
+        uses: softprops/action-gh-release@6da8fa9354ddfdc4aeace5fc48d7f679b5214090 # v2.4.1
         with:
           draft: true
           fail_on_unmatched_files: true
