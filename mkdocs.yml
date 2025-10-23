@@ -36,6 +36,7 @@ nav:
     - guide/gps-pps.md
     - guide/exporting-metrics.md
     - guide/nts.md
+    - guide/nts-pool.md
     - guide/ntpv5.md
     - guide/migrating-chrony.md
     - guide/migrating-ntpd.md
