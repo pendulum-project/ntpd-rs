@@ -319,6 +319,11 @@ not tampered with.
     NTPv5 packets, you can set this value to `[4, 5]`. NTPv5 support is
     currently in beta and can still change in a backwards incompatible way.
 
+`accepted-pool-authentication-tokens` = *list of keys* (**[]**)
+:   Tokens pools can use to authenticate pool-specific requests to this NTS
+    server. Note that pool support is currently in beta and can still change in
+    a backwards incompatible way.
+
 ## `[synchronization]`
 This section of the configuration focusses on how the time information from the
 time sources is gathered and applied to the system clock.
