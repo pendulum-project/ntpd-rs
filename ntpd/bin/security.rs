@@ -1,5 +1,6 @@
 use std::process;
 use libseccomp::{ScmpAction, ScmpFilterContext, ScmpSyscall};
+use capctl::{Cap, CapSet, CapState, prctl};
 
 // Shared syscalls between all three user space tools.
 const SHARED_SYSCALLS: [&str; 39] = [
@@ -43,6 +44,30 @@ const SHARED_SYSCALLS: [&str; 39] = [
     "write", 
     "ioctl"
 ];
+
+pub fn drop_caps(needed: Option<&[Cap]>) {
+    let capset = match needed {
+        Some(needed_caps) => CapSet::from_iter(needed_caps.iter().cloned()),
+        None => CapSet::empty(),
+    };
+    let mut current = match CapState::get_current() {
+        Ok(k) => k,
+        Err(e) => {
+            eprintln!("Failed to get current capabilities: {:?}", e);
+            return;
+        }
+    };
+    current.permitted = capset.clone();
+    current.inheritable = capset.clone();
+    current.effective = capset.clone();
+    if let Err(e) = current.set_current() {
+        eprintln!("Failed to set current capabilities: {:?}", e);
+        return;
+    }
+    if let Err(e) = prctl::set_no_new_privs() {
+        eprintln!("Failed to enable no-new-privileges flag on current thread: {:?}", e)
+    }
+}
 
 pub fn seccomp_init(syscalls: Vec<&str>) {
 

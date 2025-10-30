@@ -3,8 +3,9 @@
 mod security;
 
 fn main() -> std::io::Result<std::process::ExitCode> {
-    use crate::security::seccomp_init;
+    use crate::security::{seccomp_init, drop_caps};
 
+    drop_caps(None);
     // Allowed syscalls
     let syscalls = vec![
         "clock_adjtime", 

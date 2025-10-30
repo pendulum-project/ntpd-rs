@@ -2,9 +2,15 @@
 
 mod security;
 use std::process;
+use capctl::Cap;
 
 fn main() {
-    use crate::security::seccomp_init;
+    use crate::security::{seccomp_init, drop_caps};
+
+    drop_caps(Some(&[
+        Cap::NET_BIND_SERVICE,
+        Cap::SYS_TIME,
+    ]));
     
     // Allowed syscalls
     let syscalls = vec![
