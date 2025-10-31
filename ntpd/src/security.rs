@@ -81,7 +81,7 @@ pub(crate) fn seccomp_init(syscalls: Vec<&str>) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("WARNING: Seccomp context creation failed: {}", e);
-            return;
+            process::exit(1);
         }
     };
     let c_syscalls = [&SHARED_SYSCALLS[..], &syscalls[..]].concat();
