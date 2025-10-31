@@ -20,6 +20,8 @@ use std::{error::Error, path::PathBuf};
 use ::tracing::info;
 pub use config::Config;
 use ntp_proto::KalmanClockController;
+use crate::security::{drop_caps, seccomp_init};
+use capctl::Cap;
 pub use observer::ObservableState;
 pub use system::spawn;
 use tokio::runtime::Builder;
@@ -32,6 +34,38 @@ use self::tracing::LogLevel;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub fn main() -> Result<(), Box<dyn Error>> {
+
+    // Drop capabilities
+    drop_caps(Some(&[
+        Cap::NET_BIND_SERVICE,
+        Cap::SYS_TIME,
+    ]));
+    
+    // Allowed syscalls
+    let syscalls = vec![
+        "chmod", 
+        "clock_adjtime", 
+        "clone3", 
+        "clone", 
+        "futex", 
+        "getdents64", 
+        "getsockname", 
+        "getsockopt", 
+        "madvise", 
+        "newfstatat", 
+        "recvmsg", 
+        "rseq", 
+        "unlink", 
+        "writev", 
+        "prctl", 
+        "clock_nanosleep", 
+        "exit_group", 
+        "uname", 
+        "sendmmsg", 
+        "exit"
+    ];
+    seccomp_init(syscalls);
+
     let options = NtpDaemonOptions::try_parse_from(std::env::args())?;
 
     match options.action {
