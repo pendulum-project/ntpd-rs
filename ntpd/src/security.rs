@@ -29,7 +29,7 @@ const SHARED_SYSCALLS: [&str; 39] = [
     "pread64", 
     "prlimit64", 
     "rseq", 
-    "read", 
+    "read",
     "recvfrom", 
     "rt_sigaction", 
     "rt_sigprocmask", 
@@ -41,11 +41,17 @@ const SHARED_SYSCALLS: [&str; 39] = [
     "sigaltstack", 
     "socket", 
     "statx", 
-    "write", 
-    "ioctl"
+    "write",
+    "ioctl",
 ];
 
-pub fn drop_caps(needed: Option<&[Cap]>) {
+/// Drops unnecessary capabilities from the current process.
+///
+/// Removes all capabilities from the current process except for those 
+/// specified in the `needed` argument. If no capabilities are provided (`None`), 
+/// the process will have no capabilities at all.
+///
+pub(crate) fn drop_caps(needed: Option<&[Cap]>) {
     let capset = match needed {
         Some(needed_caps) => CapSet::from_iter(needed_caps.iter().cloned()),
         None => CapSet::empty(),
@@ -62,27 +68,27 @@ pub fn drop_caps(needed: Option<&[Cap]>) {
     current.effective = capset.clone();
     if let Err(e) = current.set_current() {
         eprintln!("Failed to set current capabilities: {:?}", e);
-        return;
+        process::exit(1);
     }
     if let Err(e) = prctl::set_no_new_privs() {
         eprintln!("Failed to enable no-new-privileges flag on current thread: {:?}", e)
     }
 }
 
-pub fn seccomp_init(syscalls: Vec<&str>) {
-
+pub(crate) fn seccomp_init(syscalls: Vec<&str>) {
+    // Initialize the filter setting the default action to KillProcess. If a bad syscall Is made the process Is terminated by SIGSYS.
     let mut ctx = match ScmpFilterContext::new(ScmpAction::KillProcess) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("Seccomp context creation failed: {}", e);
-            process::exit(1);
+            eprintln!("WARNING: Seccomp context creation failed: {}", e);
+            return;
         }
     };
     let c_syscalls = [&SHARED_SYSCALLS[..], &syscalls[..]].concat();
 
     for name in c_syscalls {
         if let Err(e) = ctx.add_rule(ScmpAction::Allow, match ScmpSyscall::from_name(name) {
-            Ok(s) => s,
+            Ok(k) => k,
             Err(e) => {
                 eprintln!("Invalid syscall name {}: {}", name, e);
                 process::exit(1);
@@ -93,7 +99,7 @@ pub fn seccomp_init(syscalls: Vec<&str>) {
         }
     }
     if let Err(e) = ctx.load() {
-        eprintln!("Seccomp load failed: {}", e);
+        eprintln!("WARNING: Seccomp load failed: {}", e);
         process::exit(1);
     }
 }
