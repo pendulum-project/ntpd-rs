@@ -2,6 +2,7 @@
 
 mod ctl;
 mod daemon;
+mod security;
 mod force_sync;
 mod metrics;
 
