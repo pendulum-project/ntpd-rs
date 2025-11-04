@@ -67,11 +67,12 @@ pub(crate) fn drop_caps(needed: Option<&[Cap]>) {
     current.inheritable = capset.clone();
     current.effective = capset.clone();
     if let Err(e) = current.set_current() {
-        eprintln!("Failed to set current capabilities: {:?}", e);
-        process::exit(1);
+        eprintln!("WARNING: Failed to set current capabilities: {:?}", e);
+        return;
     }
     if let Err(e) = prctl::set_no_new_privs() {
-        eprintln!("Failed to enable no-new-privileges flag on current thread: {:?}", e)
+        eprintln!("WARNING: Failed to enable no-new-privileges flag on current thread: {:?}", e);
+	return;
     }
 }
 
@@ -81,7 +82,7 @@ pub(crate) fn seccomp_init(syscalls: Vec<&str>) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("WARNING: Seccomp context creation failed: {}", e);
-            process::exit(1);
+            return;
         }
     };
     let c_syscalls = [&SHARED_SYSCALLS[..], &syscalls[..]].concat();
@@ -90,16 +91,16 @@ pub(crate) fn seccomp_init(syscalls: Vec<&str>) {
         if let Err(e) = ctx.add_rule(ScmpAction::Allow, match ScmpSyscall::from_name(name) {
             Ok(k) => k,
             Err(e) => {
-                eprintln!("Invalid syscall name {}: {}", name, e);
-                process::exit(1);
+                eprintln!("ERROR: Invalid syscall name {}: {}", name, e);
+		process::exit(1);
             }
         }) {
-            eprintln!("Failed to add rule for {}: {}", name, e);
-            process::exit(1);
+            eprintln!("WARNING: Failed to add rule for {}: {}", name, e);
+	    return;
         }
     }
     if let Err(e) = ctx.load() {
         eprintln!("WARNING: Seccomp load failed: {}", e);
-        process::exit(1);
+	return;
     }
 }
