@@ -13,7 +13,7 @@ use std::{
 
 use crate::{
     daemon::{ObservableState, config::CliArg, initialize_logging_parse_config},
-    security::seccomp_init,
+    security::{seccomp_init, drop_caps},
 };
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -114,6 +114,10 @@ impl NtpMetricsExporterOptions {
 }
 
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
+
+    // Drop capabilities
+    drop_caps(None);
+
     // Initialize seccomp
     seccomp_init(vec!["accept4"]);
 

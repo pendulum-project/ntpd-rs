@@ -24,7 +24,8 @@ pub use observer::ObservableState;
 pub use system::spawn;
 use tokio::runtime::Builder;
 use tracing_subscriber::util::SubscriberInitExt;
-use crate::security::seccomp_init;
+use crate::security::{seccomp_init, drop_caps};
+use capctl::Cap;
 
 use config::NtpDaemonOptions;
 
@@ -33,6 +34,13 @@ use self::tracing::LogLevel;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub fn main() -> Result<(), Box<dyn Error>> {
+
+    // Drop capablities
+    drop_caps(Some(&[
+        Cap::NET_BIND_SERVICE,
+        Cap::SYS_TIME,
+    ]));
+
     // Allowed syscalls
     let syscalls = vec![
         "chmod", 
