@@ -579,6 +579,7 @@ impl KeyExchangeServer {
                             cookies: cookies.into(),
                             server: self.server.as_deref().map(|v| v.into()),
                             port: self.port,
+                            keep_alive: false,
                         };
 
                         // Serialize response first to a buffer to ensure it is most likely to be sent as a
@@ -624,6 +625,7 @@ impl KeyExchangeServer {
                     cookies: cookies.into(),
                     server: self.server.as_deref().map(|v| v.into()),
                     port: self.port,
+                    keep_alive: false,
                 };
 
                 response.serialize(&mut io).await?;
@@ -1030,6 +1032,7 @@ mod tests {
                 cookies: [].as_slice().into(),
                 server: None,
                 port: None,
+                keep_alive: false,
             }
             .serialize(&mut server)
             .await

@@ -288,6 +288,7 @@ pub struct KeyExchangeResponse<'a> {
     pub cookies: Cow<'a, [Cow<'a, [u8]>]>,
     pub server: Option<Cow<'a, str>>,
     pub port: Option<u16>,
+    pub keep_alive: bool,
 }
 
 impl KeyExchangeResponse<'_> {
@@ -299,6 +300,7 @@ impl KeyExchangeResponse<'_> {
         let mut cookies = vec![];
         let mut server = None;
         let mut port = None;
+        let mut keep_alive = false;
 
         loop {
             let record = NtsRecord::parse(&mut reader).await?;
@@ -346,6 +348,7 @@ impl KeyExchangeResponse<'_> {
                     }
                     port = Some(received_port);
                 }
+                NtsRecord::KeepAlive => keep_alive = true,
                 // Error
                 NtsRecord::Error { errorcode } => return Err(NtsError::Error(errorcode)),
                 // Warning
@@ -358,7 +361,7 @@ impl KeyExchangeResponse<'_> {
                 }
                 // Ignored
                 NtsRecord::Unknown { .. } => {}
-                NtsRecord::KeepAlive | NtsRecord::Authentication { .. } => {}
+                NtsRecord::Authentication { .. } => {}
                 // Not allowed
                 NtsRecord::NtpServerDeny { .. }
                 | NtsRecord::FixedKeyRequest { .. }
@@ -374,6 +377,7 @@ impl KeyExchangeResponse<'_> {
                 cookies: cookies.into(),
                 server,
                 port,
+                keep_alive,
             })
         } else {
             Err(NtsError::Invalid)
@@ -406,6 +410,9 @@ impl KeyExchangeResponse<'_> {
         }
         if let Some(port) = self.port {
             NtsRecord::Port { port }.serialize(&mut writer).await?;
+        }
+        if self.keep_alive {
+            NtsRecord::KeepAlive.serialize(&mut writer).await?;
         }
         NtsRecord::EndOfMessage.serialize(&mut writer).await?;
 
@@ -1835,6 +1842,7 @@ mod tests {
         assert_eq!(response.cookies, [].as_slice() as &[Cow<'static, [u8]>]);
         assert_eq!(response.port, None);
         assert_eq!(response.server, None);
+        assert!(!response.keep_alive);
 
         let Ok(response) = pwrap(
             KeyExchangeResponse::parse,
@@ -1854,6 +1862,7 @@ mod tests {
         );
         assert_eq!(response.port, None);
         assert_eq!(response.server, None);
+        assert!(!response.keep_alive);
 
         let Ok(response) = pwrap(
             KeyExchangeResponse::parse,
@@ -1868,6 +1877,7 @@ mod tests {
         assert_eq!(response.cookies, [].as_slice() as &[Cow<'static, [u8]>]);
         assert_eq!(response.port, None);
         assert_eq!(response.server, Some("hi".into()));
+        assert!(!response.keep_alive);
 
         let Ok(response) = pwrap(
             KeyExchangeResponse::parse,
@@ -1882,6 +1892,7 @@ mod tests {
         assert_eq!(response.cookies, [].as_slice() as &[Cow<'static, [u8]>]);
         assert_eq!(response.port, Some(5));
         assert_eq!(response.server, None);
+        assert!(!response.keep_alive);
 
         let Ok(response) = pwrap(
             KeyExchangeResponse::parse,
@@ -1901,6 +1912,27 @@ mod tests {
         );
         assert_eq!(response.port, Some(5));
         assert_eq!(response.server, Some("hi".into()));
+        assert!(!response.keep_alive);
+
+        let Ok(response) = pwrap(
+            KeyExchangeResponse::parse,
+            &[
+                0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 17, 0x80, 5, 0, 2, 1, 2, 0x80, 5, 0, 2, 3,
+                4, 0x80, 6, 0, 2, b'h', b'i', 0x80, 7, 0, 2, 0, 5, 0x40, 0, 0, 0, 0x80, 0, 0, 0,
+            ],
+        ) else {
+            panic!("Expected succesful parse");
+        };
+        assert_eq!(response.protocol, NextProtocol::NTPv4);
+        assert_eq!(response.algorithm, AeadAlgorithm::AeadAesSivCmac512);
+        assert_eq!(
+            response.cookies,
+            [[1u8, 2].as_slice().into(), [3u8, 4].as_slice().into()].as_slice()
+                as &[Cow<'static, [u8]>]
+        );
+        assert_eq!(response.port, Some(5));
+        assert_eq!(response.server, Some("hi".into()));
+        assert!(response.keep_alive);
     }
 
     #[test]
@@ -2044,6 +2076,7 @@ mod tests {
         assert_eq!(response.cookies, [].as_slice() as &[Cow<'static, [u8]>]);
         assert_eq!(response.port, None);
         assert_eq!(response.server, None);
+        assert!(!response.keep_alive);
     }
 
     #[test]
@@ -2090,7 +2123,8 @@ mod tests {
                     algorithm: AeadAlgorithm::Unknown(4),
                     cookies: [].as_slice().into(),
                     server: None,
-                    port: None
+                    port: None,
+                    keep_alive: false,
                 },
                 &mut buf
             )
@@ -2112,7 +2146,8 @@ mod tests {
                         .as_slice()
                         .into(),
                     server: None,
-                    port: None
+                    port: None,
+                    keep_alive: false,
                 },
                 &mut buf
             )
@@ -2135,7 +2170,8 @@ mod tests {
                     algorithm: AeadAlgorithm::Unknown(4),
                     cookies: [].as_slice().into(),
                     server: Some("hi".into()),
-                    port: None
+                    port: None,
+                    keep_alive: false,
                 },
                 &mut buf
             )
@@ -2157,7 +2193,8 @@ mod tests {
                     algorithm: AeadAlgorithm::Unknown(4),
                     cookies: [].as_slice().into(),
                     server: None,
-                    port: Some(15)
+                    port: Some(15),
+                    keep_alive: false,
                 },
                 &mut buf
             )
@@ -2181,7 +2218,8 @@ mod tests {
                         .as_slice()
                         .into(),
                     server: Some("hi".into()),
-                    port: Some(15)
+                    port: Some(15),
+                    keep_alive: false,
                 },
                 &mut buf
             )
@@ -2192,6 +2230,32 @@ mod tests {
             [
                 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 4, 0, 5, 0, 3, 1, 2, 3, 0, 5, 0, 2, 4, 5,
                 0x80, 6, 0, 2, b'h', b'i', 0x80, 7, 0, 2, 0, 15, 0x80, 0, 0, 0
+            ]
+        );
+
+        let mut buf = vec![];
+        assert!(
+            swrap(
+                KeyExchangeResponse::serialize,
+                KeyExchangeResponse {
+                    protocol: NextProtocol::NTPv4,
+                    algorithm: AeadAlgorithm::Unknown(4),
+                    cookies: [[1, 2, 3].as_slice().into(), [4, 5].as_slice().into()]
+                        .as_slice()
+                        .into(),
+                    server: Some("hi".into()),
+                    port: Some(15),
+                    keep_alive: true,
+                },
+                &mut buf
+            )
+            .is_ok()
+        );
+        assert_eq!(
+            buf,
+            [
+                0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 4, 0, 5, 0, 3, 1, 2, 3, 0, 5, 0, 2, 4, 5,
+                0x80, 6, 0, 2, b'h', b'i', 0x80, 7, 0, 2, 0, 15, 0x40, 0, 0, 0, 0x80, 0, 0, 0
             ]
         );
     }
