@@ -166,6 +166,8 @@ async fn run_key_exchange_server(
                             .await
                         {
                             tracing::debug!(?err, ?source_addr, "Long term NTS KE failed");
+                        } else {
+                            tracing::debug!("Long lived connection closed by remote");
                         }
                         drop(longlived_permit);
                     }
