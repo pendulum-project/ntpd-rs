@@ -600,6 +600,7 @@ impl KeyExchangeServer {
                 s2c_key,
                 algorithm,
                 protocol,
+                keep_alive: _,
             } if self
                 .pool_authentication_tokens
                 .iter()
@@ -634,6 +635,7 @@ impl KeyExchangeServer {
                 authentication,
                 wants_protocols,
                 wants_algorithms,
+                keep_alive: _,
             } if self
                 .pool_authentication_tokens
                 .iter()
