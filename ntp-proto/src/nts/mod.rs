@@ -480,6 +480,8 @@ impl KeyExchangeServer {
         mut io: tokio_rustls::server::TlsStream<T>,
         mut get_keyset: impl FnMut() -> U,
     ) -> Result<(), NtsError> {
+        tracing::debug!("Longterm handling started for connection");
+
         loop {
             let request = match Request::parse(&mut io).await {
                 Ok(request) => request,
@@ -527,6 +529,8 @@ impl KeyExchangeServer {
                     protocol,
                     keep_alive,
                 } => {
+                    tracing::debug!("Received fixedkey request on longterm connection");
+
                     let cookie = DecodedServerCookie {
                         algorithm,
                         s2c: s2c_key,
@@ -565,6 +569,8 @@ impl KeyExchangeServer {
                     wants_algorithms,
                     keep_alive,
                 } => {
+                    tracing::debug!("Received support request on longterm connection");
+
                     use crate::nts::messages::SupportsResponse;
                     use std::ops::Deref;
 
@@ -589,6 +595,7 @@ impl KeyExchangeServer {
                     }
                 }
                 Request::KeyExchange { .. } => {
+                    tracing::debug!("Received invalid key exchange request on longterm connection");
                     ErrorResponse {
                         errorcode: ErrorCode::BadRequest,
                     }
@@ -598,6 +605,10 @@ impl KeyExchangeServer {
                     return Err(NtsError::Invalid);
                 }
             }
+
+            tracing::debug!(
+                "Succesfully handled request on long term connection, waiting for next"
+            );
         }
     }
 
