@@ -85,6 +85,11 @@ async fn run_key_exchange_server(
     let timeout = std::time::Duration::from_millis(ke_config.key_exchange_timeout_ms);
     let key_exchange_server = Arc::new(key_exchange_server);
 
+    // Long lived permits cannot be reinitialized. This means we do risk running out should error
+    // conditions cause some to be lost. However, that is an acceptable risk as this is primarily
+    // intended as an optimization, and not critical for functioning of the server.
+    let longlivedpermits = Arc::new(tokio::sync::Semaphore::new(ke_config.longlived_connections));
+
     loop {
         let listener = match TcpListener::bind(&ke_config.listen).await {
             Ok(listener) => listener,
@@ -138,18 +143,32 @@ async fn run_key_exchange_server(
             };
             let keyset = keyset.borrow().clone();
             let key_exchange_server = key_exchange_server.clone();
+            let longlivedpermits = longlivedpermits.clone();
 
             let fut = async move {
-                key_exchange_server
-                    .handle_connection(stream, &keyset, || None::<()>)
-                    .await
+                let result = key_exchange_server
+                    .handle_connection(stream, &keyset, || {
+                        longlivedpermits.try_acquire_owned().ok()
+                    })
+                    .await;
+                // make key exchange server and keyset available if this has become a long-lived connection.
+                result.map(|result| result.map(|result| (result, (key_exchange_server, keyset))))
             };
 
             tokio::spawn(async move {
                 match tokio::time::timeout(timeout, fut).await {
                     Err(_) => tracing::debug!(?source_addr, "NTS KE timed out"),
                     Ok(Err(err)) => tracing::debug!(?err, ?source_addr, "NTS KE failed"),
-                    Ok(Ok(_)) => tracing::debug!(?source_addr, "NTS KE completed"),
+                    Ok(Ok(None)) => tracing::debug!(?source_addr, "NTS KE completed"),
+                    Ok(Ok(Some(((longlived_permit, io), (key_exchange_server, keyset))))) => {
+                        if let Err(err) = key_exchange_server
+                            .handle_longterm(io, || keyset.clone())
+                            .await
+                        {
+                            tracing::debug!(?err, ?source_addr, "Long term NTS KE failed");
+                        }
+                        drop(longlived_permit);
+                    }
                 }
                 drop(permit);
             });
@@ -233,6 +252,7 @@ mod tests {
             accepted_pool_authentication_tokens: vec![],
             key_exchange_timeout_ms: 10000,
             concurrent_connections: 1,
+            longlived_connections: 0,
             listen: SocketAddr::new("0.0.0.0".parse().unwrap(), port),
             ntp_port: None,
             ntp_server: None,
@@ -315,6 +335,7 @@ mod tests {
             accepted_pool_authentication_tokens: vec![],
             key_exchange_timeout_ms: 1000,
             concurrent_connections: 512,
+            longlived_connections: 5,
             listen: SocketAddr::new("0.0.0.0".parse().unwrap(), port),
             ntp_port: Some(568),
             ntp_server: Some("jantje".into()),

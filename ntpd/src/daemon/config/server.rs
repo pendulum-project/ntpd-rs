@@ -191,25 +191,64 @@ impl From<ServerConfig> for ntp_proto::ServerConfig {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct NtsKeConfig {
     pub certificate_chain_path: PathBuf,
     pub private_key_path: PathBuf,
-    #[serde(default)]
     pub accepted_pool_authentication_tokens: Vec<String>,
-    #[serde(default = "default_nts_ke_timeout")]
     pub key_exchange_timeout_ms: u64,
-    #[serde(default = "default_concurrent_connections")]
     pub concurrent_connections: usize,
+    pub longlived_connections: usize,
     pub listen: SocketAddr,
     pub ntp_port: Option<u16>,
     pub ntp_server: Option<String>,
-    #[serde(
-        default = "default_accept_ntp_versions",
-        deserialize_with = "deserialize_accepted_ntp_versions_for_nts"
-    )]
     pub accept_ntp_versions: Vec<NtpVersion>,
+}
+
+impl<'de> Deserialize<'de> for NtsKeConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "kebab-case", deny_unknown_fields)]
+        struct NtsKeConfigRaw {
+            certificate_chain_path: PathBuf,
+            private_key_path: PathBuf,
+            #[serde(default)]
+            accepted_pool_authentication_tokens: Vec<String>,
+            #[serde(default = "default_nts_ke_timeout")]
+            key_exchange_timeout_ms: u64,
+            #[serde(default = "default_concurrent_connections")]
+            concurrent_connections: usize,
+            #[serde(default)]
+            longlived_connections: Option<usize>,
+            listen: SocketAddr,
+            ntp_port: Option<u16>,
+            ntp_server: Option<String>,
+            #[serde(
+                default = "default_accept_ntp_versions",
+                deserialize_with = "deserialize_accepted_ntp_versions_for_nts"
+            )]
+            accept_ntp_versions: Vec<NtpVersion>,
+        }
+
+        let raw = NtsKeConfigRaw::deserialize(deserializer)?;
+        Ok(NtsKeConfig {
+            certificate_chain_path: raw.certificate_chain_path,
+            private_key_path: raw.private_key_path,
+            accepted_pool_authentication_tokens: raw.accepted_pool_authentication_tokens,
+            key_exchange_timeout_ms: raw.key_exchange_timeout_ms,
+            concurrent_connections: raw.concurrent_connections,
+            longlived_connections: raw
+                .longlived_connections
+                .unwrap_or(raw.concurrent_connections / 10),
+            listen: raw.listen,
+            ntp_port: raw.ntp_port,
+            ntp_server: raw.ntp_server,
+            accept_ntp_versions: raw.accept_ntp_versions,
+        })
+    }
 }
 
 fn default_accept_ntp_versions() -> Vec<NtpVersion> {

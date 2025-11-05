@@ -383,9 +383,15 @@ Timeout in milliseconds for how long a key exchange may take.
 If the timeout is exceeded the connection will be dropped.
 .TP
 \f[V]concurrent-connections\f[R] = \f[I]number\f[R] (\f[B]512\f[R])
-Maximum number of concurrent connections the key exchange server will
-handle.
+Maximum number of total concurrent connections the key exchange server
+will handle.
 Any connections above the threshold will be held in an OS level queue.
+.TP
+\f[V]longlived-connections\f[R] = \f[I]number\f[R] (\f[B]\f[VB]concurrent-connections\f[B]/10\f[R])
+Maximum number of concurrent longlived connections from nts pools the
+key exchange server will handle.
+Note that pool support is currently in beta and can still change in
+backwards incompatible ways.
 .PP
 \f[V]ntp-port\f[R] = \f[I]port\f[R] Port number the key exchange server
 should instruct clients to use.
