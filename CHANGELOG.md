@@ -1,5 +1,10 @@
 # Changelog
 
+## [main]
+
+### Added
+- Support for keeping connections to experimental NTS pools alive longterm, saving resource usage for pools.
+
 ## [1.7.0-alpha.20251003]
 
 ### Added
@@ -324,6 +329,7 @@ process.
 - Fixed a bug in peer dispersion calculation which resulted in overly
   pessimistic dispersion estimates.
 
+[main]: https://github.com/pendulum-project/ntpd-rs/compare/v1.7.0-alpha.20251003...main
 [1.7.0-alpha.20251003]: https://github.com/pendulum-project/ntpd-rs/compare/v1.6.2...1.7.0-alpha.20251003
 [1.6.2]: https://github.com/pendulum-project/ntpd-rs/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/pendulum-project/ntpd-rs/compare/v1.6.0...v1.6.1
