@@ -657,6 +657,7 @@ impl KeyExchangeServer {
                     } else {
                         None
                     },
+                    keep_alive: false,
                 }
                 .serialize(&mut io)
                 .await?;

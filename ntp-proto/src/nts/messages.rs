@@ -481,6 +481,7 @@ impl ErrorResponse {
 pub struct SupportsResponse<'a> {
     pub algorithms: Option<Cow<'a, [AlgorithmDescription]>>,
     pub protocols: Option<Cow<'a, [NextProtocol]>>,
+    pub keep_alive: bool,
 }
 
 impl SupportsResponse<'_> {
@@ -501,6 +502,9 @@ impl SupportsResponse<'_> {
             }
             .serialize(&mut writer)
             .await?;
+        }
+        if self.keep_alive {
+            NtsRecord::KeepAlive.serialize(&mut writer).await?;
         }
         NtsRecord::EndOfMessage.serialize(&mut writer).await?;
 
@@ -2272,7 +2276,8 @@ mod tests {
                             .as_slice()
                             .into()
                     ),
-                    protocols: None
+                    protocols: None,
+                    keep_alive: false,
                 },
                 &mut buf
             )
@@ -2291,6 +2296,7 @@ mod tests {
                             .into()
                     ),
                     protocols: Some([NextProtocol::NTPv4].as_slice().into()),
+                    keep_alive: false,
                 },
                 &mut buf
             )
@@ -2310,12 +2316,28 @@ mod tests {
                 SupportsResponse {
                     algorithms: None,
                     protocols: Some([NextProtocol::NTPv4].as_slice().into()),
+                    keep_alive: false,
                 },
                 &mut buf
             )
             .is_ok()
         );
         assert_eq!(buf, [0xC0, 4, 0, 2, 0, 0, 0x80, 0, 0, 0]);
+
+        let mut buf = vec![];
+        assert!(
+            swrap(
+                SupportsResponse::serialize,
+                SupportsResponse {
+                    algorithms: None,
+                    protocols: Some([NextProtocol::NTPv4].as_slice().into()),
+                    keep_alive: true,
+                },
+                &mut buf
+            )
+            .is_ok()
+        );
+        assert_eq!(buf, [0xC0, 4, 0, 2, 0, 0, 0x40, 0, 0, 0, 0x80, 0, 0, 0]);
     }
 
     #[test]
