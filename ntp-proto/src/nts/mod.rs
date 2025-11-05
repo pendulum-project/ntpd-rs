@@ -475,11 +475,138 @@ impl KeyExchangeServer {
         })
     }
 
-    pub async fn handle_connection(
+    pub async fn handle_longterm<T: AsyncRead + AsyncWrite + Unpin, U: AsRef<KeySet>>(
         &self,
-        io: impl AsyncRead + AsyncWrite + Unpin,
-        keyset: &KeySet,
+        mut io: tokio_rustls::server::TlsStream<T>,
+        mut get_keyset: impl FnMut() -> U,
     ) -> Result<(), NtsError> {
+        loop {
+            let request = match Request::parse(&mut io).await {
+                Ok(request) => request,
+                Err(NtsError::IO(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                    let _ = io.shutdown().await;
+                    return Ok(());
+                }
+                Err(NtsError::Invalid) => {
+                    ErrorResponse {
+                        errorcode: ErrorCode::BadRequest,
+                    }
+                    .serialize(&mut io)
+                    .await?;
+                    io.shutdown().await?;
+                    return Err(NtsError::Invalid);
+                }
+                Err(NtsError::NotPermitted) => {
+                    ErrorResponse {
+                        errorcode: ErrorCode::BadRequest,
+                    }
+                    .serialize(&mut io)
+                    .await?;
+                    io.shutdown().await?;
+                    return Err(NtsError::NotPermitted);
+                }
+                Err(NtsError::UnrecognizedCriticalRecord) => {
+                    ErrorResponse {
+                        errorcode: ErrorCode::UnrecognizedCriticalRecord,
+                    }
+                    .serialize(&mut io)
+                    .await?;
+                    io.shutdown().await?;
+                    return Err(NtsError::Invalid);
+                }
+                Err(v) => return Err(v),
+            };
+
+            match request {
+                // No need to check the authentication, as that was already done on the initial request.
+                Request::FixedKey {
+                    authentication: _,
+                    c2s_key,
+                    s2c_key,
+                    algorithm,
+                    protocol,
+                    keep_alive,
+                } => {
+                    let cookie = DecodedServerCookie {
+                        algorithm,
+                        s2c: s2c_key,
+                        c2s: c2s_key,
+                    };
+
+                    let mut cookies = Vec::with_capacity(DEFAULT_NUMBER_OF_COOKIES);
+
+                    let keyset = get_keyset();
+
+                    for _ in 0..DEFAULT_NUMBER_OF_COOKIES {
+                        cookies.push(keyset.as_ref().encode_cookie(&cookie).into());
+                    }
+
+                    drop(keyset);
+
+                    let response = KeyExchangeResponse {
+                        protocol,
+                        algorithm,
+                        cookies: cookies.into(),
+                        server: self.server.as_deref().map(|v| v.into()),
+                        port: self.port,
+                        keep_alive,
+                    };
+
+                    response.serialize(&mut io).await?;
+                    if !keep_alive {
+                        io.shutdown().await?;
+                        return Ok(());
+                    }
+                }
+                // No need to check the authentication, as that was already done on the initial request.
+                Request::Support {
+                    authentication: _,
+                    wants_protocols,
+                    wants_algorithms,
+                    keep_alive,
+                } => {
+                    use crate::nts::messages::SupportsResponse;
+                    use std::ops::Deref;
+
+                    SupportsResponse {
+                        algorithms: if wants_algorithms {
+                            Some(self.algorithms.deref().into())
+                        } else {
+                            None
+                        },
+                        protocols: if wants_protocols {
+                            Some(self.protocols.deref().into())
+                        } else {
+                            None
+                        },
+                        keep_alive: false,
+                    }
+                    .serialize(&mut io)
+                    .await?;
+                    if !keep_alive {
+                        io.shutdown().await?;
+                        return Ok(());
+                    }
+                }
+                Request::KeyExchange { .. } => {
+                    ErrorResponse {
+                        errorcode: ErrorCode::BadRequest,
+                    }
+                    .serialize(&mut io)
+                    .await?;
+                    io.shutdown().await?;
+                    return Err(NtsError::Invalid);
+                }
+            }
+        }
+    }
+
+    pub async fn handle_connection<IO: AsyncRead + AsyncWrite + Unpin, P>(
+        &self,
+        io: IO,
+        keyset: &KeySet,
+        get_keepalive_permit: impl FnOnce() -> Option<P>,
+    ) -> Result<Option<(P, tokio_rustls::server::TlsStream<IO>)>, NtsError> {
         let mut io = self.acceptor.accept(io).await?;
 
         let request = match Request::parse(&mut io).await {
@@ -588,7 +715,7 @@ impl KeyExchangeServer {
                         response.serialize(&mut req_buf).await?;
                         io.write_all(&req_buf).await?;
 
-                        Ok(())
+                        Ok(None)
                     }
                 };
                 io.shutdown().await?;
@@ -601,7 +728,7 @@ impl KeyExchangeServer {
                 s2c_key,
                 algorithm,
                 protocol,
-                keep_alive: _,
+                keep_alive,
             } if self
                 .pool_authentication_tokens
                 .iter()
@@ -619,25 +746,34 @@ impl KeyExchangeServer {
                     cookies.push(keyset.encode_cookie(&cookie).into());
                 }
 
+                let permit = if keep_alive {
+                    get_keepalive_permit()
+                } else {
+                    None
+                };
+
                 let response = KeyExchangeResponse {
                     protocol,
                     algorithm,
                     cookies: cookies.into(),
                     server: self.server.as_deref().map(|v| v.into()),
                     port: self.port,
-                    keep_alive: false,
+                    keep_alive: permit.is_some(),
                 };
 
                 response.serialize(&mut io).await?;
-                io.shutdown().await?;
-
-                Ok(())
+                if let Some(permit) = permit {
+                    Ok(Some((permit, io)))
+                } else {
+                    io.shutdown().await?;
+                    Ok(None)
+                }
             }
             Request::Support {
                 authentication,
                 wants_protocols,
                 wants_algorithms,
-                keep_alive: _,
+                keep_alive,
             } if self
                 .pool_authentication_tokens
                 .iter()
@@ -645,6 +781,12 @@ impl KeyExchangeServer {
             {
                 use crate::nts::messages::SupportsResponse;
                 use std::ops::Deref;
+
+                let permit = if keep_alive {
+                    get_keepalive_permit()
+                } else {
+                    None
+                };
 
                 SupportsResponse {
                     algorithms: if wants_algorithms {
@@ -657,13 +799,16 @@ impl KeyExchangeServer {
                     } else {
                         None
                     },
-                    keep_alive: false,
+                    keep_alive: permit.is_some(),
                 }
                 .serialize(&mut io)
                 .await?;
-                io.shutdown().await?;
-
-                Ok(())
+                if let Some(permit) = permit {
+                    Ok(Some((permit, io)))
+                } else {
+                    io.shutdown().await?;
+                    Ok(None)
+                }
             }
             Request::FixedKey { .. } | Request::Support { .. } => {
                 ErrorResponse {
@@ -750,7 +895,11 @@ mod tests {
             })
             .unwrap();
             let keyset = KeySet::new();
-            assert!(kex.handle_connection(server, &keyset).await.is_ok());
+            assert!(
+                kex.handle_connection(server, &keyset, || None::<()>)
+                    .await
+                    .is_ok()
+            );
             keyset
         };
 
@@ -808,7 +957,11 @@ mod tests {
             })
             .unwrap();
             let keyset = KeySet::new();
-            assert!(kex.handle_connection(server, &keyset).await.is_ok());
+            assert!(
+                kex.handle_connection(server, &keyset, || None::<()>)
+                    .await
+                    .is_ok()
+            );
             keyset
         };
 
@@ -866,7 +1019,11 @@ mod tests {
             })
             .unwrap();
             let keyset = KeySet::new();
-            assert!(kex.handle_connection(server, &keyset).await.is_ok());
+            assert!(
+                kex.handle_connection(server, &keyset, || None::<()>)
+                    .await
+                    .is_ok()
+            );
             keyset
         };
 
@@ -924,7 +1081,11 @@ mod tests {
             })
             .unwrap();
             let keyset = KeySet::new();
-            assert!(kex.handle_connection(server, &keyset).await.is_ok());
+            assert!(
+                kex.handle_connection(server, &keyset, || None::<()>)
+                    .await
+                    .is_ok()
+            );
             keyset
         };
 
@@ -980,7 +1141,7 @@ mod tests {
             })
             .unwrap();
             let keyset = KeySet::new();
-            kex.handle_connection(server, &keyset).await
+            kex.handle_connection(server, &keyset, || None::<()>).await
         };
 
         let (kexresult, serverresult) = tokio::join!(client, server);
@@ -1117,7 +1278,9 @@ mod tests {
             })
             .unwrap();
             let keyset = KeySet::new();
-            kex.handle_connection(server, &keyset).await.unwrap();
+            kex.handle_connection(server, &keyset, || None::<()>)
+                .await
+                .unwrap();
             keyset
         };
 
@@ -1125,6 +1288,232 @@ mod tests {
 
         assert_eq!(response.algorithm, AeadAlgorithm::AeadAesSivCmac256);
         assert_eq!(response.protocol, NextProtocol::NTPv4);
+        assert!(!response.keep_alive);
+
+        for cookie in response.cookies.iter() {
+            let decoded = keyset.decode_cookie(cookie).unwrap();
+            assert_eq!(
+                decoded.c2s.key_bytes(),
+                [
+                    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
+                    22, 23, 24, 25, 26, 27, 28, 29, 30, 31
+                ]
+            );
+            assert_eq!(
+                decoded.s2c.key_bytes(),
+                [
+                    32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51,
+                    52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63
+                ]
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_keyexchange_roundtrip_fixed_key_keep_alive() {
+        let (client, server) = tokio::io::duplex(2048);
+
+        let client = async move {
+            let certificates = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/testca.pem").as_slice(),
+            )
+            .collect::<Result<Arc<_>, _>>()
+            .unwrap();
+            let certificate_chain = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/end.fullchain.pem").as_slice(),
+            )
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+            let private_key = tls_utils::pemfile::private_key(
+                &mut include_bytes!("../../test-keys/end.key").as_slice(),
+            )
+            .unwrap();
+
+            let builder = tls_utils::client_config_builder_with_protocol_versions(&[&TLS13]);
+            let verifier =
+                tls_utils::PlatformVerifier::new_with_extra_roots(certificates.iter().cloned())
+                    .unwrap()
+                    .with_provider(builder.crypto_provider().clone());
+            let mut tls_config = builder
+                .dangerous()
+                .with_custom_certificate_verifier(Arc::new(verifier))
+                .with_client_auth_cert(certificate_chain, private_key)
+                .unwrap();
+            tls_config.alpn_protocols = vec![b"ntske/1".into()];
+            let connector = TlsConnector::from(Arc::new(tls_config));
+
+            let mut client = connector
+                .connect(ServerName::try_from("localhost").unwrap(), client)
+                .await
+                .unwrap();
+
+            client
+                .write_all(&[
+                    0x40, 5, 0, 2, b'h', b'i', 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+                    11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
+                    31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50,
+                    51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80,
+                    4, 0, 2, 0, 15, 0x40, 0, 0, 0, 0x40, 0, 0, 0, 0x80, 0, 0, 0,
+                ])
+                .await
+                .unwrap();
+
+            let response = KeyExchangeResponse::parse(&mut client).await.unwrap();
+
+            assert_eq!(response.algorithm, AeadAlgorithm::AeadAesSivCmac256);
+            assert_eq!(response.protocol, NextProtocol::NTPv4);
+            assert!(response.keep_alive);
+
+            client
+                .write_all(&[
+                    0x40, 5, 0, 2, b'h', b'i', 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+                    11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
+                    31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50,
+                    51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80,
+                    4, 0, 2, 0, 15, 0x40, 0, 0, 0, 0x80, 0, 0, 0,
+                ])
+                .await
+                .unwrap();
+
+            KeyExchangeResponse::parse(&mut client).await.unwrap()
+        };
+
+        let server = async move {
+            let certificate_chain = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/end.fullchain.pem").as_slice(),
+            )
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+            let private_key = tls_utils::pemfile::private_key(
+                &mut include_bytes!("../../test-keys/end.key").as_slice(),
+            )
+            .unwrap();
+            let kex = KeyExchangeServer::new(NtsServerConfig {
+                certificate_chain,
+                private_key,
+                accepted_versions: vec![NtpVersion::V4],
+                server: None,
+                port: None,
+                pool_authentication_tokens: vec!["hi".into()],
+            })
+            .unwrap();
+            let keyset = Arc::new(KeySet::new());
+            let (_, io) = kex
+                .handle_connection(server, &keyset, || Some(()))
+                .await
+                .unwrap()
+                .unwrap();
+            kex.handle_longterm(io, || keyset.clone()).await.unwrap();
+            keyset
+        };
+
+        let (response, keyset) = tokio::join!(client, server);
+
+        assert_eq!(response.algorithm, AeadAlgorithm::AeadAesSivCmac256);
+        assert_eq!(response.protocol, NextProtocol::NTPv4);
+
+        for cookie in response.cookies.iter() {
+            let decoded = keyset.decode_cookie(cookie).unwrap();
+            assert_eq!(
+                decoded.c2s.key_bytes(),
+                [
+                    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
+                    22, 23, 24, 25, 26, 27, 28, 29, 30, 31
+                ]
+            );
+            assert_eq!(
+                decoded.s2c.key_bytes(),
+                [
+                    32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51,
+                    52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63
+                ]
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_keyexchange_roundtrip_fixed_key_no_permit() {
+        let (client, server) = tokio::io::duplex(2048);
+
+        let client = async move {
+            let certificates = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/testca.pem").as_slice(),
+            )
+            .collect::<Result<Arc<_>, _>>()
+            .unwrap();
+            let certificate_chain = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/end.fullchain.pem").as_slice(),
+            )
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+            let private_key = tls_utils::pemfile::private_key(
+                &mut include_bytes!("../../test-keys/end.key").as_slice(),
+            )
+            .unwrap();
+
+            let builder = tls_utils::client_config_builder_with_protocol_versions(&[&TLS13]);
+            let verifier =
+                tls_utils::PlatformVerifier::new_with_extra_roots(certificates.iter().cloned())
+                    .unwrap()
+                    .with_provider(builder.crypto_provider().clone());
+            let mut tls_config = builder
+                .dangerous()
+                .with_custom_certificate_verifier(Arc::new(verifier))
+                .with_client_auth_cert(certificate_chain, private_key)
+                .unwrap();
+            tls_config.alpn_protocols = vec![b"ntske/1".into()];
+            let connector = TlsConnector::from(Arc::new(tls_config));
+
+            let mut client = connector
+                .connect(ServerName::try_from("localhost").unwrap(), client)
+                .await
+                .unwrap();
+
+            client
+                .write_all(&[
+                    0x40, 5, 0, 2, b'h', b'i', 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+                    11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
+                    31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50,
+                    51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80,
+                    4, 0, 2, 0, 15, 0x40, 0, 0, 0, 0x80, 0, 0, 0,
+                ])
+                .await
+                .unwrap();
+
+            KeyExchangeResponse::parse(&mut client).await.unwrap()
+        };
+
+        let server = async move {
+            let certificate_chain = tls_utils::pemfile::certs(
+                &mut include_bytes!("../../test-keys/end.fullchain.pem").as_slice(),
+            )
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+            let private_key = tls_utils::pemfile::private_key(
+                &mut include_bytes!("../../test-keys/end.key").as_slice(),
+            )
+            .unwrap();
+            let kex = KeyExchangeServer::new(NtsServerConfig {
+                certificate_chain,
+                private_key,
+                accepted_versions: vec![NtpVersion::V4],
+                server: None,
+                port: None,
+                pool_authentication_tokens: vec!["hi".into()],
+            })
+            .unwrap();
+            let keyset = KeySet::new();
+            kex.handle_connection(server, &keyset, || None::<()>)
+                .await
+                .unwrap();
+            keyset
+        };
+
+        let (response, keyset) = tokio::join!(client, server);
+
+        assert_eq!(response.algorithm, AeadAlgorithm::AeadAesSivCmac256);
+        assert_eq!(response.protocol, NextProtocol::NTPv4);
+        assert!(!response.keep_alive);
 
         for cookie in response.cookies.iter() {
             let decoded = keyset.decode_cookie(cookie).unwrap();
@@ -1207,7 +1596,7 @@ mod tests {
             })
             .unwrap();
             let keyset = KeySet::new();
-            kex.handle_connection(server, &keyset).await
+            kex.handle_connection(server, &keyset, || None::<()>).await
         };
 
         let (response, kexerror) = tokio::join!(client, server);
@@ -1288,7 +1677,9 @@ mod tests {
             })
             .unwrap();
             let keyset = KeySet::new();
-            kex.handle_connection(server, &keyset).await.unwrap();
+            kex.handle_connection(server, &keyset, || None::<()>)
+                .await
+                .unwrap();
         };
 
         let (response, _) = tokio::join!(client, server);
@@ -1363,7 +1754,7 @@ mod tests {
             })
             .unwrap();
             let keyset = KeySet::new();
-            kex.handle_connection(server, &keyset).await
+            kex.handle_connection(server, &keyset, || None::<()>).await
         };
 
         let (response, server_res) = tokio::join!(client, server);
