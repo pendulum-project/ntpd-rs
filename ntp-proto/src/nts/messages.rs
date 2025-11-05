@@ -26,11 +26,13 @@ pub enum Request<'a> {
         algorithm: AeadAlgorithm,
         #[cfg_attr(feature = "__internal-fuzz", allow(private_interfaces))]
         protocol: NextProtocol,
+        keep_alive: bool,
     },
     Support {
         authentication: Cow<'a, str>,
         wants_protocols: bool,
         wants_algorithms: bool,
+        keep_alive: bool,
     },
 }
 
@@ -44,6 +46,7 @@ impl Request<'_> {
         let mut denied_servers = vec![];
         let mut wants_protocols = false;
         let mut wants_algorithms = false;
+        let mut keep_alive = false;
         let mut key_bytes = None;
 
         loop {
@@ -96,13 +99,13 @@ impl Request<'_> {
 
                     authentication = Some(key)
                 }
+                NtsRecord::KeepAlive => keep_alive = true,
                 // Unknown critical
                 NtsRecord::Unknown { critical: true, .. } => {
                     return Err(NtsError::UnrecognizedCriticalRecord);
                 }
                 // Ignored
                 NtsRecord::Unknown { .. } | NtsRecord::Server { .. } | NtsRecord::Port { .. } => {}
-                NtsRecord::KeepAlive => {}
                 // not allowed
                 NtsRecord::Error { .. }
                 | NtsRecord::Warning { .. }
@@ -120,6 +123,7 @@ impl Request<'_> {
                     authentication,
                     wants_protocols,
                     wants_algorithms,
+                    keep_alive,
                 });
             } else {
                 return Err(NtsError::Invalid);
@@ -158,6 +162,7 @@ impl Request<'_> {
                     s2c_key,
                     algorithm: algorithms[0],
                     protocol: protocols[0],
+                    keep_alive,
                 })
             } else {
                 Err(NtsError::Invalid)
@@ -212,6 +217,7 @@ impl Request<'_> {
                 s2c_key,
                 algorithm,
                 protocol,
+                keep_alive,
             } => {
                 NtsRecord::Authentication {
                     key: authentication,
@@ -234,12 +240,16 @@ impl Request<'_> {
                 }
                 .serialize(&mut writer)
                 .await?;
+                if keep_alive {
+                    NtsRecord::KeepAlive.serialize(&mut writer).await?;
+                }
                 NtsRecord::EndOfMessage.serialize(&mut writer).await?;
             }
             Request::Support {
                 authentication,
                 wants_protocols,
                 wants_algorithms,
+                keep_alive,
             } => {
                 NtsRecord::Authentication {
                     key: authentication,
@@ -259,6 +269,9 @@ impl Request<'_> {
                     }
                     .serialize(&mut writer)
                     .await?;
+                }
+                if keep_alive {
+                    NtsRecord::KeepAlive.serialize(&mut writer).await?;
                 }
                 NtsRecord::EndOfMessage.serialize(&mut writer).await?;
             }
@@ -880,6 +893,7 @@ mod tests {
             s2c_key,
             algorithm,
             protocol,
+            keep_alive,
         }) = pwrap(
             Request::parse,
             &[
@@ -910,6 +924,7 @@ mod tests {
         );
         assert_eq!(algorithm, AeadAlgorithm::AeadAesSivCmac256);
         assert_eq!(protocol, NextProtocol::NTPv4);
+        assert!(!keep_alive);
 
         let Ok(Request::FixedKey {
             authentication,
@@ -917,6 +932,7 @@ mod tests {
             s2c_key,
             algorithm,
             protocol,
+            keep_alive,
         }) = pwrap(
             Request::parse,
             &[
@@ -953,6 +969,7 @@ mod tests {
         );
         assert_eq!(algorithm, AeadAlgorithm::AeadAesSivCmac512);
         assert_eq!(protocol, NextProtocol::NTPv4);
+        assert!(!keep_alive);
 
         let Ok(Request::FixedKey {
             authentication,
@@ -960,6 +977,7 @@ mod tests {
             s2c_key,
             algorithm,
             protocol,
+            keep_alive,
         }) = pwrap(
             Request::parse,
             &[
@@ -990,6 +1008,46 @@ mod tests {
         );
         assert_eq!(algorithm, AeadAlgorithm::AeadAesSivCmac256);
         assert_eq!(protocol, NextProtocol::NTPv4);
+        assert!(!keep_alive);
+
+        let Ok(Request::FixedKey {
+            authentication,
+            c2s_key,
+            s2c_key,
+            algorithm,
+            protocol,
+            keep_alive,
+        }) = pwrap(
+            Request::parse,
+            &[
+                0x40, 5, 0, 1, b'a', 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0xC0, 2, 0, 64, 0,
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+                24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44,
+                45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 0x40,
+                0, 0, 0, 0x80, 0, 0, 0,
+            ],
+        )
+        else {
+            panic!("Expected parse as fixedkey");
+        };
+        assert_eq!(authentication, "a");
+        assert_eq!(
+            c2s_key.key_bytes(),
+            [
+                0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+                23, 24, 25, 26, 27, 28, 29, 30, 31
+            ]
+        );
+        assert_eq!(
+            s2c_key.key_bytes(),
+            [
+                32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52,
+                53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63
+            ]
+        );
+        assert_eq!(algorithm, AeadAlgorithm::AeadAesSivCmac256);
+        assert_eq!(protocol, NextProtocol::NTPv4);
+        assert!(keep_alive);
     }
 
     #[test]
@@ -1186,6 +1244,7 @@ mod tests {
             s2c_key,
             algorithm,
             protocol,
+            keep_alive,
         }) = pwrap(
             Request::parse,
             &[
@@ -1216,6 +1275,7 @@ mod tests {
         );
         assert_eq!(algorithm, AeadAlgorithm::AeadAesSivCmac256);
         assert_eq!(protocol, NextProtocol::NTPv4);
+        assert!(!keep_alive);
 
         let Ok(Request::FixedKey {
             authentication,
@@ -1223,6 +1283,7 @@ mod tests {
             s2c_key,
             algorithm,
             protocol,
+            keep_alive,
         }) = pwrap(
             Request::parse,
             &[
@@ -1253,6 +1314,7 @@ mod tests {
         );
         assert_eq!(algorithm, AeadAlgorithm::AeadAesSivCmac256);
         assert_eq!(protocol, NextProtocol::NTPv4);
+        assert!(!keep_alive);
 
         let Ok(Request::FixedKey {
             authentication,
@@ -1260,6 +1322,7 @@ mod tests {
             s2c_key,
             algorithm,
             protocol,
+            keep_alive,
         }) = pwrap(
             Request::parse,
             &[
@@ -1290,6 +1353,7 @@ mod tests {
         );
         assert_eq!(algorithm, AeadAlgorithm::AeadAesSivCmac256);
         assert_eq!(protocol, NextProtocol::NTPv4);
+        assert!(!keep_alive);
 
         let Ok(Request::FixedKey {
             authentication,
@@ -1297,6 +1361,7 @@ mod tests {
             s2c_key,
             algorithm,
             protocol,
+            keep_alive,
         }) = pwrap(
             Request::parse,
             &[
@@ -1327,6 +1392,7 @@ mod tests {
         );
         assert_eq!(algorithm, AeadAlgorithm::AeadAesSivCmac256);
         assert_eq!(protocol, NextProtocol::NTPv4);
+        assert!(!keep_alive);
     }
 
     #[test]
@@ -1354,7 +1420,8 @@ mod tests {
                         .into()
                     )),
                     algorithm: AeadAlgorithm::AeadAesSivCmac256,
-                    protocol: NextProtocol::NTPv4
+                    protocol: NextProtocol::NTPv4,
+                    keep_alive: false,
                 },
                 &mut buf
             ),
@@ -1370,6 +1437,45 @@ mod tests {
                 0, 0
             ]
         );
+
+        let mut buf = vec![];
+        assert!(matches!(
+            swrap(
+                Request::serialize,
+                Request::FixedKey {
+                    authentication: "a".into(),
+                    c2s_key: Box::new(AesSivCmac256::new(
+                        [
+                            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+                            20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31
+                        ]
+                        .into()
+                    )),
+                    s2c_key: Box::new(AesSivCmac256::new(
+                        [
+                            32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
+                            50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63
+                        ]
+                        .into()
+                    )),
+                    algorithm: AeadAlgorithm::AeadAesSivCmac256,
+                    protocol: NextProtocol::NTPv4,
+                    keep_alive: true,
+                },
+                &mut buf
+            ),
+            Ok(())
+        ));
+        assert_eq!(
+            buf,
+            [
+                0x40, 5, 0, 1, b'a', 0xC0, 2, 0, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+                14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+                35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55,
+                56, 57, 58, 59, 60, 61, 62, 63, 0x80, 1, 0, 2, 0, 0, 0x80, 4, 0, 2, 0, 15, 0x40, 0,
+                0, 0, 0x80, 0, 0, 0
+            ]
+        );
     }
 
     #[test]
@@ -1378,6 +1484,7 @@ mod tests {
             authentication,
             wants_protocols,
             wants_algorithms,
+            keep_alive,
         }) = pwrap(
             Request::parse,
             &[0x40, 5, 0, 1, b'a', 0xC0, 1, 0, 0, 0x80, 0, 0, 0],
@@ -1388,11 +1495,13 @@ mod tests {
         assert_eq!(authentication, "a");
         assert!(wants_algorithms);
         assert!(!wants_protocols);
+        assert!(!keep_alive);
 
         let Ok(Request::Support {
             authentication,
             wants_protocols,
             wants_algorithms,
+            keep_alive,
         }) = pwrap(
             Request::parse,
             &[0x40, 5, 0, 1, b'a', 0xC0, 4, 0, 0, 0x80, 0, 0, 0],
@@ -1403,11 +1512,13 @@ mod tests {
         assert_eq!(authentication, "a");
         assert!(!wants_algorithms);
         assert!(wants_protocols);
+        assert!(!keep_alive);
 
         let Ok(Request::Support {
             authentication,
             wants_protocols,
             wants_algorithms,
+            keep_alive,
         }) = pwrap(
             Request::parse,
             &[
@@ -1420,6 +1531,26 @@ mod tests {
         assert_eq!(authentication, "a");
         assert!(wants_algorithms);
         assert!(wants_protocols);
+        assert!(!keep_alive);
+
+        let Ok(Request::Support {
+            authentication,
+            wants_protocols,
+            wants_algorithms,
+            keep_alive,
+        }) = pwrap(
+            Request::parse,
+            &[
+                0x40, 5, 0, 1, b'a', 0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x40, 0, 0, 0, 0x80, 0, 0, 0,
+            ],
+        )
+        else {
+            panic!("Parse problem");
+        };
+        assert_eq!(authentication, "a");
+        assert!(wants_algorithms);
+        assert!(wants_protocols);
+        assert!(keep_alive);
     }
 
     #[test]
@@ -1541,6 +1672,7 @@ mod tests {
             authentication,
             wants_protocols,
             wants_algorithms,
+            keep_alive,
         }) = pwrap(
             Request::parse,
             &[
@@ -1554,11 +1686,13 @@ mod tests {
         assert_eq!(authentication, "a");
         assert!(wants_algorithms);
         assert!(wants_protocols);
+        assert!(!keep_alive);
 
         let Ok(Request::Support {
             authentication,
             wants_protocols,
             wants_algorithms,
+            keep_alive,
         }) = pwrap(
             Request::parse,
             &[
@@ -1572,11 +1706,13 @@ mod tests {
         assert_eq!(authentication, "a");
         assert!(wants_algorithms);
         assert!(wants_protocols);
+        assert!(!keep_alive);
 
         let Ok(Request::Support {
             authentication,
             wants_protocols,
             wants_algorithms,
+            keep_alive,
         }) = pwrap(
             Request::parse,
             &[
@@ -1590,23 +1726,7 @@ mod tests {
         assert_eq!(authentication, "a");
         assert!(wants_algorithms);
         assert!(wants_protocols);
-
-        let Ok(Request::Support {
-            authentication,
-            wants_protocols,
-            wants_algorithms,
-        }) = pwrap(
-            Request::parse,
-            &[
-                0x40, 5, 0, 1, b'a', 0xC0, 1, 0, 0, 0xC0, 4, 0, 0, 0x40, 0, 0, 0, 0x80, 0, 0, 0,
-            ],
-        )
-        else {
-            panic!("Parse problem");
-        };
-        assert_eq!(authentication, "a");
-        assert!(wants_algorithms);
-        assert!(wants_protocols);
+        assert!(!keep_alive);
     }
 
     #[test]
@@ -1618,7 +1738,8 @@ mod tests {
                 Request::Support {
                     authentication: "a".into(),
                     wants_algorithms: false,
-                    wants_protocols: false
+                    wants_protocols: false,
+                    keep_alive: false,
                 },
                 &mut buf
             ),
@@ -1633,7 +1754,8 @@ mod tests {
                 Request::Support {
                     authentication: "a".into(),
                     wants_algorithms: true,
-                    wants_protocols: false
+                    wants_protocols: false,
+                    keep_alive: false,
                 },
                 &mut buf
             ),
@@ -1648,7 +1770,8 @@ mod tests {
                 Request::Support {
                     authentication: "a".into(),
                     wants_algorithms: false,
-                    wants_protocols: true
+                    wants_protocols: true,
+                    keep_alive: false,
                 },
                 &mut buf
             ),
@@ -1663,7 +1786,8 @@ mod tests {
                 Request::Support {
                     authentication: "a".into(),
                     wants_algorithms: true,
-                    wants_protocols: true
+                    wants_protocols: true,
+                    keep_alive: false,
                 },
                 &mut buf
             ),
@@ -1673,6 +1797,27 @@ mod tests {
             buf,
             [
                 0x40, 5, 0, 1, b'a', 0xC0, 4, 0, 0, 0xC0, 1, 0, 0, 0x80, 0, 0, 0
+            ]
+        );
+
+        let mut buf = vec![];
+        assert!(matches!(
+            swrap(
+                Request::serialize,
+                Request::Support {
+                    authentication: "a".into(),
+                    wants_algorithms: true,
+                    wants_protocols: true,
+                    keep_alive: true,
+                },
+                &mut buf
+            ),
+            Ok(())
+        ));
+        assert_eq!(
+            buf,
+            [
+                0x40, 5, 0, 1, b'a', 0xC0, 4, 0, 0, 0xC0, 1, 0, 0, 0x40, 0, 0, 0, 0x80, 0, 0, 0
             ]
         );
     }
