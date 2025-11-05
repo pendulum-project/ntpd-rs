@@ -139,13 +139,17 @@ async fn run_key_exchange_server(
             let keyset = keyset.borrow().clone();
             let key_exchange_server = key_exchange_server.clone();
 
-            let fut = async move { key_exchange_server.handle_connection(stream, &keyset).await };
+            let fut = async move {
+                key_exchange_server
+                    .handle_connection(stream, &keyset, || None::<()>)
+                    .await
+            };
 
             tokio::spawn(async move {
                 match tokio::time::timeout(timeout, fut).await {
                     Err(_) => tracing::debug!(?source_addr, "NTS KE timed out"),
                     Ok(Err(err)) => tracing::debug!(?err, ?source_addr, "NTS KE failed"),
-                    Ok(Ok(())) => tracing::debug!(?source_addr, "NTS KE completed"),
+                    Ok(Ok(_)) => tracing::debug!(?source_addr, "NTS KE completed"),
                 }
                 drop(permit);
             });
