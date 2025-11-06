@@ -2,9 +2,9 @@
 
 mod ctl;
 mod daemon;
-mod security;
 mod force_sync;
 mod metrics;
+mod security;
 
 pub use ctl::main as ctl_main;
 pub use daemon::main as daemon_main;

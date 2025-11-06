@@ -170,28 +170,27 @@ fn validate(config: Option<PathBuf>) -> std::io::Result<ExitCode> {
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub fn main() -> std::io::Result<ExitCode> {
-
     // Allowed syscalls
     let syscalls = vec![
-        "clock_adjtime", 
-        "clock_nanosleep", 
-        "clone3", 
-        "dup", 
-        "exit_group", 
-        "fchownat", 
-        "futex", 
-        "getdents64", 
-        "getsockname", 
-        "getsockopt", 
-        "madvise", 
-        "newfstatat", 
-        "open_by_handle_at", 
-        "prctl", 
-        "rseq", 
-        "recvmsg", 
-        "sendmmsg", 
-        "time", 
-        "uname", 
+        "clock_adjtime",
+        "clock_nanosleep",
+        "clone3",
+        "dup",
+        "exit_group",
+        "fchownat",
+        "futex",
+        "getdents64",
+        "getsockname",
+        "getsockopt",
+        "madvise",
+        "newfstatat",
+        "open_by_handle_at",
+        "prctl",
+        "rseq",
+        "recvmsg",
+        "sendmmsg",
+        "time",
+        "uname",
         "writev",
     ];
     seccomp_init(syscalls);

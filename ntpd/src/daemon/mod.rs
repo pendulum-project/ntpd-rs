@@ -17,6 +17,7 @@ mod util;
 
 use std::{error::Error, path::PathBuf};
 
+use crate::security::seccomp_init;
 use ::tracing::info;
 pub use config::Config;
 use ntp_proto::KalmanClockController;
@@ -24,7 +25,6 @@ pub use observer::ObservableState;
 pub use system::spawn;
 use tokio::runtime::Builder;
 use tracing_subscriber::util::SubscriberInitExt;
-use crate::security::seccomp_init;
 
 use config::NtpDaemonOptions;
 
@@ -35,26 +35,26 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub fn main() -> Result<(), Box<dyn Error>> {
     // Allowed syscalls
     let syscalls = vec![
-        "chmod", 
-        "clock_adjtime", 
-        "clone3", 
-        "clone", 
-        "futex", 
-        "getdents64", 
-        "getsockname", 
-        "getsockopt", 
-        "madvise", 
-        "newfstatat", 
-        "recvmsg", 
-        "rseq", 
-        "unlink", 
-        "writev", 
-        "prctl", 
-        "clock_nanosleep", 
-        "exit_group", 
-        "uname", 
-        "sendmmsg", 
-        "exit"
+        "chmod",
+        "clock_adjtime",
+        "clone3",
+        "clone",
+        "futex",
+        "getdents64",
+        "getsockname",
+        "getsockopt",
+        "madvise",
+        "newfstatat",
+        "recvmsg",
+        "rseq",
+        "unlink",
+        "writev",
+        "prctl",
+        "clock_nanosleep",
+        "exit_group",
+        "uname",
+        "sendmmsg",
+        "exit",
     ];
     seccomp_init(syscalls);
 
