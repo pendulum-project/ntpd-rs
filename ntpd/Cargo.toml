@@ -28,6 +28,8 @@ serde.workspace = true
 serde_json.workspace = true
 
 rustls23.workspace = true
+capctl = "0.2.4"
+libseccomp = "0.4.0"
 
 [dev-dependencies]
 ntp-proto = { workspace = true, features = ["__internal-test",] }

@@ -15,7 +15,8 @@ mod system;
 pub mod tracing;
 mod util;
 
-use crate::security::seccomp_init;
+use crate::security::{drop_caps, seccomp_init};
+use capctl::Cap;
 use std::{error::Error, path::PathBuf};
 
 use ::tracing::info;
@@ -33,6 +34,9 @@ use self::tracing::LogLevel;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub fn main() -> Result<(), Box<dyn Error>> {
+    // Drop capablities
+    drop_caps(Some(&[Cap::NET_BIND_SERVICE, Cap::SYS_TIME]));
+
     // Allowed syscalls
     let syscalls = vec![
         "chmod",

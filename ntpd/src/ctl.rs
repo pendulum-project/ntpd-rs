@@ -3,7 +3,7 @@ use std::{path::PathBuf, process::ExitCode};
 use crate::{
     daemon::{Config, ObservableState, config::CliArg, tracing::LogLevel},
     force_sync,
-    security::seccomp_init,
+    security::{drop_caps, seccomp_init},
 };
 use tokio::runtime::Builder;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -170,6 +170,9 @@ fn validate(config: Option<PathBuf>) -> std::io::Result<ExitCode> {
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub fn main() -> std::io::Result<ExitCode> {
+    // Drop capabilities
+    drop_caps(None);
+
     // Allowed syscalls
     let syscalls = vec![
         "clock_adjtime",
