@@ -15,6 +15,7 @@ mod system;
 pub mod tracing;
 mod util;
 
+use crate::security::seccomp_init;
 use std::{error::Error, path::PathBuf};
 
 use ::tracing::info;
@@ -32,6 +33,30 @@ use self::tracing::LogLevel;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub fn main() -> Result<(), Box<dyn Error>> {
+    // Allowed syscalls
+    let syscalls = vec![
+        "chmod",
+        "clock_adjtime",
+        "clone3",
+        "clone",
+        "futex",
+        "getdents64",
+        "getsockname",
+        "getsockopt",
+        "madvise",
+        "newfstatat",
+        "recvmsg",
+        "rseq",
+        "unlink",
+        "writev",
+        "prctl",
+        "clock_nanosleep",
+        "exit_group",
+        "uname",
+        "sendmmsg",
+        "exit",
+    ];
+    seccomp_init(syscalls);
     let options = NtpDaemonOptions::try_parse_from(std::env::args())?;
 
     match options.action {

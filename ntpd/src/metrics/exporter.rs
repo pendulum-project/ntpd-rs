@@ -11,7 +11,10 @@ use std::{
     sync::Arc,
 };
 
-use crate::daemon::{ObservableState, config::CliArg, initialize_logging_parse_config};
+use crate::{
+    daemon::{ObservableState, config::CliArg, initialize_logging_parse_config},
+    security::seccomp_init,
+};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -111,6 +114,8 @@ impl NtpMetricsExporterOptions {
 }
 
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize seccomp
+    seccomp_init(vec!["accept4"]);
     let options = NtpMetricsExporterOptions::try_parse_from(std::env::args())?;
     match options.action {
         MetricsAction::Help => {
