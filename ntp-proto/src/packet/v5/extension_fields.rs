@@ -113,7 +113,6 @@ impl<'a> ReferenceIdResponse<'a> {
     pub fn serialize(&self, mut writer: impl NonBlockingWrite) -> std::io::Result<()> {
         let len: u16 = self.bytes.len().try_into().unwrap();
         let len = len + 4; // Add room for type and length
-        assert_eq!(len % 4, 0);
 
         writer.write_all(
             &ExtensionFieldTypeId::ReferenceIdResponse
@@ -122,6 +121,9 @@ impl<'a> ReferenceIdResponse<'a> {
         )?;
         writer.write_all(&len.to_be_bytes())?;
         writer.write_all(self.bytes.as_ref())?;
+        if !len.is_multiple_of(4) {
+            writer.write_all(&[0u8; 3][..(4 - (len % 4)) as usize])?;
+        }
 
         Ok(())
     }
@@ -169,5 +171,40 @@ mod tests {
         let res = ReferenceIdRequest::decode(&[0, 2, 0, 0, 0]).unwrap();
         assert_eq!(res.payload_len, 5);
         assert_eq!(res.offset, 2);
+    }
+
+    #[test]
+    fn test_reference_id_response_serialize() {
+        let mut out = vec![];
+        ReferenceIdResponse {
+            bytes: [0; 1].as_ref().into(),
+        }
+        .serialize(&mut out)
+        .unwrap();
+        assert_eq!(out, [0xF5, 4, 0, 5, 0, 0, 0, 0]);
+
+        let mut out = vec![];
+        ReferenceIdResponse {
+            bytes: [0; 2].as_ref().into(),
+        }
+        .serialize(&mut out)
+        .unwrap();
+        assert_eq!(out, [0xF5, 4, 0, 6, 0, 0, 0, 0]);
+
+        let mut out = vec![];
+        ReferenceIdResponse {
+            bytes: [0; 3].as_ref().into(),
+        }
+        .serialize(&mut out)
+        .unwrap();
+        assert_eq!(out, [0xF5, 4, 0, 7, 0, 0, 0, 0]);
+
+        let mut out = vec![];
+        ReferenceIdResponse {
+            bytes: [0; 4].as_ref().into(),
+        }
+        .serialize(&mut out)
+        .unwrap();
+        assert_eq!(out, [0xF5, 4, 0, 8, 0, 0, 0, 0]);
     }
 }
