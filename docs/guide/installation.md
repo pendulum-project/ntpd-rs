@@ -59,7 +59,7 @@ main NTP daemon. Running it from the command line to test it should provide outp
 To use this binary as your system NTP daemon, you must also:
 
 - move the `ntp-daemon` binary to an appropriate location (e.g. `/usr/bin`),
-- set up a configuration in `/etc/ntpd-rs/ntp.toml` (we suggest copying the configuration under `docs/examples/ntp.toml.default`),
+- set up a configuration in `/etc/ntpd-rs/ntp.toml` (we suggest copying the configuration under `docs/examples/conf/ntp.toml.default`),
 - set permissions for the binary and config file for the binary to be able to run and read the configuration,
 - configure the binary to be run as a system service.
 
