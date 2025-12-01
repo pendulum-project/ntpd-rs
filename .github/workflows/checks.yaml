@@ -85,11 +85,11 @@ jobs:
         with:
           target: ${{ matrix.target }}
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@f79fe7514db78f0a7bdba3cb6dd9c1baa7d046d9
+        uses: taiki-e/install-action@3575e532701a5fc614b0c842e4119af4cc5fd16d
         with:
           tool: cargo-llvm-cov
       - name: Rust cache
-        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
         with:
           shared-key: "${{matrix.rust}}-${{matrix.target}}"
       - name: cargo build
@@ -122,7 +122,7 @@ jobs:
         with:
           toolchain: nightly
       - name: Install udeps
-        uses: taiki-e/install-action@f79fe7514db78f0a7bdba3cb6dd9c1baa7d046d9
+        uses: taiki-e/install-action@3575e532701a5fc614b0c842e4119af4cc5fd16d
         with:
           tool: cargo-udeps
       - name: cargo udeps
@@ -223,13 +223,13 @@ jobs:
         if: ${{matrix.runs_on == 'ubuntu-latest'}}
 
       - name: Install bindgen-cli
-        uses: taiki-e/install-action@f79fe7514db78f0a7bdba3cb6dd9c1baa7d046d9
+        uses: taiki-e/install-action@3575e532701a5fc614b0c842e4119af4cc5fd16d
         with:
           tool: bindgen-cli
         if: ${{matrix.runs_on == 'ubuntu-latest'}}
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
         with:
           shared-key: "stable-${{matrix.target}}"
 
@@ -289,7 +289,7 @@ jobs:
           toolchain: nightly
           components: llvm-tools-preview
       - name: Install cargo fuzz & rustfilt
-        uses: taiki-e/install-action@f79fe7514db78f0a7bdba3cb6dd9c1baa7d046d9
+        uses: taiki-e/install-action@3575e532701a5fc614b0c842e4119af4cc5fd16d
         with:
           tool: cargo-fuzz,rustfilt
       - name: Run `cargo fuzz`
@@ -321,10 +321,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
-      - uses: EmbarkStudios/cargo-deny-action@f2ba7abc2abebaf185c833c3961145a3c275caad
+      - uses: EmbarkStudios/cargo-deny-action@76cd80eb775d7bbbd2d80292136d74d39e1b4918
         with:
           arguments: --workspace --all-features
-      - uses: EmbarkStudios/cargo-deny-action@f2ba7abc2abebaf185c833c3961145a3c275caad
+      - uses: EmbarkStudios/cargo-deny-action@76cd80eb775d7bbbd2d80292136d74d39e1b4918
         with:
           manifest-path: ./fuzz/Cargo.toml
           arguments: --all-features
