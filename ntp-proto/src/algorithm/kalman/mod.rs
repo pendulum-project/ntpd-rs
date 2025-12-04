@@ -286,7 +286,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
             }
             if self.synchronization_config.warn_on_jump {
                 warn!(
-                    "Jumped offset by {}ms. This may cause problems for other software. If this is not a problem for your system, you can reclassify this warning as an informative message through the `synchronization.warn_on_jump` setting in ntp.toml.",
+                    "Jumped offset by {}ms. This may cause problems for other software. If this is not a problem for your system, you can reclassify this warning as an informative message through the `synchronization.warn-on-jump` setting in ntp.toml.",
                     change * 1e3
                 );
             } else {
