@@ -69,7 +69,7 @@ mod tests {
         for mac_len in [0usize, 16, 20] {
             let mut data = Vec::with_capacity(4 + mac_len);
             data.extend_from_slice(&42u32.to_be_bytes());
-            data.extend(std::iter::repeat(0xAA).take(mac_len));
+            data.extend(std::iter::repeat_n(0xAA, mac_len));
             let parsed = Mac::deserialize(&data).unwrap();
             assert_eq!(parsed.keyid, 42);
             assert_eq!(parsed.mac.len(), mac_len);
@@ -80,7 +80,7 @@ mod tests {
     fn rejects_too_long() {
         let mut data = Vec::with_capacity(4 + Mac::MAXIMUM_SIZE + 1);
         data.extend_from_slice(&1u32.to_be_bytes());
-        data.extend(std::iter::repeat(0xBB).take(Mac::MAXIMUM_SIZE + 1));
+        data.extend(std::iter::repeat_n(0xBB, Mac::MAXIMUM_SIZE + 1));
         assert!(Mac::deserialize(&data).is_err());
     }
 }
