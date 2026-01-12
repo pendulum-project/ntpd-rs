@@ -110,7 +110,11 @@ impl<C: NtpClock> SingleShotController<C> {
 }
 
 pub(crate) fn force_sync(config: Option<PathBuf>) -> std::io::Result<ExitCode> {
-    let config = initialize_logging_parse_config(Some(LogLevel::Warn), config);
+    let (config, _) = initialize_logging_parse_config(
+        Some(LogLevel::Warn),
+        config,
+        crate::daemon::Application::Ctl,
+    );
 
     // Warn/error if the config is unreasonable. We do this after finishing
     // tracing setup to ensure logging is fully configured.

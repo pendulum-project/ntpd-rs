@@ -297,10 +297,20 @@ anything going on in the daemon, whereas the highest level
 \f[V]error\f[R] only logs error conditions in the daemon.
 Levels higher than the given log level are logged as well.
 .TP
-\f[V]ansi-colors\f[R] = \f[V]true\f[R] | \f[V]false\f[R] (\f[B]true\f[R])
-Can be used to disable ANSI escape codes in logs.
+\f[V]log-path\f[R] = \f[I]path\f[R] (\f[B]unset\f[R])
+Path to which the deamon should direct its log output.
+The file at this location is reopened on SIGHUP.
+When not present, log output will be directed to stdout.
+.TP
+\f[V]log-path-metrics-exporter\f[R] = \f[I]path\f[R] (\f[B]unset\f[R])
+Path to which the metrics exporter daemon should direct its log output.
+The file at this location is reopened on SIGHUP.
+When not present, log output will be directed to stdout.
+.TP
+\f[V]ansi-colors\f[R] = \f[V]true\f[R] | \f[V]false\f[R] (see note)
+Can be used to control ANSI escape codes in logs.
 By default, ANSI escape codes are used to add some colors and other
-formatting to the logs.
+formatting to the logs when the log target is a terminal.
 .TP
 \f[V]observation-path\f[R] = \f[I]path\f[R] (\f[B]unset\f[R])
 Path where the daemon will create an observation Unix domain socket.

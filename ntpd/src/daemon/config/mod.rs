@@ -305,8 +305,12 @@ pub struct ClockConfig {
 pub struct ObservabilityConfig {
     #[serde(default)]
     pub log_level: Option<LogLevel>,
-    #[serde(default = "default_ansi_colors")]
-    pub ansi_colors: bool,
+    #[serde(default)]
+    pub log_path: Option<PathBuf>,
+    #[serde(default)]
+    pub log_path_metrics_exporter: Option<PathBuf>,
+    #[serde(default)]
+    pub ansi_colors: Option<bool>,
     #[serde(default)]
     pub observation_path: Option<PathBuf>,
     #[serde(default = "default_observation_permissions")]
@@ -319,16 +323,14 @@ impl Default for ObservabilityConfig {
     fn default() -> Self {
         Self {
             log_level: Default::default(),
-            ansi_colors: default_ansi_colors(),
+            log_path: Default::default(),
+            log_path_metrics_exporter: Default::default(),
+            ansi_colors: None,
             observation_path: Default::default(),
             observation_permissions: default_observation_permissions(),
             metrics_exporter_listen: default_metrics_exporter_listen(),
         }
     }
-}
-
-const fn default_ansi_colors() -> bool {
-    true
 }
 
 const fn default_observation_permissions() -> u32 {
