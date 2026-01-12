@@ -173,7 +173,9 @@ mod tests {
         writer.write_u64(oversized).await.unwrap();
 
         let mut buf = Vec::new();
-        let err = read_json::<Vec<usize>>(&mut reader, &mut buf).await.unwrap_err();
+        let err = read_json::<Vec<usize>>(&mut reader, &mut buf)
+            .await
+            .unwrap_err();
 
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
     }
