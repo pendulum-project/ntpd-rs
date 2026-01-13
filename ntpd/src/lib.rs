@@ -66,7 +66,7 @@
 #![warn(clippy::many_single_char_names)]
 //FIXME: Enable #![warn(clippy::map_unwrap_or)]
 #![warn(clippy::match_bool)]
-//FIXME: Enable #![warn(clippy::match_same_arms)]
+#![warn(clippy::match_same_arms)]
 #![warn(clippy::match_wild_err_arm)]
 //FIXME: Enable #![warn(clippy::match_wildcard_for_single_variants)]
 #![warn(clippy::maybe_infinite_iter)]

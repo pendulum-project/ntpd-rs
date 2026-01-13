@@ -263,7 +263,7 @@ impl NtsRecord<'_> {
             .map_err(|_| ErrorKind::InvalidInput)?;
         writer.write_u16(size).await?;
         match self {
-            NtsRecord::EndOfMessage => {}
+            NtsRecord::EndOfMessage | NtsRecord::KeepAlive => {}
             NtsRecord::NextProtocol { protocol_ids } => {
                 for &id in protocol_ids.iter() {
                     writer.write_u16(id.into()).await?;
@@ -280,7 +280,6 @@ impl NtsRecord<'_> {
             NtsRecord::Server { name } => writer.write_all(name.as_bytes()).await?,
             NtsRecord::Port { port } => writer.write_u16(*port).await?,
             NtsRecord::Unknown { data, .. } => writer.write_all(data).await?,
-            NtsRecord::KeepAlive => {}
             NtsRecord::SupportedNextProtocolList {
                 supported_protocols,
             } => {
@@ -334,16 +333,15 @@ impl NtsRecord<'_> {
 
     fn body_size(&self) -> usize {
         match self {
-            NtsRecord::EndOfMessage => 0,
+            NtsRecord::EndOfMessage | NtsRecord::KeepAlive => 0,
+            NtsRecord::Error { .. } | NtsRecord::Warning { .. } | NtsRecord::Port { .. } => {
+                size_of::<u16>()
+            }
             NtsRecord::NextProtocol { protocol_ids } => protocol_ids.len() * size_of::<u16>(),
-            NtsRecord::Error { .. } => size_of::<u16>(),
-            NtsRecord::Warning { .. } => size_of::<u16>(),
             NtsRecord::AeadAlgorithm { algorithm_ids } => algorithm_ids.len() * size_of::<u16>(),
             NtsRecord::NewCookie { cookie_data } => cookie_data.len(),
             NtsRecord::Server { name } => name.len(),
-            NtsRecord::Port { .. } => size_of::<u16>(),
             NtsRecord::Unknown { data, .. } => data.len(),
-            NtsRecord::KeepAlive => 0,
             NtsRecord::SupportedNextProtocolList {
                 supported_protocols,
             } => supported_protocols.len() * size_of::<u16>(),
