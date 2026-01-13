@@ -98,7 +98,7 @@
 #![warn(clippy::ptr_cast_constness)]
 #![warn(clippy::pub_underscore_fields)]
 #![warn(clippy::range_minus_one)]
-//FIXME: Enable #![warn(clippy::range_plus_one)]
+#![warn(clippy::range_plus_one)]
 //FIXME: Enable #![warn(clippy::redundant_closure_for_method_calls)]
 //FIXME: Enable #![warn(clippy::redundant_else)]
 #![warn(clippy::ref_as_ptr)]
