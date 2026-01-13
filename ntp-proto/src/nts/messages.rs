@@ -37,6 +37,8 @@ pub enum Request<'a> {
 }
 
 impl Request<'_> {
+    // FIXME: Figure out a way to simplify and/or split this function.
+    #[expect(clippy::too_many_lines)]
     pub async fn parse(reader: impl AsyncRead + Unpin) -> Result<Self, NtsError> {
         let mut reader = reader.take(MAX_MESSAGE_SIZE);
 
@@ -513,6 +515,10 @@ impl SupportsResponse<'_> {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Long tests are not really a big problem"
+)]
 mod tests {
     use std::{
         future::Future,

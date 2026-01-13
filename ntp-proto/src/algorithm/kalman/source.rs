@@ -982,6 +982,10 @@ impl<
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Long tests are not really a big problem"
+)]
 mod tests {
     use crate::{packet::NtpLeapIndicator, time_types::NtpInstant};
 

@@ -566,6 +566,10 @@ impl From<toml::de::Error> for ConfigError {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Long tests are not really a big problem"
+)]
 mod tests {
     use ntp_proto::{NtpDuration, ProtocolVersion, StepThreshold};
 
