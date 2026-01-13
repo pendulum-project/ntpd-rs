@@ -398,7 +398,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
             actions.push(SystemAction::SetTimer(timeout));
         }
         if let Some(message) = update.source_message {
-            actions.push(SystemAction::UpdateSources(SystemSourceUpdate { message }))
+            actions.push(SystemAction::UpdateSources(SystemSourceUpdate { message }));
         }
         actions.into()
     }

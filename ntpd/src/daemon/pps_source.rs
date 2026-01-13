@@ -133,10 +133,10 @@ where
                         self.source.handle_message(update.message);
                     }
                     Err(e) => {
-                        error!("Error receiving system update: {:?}", e)
+                        error!("Error receiving system update: {:?}", e);
                     }
                 },
-            };
+            }
         }
     }
 

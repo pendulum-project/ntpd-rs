@@ -58,7 +58,7 @@ impl ServerStatHandler for ServerStats {
                 (ServerResponse::ProvideTime, _) => self.nts_accepted_packets.inc(),
                 (ServerResponse::Deny, _) => self.nts_denied_packets.inc(),
                 (ServerResponse::Ignore, ServerReason::RateLimit) => {
-                    self.nts_rate_limited_packets.inc()
+                    self.nts_rate_limited_packets.inc();
                 }
                 _ => { /* counted above */ }
             }

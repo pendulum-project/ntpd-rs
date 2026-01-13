@@ -458,17 +458,17 @@ impl<'a> NtpPacket<'a> {
             NtpHeader::V3(header) => header.serialize(&mut *w, 3)?,
             NtpHeader::V4(header) => header.serialize(&mut *w, 4)?,
             NtpHeader::V5(header) => header.serialize(&mut *w)?,
-        };
+        }
 
         match self.header {
             NtpHeader::V3(_) => { /* No extension fields in V3 */ }
             NtpHeader::V4(_) => {
                 self.efdata
-                    .serialize(&mut *w, cipher, ExtensionHeaderVersion::V4)?
+                    .serialize(&mut *w, cipher, ExtensionHeaderVersion::V4)?;
             }
             NtpHeader::V5(_) => {
                 self.efdata
-                    .serialize(&mut *w, cipher, ExtensionHeaderVersion::V5)?
+                    .serialize(&mut *w, cipher, ExtensionHeaderVersion::V5)?;
             }
         }
 
@@ -642,7 +642,7 @@ impl<'a> NtpPacket<'a> {
                 // had the correct draft identification
                 if header.reference_timestamp == v5::UPGRADE_TIMESTAMP {
                     response_header.reference_timestamp = v5::UPGRADE_TIMESTAMP;
-                };
+                }
 
                 NtpPacket {
                     header: NtpHeader::V4(response_header),
@@ -1282,7 +1282,7 @@ impl NtpPacket<'_> {
             NtpHeader::V3(header) => header.origin_timestamp = timestamp,
             NtpHeader::V4(header) => header.origin_timestamp = timestamp,
             NtpHeader::V5(header) => {
-                header.client_cookie = v5::NtpClientCookie::from_ntp_timestamp(timestamp)
+                header.client_cookie = v5::NtpClientCookie::from_ntp_timestamp(timestamp);
             }
         }
     }

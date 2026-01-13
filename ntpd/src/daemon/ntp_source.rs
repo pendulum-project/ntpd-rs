@@ -359,7 +359,7 @@ where
                             unreachable!("Should not be updating system from startup")
                         }
                         ntp_proto::NtpSourceAction::SetTimer(timeout) => {
-                            poll_wait.as_mut().reset(Instant::now() + timeout)
+                            poll_wait.as_mut().reset(Instant::now() + timeout);
                         }
                         ntp_proto::NtpSourceAction::Reset => {
                             unreachable!("Should not be resetting from startup")
