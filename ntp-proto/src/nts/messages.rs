@@ -362,8 +362,7 @@ impl KeyExchangeResponse<'_> {
                     return Err(NtsError::UnrecognizedCriticalRecord);
                 }
                 // Ignored
-                NtsRecord::Unknown { .. } => {}
-                NtsRecord::Authentication { .. } => {}
+                NtsRecord::Unknown { .. } | NtsRecord::Authentication { .. } => {}
                 // Not allowed
                 NtsRecord::NtpServerDeny { .. }
                 | NtsRecord::FixedKeyRequest { .. }

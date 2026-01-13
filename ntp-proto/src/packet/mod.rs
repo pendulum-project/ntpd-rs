@@ -61,8 +61,7 @@ impl NtpLeapIndicator {
             NtpLeapIndicator::NoWarning => 0,
             NtpLeapIndicator::Leap61 => 1,
             NtpLeapIndicator::Leap59 => 2,
-            NtpLeapIndicator::Unknown => 3,
-            NtpLeapIndicator::Unsynchronized => 3,
+            NtpLeapIndicator::Unknown | NtpLeapIndicator::Unsynchronized => 3,
         }
     }
 
@@ -1045,16 +1044,14 @@ impl<'a> NtpPacket<'a> {
 
     pub fn leap(&self) -> NtpLeapIndicator {
         match self.header {
-            NtpHeader::V3(header) => header.leap,
-            NtpHeader::V4(header) => header.leap,
+            NtpHeader::V3(header) | NtpHeader::V4(header) => header.leap,
             NtpHeader::V5(header) => header.leap,
         }
     }
 
     pub fn mode(&self) -> NtpAssociationMode {
         match self.header {
-            NtpHeader::V3(header) => header.mode,
-            NtpHeader::V4(header) => header.mode,
+            NtpHeader::V3(header) | NtpHeader::V4(header) => header.mode,
 
             // FIXME long term the return type should change to capture both mode types
             NtpHeader::V5(header) => match header.mode {
@@ -1073,56 +1070,49 @@ impl<'a> NtpPacket<'a> {
 
     pub fn stratum(&self) -> u8 {
         match self.header {
-            NtpHeader::V3(header) => header.stratum,
-            NtpHeader::V4(header) => header.stratum,
+            NtpHeader::V3(header) | NtpHeader::V4(header) => header.stratum,
             NtpHeader::V5(header) => header.stratum,
         }
     }
 
     pub fn precision(&self) -> i8 {
         match self.header {
-            NtpHeader::V3(header) => header.precision,
-            NtpHeader::V4(header) => header.precision,
+            NtpHeader::V3(header) | NtpHeader::V4(header) => header.precision,
             NtpHeader::V5(header) => header.precision,
         }
     }
 
     pub fn root_delay(&self) -> NtpDuration {
         match self.header {
-            NtpHeader::V3(header) => header.root_delay,
-            NtpHeader::V4(header) => header.root_delay,
+            NtpHeader::V3(header) | NtpHeader::V4(header) => header.root_delay,
             NtpHeader::V5(header) => header.root_delay,
         }
     }
 
     pub fn root_dispersion(&self) -> NtpDuration {
         match self.header {
-            NtpHeader::V3(header) => header.root_dispersion,
-            NtpHeader::V4(header) => header.root_dispersion,
+            NtpHeader::V3(header) | NtpHeader::V4(header) => header.root_dispersion,
             NtpHeader::V5(header) => header.root_dispersion,
         }
     }
 
     pub fn receive_timestamp(&self) -> NtpTimestamp {
         match self.header {
-            NtpHeader::V3(header) => header.receive_timestamp,
-            NtpHeader::V4(header) => header.receive_timestamp,
+            NtpHeader::V3(header) | NtpHeader::V4(header) => header.receive_timestamp,
             NtpHeader::V5(header) => header.receive_timestamp,
         }
     }
 
     pub fn transmit_timestamp(&self) -> NtpTimestamp {
         match self.header {
-            NtpHeader::V3(header) => header.transmit_timestamp,
-            NtpHeader::V4(header) => header.transmit_timestamp,
+            NtpHeader::V3(header) | NtpHeader::V4(header) => header.transmit_timestamp,
             NtpHeader::V5(header) => header.transmit_timestamp,
         }
     }
 
     pub fn reference_id(&self) -> ReferenceId {
         match self.header {
-            NtpHeader::V3(header) => header.reference_id,
-            NtpHeader::V4(header) => header.reference_id,
+            NtpHeader::V3(header) | NtpHeader::V4(header) => header.reference_id,
             // TODO NTPv5 does not have reference IDs so this should always be None for now
             NtpHeader::V5(_header) => ReferenceId::NONE,
         }
@@ -1130,8 +1120,7 @@ impl<'a> NtpPacket<'a> {
 
     fn kiss_code(&self) -> ReferenceId {
         match self.header {
-            NtpHeader::V3(header) => header.reference_id,
-            NtpHeader::V4(header) => header.reference_id,
+            NtpHeader::V3(header) | NtpHeader::V4(header) => header.reference_id,
             // Kiss code in ntpv5 is the first four bytes of the server cookie
             NtpHeader::V5(header) => {
                 ReferenceId::from_bytes(header.server_cookie.0[..4].try_into().unwrap())
@@ -1141,8 +1130,7 @@ impl<'a> NtpPacket<'a> {
 
     pub fn is_kiss(&self) -> bool {
         match self.header {
-            NtpHeader::V3(header) => header.stratum == 0,
-            NtpHeader::V4(header) => header.stratum == 0,
+            NtpHeader::V3(header) | NtpHeader::V4(header) => header.stratum == 0,
             NtpHeader::V5(header) => header.stratum == 0,
         }
     }
@@ -1211,10 +1199,7 @@ impl<'a> NtpPacket<'a> {
             }
         }
         match self.header {
-            NtpHeader::V3(header) => {
-                header.origin_timestamp == identifier.expected_origin_timestamp
-            }
-            NtpHeader::V4(header) => {
+            NtpHeader::V3(header) | NtpHeader::V4(header) => {
                 header.origin_timestamp == identifier.expected_origin_timestamp
             }
             NtpHeader::V5(header) => {
@@ -1267,8 +1252,7 @@ impl NtpPacket<'_> {
 
     pub fn set_mode(&mut self, mode: NtpAssociationMode) {
         match &mut self.header {
-            NtpHeader::V3(header) => header.mode = mode,
-            NtpHeader::V4(header) => header.mode = mode,
+            NtpHeader::V3(header) | NtpHeader::V4(header) => header.mode = mode,
             NtpHeader::V5(header) => {
                 header.mode = match mode {
                     NtpAssociationMode::Client => v5::NtpMode::Request,
@@ -1281,8 +1265,7 @@ impl NtpPacket<'_> {
 
     pub fn set_origin_timestamp(&mut self, timestamp: NtpTimestamp) {
         match &mut self.header {
-            NtpHeader::V3(header) => header.origin_timestamp = timestamp,
-            NtpHeader::V4(header) => header.origin_timestamp = timestamp,
+            NtpHeader::V3(header) | NtpHeader::V4(header) => header.origin_timestamp = timestamp,
             NtpHeader::V5(header) => {
                 header.client_cookie = v5::NtpClientCookie::from_ntp_timestamp(timestamp);
             }
@@ -1291,64 +1274,58 @@ impl NtpPacket<'_> {
 
     pub fn set_transmit_timestamp(&mut self, timestamp: NtpTimestamp) {
         match &mut self.header {
-            NtpHeader::V3(header) => header.transmit_timestamp = timestamp,
-            NtpHeader::V4(header) => header.transmit_timestamp = timestamp,
+            NtpHeader::V3(header) | NtpHeader::V4(header) => header.transmit_timestamp = timestamp,
             NtpHeader::V5(header) => header.transmit_timestamp = timestamp,
         }
     }
 
     pub fn set_receive_timestamp(&mut self, timestamp: NtpTimestamp) {
         match &mut self.header {
-            NtpHeader::V3(header) => header.receive_timestamp = timestamp,
-            NtpHeader::V4(header) => header.receive_timestamp = timestamp,
+            NtpHeader::V3(header) | NtpHeader::V4(header) => header.receive_timestamp = timestamp,
             NtpHeader::V5(header) => header.receive_timestamp = timestamp,
         }
     }
 
     pub fn set_precision(&mut self, precision: i8) {
         match &mut self.header {
-            NtpHeader::V3(header) => header.precision = precision,
-            NtpHeader::V4(header) => header.precision = precision,
+            NtpHeader::V3(header) | NtpHeader::V4(header) => header.precision = precision,
             NtpHeader::V5(header) => header.precision = precision,
         }
     }
 
     pub fn set_leap(&mut self, leap: NtpLeapIndicator) {
         match &mut self.header {
-            NtpHeader::V3(header) => header.leap = leap,
-            NtpHeader::V4(header) => header.leap = leap,
+            NtpHeader::V3(header) | NtpHeader::V4(header) => header.leap = leap,
             NtpHeader::V5(header) => header.leap = leap,
         }
     }
 
     pub fn set_stratum(&mut self, stratum: u8) {
         match &mut self.header {
-            NtpHeader::V3(header) => header.stratum = stratum,
-            NtpHeader::V4(header) => header.stratum = stratum,
+            NtpHeader::V3(header) | NtpHeader::V4(header) => header.stratum = stratum,
             NtpHeader::V5(header) => header.stratum = stratum,
         }
     }
 
     pub fn set_reference_id(&mut self, reference_id: ReferenceId) {
         match &mut self.header {
-            NtpHeader::V3(header) => header.reference_id = reference_id,
-            NtpHeader::V4(header) => header.reference_id = reference_id,
+            NtpHeader::V3(header) | NtpHeader::V4(header) => header.reference_id = reference_id,
             NtpHeader::V5(_header) => todo!("NTPv5 does not have reference IDs"),
         }
     }
 
     pub fn set_root_delay(&mut self, root_delay: NtpDuration) {
         match &mut self.header {
-            NtpHeader::V3(header) => header.root_delay = root_delay,
-            NtpHeader::V4(header) => header.root_delay = root_delay,
+            NtpHeader::V3(header) | NtpHeader::V4(header) => header.root_delay = root_delay,
             NtpHeader::V5(header) => header.root_delay = root_delay,
         }
     }
 
     pub fn set_root_dispersion(&mut self, root_dispersion: NtpDuration) {
         match &mut self.header {
-            NtpHeader::V3(header) => header.root_dispersion = root_dispersion,
-            NtpHeader::V4(header) => header.root_dispersion = root_dispersion,
+            NtpHeader::V3(header) | NtpHeader::V4(header) => {
+                header.root_dispersion = root_dispersion;
+            }
             NtpHeader::V5(header) => header.root_dispersion = root_dispersion,
         }
     }
