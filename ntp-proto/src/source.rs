@@ -231,7 +231,7 @@ pub struct OneWaySourceUpdate<SourceMessage> {
 }
 
 #[derive(Debug, Clone, Copy)]
-#[allow(clippy::large_enum_variant)]
+#[expect(clippy::large_enum_variant)]
 pub enum SourceSnapshot {
     Ntp(NtpSourceSnapshot),
     OneWay(OneWaySourceSnapshot),
@@ -418,7 +418,7 @@ impl<SourceMessage> NtpSourceUpdate<SourceMessage> {
 }
 
 #[derive(Debug, Clone)]
-#[allow(clippy::large_enum_variant)]
+#[expect(clippy::large_enum_variant)]
 pub enum NtpSourceAction<SourceMessage> {
     /// Send a message over the network. When this is issued, the network port maybe changed.
     Send(Vec<u8>),

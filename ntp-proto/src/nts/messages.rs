@@ -588,7 +588,6 @@ mod tests {
                 assert_eq!(algorithms, [AeadAlgorithm::AeadAesSivCmac256].as_slice());
                 assert_eq!(protocols, [NextProtocol::NTPv4].as_slice());
             }
-            #[allow(unreachable_patterns)]
             _ => panic!("Unexpected misparse of message"),
         }
 
@@ -612,7 +611,6 @@ mod tests {
                     [NextProtocol::DraftNTPv5, NextProtocol::NTPv4].as_slice()
                 );
             }
-            #[allow(unreachable_patterns)]
             _ => panic!("Unexpected misparse of message"),
         }
     }
@@ -734,7 +732,6 @@ mod tests {
                 assert_eq!(algorithms, [AeadAlgorithm::AeadAesSivCmac256].as_slice());
                 assert_eq!(protocols, [NextProtocol::NTPv4].as_slice());
             }
-            #[allow(unreachable_patterns)]
             _ => panic!("Unexpected misparse of message"),
         }
 
@@ -755,7 +752,6 @@ mod tests {
                 assert_eq!(algorithms, [AeadAlgorithm::AeadAesSivCmac256].as_slice());
                 assert_eq!(protocols, [NextProtocol::NTPv4].as_slice());
             }
-            #[allow(unreachable_patterns)]
             _ => panic!("Unexpected misparse of message"),
         }
 
@@ -776,7 +772,6 @@ mod tests {
                 assert_eq!(algorithms, [AeadAlgorithm::AeadAesSivCmac256].as_slice());
                 assert_eq!(protocols, [NextProtocol::NTPv4].as_slice());
             }
-            #[allow(unreachable_patterns)]
             _ => panic!("Unexpected misparse of message"),
         }
 
@@ -797,7 +792,6 @@ mod tests {
                 assert_eq!(algorithms, [AeadAlgorithm::AeadAesSivCmac256].as_slice());
                 assert_eq!(protocols, [NextProtocol::NTPv4].as_slice());
             }
-            #[allow(unreachable_patterns)]
             _ => panic!("Unexpected misparse of message"),
         }
 
@@ -818,7 +812,6 @@ mod tests {
                 assert_eq!(algorithms, [AeadAlgorithm::AeadAesSivCmac256].as_slice());
                 assert_eq!(protocols, [NextProtocol::NTPv4].as_slice());
             }
-            #[allow(unreachable_patterns)]
             _ => panic!("Unexpected misparse of message"),
         }
     }
@@ -844,7 +837,6 @@ mod tests {
                 assert_eq!(protocols, [NextProtocol::NTPv4].as_slice());
                 assert_eq!(denied_servers, ["hi"].as_slice());
             }
-            #[allow(unreachable_patterns)]
             _ => panic!("Unexpected misparse of message"),
         }
     }

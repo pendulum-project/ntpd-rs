@@ -680,7 +680,6 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
 }
 
 #[derive(Debug, Clone)]
-#[allow(clippy::large_enum_variant)]
 enum SourceStateInner<
     D: Debug + Copy + Clone,
     N: MeasurementNoiseEstimator<MeasurementDelay = D> + Clone,

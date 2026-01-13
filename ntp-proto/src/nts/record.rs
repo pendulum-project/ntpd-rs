@@ -308,7 +308,7 @@ impl NtsRecord<'_> {
     fn record_type(&self) -> u16 {
         const CRITICAL_BIT: u16 = 0x8000;
         match self {
-            #[allow(clippy::identity_op)]
+            #[expect(clippy::identity_op)]
             NtsRecord::EndOfMessage => 0 | CRITICAL_BIT,
             NtsRecord::NextProtocol { .. } => 1 | CRITICAL_BIT,
             NtsRecord::Error { .. } => 2 | CRITICAL_BIT,
