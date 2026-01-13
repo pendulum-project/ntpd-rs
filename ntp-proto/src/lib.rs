@@ -117,7 +117,7 @@
 #![warn(clippy::string_add_assign)]
 #![warn(clippy::struct_excessive_bools)]
 //FIXME: Enable #![warn(clippy::struct_field_names)]
-//FIXME: Enable #![warn(clippy::too_many_lines)]
+#![warn(clippy::too_many_lines)]
 #![warn(clippy::transmute_ptr_to_ptr)]
 //FIXME: Enable #![warn(clippy::trivially_copy_pass_by_ref)]
 #![warn(clippy::unchecked_duration_subtraction)]

@@ -139,6 +139,9 @@ macro_rules! collect_servers {
     }};
 }
 
+// Allow this function to be oversized as it is otherwise straightforward
+// and has no reasonable way to be split.
+#[expect(clippy::too_many_lines)]
 pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> std::fmt::Result {
     format_metric(
         w,

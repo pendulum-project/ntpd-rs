@@ -475,6 +475,8 @@ impl KeyExchangeServer {
         })
     }
 
+    // FIXME: Figure out a way to simplify and/or split this function.
+    #[expect(clippy::too_many_lines)]
     pub async fn handle_longterm<T: AsyncRead + AsyncWrite + Unpin, U: AsRef<KeySet>>(
         &self,
         mut io: tokio_rustls::server::TlsStream<T>,
@@ -612,6 +614,8 @@ impl KeyExchangeServer {
         }
     }
 
+    // FIXME: Figure out a way to simplify or split this function
+    #[expect(clippy::too_many_lines)]
     pub async fn handle_connection<IO: AsyncRead + AsyncWrite + Unpin, P>(
         &self,
         io: IO,
@@ -835,6 +839,10 @@ impl KeyExchangeServer {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Long tests are not really a big problem"
+)]
 mod tests {
     use super::*;
 

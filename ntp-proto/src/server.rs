@@ -170,6 +170,8 @@ impl<C: NtpClock> Server<C> {
     /// If the buffer isn't large enough to encode the reply, this
     /// will log an error and ignore the incoming packet. A buffer
     /// as large as the message will always suffice.
+    // FIXME: Figure out a way to simplify or split this function
+    #[expect(clippy::too_many_lines)]
     pub fn handle<'a>(
         &mut self,
         client_ip: IpAddr,
@@ -433,6 +435,10 @@ impl<'de> Deserialize<'de> for IpSubnet {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Long tests are not really a big problem"
+)]
 mod tests {
     use std::net::{Ipv4Addr, Ipv6Addr};
 

@@ -116,6 +116,8 @@ where
         SocketResult::Ok
     }
 
+    // FIXME: Figure out reasonable ways to simplify and/or split this function
+    #[expect(clippy::too_many_lines)]
     async fn run(&mut self, mut poll_wait: Pin<&mut T>) {
         loop {
             let mut buf = [0_u8; 1024];

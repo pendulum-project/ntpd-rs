@@ -868,6 +868,10 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Long tests are not really a big problem"
+)]
 mod test {
     use crate::{
         NtpClock,

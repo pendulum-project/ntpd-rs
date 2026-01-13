@@ -297,7 +297,9 @@ impl<'a> NtpPacket<'a> {
         }
     }
 
-    #[allow(clippy::result_large_err)]
+    #[expect(clippy::result_large_err)]
+    // FIXME: Figure out a way to simplify and/or split this function.
+    #[expect(clippy::too_many_lines)]
     pub fn deserialize(
         data: &'a [u8],
         cipher: &(impl CipherProvider + ?Sized),
@@ -1363,6 +1365,10 @@ impl Default for NtpPacket<'_> {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Long tests are not really a big problem"
+)]
 mod tests {
     use crate::{
         keyset::KeySetProvider, nts::AeadAlgorithm, system::TimeSnapshot,

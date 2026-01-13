@@ -97,6 +97,8 @@ pub struct KalmanClockController<C: NtpClock, SourceId: Hash + Eq + Copy + Debug
 }
 
 impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, SourceId> {
+    // FIXME: Figure out a way to simplify and/or split this function.
+    #[expect(clippy::too_many_lines)]
     fn update_clock(
         &mut self,
         time: NtpTimestamp,
