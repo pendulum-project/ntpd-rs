@@ -180,7 +180,7 @@ impl<'a> ExtensionField<'a> {
             (data_length as u16 + ExtensionField::HEADER_LENGTH as u16).max(minimum_size);
 
         if version == ExtensionHeaderVersion::V4 {
-            actual_length = next_multiple_of_u16(actual_length, 4)
+            actual_length = next_multiple_of_u16(actual_length, 4);
         }
 
         w.write_all(&ef_id.to_type_id().to_be_bytes())?;

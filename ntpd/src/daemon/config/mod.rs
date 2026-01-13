@@ -82,13 +82,13 @@ impl CliArg {
 
                     if let Some((key, value)) = long_arg.split_once('=') {
                         if takes_argument.contains(&key) {
-                            processed.push(CliArg::Argument(key.to_string(), value.to_string()))
+                            processed.push(CliArg::Argument(key.to_string(), value.to_string()));
                         } else {
-                            invalid?
+                            invalid?;
                         }
                     } else if takes_argument.contains(&long_arg) {
                         if let Some(next) = arg_iter.next() {
-                            processed.push(CliArg::Argument(long_arg.to_string(), next))
+                            processed.push(CliArg::Argument(long_arg.to_string(), next));
                         } else {
                             Err(format!("'{}' expects an argument", &long_arg))?;
                         }

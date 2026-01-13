@@ -120,7 +120,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 snapshot.state =
                     snapshot
                         .state
-                        .progress_time(time, snapshot.wander, snapshot.period)
+                        .progress_time(time, snapshot.wander, snapshot.period);
             }
         }
 
@@ -346,7 +346,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                     actual_change,
                     state.wander,
                     state.period,
-                )
+                );
             }
         }
         debug!(

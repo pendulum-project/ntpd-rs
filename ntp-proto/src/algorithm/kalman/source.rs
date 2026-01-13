@@ -319,7 +319,7 @@ impl MeasurementNoiseEstimator for AveragingBuffer {
     type MeasurementDelay = NtpDuration;
 
     fn update(&mut self, delay: Self::MeasurementDelay) {
-        self.update(delay.to_seconds())
+        self.update(delay.to_seconds());
     }
 
     fn get_noise_estimate(&self) -> f64 {
@@ -507,10 +507,10 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
             |mut value, prediction, period| {
                 if let Some(period) = period {
                     while (value - prediction).ventry(0) > period / 2.0 {
-                        value = value - Vector::new_vector([period])
+                        value = value - Vector::new_vector([period]);
                     }
                     while (value - prediction).ventry(0) < -period / 2.0 {
-                        value = value + Vector::new_vector([period])
+                        value = value + Vector::new_vector([period]);
                     }
                 }
 
@@ -875,7 +875,7 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
         match &mut self.0 {
             SourceStateInner::Initial(_) => {}
             SourceStateInner::Stable(filter) => {
-                filter.process_frequency_steering(time, steer, period)
+                filter.process_frequency_steering(time, steer, period);
             }
         }
     }

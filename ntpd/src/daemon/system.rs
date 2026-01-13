@@ -376,7 +376,7 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C, SourceId = So
             MsgForSystem::MustDemobilize(index) => {
                 if let Err(e) = self.handle_source_demobilize(index).await {
                     unreachable!("Could not demobilize source: {}", e);
-                };
+                }
             }
             MsgForSystem::SourceUpdate(index, update) => {
                 match self.system.handle_source_update(index, update) {
@@ -549,7 +549,7 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C, SourceId = So
                     source,
                 );
             }
-        };
+        }
 
         // Try and find a related spawner and notify that spawner.
         // This makes sure that the spawner that initially sent the create event

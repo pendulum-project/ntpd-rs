@@ -298,7 +298,7 @@ impl NtsRecord<'_> {
             }
             NtsRecord::FixedKeyRequest { c2s, s2c } => {
                 writer.write_all(c2s).await?;
-                writer.write_all(s2c).await?
+                writer.write_all(s2c).await?;
             }
             NtsRecord::NtpServerDeny { denied } => writer.write_all(denied.as_bytes()).await?,
             NtsRecord::Authentication { key } => writer.write_all(key.as_bytes()).await?,

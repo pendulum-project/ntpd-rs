@@ -97,7 +97,7 @@ impl Request<'_> {
                         return Err(NtsError::Invalid);
                     }
 
-                    authentication = Some(key)
+                    authentication = Some(key);
                 }
                 NtsRecord::KeepAlive => keep_alive = true,
                 // Unknown critical
@@ -331,14 +331,14 @@ impl KeyExchangeResponse<'_> {
                 }
                 NtsRecord::NewCookie { cookie_data } => {
                     if cookies.len() < DEFAULT_NUMBER_OF_COOKIES {
-                        cookies.push(cookie_data)
+                        cookies.push(cookie_data);
                     }
                 }
                 NtsRecord::Server { name } => {
                     if server.is_some() {
                         return Err(NtsError::Invalid);
                     }
-                    server = Some(name)
+                    server = Some(name);
                 }
                 NtsRecord::Port {
                     port: received_port,

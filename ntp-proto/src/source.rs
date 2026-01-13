@@ -113,7 +113,7 @@ impl<Controller: SourceController<MeasurementDelay = ()>> OneWaySource<Controlle
     }
 
     pub fn handle_message(&mut self, message: Controller::ControllerMessage) {
-        self.controller.handle_message(message)
+        self.controller.handle_message(message);
     }
 
     pub fn observe<SourceId>(
@@ -693,7 +693,7 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
                 } else {
                     debug!(tries_left, "Server did not yet respond with upgrade code");
                     self.protocol_version = ProtocolVersion::V4UpgradingToV5 { tries_left };
-                };
+                }
             } else if let ProtocolVersion::UpgradedToV5 = self.protocol_version {
                 self.protocol_version = ProtocolVersion::V5;
             }
@@ -809,7 +809,7 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
                     .bloom_filter
                     .handle_response(header.client_cookie, ref_id);
                 if let Err(err) = result {
-                    warn!(?err, "Invalid ReferenceIdResponse from source, ignoring...")
+                    warn!(?err, "Invalid ReferenceIdResponse from source, ignoring...");
                 }
             }
         }
@@ -1105,7 +1105,7 @@ mod test {
         source.nts = Some(Box::new(ntsdata));
         let actions = source.handle_timer();
         for action in actions {
-            assert!(matches!(action, NtpSourceAction::Reset))
+            assert!(matches!(action, NtpSourceAction::Reset));
         }
     }
 

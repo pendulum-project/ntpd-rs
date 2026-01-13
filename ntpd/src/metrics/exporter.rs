@@ -163,7 +163,7 @@ fn run(options: NtpMetricsExporterOptions) -> Result<(), Box<dyn std::error::Err
                     .await;
                 }
                 Ok(listener) => break listener,
-            };
+            }
         };
 
         // this has a lot more permits than the daemon observer has, but we expect http transfers to

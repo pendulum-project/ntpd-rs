@@ -140,7 +140,7 @@ impl Spawner for NtsPoolSpawner {
                 Err(_) => {
                     warn!("timeout while attempting key exchange");
                 }
-            };
+            }
         }
 
         Ok(())
