@@ -375,7 +375,7 @@ mod tests {
 
     #[test]
     fn parse_request() {
-        #[allow(clippy::unusual_byte_groupings)] // Bits are grouped by fields
+        #[expect(clippy::unusual_byte_groupings)] // Bits are grouped by fields
         #[rustfmt::skip]
         let data = [
             // LI VN  Mode
@@ -439,7 +439,7 @@ mod tests {
 
     #[test]
     fn parse_response() {
-        #[allow(clippy::unusual_byte_groupings)] // Bits are grouped by fields
+        #[expect(clippy::unusual_byte_groupings)] // Bits are grouped by fields
         #[rustfmt::skip]
         let data = [
             // LI VN  Mode
@@ -512,7 +512,7 @@ mod tests {
 
     #[test]
     fn parse_response_unsynchronized() {
-        #[allow(clippy::unusual_byte_groupings)] // Bits are grouped by fields
+        #[expect(clippy::unusual_byte_groupings)] // Bits are grouped by fields
         #[rustfmt::skip]
         let data = [
             // LI VN  Mode
@@ -623,7 +623,7 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::unusual_byte_groupings)] // Bits are grouped by fields
+    #[expect(clippy::unusual_byte_groupings)] // Bits are grouped by fields
     fn fail_on_incorrect_version() {
         let mut data: [u8; 48] = [0u8; 48];
         data[0] = 0b_00_111_100;

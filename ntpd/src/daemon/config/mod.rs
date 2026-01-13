@@ -841,7 +841,7 @@ mod tests {
     fn duration_not_nan() {
         #[derive(Debug, Deserialize)]
         struct Helper {
-            #[allow(unused)]
+            #[expect(unused)]
             duration: NtpDuration,
         }
 
@@ -859,7 +859,7 @@ mod tests {
     fn step_threshold_not_nan() {
         #[derive(Debug, Deserialize)]
         struct Helper {
-            #[allow(unused)]
+            #[expect(unused)]
             threshold: StepThreshold,
         }
 

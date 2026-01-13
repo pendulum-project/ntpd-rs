@@ -217,7 +217,7 @@ struct SystemTask<
 impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C, SourceId = SourceId>, T: Wait>
     SystemTask<C, Controller, T>
 {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     fn new(
         clock: C,
         interface: Option<InterfaceName>,

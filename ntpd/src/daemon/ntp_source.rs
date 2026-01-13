@@ -30,7 +30,7 @@ impl Wait for Sleep {
 }
 
 #[derive(Debug, Clone)]
-#[allow(clippy::large_enum_variant)]
+#[expect(clippy::large_enum_variant)]
 pub enum MsgForSystem<SourceMessage> {
     /// Received a Kiss-o'-Death and must demobilize
     MustDemobilize(SourceId),
@@ -122,7 +122,6 @@ where
         loop {
             let mut buf = [0_u8; 1024];
 
-            #[allow(clippy::large_enum_variant)]
             enum SelectResult<Controller: SourceController> {
                 Timer,
                 Recv(Result<RecvResult<SocketAddr>, std::io::Error>),
@@ -334,7 +333,7 @@ impl<C, Controller: SourceController<MeasurementDelay = NtpDuration>>
 where
     C: 'static + NtpClock + Send + Sync,
 {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     #[instrument(level = tracing::Level::ERROR, name = "Ntp Source", skip(timestamp_mode, clock, channels, source, initial_actions))]
     pub fn spawn(
         index: SourceId,

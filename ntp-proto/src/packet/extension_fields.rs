@@ -592,7 +592,6 @@ impl<'a> ExtensionFieldData<'a> {
         Ok(())
     }
 
-    #[allow(clippy::type_complexity)]
     pub(super) fn deserialize(
         data: &'a [u8],
         header_size: usize,

@@ -155,7 +155,6 @@ impl<ControllerMessage: Clone> Clone for SystemSourceUpdate<ControllerMessage> {
 }
 
 #[derive(Debug, Clone)]
-#[allow(clippy::large_enum_variant)]
 pub enum SystemAction<ControllerMessage> {
     UpdateSources(SystemSourceUpdate<ControllerMessage>),
     SetTimer(Duration),
@@ -297,7 +296,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         Ok(OneWaySource::new(controller))
     }
 
-    #[allow(clippy::type_complexity)]
+    #[expect(clippy::type_complexity)]
     pub fn create_ntp_source(
         &mut self,
         id: SourceId,

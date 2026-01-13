@@ -140,7 +140,6 @@ where
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     #[instrument(level = tracing::Level::ERROR, name = "Pps Source", skip(clock, channels, source))]
     pub fn spawn(
         index: SourceId,
