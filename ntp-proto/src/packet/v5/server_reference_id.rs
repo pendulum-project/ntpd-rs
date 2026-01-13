@@ -380,7 +380,7 @@ mod tests {
                 continue;
             };
 
-            for _chunk in 0..((512 / chunk_size) + 1) {
+            for _chunk in 0..=(512 / chunk_size) {
                 let cookie = NtpClientCookie::new_random();
                 let request = bf.next_request(cookie);
                 let response = request.to_response(&target_filter).unwrap();
