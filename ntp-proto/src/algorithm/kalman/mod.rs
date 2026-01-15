@@ -199,7 +199,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 .iter()
                 .map(|v| v.wander)
                 .fold(None, |v: Option<f64>, a: f64| {
-                    Some(v.map(|b| b.max(a)).unwrap_or(a))
+                    Some(v.map_or(a, |b| b.max(a)))
                 })
                 .unwrap_or(self.algo_config.initial_wander);
             self.clock
@@ -256,8 +256,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 || self
                     .synchronization_config
                     .accumulated_step_panic_threshold
-                    .map(|v| self.timedata.accumulated_steps > v)
-                    .unwrap_or(false)
+                    .is_some_and(|v| self.timedata.accumulated_steps > v)
             {
                 error!(
                     "Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate. If the clock is significantly wrong, you can use `ntp-ctl force-sync` to correct it."

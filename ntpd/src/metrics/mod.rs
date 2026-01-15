@@ -196,8 +196,7 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
             state
                 .system
                 .accumulated_steps_threshold
-                .map(NtpDuration::to_seconds)
-                .unwrap_or(-1.0),
+                .map_or(-1.0, NtpDuration::to_seconds),
         ),
     )?;
 
