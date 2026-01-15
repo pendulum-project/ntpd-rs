@@ -155,8 +155,8 @@ impl TryFrom<&str> for ServerConfig {
             listen: SocketAddr::from_str(value)?,
             denylist: default_denylist(),
             allowlist: default_allowlist(),
-            rate_limiting_cache_size: Default::default(),
-            rate_limiting_cutoff: Default::default(),
+            rate_limiting_cache_size: 0,
+            rate_limiting_cutoff: Duration::default(),
             require_nts: None,
             accept_ntp_versions: default_accepted_ntp_versions(),
         })
@@ -170,8 +170,8 @@ impl From<SocketAddr> for ServerConfig {
             listen,
             denylist: default_denylist(),
             allowlist: default_allowlist(),
-            rate_limiting_cache_size: Default::default(),
-            rate_limiting_cutoff: Default::default(),
+            rate_limiting_cache_size: 0,
+            rate_limiting_cutoff: Duration::default(),
             require_nts: None,
             accept_ntp_versions: default_accepted_ntp_versions(),
         }

@@ -202,8 +202,8 @@ mod tests {
 
     use ntp_proto::v5::{BloomFilter, ServerId};
     use ntp_proto::{
-        NtpDuration, NtpLeapIndicator, NtpTimestamp, PollIntervalLimits, Reach, ReferenceId,
-        TimeSnapshot,
+        NtpDuration, NtpLeapIndicator, NtpTimestamp, ObservableSourceTimedata, PollIntervalLimits,
+        Reach, ReferenceId, TimeSnapshot,
     };
     use tokio::{io::AsyncReadExt, net::UnixStream};
 
@@ -266,8 +266,8 @@ mod tests {
         source_snapshots.insert(
             id,
             ObservableSourceState {
-                timedata: Default::default(),
-                unanswered_polls: Reach::default().unanswered_polls(),
+                timedata: ObservableSourceTimedata::default(),
+                unanswered_polls: Reach::never().unanswered_polls(),
                 poll_interval: PollIntervalLimits::default().min,
                 nts_cookies: None,
                 name: "127.0.0.3:123".into(),
@@ -341,8 +341,8 @@ mod tests {
         source_snapshots.insert(
             id,
             ObservableSourceState {
-                timedata: Default::default(),
-                unanswered_polls: Reach::default().unanswered_polls(),
+                timedata: ObservableSourceTimedata::default(),
+                unanswered_polls: Reach::never().unanswered_polls(),
                 poll_interval: PollIntervalLimits::default().min,
                 nts_cookies: None,
                 name: "127.0.0.3:123".into(),

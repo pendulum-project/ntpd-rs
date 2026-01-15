@@ -321,7 +321,7 @@ pub struct NtsClientConfig {
 impl Default for NtsClientConfig {
     fn default() -> Self {
         Self {
-            certificates: Default::default(),
+            certificates: Arc::new([]),
             protocol_version: ProtocolVersion::V4,
         }
     }

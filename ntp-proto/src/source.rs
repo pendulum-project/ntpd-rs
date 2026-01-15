@@ -180,7 +180,7 @@ impl Measurement<NtpDuration> {
 /// As valid packets arrive, the rightmost bit is set to one.
 /// If the register contains any nonzero bits, the server is considered reachable;
 /// otherwise, it is unreachable.
-#[derive(Default, Clone, Copy, Serialize, Deserialize)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct Reach(u8);
 
 impl std::fmt::Debug for Reach {
@@ -199,6 +199,10 @@ impl std::fmt::Debug for Reach {
 }
 
 impl Reach {
+    pub fn never() -> Self {
+        Reach(0)
+    }
+
     pub fn is_reachable(&self) -> bool {
         self.0 != 0
     }
@@ -325,7 +329,7 @@ impl NtpSourceSnapshot {
 pub fn source_snapshot() -> NtpSourceSnapshot {
     use std::net::Ipv4Addr;
 
-    let mut reach = crate::source::Reach::default();
+    let mut reach = crate::source::Reach::never();
     reach.received_packet();
 
     NtpSourceSnapshot {
@@ -497,7 +501,7 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
                 current_request_identifier: None,
                 source_id: ReferenceId::from_ip(source_addr.ip()),
                 source_addr,
-                reach: Default::default(),
+                reach: Reach::never(),
                 tries: 0,
 
                 stratum: 16,
@@ -849,7 +853,7 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
 
             source_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
             source_id: ReferenceId::from_int(0),
-            reach: Reach::default(),
+            reach: Reach::never(),
             tries: 0,
 
             stratum: 0,
@@ -991,7 +995,7 @@ mod test {
 
     #[test]
     fn reachability() {
-        let mut reach = Reach::default();
+        let mut reach = Reach::never();
 
         // the default reach register value is 0, and hence not reachable
         assert!(!reach.is_reachable());
