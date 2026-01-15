@@ -646,7 +646,7 @@ impl<'a> TryFrom<&'a str> for NtpSourceConfig {
         StandardSource::try_from(value).map(|first| {
             Self::Standard(FlattenedPair {
                 first,
-                second: Default::default(),
+                second: PartialSourceConfig::default(),
             })
         })
     }

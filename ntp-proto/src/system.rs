@@ -237,7 +237,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
             synchronization_config,
             system,
             ip_list,
-            sources: Default::default(),
+            sources: HashMap::new(),
             controller: Controller::new(clock, synchronization_config, algorithm_config)?,
             controller_took_control: false,
         })
@@ -418,7 +418,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
 mod tests {
     use std::net::{Ipv4Addr, SocketAddr};
 
-    use crate::{NtpSourceSnapshot, time_types::PollIntervalLimits};
+    use crate::{NtpSourceSnapshot, Reach, time_types::PollIntervalLimits};
 
     use super::*;
 
@@ -443,7 +443,7 @@ mod tests {
                     source_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
                     source_id: ReferenceId::KISS_DENY,
                     poll_interval: PollIntervalLimits::default().max,
-                    reach: Default::default(),
+                    reach: Reach::never(),
                     stratum: 2,
                     reference_id: ReferenceId::NONE,
                     protocol_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
@@ -453,7 +453,7 @@ mod tests {
                     source_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
                     source_id: ReferenceId::KISS_RATE,
                     poll_interval: PollIntervalLimits::default().max,
-                    reach: Default::default(),
+                    reach: Reach::never(),
                     stratum: 3,
                     reference_id: ReferenceId::NONE,
                     protocol_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),

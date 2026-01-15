@@ -20,7 +20,7 @@ impl PpsSpawner {
         PpsSpawner {
             config,
             source_config,
-            id: Default::default(),
+            id: SpawnerId::new(),
             has_spawned: false,
         }
     }

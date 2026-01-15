@@ -38,9 +38,9 @@ impl PoolSpawner {
         PoolSpawner {
             config,
             source_config,
-            id: Default::default(),
-            current_sources: Default::default(),
-            known_ips: Default::default(),
+            id: SpawnerId::new(),
+            current_sources: vec![],
+            known_ips: vec![],
         }
     }
 }

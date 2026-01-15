@@ -271,9 +271,9 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C, SourceId = So
                 spawn_rx,
                 spawn_tx,
 
-                sources: Default::default(),
-                servers: Default::default(),
-                spawners: Default::default(),
+                sources: HashMap::new(),
+                servers: vec![],
+                spawners: vec![],
                 clock,
                 timestamp_mode,
                 interface,

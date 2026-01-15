@@ -43,7 +43,7 @@ impl std::error::Error for StandardSpawnError {}
 impl StandardSpawner {
     pub fn new(config: StandardSource, source_config: SourceConfig) -> StandardSpawner {
         StandardSpawner {
-            id: Default::default(),
+            id: SpawnerId::new(),
             config,
             source_config,
             resolved: None,

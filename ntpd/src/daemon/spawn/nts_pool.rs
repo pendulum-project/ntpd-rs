@@ -62,8 +62,8 @@ impl NtsPoolSpawner {
             config,
             key_exchange_client,
             source_config,
-            id: Default::default(),
-            current_sources: Default::default(),
+            id: SpawnerId::new(),
+            current_sources: vec![],
         })
     }
 

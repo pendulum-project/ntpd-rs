@@ -318,9 +318,9 @@ pub struct ObservabilityConfig {
 impl Default for ObservabilityConfig {
     fn default() -> Self {
         Self {
-            log_level: Default::default(),
+            log_level: None,
             ansi_colors: default_ansi_colors(),
-            observation_path: Default::default(),
+            observation_path: None,
             observation_permissions: default_observation_permissions(),
             metrics_exporter_listen: default_metrics_exporter_listen(),
         }
@@ -582,7 +582,7 @@ mod tests {
                     address: NormalizedAddress::new_unchecked("example.com", 123).into(),
                     ntp_version: ProtocolVersion::V4,
                 },
-                second: Default::default()
+                second: PartialSourceConfig::default()
             })]
         );
         assert!(config.observability.log_level.is_none());
@@ -599,7 +599,7 @@ mod tests {
                     address: NormalizedAddress::new_unchecked("example.com", 123).into(),
                     ntp_version: ProtocolVersion::V4,
                 },
-                second: Default::default()
+                second: PartialSourceConfig::default()
             })]
         );
 
@@ -614,7 +614,7 @@ mod tests {
                     address: NormalizedAddress::new_unchecked("example.com", 123).into(),
                     ntp_version: ProtocolVersion::V4,
                 },
-                second: Default::default()
+                second: PartialSourceConfig::default()
             })]
         );
         assert_eq!(
@@ -645,7 +645,7 @@ mod tests {
                     address: NormalizedAddress::new_unchecked("example.com", 123).into(),
                     ntp_version: ProtocolVersion::V4,
                 },
-                second: Default::default()
+                second: PartialSourceConfig::default()
             })]
         );
         assert!(
@@ -695,7 +695,7 @@ mod tests {
                     address: NormalizedAddress::new_unchecked("example.com", 123).into(),
                     ntp_version: ProtocolVersion::V4,
                 },
-                second: Default::default()
+                second: PartialSourceConfig::default()
             })]
         );
 
@@ -716,7 +716,7 @@ mod tests {
                     address: NormalizedAddress::new_unchecked("example.com", 123).into(),
                     ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
                 },
-                second: Default::default()
+                second: PartialSourceConfig::default()
             })]
         );
         assert!(config.observability.log_level.is_none());

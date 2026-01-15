@@ -70,7 +70,7 @@ impl NtsSpawner {
             config,
             key_exchange_client,
             source_config,
-            id: Default::default(),
+            id: SpawnerId::new(),
             has_spawned: false,
         })
     }

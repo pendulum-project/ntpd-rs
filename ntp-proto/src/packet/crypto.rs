@@ -1,5 +1,6 @@
 use std::fmt::Display;
 
+use aead::generic_array::GenericArray;
 use aes_siv::{Key, KeyInit, siv::Aes128Siv, siv::Aes256Siv};
 use rand::Rng;
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -167,7 +168,7 @@ impl AesSivCmac256 {
 
     pub fn key_size() -> usize {
         // prefer trust in compiler optimisation over trust in mental arithmetic
-        Self::new(Default::default()).key.len()
+        Self::new(GenericArray::default()).key.len()
     }
 
     pub fn from_key_bytes(key_bytes: &[u8]) -> Result<Self, KeyError> {
@@ -250,7 +251,7 @@ impl AesSivCmac512 {
 
     pub fn key_size() -> usize {
         // prefer trust in compiler optimisation over trust in mental arithmetic
-        Self::new(Default::default()).key.len()
+        Self::new(GenericArray::default()).key.len()
     }
 
     pub fn from_key_bytes(key_bytes: &[u8]) -> Result<Self, KeyError> {

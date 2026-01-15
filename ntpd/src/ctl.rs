@@ -319,9 +319,12 @@ mod tests {
     use std::os::unix::prelude::PermissionsExt;
     use std::path::Path;
 
+    use ntp_proto::SystemSnapshot;
+
     use crate::{
         daemon::{
             config::ObservabilityConfig,
+            observer::ProgramData,
             sockets::{create_unix_socket_with_permissions, write_json},
         },
         test::alloc_port,
@@ -333,7 +336,7 @@ mod tests {
         command: Format,
         value: T,
     ) -> std::io::Result<Result<ExitCode, std::io::Error>> {
-        let config: ObservabilityConfig = Default::default();
+        let config: ObservabilityConfig = ObservabilityConfig::default();
 
         // be careful with copying: tests run concurrently and should use a unique socket name!
         let path = std::env::temp_dir().join(format!("ntp-test-stream-{}", alloc_port()));
@@ -360,8 +363,8 @@ mod tests {
     #[tokio::test]
     async fn test_control_socket_source() -> std::io::Result<()> {
         let value = ObservableState {
-            program: Default::default(),
-            system: Default::default(),
+            program: ProgramData::default(),
+            system: SystemSnapshot::default(),
             sources: vec![],
             servers: vec![],
         };
@@ -378,8 +381,8 @@ mod tests {
     #[tokio::test]
     async fn test_control_socket_prometheus() -> std::io::Result<()> {
         let value = ObservableState {
-            program: Default::default(),
-            system: Default::default(),
+            program: ProgramData::default(),
+            system: SystemSnapshot::default(),
             sources: vec![],
             servers: vec![],
         };

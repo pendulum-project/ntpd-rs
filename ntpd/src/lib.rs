@@ -15,7 +15,7 @@
 #![warn(clippy::cloned_instead_of_copied)]
 #![warn(clippy::comparison_chain)]
 #![warn(clippy::copy_iterator)]
-//FIXME: Enable #![warn(clippy::default_trait_access)]
+#![warn(clippy::default_trait_access)]
 #![warn(clippy::doc_comment_double_space_linebreaks)]
 #![warn(clippy::doc_link_with_quotes)]
 //FIXME: Enable #![warn(clippy::doc_markdown)]
