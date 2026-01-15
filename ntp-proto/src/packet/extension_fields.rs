@@ -616,12 +616,12 @@ impl<'a> ExtensionFieldData<'a> {
             RawExtensionField::V4_UNENCRYPTED_MINIMUM_SIZE,
             version,
         ) {
-            let (offset, field) = field.map_err(|e| e.generalize())?;
+            let (offset, field) = field.map_err(ParsingError::generalize)?;
             size = offset + field.wire_length(version);
             match field.type_id {
                 ExtensionFieldTypeId::NtsEncryptedField => {
                     let encrypted = RawEncryptedField::from_message_bytes(field.message_bytes)
-                        .map_err(|e| e.generalize())?;
+                        .map_err(ParsingError::generalize)?;
 
                     let cipher = match cipher.get(&efdata.untrusted) {
                         Some(cipher) => cipher,
@@ -663,7 +663,7 @@ impl<'a> ExtensionFieldData<'a> {
                 }
                 _ => {
                     let field =
-                        ExtensionField::decode(field, version).map_err(|e| e.generalize())?;
+                        ExtensionField::decode(field, version).map_err(ParsingError::generalize)?;
                     efdata.untrusted.push(field);
                 }
             }
@@ -742,13 +742,13 @@ impl<'a> RawEncryptedField<'a> {
             version,
         )
         .map(|encrypted_field| {
-            let encrypted_field = encrypted_field.map_err(|e| e.generalize())?.1;
+            let encrypted_field = encrypted_field.map_err(ParsingError::generalize)?.1;
             if encrypted_field.type_id == ExtensionFieldTypeId::NtsEncryptedField {
                 // TODO: Discuss whether we want this check
                 Err(ParsingError::MalformedNtsExtensionFields)
             } else {
                 Ok(ExtensionField::decode(encrypted_field, version)
-                    .map_err(|e| e.generalize())?
+                    .map_err(ParsingError::generalize)?
                     .into_owned())
             }
         })

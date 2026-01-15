@@ -1,6 +1,6 @@
 pub mod exporter;
 
-use ntp_proto::PollIntervalLimits;
+use ntp_proto::{NtpDuration, PollIntervalLimits};
 
 use crate::daemon::ObservableState;
 
@@ -196,7 +196,7 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
             state
                 .system
                 .accumulated_steps_threshold
-                .map(|v| v.to_seconds())
+                .map(NtpDuration::to_seconds)
                 .unwrap_or(-1.0),
         ),
     )?;
