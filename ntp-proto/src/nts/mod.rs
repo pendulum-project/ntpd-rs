@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, convert::Into, sync::Arc};
 
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio_rustls::{TlsAcceptor, TlsConnector};
@@ -553,7 +553,7 @@ impl KeyExchangeServer {
                         protocol,
                         algorithm,
                         cookies: cookies.into(),
-                        server: self.server.as_deref().map(|v| v.into()),
+                        server: self.server.as_deref().map(Into::into),
                         port: self.port,
                         keep_alive,
                     };
@@ -719,7 +719,7 @@ impl KeyExchangeServer {
                             protocol,
                             algorithm,
                             cookies: cookies.into(),
-                            server: self.server.as_deref().map(|v| v.into()),
+                            server: self.server.as_deref().map(Into::into),
                             port: self.port,
                             keep_alive: false,
                         };
@@ -771,7 +771,7 @@ impl KeyExchangeServer {
                     protocol,
                     algorithm,
                     cookies: cookies.into(),
-                    server: self.server.as_deref().map(|v| v.into()),
+                    server: self.server.as_deref().map(Into::into),
                     port: self.port,
                     keep_alive: permit.is_some(),
                 };

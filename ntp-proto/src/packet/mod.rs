@@ -293,7 +293,7 @@ impl<'a> NtpPacket<'a> {
         NtpPacket::<'static> {
             header: self.header,
             efdata: self.efdata.into_owned(),
-            mac: self.mac.map(|v| v.into_owned()),
+            mac: self.mac.map(mac::Mac::into_owned),
         }
     }
 
@@ -313,9 +313,9 @@ impl<'a> NtpPacket<'a> {
         match version {
             3 => {
                 let (header, header_size) =
-                    NtpHeaderV3V4::deserialize(data).map_err(|e| e.generalize())?;
+                    NtpHeaderV3V4::deserialize(data).map_err(ParsingError::generalize)?;
                 let mac = if header_size != data.len() {
-                    Some(Mac::deserialize(&data[header_size..]).map_err(|e| e.generalize())?)
+                    Some(Mac::deserialize(&data[header_size..]).map_err(ParsingError::generalize)?)
                 } else {
                     None
                 };
@@ -330,7 +330,7 @@ impl<'a> NtpPacket<'a> {
             }
             4 => {
                 let (header, header_size) =
-                    NtpHeaderV3V4::deserialize(data).map_err(|e| e.generalize())?;
+                    NtpHeaderV3V4::deserialize(data).map_err(ParsingError::generalize)?;
 
                 let construct_packet = |remaining_bytes: &'a [u8], efdata| {
                     let mac = if !remaining_bytes.is_empty() {
@@ -356,7 +356,7 @@ impl<'a> NtpPacket<'a> {
                 ) {
                     Ok(decoded) => {
                         let packet = construct_packet(decoded.remaining_bytes, decoded.efdata)
-                            .map_err(|e| e.generalize())?;
+                            .map_err(ParsingError::generalize)?;
 
                         Ok((packet, decoded.cookie))
                     }
@@ -365,7 +365,7 @@ impl<'a> NtpPacket<'a> {
                         let invalid = e.get_decrypt_error()?;
 
                         let packet = construct_packet(invalid.remaining_bytes, invalid.efdata)
-                            .map_err(|e| e.generalize())?;
+                            .map_err(ParsingError::generalize)?;
 
                         Err(ParsingError::DecryptError(packet))
                     }
@@ -373,7 +373,7 @@ impl<'a> NtpPacket<'a> {
             }
             5 => {
                 let (header, header_size) =
-                    v5::NtpHeaderV5::deserialize(data).map_err(|e| e.generalize())?;
+                    v5::NtpHeaderV5::deserialize(data).map_err(ParsingError::generalize)?;
 
                 let construct_packet = |remaining_bytes: &'a [u8], efdata| {
                     let mac = if !remaining_bytes.is_empty() {
@@ -399,7 +399,7 @@ impl<'a> NtpPacket<'a> {
                 ) {
                     Ok(decoded) => {
                         let packet = construct_packet(decoded.remaining_bytes, decoded.efdata)
-                            .map_err(|e| e.generalize())?;
+                            .map_err(ParsingError::generalize)?;
 
                         Ok((packet, decoded.cookie))
                     }
@@ -408,7 +408,7 @@ impl<'a> NtpPacket<'a> {
                         let invalid = e.get_decrypt_error()?;
 
                         let packet = construct_packet(invalid.remaining_bytes, invalid.efdata)
-                            .map_err(|e| e.generalize())?;
+                            .map_err(ParsingError::generalize)?;
 
                         Err(ParsingError::DecryptError(packet))
                     }

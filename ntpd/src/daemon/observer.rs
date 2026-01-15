@@ -5,6 +5,7 @@ use super::system::ServerData;
 use libc::{ECONNABORTED, EMFILE, ENFILE, ENOBUFS, ENOMEM};
 use ntp_proto::{NtpClock, NtpTimestamp, ObservableSourceState, SystemSnapshot};
 use std::collections::HashMap;
+use std::convert::Into;
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 use std::{net::SocketAddr, time::Instant};
@@ -188,7 +189,7 @@ async fn handle_connection(
             .cloned()
             .collect(),
         system: *system_reader.borrow(),
-        servers: server_reader.borrow().iter().map(|s| s.into()).collect(),
+        servers: server_reader.borrow().iter().map(Into::into).collect(),
     };
 
     super::sockets::write_json(stream, &observe).await?;
