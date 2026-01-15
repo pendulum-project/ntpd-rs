@@ -1,0 +1,18 @@
+name: Add issues to nts-pool project
+
+on:
+  pull_request:
+    types:
+      - opened
+
+jobs:
+  add-to-project:
+    name: Add PR to project
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/add-to-project@244f685bbc3b7adfa8466e08b698b5577571133e # v1.0.2
+        with:
+          # You can target a project in a different organization
+          # to the issue
+          project-url: https://github.com/orgs/pendulum-project/projects/6
+          github-token: ${{ secrets.PROJECT_WRITE_PAT }}
