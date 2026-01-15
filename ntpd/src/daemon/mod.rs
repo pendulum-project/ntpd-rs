@@ -15,7 +15,7 @@ mod system;
 pub mod tracing;
 mod util;
 
-use std::{error::Error, path::PathBuf};
+use std::{error::Error, io::IsTerminal, path::PathBuf};
 
 use ::tracing::info;
 pub use config::Config;
@@ -26,6 +26,8 @@ use tokio::runtime::Builder;
 use tracing_subscriber::util::SubscriberInitExt;
 
 use config::NtpDaemonOptions;
+
+use crate::daemon::tracing::LogReloadTaskStarter;
 
 use self::tracing::LogLevel;
 
@@ -47,41 +49,66 @@ pub fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[derive(Debug, Copy, Clone)]
+pub(crate) enum Application {
+    Deamon,
+    MetricsExporter,
+    Ctl,
+}
+
 // initializes the logger so that logs during config parsing are reported. Then it overrides the
 // log level based on the config if required.
 pub(crate) fn initialize_logging_parse_config(
     initial_log_level: Option<LogLevel>,
     config_path: Option<PathBuf>,
-) -> Config {
+    app: Application,
+) -> (Config, Option<LogReloadTaskStarter>) {
     let mut log_level = initial_log_level.unwrap_or_default();
 
-    let config_tracing = crate::daemon::tracing::tracing_init(log_level, true);
-    let config = ::tracing::subscriber::with_default(config_tracing, || {
-        match Config::from_args(config_path, vec![], vec![]) {
-            Ok(c) => c,
-            Err(e) => {
-                // print to stderr because tracing is not yet setup
-                eprintln!("There was an error loading the config: {e}");
-                std::process::exit(exitcode::CONFIG);
+    let (config_tracing, _) = crate::daemon::tracing::tracing_init(log_level, None, true);
+    let (config, tracing_inst, task_starter) =
+        ::tracing::subscriber::with_default(config_tracing, || {
+            let config = match Config::from_args(config_path, vec![], vec![]) {
+                Ok(c) => c,
+                Err(e) => {
+                    // print to stderr because tracing is not yet setup
+                    eprintln!("There was an error loading the config: {e}");
+                    std::process::exit(exitcode::CONFIG);
+                }
+            };
+
+            if let Some(config_log_level) = config.observability.log_level
+                && initial_log_level.is_none()
+            {
+                log_level = config_log_level;
             }
-        }
-    });
 
-    if let Some(config_log_level) = config.observability.log_level
-        && initial_log_level.is_none()
-    {
-        log_level = config_log_level;
-    }
+            let log_path = match app {
+                Application::Deamon => config.observability.log_path.clone(),
+                Application::MetricsExporter => {
+                    config.observability.log_path_metrics_exporter.clone()
+                }
+                Application::Ctl => None,
+            };
 
-    // set a default global subscriber from now on
-    let tracing_inst = self::tracing::tracing_init(log_level, config.observability.ansi_colors);
+            let ansi_colors = config
+                .observability
+                .ansi_colors
+                .unwrap_or_else(|| log_path.is_none() && std::io::stdout().is_terminal());
+
+            // set a default global subscriber from now on
+            let (tracing_inst, task_starter) =
+                self::tracing::tracing_init(log_level, log_path, ansi_colors);
+            (config, tracing_inst, task_starter)
+        });
     tracing_inst.init();
 
-    config
+    (config, task_starter)
 }
 
 fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
-    let config = initialize_logging_parse_config(options.log_level, options.config);
+    let (config, task_starter) =
+        initialize_logging_parse_config(options.log_level, options.config, Application::Deamon);
 
     let runtime = if config.servers.is_empty() && config.nts_ke.is_empty() {
         Builder::new_current_thread().enable_all().build()?
@@ -89,7 +116,11 @@ fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
         Builder::new_multi_thread().enable_all().build()?
     };
 
-    runtime.block_on(async {
+    runtime.block_on(async move {
+        if let Some(task_starter) = task_starter {
+            task_starter.start();
+        }
+
         // give the user a warning that we use the command line option
         if config.observability.log_level.is_some() && options.log_level.is_some() {
             info!("Log level override from command line arguments is active");

@@ -126,9 +126,17 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn run(options: NtpMetricsExporterOptions) -> Result<(), Box<dyn std::error::Error>> {
-    let config = initialize_logging_parse_config(None, options.config);
+    let (config, task_starter) = initialize_logging_parse_config(
+        None,
+        options.config,
+        crate::daemon::Application::MetricsExporter,
+    );
 
     Builder::new_current_thread().enable_all().build()?.block_on(async {
+        if let Some(task_starter) = task_starter {
+            task_starter.start();
+        }
+
         let timeout = std::time::Duration::from_millis(1000);
 
         let observation_socket_path = match config.observability.observation_path {

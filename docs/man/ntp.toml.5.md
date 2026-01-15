@@ -227,9 +227,20 @@ ntp-metrics-exporter(8).
     daemon, whereas the highest level `error` only logs error conditions in the
     daemon. Levels higher than the given log level are logged as well.
 
-`ansi-colors` = `true` | `false` (**true**)
-:   Can be used to disable ANSI escape codes in logs. By default, ANSI escape
-    codes are used to add some colors and other formatting to the logs.
+`log-path` = *path* (**unset**)
+:   Path to which the deamon should direct its log output. The file at this
+    location is reopened on SIGHUP. When not present, log output will be
+    directed to stdout.
+
+`log-path-metrics-exporter` = *path* (**unset**)
+:   Path to which the metrics exporter daemon should direct its log output. The
+    file at this location is reopened on SIGHUP. When not present, log output
+    will be directed to stdout.
+
+`ansi-colors` = `true` | `false` (see note)
+:   Can be used to control ANSI escape codes in logs. By default, ANSI escape
+    codes are used to add some colors and other formatting to the logs when the
+    log target is a terminal.
 
 `observation-path` = *path* (**unset**)
 :   Path where the daemon will create an observation Unix domain socket. This

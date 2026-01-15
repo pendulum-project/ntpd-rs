@@ -1,4 +1,8 @@
-use std::str::FromStr;
+use std::{
+    path::PathBuf,
+    str::FromStr,
+    sync::{Arc, Mutex, MutexGuard},
+};
 
 use serde::Deserialize;
 use tracing::metadata::LevelFilter;
@@ -64,12 +68,112 @@ impl From<LogLevel> for LevelFilter {
     }
 }
 
+struct ReloadableMakeWriter {
+    file: Arc<Mutex<std::fs::File>>,
+}
+
+struct ReloadableWriter<'a> {
+    writer: MutexGuard<'a, std::fs::File>,
+}
+
+impl std::io::Write for ReloadableWriter<'_> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.writer.write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.writer.flush()
+    }
+
+    fn write_vectored(&mut self, bufs: &[std::io::IoSlice<'_>]) -> std::io::Result<usize> {
+        self.writer.write_vectored(bufs)
+    }
+
+    fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
+        self.writer.write_all(buf)
+    }
+
+    fn write_fmt(&mut self, args: std::fmt::Arguments<'_>) -> std::io::Result<()> {
+        self.writer.write_fmt(args)
+    }
+}
+
+pub struct LogReloadTaskStarter {
+    path: PathBuf,
+    file_handle: Arc<Mutex<std::fs::File>>,
+}
+
+impl ReloadableMakeWriter {
+    // Note, making one of these leaks
+    fn new(path: PathBuf) -> Result<(Self, LogReloadTaskStarter), std::io::Error> {
+        let file = std::fs::File::create(&path)?;
+        let file = Arc::new(Mutex::new(file));
+        let file_handle = file.clone();
+        Ok((Self { file }, LogReloadTaskStarter { path, file_handle }))
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for ReloadableMakeWriter {
+    type Writer = ReloadableWriter<'a>;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        ReloadableWriter {
+            writer: self.file.lock().unwrap(),
+        }
+    }
+}
+
+impl LogReloadTaskStarter {
+    pub fn start(self) {
+        tokio::spawn(async move {
+            let Ok(mut stream) =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
+            else {
+                tracing::error!("Could not listen for hangup signal, logrotation may malfunction.");
+                return;
+            };
+
+            loop {
+                stream.recv().await;
+                let new_file = match std::fs::File::create(&self.path) {
+                    Ok(new_file) => new_file,
+                    Err(e) => {
+                        tracing::error!(
+                            "Could not reopen log file, continuing with old handle: {e}"
+                        );
+                        continue;
+                    }
+                };
+                *self.file_handle.lock().unwrap() = new_file;
+            }
+        });
+    }
+}
+
 pub fn tracing_init(
     level: impl Into<LevelFilter>,
+    log_path: Option<PathBuf>,
     ansi_colors: bool,
-) -> tracing_subscriber::fmt::Subscriber {
-    tracing_subscriber::fmt()
+) -> (
+    Box<dyn tracing::Subscriber + Send + Sync + 'static>,
+    Option<LogReloadTaskStarter>,
+) {
+    let builder = tracing_subscriber::fmt()
         .with_max_level(level)
-        .with_ansi(ansi_colors)
-        .finish()
+        .with_ansi(ansi_colors);
+    if let Some(path) = log_path {
+        let (writer, task_starter) = match ReloadableMakeWriter::new(path.clone()) {
+            Ok(writer) => writer,
+            Err(e) => {
+                tracing::error!("Could not open logfile {}, exiting: {e}", path.display());
+                std::process::exit(70);
+            }
+        };
+        (
+            Box::new(builder.with_writer(writer).finish()),
+            Some(task_starter),
+        )
+    } else {
+        (Box::new(builder.finish()), None)
+    }
 }
