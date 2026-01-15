@@ -410,18 +410,18 @@ fn accept_packet<'a, C: NtpClock>(
             timestamp,
             ..
         }) => {
-            let recv_timestamp =
-                timestamp
-                    .map(convert_net_timestamp)
-                    .unwrap_or_else(|| match clock.now() {
-                        Ok(now) => {
-                            debug!(?size, "received a packet without a timestamp, substituting");
-                            now
-                        }
-                        _ => {
-                            panic!("Received packet without timestamp and couldn't substitute");
-                        }
-                    });
+            let recv_timestamp = timestamp.map_or_else(
+                || match clock.now() {
+                    Ok(now) => {
+                        debug!(?size, "received a packet without a timestamp, substituting");
+                        now
+                    }
+                    _ => {
+                        panic!("Received packet without timestamp and couldn't substitute");
+                    }
+                },
+                convert_net_timestamp,
+            );
 
             // Note: packets are allowed to be bigger when including extensions.
             // we don't expect them, but the server may still send them. The

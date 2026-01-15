@@ -968,15 +968,17 @@ impl<
     fn observe(&self) -> super::super::ObservableSourceTimedata {
         self.state
             .snapshot(&self.index, &self.algo_config, self.period)
-            .map(|snapshot| snapshot.observe())
-            .unwrap_or(ObservableSourceTimedata {
-                offset: NtpDuration::ZERO,
-                uncertainty: NtpDuration::MAX,
-                delay: NtpDuration::MAX,
-                remote_delay: NtpDuration::MAX,
-                remote_uncertainty: NtpDuration::MAX,
-                last_update: NtpTimestamp::default(),
-            })
+            .map_or(
+                ObservableSourceTimedata {
+                    offset: NtpDuration::ZERO,
+                    uncertainty: NtpDuration::MAX,
+                    delay: NtpDuration::MAX,
+                    remote_delay: NtpDuration::MAX,
+                    remote_uncertainty: NtpDuration::MAX,
+                    last_update: NtpTimestamp::default(),
+                },
+                |snapshot| snapshot.observe(),
+            )
     }
 }
 

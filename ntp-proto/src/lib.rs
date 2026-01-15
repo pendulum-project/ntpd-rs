@@ -71,7 +71,7 @@
 //FIXME: Enable #![warn(clippy::manual_midpoint)]
 #![warn(clippy::manual_string_new)]
 #![warn(clippy::many_single_char_names)]
-//FIXME: Enable #![warn(clippy::map_unwrap_or)]
+#![warn(clippy::map_unwrap_or)]
 //FIXME: Enable #![warn(clippy::match_bool)]
 #![warn(clippy::match_same_arms)]
 #![warn(clippy::match_wild_err_arm)]

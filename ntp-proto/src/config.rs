@@ -79,8 +79,7 @@ pub struct StepThreshold {
 
 impl StepThreshold {
     pub fn is_within(&self, duration: NtpDuration) -> bool {
-        self.forward.map(|v| duration < v).unwrap_or(true)
-            && self.backward.map(|v| duration > -v).unwrap_or(true)
+        self.forward.is_none_or(|v| duration < v) && self.backward.is_none_or(|v| duration > -v)
     }
 }
 
