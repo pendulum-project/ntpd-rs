@@ -136,7 +136,7 @@
 #![warn(clippy::used_underscore_binding)]
 #![warn(clippy::used_underscore_items)]
 #![warn(clippy::verbose_bit_mask)]
-//FIXME: Enable #![warn(clippy::wildcard_imports)]
+#![warn(clippy::wildcard_imports)]
 #![warn(clippy::zero_sized_map_values)]
 #![cfg_attr(not(feature = "__internal-api"), allow(unused))]
 

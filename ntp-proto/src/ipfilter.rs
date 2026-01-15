@@ -219,6 +219,13 @@ impl IpFilter {
 
 #[cfg(feature = "__internal-fuzz")]
 pub mod fuzz {
+    #[cfg_attr(
+        not(test),
+        expect(
+            clippy::wildcard_imports,
+            reason = "Reasonable to do wildcard imports for testing modules"
+        )
+    )]
     use super::*;
 
     fn contains(subnet: &IpSubnet, addr: &IpAddr) -> bool {
