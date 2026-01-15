@@ -7,7 +7,7 @@ Conflicts=systemd-timesyncd.service ntp.service chrony.service
 
 [Service]
 Type=simple
-Restart=no
+Restart=always
 ExecStart=/usr/bin/ntp-daemon
 Environment="RUST_LOG=info"
 RuntimeDirectory=ntpd-rs
