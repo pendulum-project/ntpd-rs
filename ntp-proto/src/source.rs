@@ -540,13 +540,13 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
 
     pub fn handle_timer(&mut self) -> NtpSourceActionIterator<Controller::SourceMessage> {
         if !self.reach.is_reachable() && self.tries >= STARTUP_TRIES_THRESHOLD {
-            if self.have_deny_rstr_response {
+            return if self.have_deny_rstr_response {
                 // There were kiss of death responses, so we should probably demobilize instead
                 // of just retrying endlessly
-                return actions!(NtpSourceAction::Demobilize);
+                actions!(NtpSourceAction::Demobilize)
             } else {
-                return actions!(NtpSourceAction::Reset);
-            }
+                actions!(NtpSourceAction::Reset)
+            };
         }
 
         if matches!(self.protocol_version, ProtocolVersion::UpgradedToV5)

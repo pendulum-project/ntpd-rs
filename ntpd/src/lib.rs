@@ -93,10 +93,7 @@
 #![warn(clippy::range_minus_one)]
 #![warn(clippy::range_plus_one)]
 #![warn(clippy::redundant_closure_for_method_calls)]
-#![allow(
-    clippy::redundant_else,
-    reason = "We prefer the style this warns against"
-)]
+#![warn(clippy::redundant_else)]
 #![warn(clippy::ref_as_ptr)]
 #![warn(clippy::ref_binding_to_reference)]
 #![warn(clippy::ref_option)]

@@ -118,9 +118,8 @@ impl CliArg {
                                 Err(format!("'-{char}' expects an argument"))?;
                             }
                             break;
-                        } else {
-                            processed.push(CliArg::Flag(flag));
                         }
+                        processed.push(CliArg::Flag(flag));
                     }
                 }
                 _argument => rest.push(arg),
@@ -217,13 +216,14 @@ where
 
     if let Some(path) = data {
         tracing::info!("using custom clock {path:?}");
-        #[cfg(target_os = "linux")]
-        return Ok(NtpClockWrapper::new(
-            UnixClock::open(path).map_err(|e| serde::de::Error::custom(e.to_string()))?,
-        ));
 
         #[cfg(not(target_os = "linux"))]
         panic!("Custom clock paths not supported on this platform");
+
+        #[cfg(target_os = "linux")]
+        Ok(NtpClockWrapper::new(
+            UnixClock::open(path).map_err(|e| serde::de::Error::custom(e.to_string()))?,
+        ))
     } else {
         tracing::debug!("using REALTIME clock");
         Ok(NtpClockWrapper::new(UnixClock::CLOCK_REALTIME))
