@@ -100,7 +100,7 @@
 #![warn(clippy::range_minus_one)]
 #![warn(clippy::range_plus_one)]
 #![warn(clippy::redundant_closure_for_method_calls)]
-//FIXME: Enable #![warn(clippy::redundant_else)]
+#![warn(clippy::redundant_else)]
 #![warn(clippy::ref_as_ptr)]
 #![warn(clippy::ref_binding_to_reference)]
 #![warn(clippy::ref_option)]

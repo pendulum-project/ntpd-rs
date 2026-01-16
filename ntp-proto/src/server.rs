@@ -247,10 +247,9 @@ impl<C: NtpClock> Server<C> {
                     ServerResponse::Ignore,
                 );
                 return ServerAction::Ignore;
-            } else {
-                action = ServerResponse::Deny;
-                reason = ServerReason::Policy;
             }
+            action = ServerResponse::Deny;
+            reason = ServerReason::Policy;
         }
 
         let mut cursor = Cursor::new(buffer);
