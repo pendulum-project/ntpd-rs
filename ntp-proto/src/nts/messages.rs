@@ -116,20 +116,20 @@ impl Request<'_> {
         }
 
         if wants_algorithms || wants_protocols {
-            if let Some(authentication) = authentication
+            return if let Some(authentication) = authentication
                 && key_bytes.is_none()
                 && protocols.is_none()
                 && algorithms.is_none()
             {
-                return Ok(Request::Support {
+                Ok(Request::Support {
                     authentication,
                     wants_protocols,
                     wants_algorithms,
                     keep_alive,
-                });
+                })
             } else {
-                return Err(NtsError::Invalid);
-            }
+                Err(NtsError::Invalid)
+            };
         } else if let Some(key_bytes) = key_bytes {
             return if let (Some(authentication), Some(protocols), Some(algorithms)) =
                 (authentication, protocols, algorithms)
