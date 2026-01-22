@@ -81,6 +81,8 @@ pub struct StandardSource {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct NtsSourceConfig {
     pub address: NtsKeAddress,
+    #[serde(default)]
+    pub enable_srv_resolution: bool,
     #[serde(
         deserialize_with = "deserialize_certificate_authorities",
         default = "default_certificate_authorities",
@@ -140,6 +142,8 @@ fn max_sources_default() -> usize {
 pub struct NtsPoolSourceConfig {
     #[serde(rename = "address")]
     pub addr: NtsKeAddress,
+    #[serde(default)]
+    pub enable_srv_resolution: bool,
     #[serde(
         deserialize_with = "deserialize_certificate_authorities",
         default = "default_certificate_authorities",
