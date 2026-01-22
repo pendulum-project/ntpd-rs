@@ -7,6 +7,7 @@ use tokio::sync::mpsc;
 use tracing::warn;
 
 use crate::daemon::config::{NormalizedAddress, NtpAddress};
+use crate::daemon::dns::resolve_ke;
 use crate::daemon::spawn::resolve_single_ntp_server;
 
 use super::super::config::NtsSourceConfig;
@@ -60,6 +61,60 @@ impl NtsSpawner {
             has_spawned: false,
         })
     }
+
+    // We do resolution and connecting at the same time to deal with problems with either
+    // ipv4 or ipv6.
+    async fn resolve_and_connect(&mut self) -> Option<(TcpStream, String)> {
+        if self.config.enable_srv_resolution {
+            match resolve_ke(&self.config.address).await {
+                Ok(addrs) => {
+                    let mut last_error = None;
+                    for addr in addrs {
+                        let io = match TcpStream::connect(addr.addr).await {
+                            Ok(io) => io,
+                            Err(e) => {
+                                last_error = Some(e);
+                                continue;
+                            }
+                        };
+                        return Some((
+                            io,
+                            addr.srv_record_name
+                                .unwrap_or_else(|| self.config.address.server_name.clone()),
+                        ));
+                    }
+
+                    if let Some(e) = last_error {
+                        warn!(error = ?e, "error while attempting key exchange");
+                    } else {
+                        warn!(
+                            "Unresolvable domain name {}",
+                            self.config.address.server_name
+                        );
+                    }
+                    None
+                }
+                Err(e) => {
+                    warn!(error=?e, "Error trying to resolve ke server domain name.");
+                    None
+                }
+            }
+        } else {
+            let io = match TcpStream::connect((
+                self.config.address.server_name.as_str(),
+                self.config.address.port,
+            ))
+            .await
+            {
+                Ok(io) => io,
+                Err(e) => {
+                    warn!(error = ?e, "error while attempting key exchange");
+                    return None;
+                }
+            };
+            Some((io, self.config.address.server_name.clone()))
+        }
+    }
 }
 
 impl Spawner for NtsSpawner {
@@ -69,23 +124,13 @@ impl Spawner for NtsSpawner {
         &mut self,
         action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), NtsSpawnError> {
-        let io = match TcpStream::connect((
-            self.config.address.server_name.as_str(),
-            self.config.address.port,
-        ))
-        .await
-        {
-            Ok(io) => io,
-            Err(e) => {
-                warn!(error = ?e, "error while attempting key exchange");
-                return Ok(());
-            }
+        let Some((io, name)) = self.resolve_and_connect().await else {
+            return Ok(());
         };
 
         match tokio::time::timeout(
             super::NTS_TIMEOUT,
-            self.key_exchange_client
-                .exchange_keys(io, self.config.address.server_name.clone(), []),
+            self.key_exchange_client.exchange_keys(io, name, []),
         )
         .await
         {
@@ -144,5 +189,78 @@ impl Spawner for NtsSpawner {
 
     fn get_description(&self) -> &str {
         "nts"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use ntp_proto::SourceConfig;
+    use tokio::{io::AsyncReadExt, net::TcpListener};
+
+    use crate::daemon::{
+        config::{NormalizedAddress, NtsKeAddress, NtsSourceConfig},
+        spawn::{Spawner, nts::NtsSpawner},
+    };
+
+    #[tokio::test]
+    async fn direct_name_resolution() {
+        let listener = TcpListener::bind("[::]:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::task::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buf = [0u8; 16];
+            let _ = socket.read(&mut buf).await.unwrap();
+        });
+
+        let mut spawner = NtsSpawner::new(
+            NtsSourceConfig {
+                address: NtsKeAddress(NormalizedAddress::new_from_parts("localhost", addr.port())),
+                enable_srv_resolution: false,
+                certificate_authorities: Arc::default(),
+                ntp_version: ntp_proto::ProtocolVersion::V4,
+            },
+            SourceConfig::default(),
+        )
+        .unwrap();
+
+        let (sender, _receiver) = tokio::sync::mpsc::channel(1);
+
+        assert!(spawner.try_spawn(&sender).await.is_ok());
+        assert!(!spawner.is_complete());
+
+        assert!(server.is_finished());
+        assert!(server.await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn allow_srv_direct_name_resolution() {
+        let listener = TcpListener::bind("[::]:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::task::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buf = [0u8; 16];
+            let _ = socket.read(&mut buf).await.unwrap();
+        });
+
+        let mut spawner = NtsSpawner::new(
+            NtsSourceConfig {
+                address: NtsKeAddress(NormalizedAddress::new_from_parts("localhost", addr.port())),
+                enable_srv_resolution: true,
+                certificate_authorities: Arc::default(),
+                ntp_version: ntp_proto::ProtocolVersion::V4,
+            },
+            SourceConfig::default(),
+        )
+        .unwrap();
+
+        let (sender, _receiver) = tokio::sync::mpsc::channel(1);
+
+        assert!(spawner.try_spawn(&sender).await.is_ok());
+        assert!(!spawner.is_complete());
+
+        assert!(server.is_finished());
+        assert!(server.await.is_ok());
     }
 }

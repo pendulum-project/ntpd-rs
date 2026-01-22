@@ -62,6 +62,11 @@ to allow verifying that NTP messages have not been tampered with.
 Note that the TLS protocol requires that both the client and server have
 a rough idea of the current time.
 .TP
+\f[V]nts-pool\f[R]
+Connect to a pool of Network Time Security (NTS) sources.
+This is currently experimental, and may change in backwards incompatible
+ways.
+.TP
 \f[V]sock\f[R]
 A sock source connects to a GPSd socket to get timing data from GPS
 receivers.
@@ -109,9 +114,12 @@ Note that a pool counts as multiple time sources.
 .TP
 \f[V]mode\f[R] = \f[I]mode\f[R]
 Specify one of the source modes that ntpd-rs supports: \f[V]server\f[R],
-\f[V]pool\f[R], \f[V]nts\f[R], \f[V]sock\f[R] or \f[V]pps\f[R].
+\f[V]pool\f[R], \f[V]nts\f[R], \f[V]nts-pool\f[R], \f[V]sock\f[R] or
+\f[V]pps\f[R].
 For a description of the different source modes, see the \f[I]SOURCE
 MODES\f[R] section.
+Note that sources of type \f[V]nts-pool\f[R] are experimental and may
+change their behavior in backwards-incompatible ways between versions.
 .TP
 \f[V]address\f[R] = \f[I]address\f[R]
 Specify the remote address of the source.
@@ -138,6 +146,15 @@ connect to from a pool.
 The daemon will keep retrying to get more sources from the pool when
 connections are lost, up to the maximum specified by this configuration
 value.
+.TP
+\f[V]enable-srv-resolution\f[R] = \f[I]bool\f[R] (\f[B]false\f[R])
+Can only be set on source with the \f[V]nts\f[R] or \f[V]nts-pool\f[R]
+mode.
+Enables following SRV records when resolving the address of the NTS-ke
+server.
+Such records must be DNSSEC signed.
+Note that this feature is still experimental and may change in backwards
+incompatible ways.
 .TP
 \f[V]ignore\f[R] = \f[I]ip addresses\f[R]
 \f[V]pool\f[R] mode only.
