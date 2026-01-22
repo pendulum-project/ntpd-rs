@@ -1,7 +1,7 @@
 name: Add issues to nts-pool project
 
 on:
-  pull_request:
+  pull_request_target:
     types:
       - opened
 
