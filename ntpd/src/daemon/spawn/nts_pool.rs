@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::collections::VecDeque;
 use std::fmt::Display;
 use std::ops::Deref;
 
@@ -9,6 +10,7 @@ use tracing::warn;
 use ntp_proto::{KeyExchangeClient, NtsClientConfig, NtsError, SourceConfig};
 
 use crate::daemon::config::{NormalizedAddress, NtpAddress};
+use crate::daemon::dns::{KeResolutionResult, resolve_ke};
 use crate::daemon::spawn::resolve_single_ntp_server;
 
 use super::super::config::NtsPoolSourceConfig;
@@ -26,6 +28,7 @@ pub struct NtsPoolSpawner {
     source_config: SourceConfig,
     id: SpawnerId,
     current_sources: Vec<PoolSource>,
+    known_resolutions: VecDeque<KeResolutionResult>,
 }
 
 #[derive(Debug)]
@@ -65,6 +68,7 @@ impl NtsPoolSpawner {
             source_config,
             id: SpawnerId::new(),
             current_sources: vec![],
+            known_resolutions: VecDeque::new(),
         })
     }
 
@@ -72,6 +76,78 @@ impl NtsPoolSpawner {
         self.current_sources
             .iter()
             .any(|source| source.remote == domain)
+    }
+
+    async fn lookup(&mut self) -> Option<(TcpStream, String, Option<String>)> {
+        if self.config.enable_srv_resolution {
+            let mut did_resolution = false;
+            loop {
+                if self.known_resolutions.is_empty() {
+                    if did_resolution {
+                        warn!(
+                            "Could not find more sources for pool at {}",
+                            self.config.addr.server_name
+                        );
+                        return None;
+                    }
+                    did_resolution = true;
+                    match resolve_ke(&self.config.addr).await {
+                        Ok(resolutions) => self.known_resolutions.extend(resolutions),
+                        Err(e) => {
+                            warn!(error=?e, "Error trying to resolve ke server domain name.");
+                            return None;
+                        }
+                    }
+
+                    if self.known_resolutions.is_empty() {
+                        warn!("Unresolvable domain name {}", self.config.addr.server_name);
+                        return None;
+                    }
+                }
+
+                let mut last_error = None;
+                while let Some(addr) = self.known_resolutions.pop_front() {
+                    if let Some(name) = &addr.srv_record_name
+                        && self.contains_source(name)
+                    {
+                        continue;
+                    }
+                    let io = match TcpStream::connect(addr.addr).await {
+                        Ok(io) => io,
+                        Err(e) => {
+                            last_error = Some(e);
+                            continue;
+                        }
+                    };
+                    return Some((
+                        io,
+                        addr.srv_record_name
+                            .clone()
+                            .unwrap_or_else(|| self.config.addr.server_name.clone()),
+                        addr.srv_record_name,
+                    ));
+                }
+
+                if let Some(e) = last_error {
+                    warn!(error = ?e, "error while attempting key exchange");
+                    return None;
+                }
+            }
+        } else {
+            let io = match TcpStream::connect((
+                self.config.addr.server_name.as_str(),
+                self.config.addr.port,
+            ))
+            .await
+            {
+                Ok(io) => io,
+                Err(e) => {
+                    warn!(error = ?e, "error while attempting key exchange");
+                    return None;
+                }
+            };
+            Some((io, self.config.addr.server_name.clone(), None))
+        }
     }
 }
 
@@ -83,24 +159,15 @@ impl Spawner for NtsPoolSpawner {
         action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), NtsPoolSpawnError> {
         for _ in 0..self.config.count.saturating_sub(self.current_sources.len()) {
-            let io = match TcpStream::connect((
-                self.config.addr.server_name.as_str(),
-                self.config.addr.port,
-            ))
-            .await
-            {
-                Ok(io) => io,
-                Err(e) => {
-                    warn!(error = ?e, "error while attempting key exchange");
-                    break;
-                }
+            let Some((io, name, remote_name)) = self.lookup().await else {
+                return Ok(());
             };
 
             match tokio::time::timeout(
                 super::NTS_TIMEOUT,
                 self.key_exchange_client.exchange_keys(
                     io,
-                    self.config.addr.server_name.clone(),
+                    name,
                     self.current_sources
                         .iter()
                         .map(|source| Cow::Borrowed(source.remote.as_str())),
@@ -108,7 +175,9 @@ impl Spawner for NtsPoolSpawner {
             )
             .await
             {
-                Ok(Ok(ke)) if !self.contains_source(&ke.remote) => {
+                Ok(Ok(ke))
+                    if !self.contains_source(remote_name.as_deref().unwrap_or(&ke.remote)) =>
+                {
                     if let Some(address) = resolve_single_ntp_server(NtpAddress(
                         NormalizedAddress::new_from_parts(ke.remote.as_str(), ke.port),
                     ))
@@ -117,7 +186,7 @@ impl Spawner for NtsPoolSpawner {
                         let id = SourceId::new();
                         self.current_sources.push(PoolSource {
                             id,
-                            remote: ke.remote,
+                            remote: remote_name.unwrap_or(ke.remote),
                         });
                         action_tx
                             .send(SpawnEvent::new(
