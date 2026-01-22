@@ -393,7 +393,7 @@ dependencies = [
 
 [[package]]
 name = "ntp-proto"
-version = "1.7.0-alpha.20251003"
+version = "1.7.0-alpha.20260122"
 dependencies = [
  "aead",
  "aes-siv",
@@ -412,7 +412,7 @@ dependencies = [
 
 [[package]]
 name = "ntpd"
-version = "1.7.0-alpha.20251003"
+version = "1.7.0-alpha.20260122"
 dependencies = [
  "clock-steering",
  "libc",
