@@ -3,9 +3,11 @@ use std::net::SocketAddr;
 use std::ops::Deref;
 
 use ntp_proto::{KeyExchangeClient, NtsClientConfig, NtsError, SourceConfig};
-use tokio::net::TcpStream;
+use tokio::net::{TcpStream, lookup_host};
 use tokio::sync::mpsc;
 use tracing::warn;
+
+use crate::daemon::dns::resolve_ke;
 
 use super::super::config::NtsSourceConfig;
 
@@ -83,12 +85,48 @@ impl Spawner for NtsSpawner {
         &mut self,
         action_tx: &mpsc::Sender<SpawnEvent>,
     ) -> Result<(), NtsSpawnError> {
-        let io = match TcpStream::connect((
-            self.config.address.server_name.as_str(),
-            self.config.address.port,
-        ))
-        .await
-        {
+        let (addr, name) = if self.config.enable_srv_resolution {
+            match resolve_ke(&self.config.address).await {
+                Ok(mut addrs) => match addrs.next() {
+                    Some(resolution) => (
+                        resolution.addr,
+                        resolution
+                            .srv_record_name
+                            .unwrap_or_else(|| self.config.address.server_name.clone()),
+                    ),
+                    None => {
+                        warn!(
+                            "Unresolvable domain name {}",
+                            self.config.address.server_name
+                        );
+                        return Ok(());
+                    }
+                },
+                Err(e) => {
+                    warn!(error=?e, "Error trying to resolve ke server domain name.");
+                    return Ok(());
+                }
+            }
+        } else {
+            match lookup_host(&self.config.address.server_name).await {
+                Ok(mut ips) => match ips.next() {
+                    Some(addr) => (addr, self.config.address.server_name.clone()),
+                    None => {
+                        warn!(
+                            "Unresolvable domain name {}",
+                            self.config.address.server_name
+                        );
+                        return Ok(());
+                    }
+                },
+                Err(e) => {
+                    warn!(error=?e, "Error trying to resolve ke server domain name.");
+                    return Ok(());
+                }
+            }
+        };
+
+        let io = match TcpStream::connect(addr).await {
             Ok(io) => io,
             Err(e) => {
                 warn!(error = ?e, "error while attempting key exchange");
@@ -98,8 +136,7 @@ impl Spawner for NtsSpawner {
 
         match tokio::time::timeout(
             super::NTS_TIMEOUT,
-            self.key_exchange_client
-                .exchange_keys(io, self.config.address.server_name.clone(), []),
+            self.key_exchange_client.exchange_keys(io, name, []),
         )
         .await
         {

@@ -1,5 +1,6 @@
 mod clock;
 pub mod config;
+mod dns;
 pub mod keyexchange;
 mod local_ip_provider;
 mod ntp_source;
