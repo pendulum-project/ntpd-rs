@@ -1,5 +1,5 @@
 <!-- ---
-title: NTP-METRICS-EXPORTER(8) ntpd-rs 1.7.0-alpha.20251003 | ntpd-rs
+title: NTP-METRICS-EXPORTER(8) ntpd-rs 1.7.0-alpha.20260122 | ntpd-rs
 --- -->
 
 # NAME
