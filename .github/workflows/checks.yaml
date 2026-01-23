@@ -61,7 +61,7 @@ jobs:
             target: "aarch64-apple-darwin"
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
       - name: Set target rust version
@@ -81,11 +81,11 @@ jobs:
         run: cargo +nightly update -Z direct-minimal-versions
         if: ${{ matrix.rust == 'msrv' }}
       - name: Install cross-compilation tools
-        uses: taiki-e/setup-cross-toolchain-action@de3cf2a24ac5d2934a75983953853818cd5dff77
+        uses: taiki-e/setup-cross-toolchain-action@d30d20f04a3b09718e138524795d0d6ab7703dcb
         with:
           target: ${{ matrix.target }}
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@28a9d316db64b78a951f3f8587a5d08cc97ad8eb
+        uses: taiki-e/install-action@02b0f6e578e5f62f4c2e3b578ae0e1a01554138e
         with:
           tool: cargo-llvm-cov
       - name: Rust cache
@@ -114,7 +114,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
       - name: Install nightly toolchain
@@ -122,7 +122,7 @@ jobs:
         with:
           toolchain: nightly
       - name: Install udeps
-        uses: taiki-e/install-action@28a9d316db64b78a951f3f8587a5d08cc97ad8eb
+        uses: taiki-e/install-action@02b0f6e578e5f62f4c2e3b578ae0e1a01554138e
         with:
           tool: cargo-udeps
       - name: cargo udeps
@@ -136,7 +136,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
       - name: ./ntp.toml
@@ -157,7 +157,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
       - name: Build man pages
@@ -170,7 +170,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
       - name: Install rust toolchain
@@ -205,7 +205,7 @@ jobs:
     runs-on: ${{matrix.runs_on}}
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
       - name: Install rust toolchain
@@ -223,7 +223,7 @@ jobs:
         if: ${{matrix.runs_on == 'ubuntu-latest'}}
 
       - name: Install bindgen-cli
-        uses: taiki-e/install-action@28a9d316db64b78a951f3f8587a5d08cc97ad8eb
+        uses: taiki-e/install-action@02b0f6e578e5f62f4c2e3b578ae0e1a01554138e
         with:
           tool: bindgen-cli
         if: ${{matrix.runs_on == 'ubuntu-latest'}}
@@ -280,7 +280,7 @@ jobs:
             features: ''
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
       - name: Install nightly toolchain
@@ -289,7 +289,7 @@ jobs:
           toolchain: nightly
           components: llvm-tools-preview
       - name: Install cargo fuzz & rustfilt
-        uses: taiki-e/install-action@28a9d316db64b78a951f3f8587a5d08cc97ad8eb
+        uses: taiki-e/install-action@02b0f6e578e5f62f4c2e3b578ae0e1a01554138e
         with:
           tool: cargo-fuzz,rustfilt
       - name: Run `cargo fuzz`
@@ -320,11 +320,11 @@ jobs:
     name: Audit dependencies
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
-      - uses: EmbarkStudios/cargo-deny-action@76cd80eb775d7bbbd2d80292136d74d39e1b4918
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: EmbarkStudios/cargo-deny-action@3fd3802e88374d3fe9159b834c7714ec57d6c979
         with:
           arguments: --workspace --all-features
-      - uses: EmbarkStudios/cargo-deny-action@76cd80eb775d7bbbd2d80292136d74d39e1b4918
+      - uses: EmbarkStudios/cargo-deny-action@3fd3802e88374d3fe9159b834c7714ec57d6c979
         with:
           manifest-path: ./fuzz/Cargo.toml
           arguments: --all-features
