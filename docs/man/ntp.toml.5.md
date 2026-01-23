@@ -42,6 +42,10 @@ with any of these options:
     requires that both the client and server have a rough idea of the current
     time.
 
+`nts-pool`
+:   Connect to a pool of Network Time Security (NTS) sources. This is currently
+    experimental, and may change in backwards incompatible ways.
+
 `sock`
 :   A sock source connects to a GPSd socket to get timing data from GPS
     receivers. Note that GPSd must be (re-)started after starting ntpd-rs for
@@ -82,8 +86,9 @@ sources.
 
 `mode` = *mode*
 :   Specify one of the source modes that ntpd-rs supports: `server`, `pool`,
-    `nts`, `sock` or `pps`. For a description of the different source modes, see
-    the *SOURCE MODES* section.
+    `nts`, `nts-pool`, `sock` or `pps`. For a description of the different source modes, see
+    the *SOURCE MODES* section. Note that sources of type `nts-pool` are experimental
+    and may change their behavior in backwards-incompatible ways between versions.
 
 `address` = *address*
 :   Specify the remote address of the source. For server sources this will be
@@ -106,6 +111,12 @@ sources.
     The daemon will keep retrying to get more sources from the pool when
     connections are lost, up to the maximum specified by this configuration
     value.
+
+`enable-srv-resolution` = *bool* (**false**)
+:   Can only be set on source with the `nts` or `nts-pool` mode. Enables following
+    SRV records when resolving the address of the NTS-ke server. Such records
+    must be DNSSEC signed. Note that this feature is still experimental and may
+    change in backwards incompatible ways.
 
 `ignore` = *ip addresses*
 :   `pool` mode only. Specifies a list of IP addresses of servers in the pool
