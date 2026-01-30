@@ -1,20 +1,6 @@
 # Changelog
 
-## [1.7.0-alpha.20260122]
-
-### Added
-- Support for keeping connections to experimental NTS pools alive longterm, saving resource usage for pools.
-
-### Changed
-- Updated dependencies
-- Cap ntp-ctl control socket input size for defense in depth.
-
-### Fixed
-- Fixed bug in parsing NTPv4 requests with a MAC.
-- Fixed bug in odd-sized NTPv5 bloom filter requests.
-- Fixed incorrect reference to configuration field warn-on-jump in log output.
-
-## [1.7.0-alpha.20251003]
+## [1.7.0]
 
 ### Added
 - Support for the experimental NTS pool is now possible with configuration changes.
@@ -23,9 +9,13 @@
 - NTPv5 draft support now targets draft 6.
 - Reworked NTS parsing to be easier to maintain.
 - Updated dependencies.
+- Cap ntp-ctl control socket input size for defense in depth.
 
 ### Fixed
 - Fixed bug that caused force-sync to fail when only a single server was configured.
+- Fixed bug in parsing NTPv4 requests with a MAC.
+- Fixed bug in odd-sized NTPv5 bloom filter requests.
+- Fixed incorrect reference to configuration field warn-on-jump in log output.
 
 ## [1.6.2] - 2025-08-29
 
@@ -338,8 +328,7 @@ process.
 - Fixed a bug in peer dispersion calculation which resulted in overly
   pessimistic dispersion estimates.
 
-[1.7.0-alpha.20260122]: https://github.com/pendulum-project/ntpd-rs/compare/v1.7.0-alpha.20251003...v1.7.0-alpha20260122
-[1.7.0-alpha.20251003]: https://github.com/pendulum-project/ntpd-rs/compare/v1.6.2...1.7.0-alpha.20251003
+[1.7.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.6.2...v1.7.0
 [1.6.2]: https://github.com/pendulum-project/ntpd-rs/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/pendulum-project/ntpd-rs/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.5.0...v1.6.0
