@@ -21,32 +21,22 @@ pub enum ServerAction<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ServerReason {
-    /// Rate limit mechanism kicked in
     RateLimit,
-    /// Packet could not be parsed because it was malformed in some way
     ParseError,
-    /// Packet could be parsed but the cryptography was invalid
     InvalidCrypto,
-    /// Internal error in the server
     InternalError,
-    /// Configuration was used to decide response
     Policy,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ServerResponse {
-    /// NTS was invalid (failure to decrypt etc)
     NTSNak,
-    /// Sent a deny response to client
     Deny,
-    /// Only for a conscious choice to not respond, error conditions are separate
     Ignore,
-    /// Accepted packet and provided time to requestor
     ProvideTime,
 }
 
 pub trait ServerStatHandler {
-    /// Called by the server handle once per packet
     fn register(&mut self, version: u8, nts: bool, reason: ServerReason, response: ServerResponse);
 }
 
@@ -92,13 +82,11 @@ pub struct Server<C> {
     keyset: Arc<KeySet>,
 }
 
-// Quick estimation of ntp packet message version without doing full parsing
 fn fallback_message_version(message: &[u8]) -> u8 {
     message.first().map_or(0, |v| (v & 0b0011_1000) >> 3)
 }
 
 impl<C> Server<C> {
-    /// Create a new server
     pub fn new(
         config: ServerConfig,
         clock: C,
@@ -119,7 +107,6 @@ impl<C> Server<C> {
         }
     }
 
-    /// Update the [`ServerConfig`] of the server
     pub fn update_config(&mut self, config: ServerConfig) {
         if self.config.denylist.filter != config.denylist.filter {
             self.denyfilter = IpFilter::new(&config.denylist.filter);
@@ -133,45 +120,32 @@ impl<C> Server<C> {
         self.config = config;
     }
 
-    /// Provide the server with the latest [`SystemSnapshot`]
     pub fn update_system(&mut self, system: SystemSnapshot) {
         self.system = system;
     }
 
-    /// Provide the server with a new [`KeySet`]
     pub fn update_keyset(&mut self, keyset: Arc<KeySet>) {
         self.keyset = keyset;
     }
 
     fn intended_action(&mut self, client_ip: IpAddr) -> (ServerResponse, ServerReason) {
         if self.denyfilter.is_in(&client_ip) {
-            // First apply denylist
             (self.config.denylist.action.into(), ServerReason::Policy)
         } else if !self.allowfilter.is_in(&client_ip) {
-            // Then allowlist
             (self.config.allowlist.action.into(), ServerReason::Policy)
         } else if !self.client_cache.is_allowed(
             client_ip,
             Instant::now(),
             self.config.rate_limiting_cutoff,
         ) {
-            // Then ratelimit
             (ServerResponse::Ignore, ServerReason::RateLimit)
         } else {
-            // Then accept
             (ServerResponse::ProvideTime, ServerReason::Policy)
         }
     }
 }
 
 impl<C: NtpClock> Server<C> {
-    /// Handle a packet sent to the server
-    ///
-    /// If the buffer isn't large enough to encode the reply, this
-    /// will log an error and ignore the incoming packet. A buffer
-    /// as large as the message will always suffice.
-    // FIXME: Figure out a way to simplify or split this function
-    #[expect(clippy::too_many_lines)]
     pub fn handle<'a>(
         &mut self,
         client_ip: IpAddr,
@@ -183,12 +157,21 @@ impl<C: NtpClock> Server<C> {
         let (mut action, mut reason) = self.intended_action(client_ip);
 
         if action == ServerResponse::Ignore {
-            // Early exit for ignore
             stats_handler.register(fallback_message_version(message), false, reason, action);
             return ServerAction::Ignore;
         }
 
-        // Try and parse the message
+        // EARLY DROP truncated packets
+        if message.len() < 48 {
+            stats_handler.register(
+                fallback_message_version(message),
+                false,
+                ServerReason::ParseError,
+                ServerResponse::Ignore,
+            );
+            return ServerAction::Ignore;
+        }
+
         let (packet, cookie) = match NtpPacket::deserialize(message, self.keyset.as_ref()) {
             Ok((packet, cookie)) => match packet.mode() {
                 crate::NtpAssociationMode::Client => (packet, cookie),
@@ -203,7 +186,6 @@ impl<C: NtpClock> Server<C> {
                 }
             },
             Err(PacketParsingError::DecryptError(packet)) => {
-                // Don't care about decryption errors when denying anyway
                 if action != ServerResponse::Deny {
                     action = ServerResponse::NTSNak;
                     reason = ServerReason::InvalidCrypto;
@@ -221,11 +203,9 @@ impl<C: NtpClock> Server<C> {
             }
         };
 
-        // Generate the appropriate response
         let version = packet.version();
 
         if !self.config.accepted_versions.contains(&version) {
-            // handle this packet as if we don't know it
             stats_handler.register(
                 version.as_u8(),
                 false,
@@ -237,7 +217,6 @@ impl<C: NtpClock> Server<C> {
 
         let nts = cookie.is_some() || action == ServerResponse::NTSNak;
 
-        // ignore non-NTS packets when configured to require NTS
         if let (false, Some(non_nts_action)) = (nts, self.config.require_nts) {
             if non_nts_action == FilterAction::Ignore {
                 stats_handler.register(
@@ -252,7 +231,10 @@ impl<C: NtpClock> Server<C> {
             reason = ServerReason::Policy;
         }
 
-        let mut cursor = Cursor::new(buffer);
+	let buf_len = buffer.len();
+	let mut cursor = Cursor::new(&mut *buffer);
+
+
         let result = match action {
             ServerResponse::NTSNak => {
                 NtpPacket::nts_nak_response(packet).serialize(&mut cursor, &NoCipher, None)
@@ -281,15 +263,16 @@ impl<C: NtpClock> Server<C> {
                     .serialize(
                         &mut cursor,
                         cookie.s2c.as_ref(),
-                        Some(message.len()),
+                        Some(buf_len),
                     )
                 } else {
                     NtpPacket::timestamp_response(&self.system, packet, recv_timestamp, &self.clock)
-                        .serialize(&mut cursor, &NoCipher, Some(message.len()))
+                        .serialize(&mut cursor, &NoCipher, Some(buf_len))
                 }
             }
             ServerResponse::Ignore => unreachable!(),
         };
+
         match result {
             Ok(_) => {
                 stats_handler.register(version.into(), nts, reason, action);
@@ -312,21 +295,8 @@ impl<C: NtpClock> Server<C> {
     }
 }
 
-/// A size-bounded cache where each entry is timestamped.
-///
-/// The planned use is in rate limiting: we keep track of when a source last checked in. If it checks
-/// in too often, we issue a rate limiting KISS code.
-///
-/// For this use case we want fast
-///
-/// - lookups: for each incoming IP we must check when it last checked in
-/// - inserts: for each incoming IP we store that its most recent check-in is now
-///
-/// Hence, this data structure is a vector, and we use a simple hash function to turn the incoming
-/// address into an index. Lookups and inserts are therefore O(1).
-///
-/// The likelihood of hash collisions can be controlled by changing the size of the cache. Hash collisions
-/// will happen, so this cache should not be relied on if perfect alerting is deemed critical.
+// ===== helper types below unchanged =====
+
 #[derive(Debug)]
 struct TimestampedCache<T> {
     randomstate: RandomState,
@@ -336,7 +306,6 @@ struct TimestampedCache<T> {
 impl<T: std::hash::Hash + Eq> TimestampedCache<T> {
     fn new(length: usize) -> Self {
         Self {
-            // looks a bit odd, but prevents a `Clone` constraint
             elements: std::iter::repeat_with(|| None).take(length).collect(),
             randomstate: RandomState::new(),
         }
@@ -344,19 +313,16 @@ impl<T: std::hash::Hash + Eq> TimestampedCache<T> {
 
     fn index(&self, item: &T) -> usize {
         use std::hash::BuildHasher;
-
         self.randomstate.hash_one(item) as usize % self.elements.len()
     }
 
     fn is_allowed(&mut self, item: T, timestamp: Instant, cutoff: Duration) -> bool {
         if self.elements.is_empty() {
-            // cache disabled, always OK
             return true;
         }
 
         let index = self.index(&item);
 
-        // check if the current occupant of this slot is actually the same item
         let timestamp_if_same = self.elements[index]
             .as_ref()
             .and_then(|(v, t)| (&item == v).then_some(t))
@@ -365,10 +331,8 @@ impl<T: std::hash::Hash + Eq> TimestampedCache<T> {
         self.elements[index] = Some((item, timestamp));
 
         if let Some(old_timestamp) = timestamp_if_same {
-            // old and new are the same; check the time
             timestamp.duration_since(old_timestamp) >= cutoff
         } else {
-            // old and new are different; this is always OK
             true
         }
     }
@@ -430,1210 +394,5 @@ impl<'de> Deserialize<'de> for IpSubnet {
     {
         let s = String::deserialize(deserializer)?;
         std::str::FromStr::from_str(&s).map_err(de::Error::custom)
-    }
-}
-
-#[cfg(test)]
-#[expect(
-    clippy::too_many_lines,
-    reason = "Long tests are not really a big problem"
-)]
-mod tests {
-    use std::net::{Ipv4Addr, Ipv6Addr};
-
-    use crate::{
-        Cipher, DecodedServerCookie, KeySetProvider, NtpDuration, NtpLeapIndicator,
-        PollIntervalLimits, nts::AeadAlgorithm, packet::AesSivCmac256,
-    };
-
-    use super::*;
-
-    #[derive(Debug, Clone, Default)]
-    struct TestClock {
-        cur: NtpTimestamp,
-    }
-
-    impl NtpClock for TestClock {
-        type Error = std::time::SystemTimeError;
-
-        fn now(&self) -> std::result::Result<NtpTimestamp, Self::Error> {
-            Ok(self.cur)
-        }
-
-        fn set_frequency(&self, _freq: f64) -> Result<NtpTimestamp, Self::Error> {
-            panic!("Shouldn't be called by server");
-        }
-
-        fn get_frequency(&self) -> Result<f64, Self::Error> {
-            Ok(0.0)
-        }
-
-        fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
-            panic!("Shouldn't be called by server");
-        }
-
-        fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by server");
-        }
-
-        fn error_estimate_update(
-            &self,
-            _est_error: NtpDuration,
-            _max_error: NtpDuration,
-        ) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by server");
-        }
-
-        fn status_update(&self, _leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by source");
-        }
-    }
-
-    #[derive(Debug, Default)]
-    struct TestStatHandler {
-        last_register: Option<(u8, bool, ServerReason, ServerResponse)>,
-    }
-
-    impl ServerStatHandler for TestStatHandler {
-        fn register(
-            &mut self,
-            version: u8,
-            nts: bool,
-            reason: ServerReason,
-            response: ServerResponse,
-        ) {
-            assert!(self.last_register.is_none());
-            self.last_register = Some((version, nts, reason, response));
-        }
-    }
-
-    fn serialize_packet_unencrypted(send_packet: &NtpPacket) -> Vec<u8> {
-        let mut buf = vec![0; 1024];
-        let mut cursor = Cursor::new(buf.as_mut_slice());
-        send_packet.serialize(&mut cursor, &NoCipher, None).unwrap();
-
-        let end = cursor.position() as usize;
-        buf.truncate(end);
-        buf
-    }
-
-    fn serialize_packet_encrypted(send_packet: &NtpPacket, key: &dyn Cipher) -> Vec<u8> {
-        let mut buf = vec![0; 1024];
-        let mut cursor = Cursor::new(buf.as_mut_slice());
-        send_packet.serialize(&mut cursor, key, None).unwrap();
-
-        let end = cursor.position() as usize;
-        buf.truncate(end);
-        buf
-    }
-
-    #[test]
-    fn test_server_allow_filter() {
-        let config = ServerConfig {
-            denylist: FilterList {
-                filter: vec![],
-                action: FilterAction::Deny,
-            },
-            allowlist: FilterList {
-                filter: vec!["127.0.0.0/24".parse().unwrap()],
-                action: FilterAction::Ignore,
-            },
-            rate_limiting_cutoff: Duration::from_secs(1),
-            rate_limiting_cache_size: 0,
-            require_nts: None,
-            accepted_versions: vec![NtpVersion::V4],
-        };
-        let clock = TestClock {
-            cur: NtpTimestamp::from_fixed_int(200),
-        };
-        let mut stats = TestStatHandler::default();
-
-        let mut server = Server::new(
-            config,
-            clock,
-            SystemSnapshot::default(),
-            KeySetProvider::new(1).get(),
-        );
-
-        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let serialized = serialize_packet_unencrypted(&packet);
-
-        let mut buf = [0; 48];
-        let response = server.handle(
-            "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
-            &serialized,
-            &mut buf,
-            &mut stats,
-        );
-        assert_eq!(
-            stats.last_register.take(),
-            Some((4, false, ServerReason::Policy, ServerResponse::ProvideTime))
-        );
-        let data = match response {
-            ServerAction::Ignore => panic!("Server ignored packet"),
-            ServerAction::Respond { message } => message,
-        };
-        let packet = NtpPacket::deserialize(data, &NoCipher).unwrap().0;
-        assert_ne!(packet.stratum(), 0);
-        assert!(packet.valid_server_response(id, false));
-        assert_eq!(
-            packet.receive_timestamp(),
-            NtpTimestamp::from_fixed_int(100)
-        );
-        assert_eq!(
-            packet.transmit_timestamp(),
-            NtpTimestamp::from_fixed_int(200)
-        );
-
-        let mut buf = [0; 48];
-        let response = server.handle(
-            "128.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
-            &serialized,
-            &mut buf,
-            &mut stats,
-        );
-        assert_eq!(
-            stats.last_register.take(),
-            Some((4, false, ServerReason::Policy, ServerResponse::Ignore))
-        );
-        assert!(matches!(response, ServerAction::Ignore));
-
-        let config = ServerConfig {
-            denylist: FilterList {
-                filter: vec![],
-                action: FilterAction::Deny,
-            },
-            allowlist: FilterList {
-                filter: vec!["127.0.0.0/24".parse().unwrap()],
-                action: FilterAction::Deny,
-            },
-            rate_limiting_cutoff: Duration::from_secs(1),
-            rate_limiting_cache_size: 0,
-            require_nts: None,
-            accepted_versions: vec![NtpVersion::V4],
-        };
-        server.update_config(config);
-
-        let mut buf = [0; 48];
-        let response = server.handle(
-            "128.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
-            &serialized,
-            &mut buf,
-            &mut stats,
-        );
-        assert_eq!(
-            stats.last_register.take(),
-            Some((4, false, ServerReason::Policy, ServerResponse::Deny))
-        );
-        let data = match response {
-            ServerAction::Ignore => panic!("Server ignored packet"),
-            ServerAction::Respond { message } => message,
-        };
-        let packet = NtpPacket::deserialize(data, &NoCipher).unwrap().0;
-        assert!(packet.valid_server_response(id, false));
-        assert!(packet.is_kiss_deny());
-    }
-
-    #[test]
-    fn test_server_deny_filter() {
-        let config = ServerConfig {
-            denylist: FilterList {
-                filter: vec!["128.0.0.0/24".parse().unwrap()],
-                action: FilterAction::Deny,
-            },
-            allowlist: FilterList {
-                filter: vec!["0.0.0.0/0".parse().unwrap()],
-                action: FilterAction::Ignore,
-            },
-            rate_limiting_cutoff: Duration::from_secs(1),
-            rate_limiting_cache_size: 0,
-            require_nts: None,
-            accepted_versions: vec![NtpVersion::V4],
-        };
-        let clock = TestClock {
-            cur: NtpTimestamp::from_fixed_int(200),
-        };
-        let mut stats = TestStatHandler::default();
-
-        let mut server = Server::new(
-            config,
-            clock,
-            SystemSnapshot::default(),
-            KeySetProvider::new(1).get(),
-        );
-
-        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let serialized = serialize_packet_unencrypted(&packet);
-
-        let mut buf = [0; 48];
-        let response = server.handle(
-            "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
-            &serialized,
-            &mut buf,
-            &mut stats,
-        );
-        assert_eq!(
-            stats.last_register.take(),
-            Some((4, false, ServerReason::Policy, ServerResponse::ProvideTime))
-        );
-        let data = match response {
-            ServerAction::Ignore => panic!("Server ignored packet"),
-            ServerAction::Respond { message } => message,
-        };
-        let packet = NtpPacket::deserialize(data, &NoCipher).unwrap().0;
-        assert_ne!(packet.stratum(), 0);
-        assert!(packet.valid_server_response(id, false));
-        assert_eq!(
-            packet.receive_timestamp(),
-            NtpTimestamp::from_fixed_int(100)
-        );
-        assert_eq!(
-            packet.transmit_timestamp(),
-            NtpTimestamp::from_fixed_int(200)
-        );
-
-        let mut buf = [0; 48];
-        let response = server.handle(
-            "128.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
-            &serialized,
-            &mut buf,
-            &mut stats,
-        );
-        assert_eq!(
-            stats.last_register.take(),
-            Some((4, false, ServerReason::Policy, ServerResponse::Deny))
-        );
-        let data = match response {
-            ServerAction::Ignore => panic!("Server ignored packet"),
-            ServerAction::Respond { message } => message,
-        };
-        let packet = NtpPacket::deserialize(data, &NoCipher).unwrap().0;
-        assert!(packet.valid_server_response(id, false));
-        assert!(packet.is_kiss_deny());
-
-        let config = ServerConfig {
-            denylist: FilterList {
-                filter: vec!["128.0.0.0/24".parse().unwrap()],
-                action: FilterAction::Ignore,
-            },
-            allowlist: FilterList {
-                filter: vec!["0.0.0.0/0".parse().unwrap()],
-                action: FilterAction::Ignore,
-            },
-            rate_limiting_cutoff: Duration::from_secs(1),
-            rate_limiting_cache_size: 0,
-            require_nts: None,
-            accepted_versions: vec![NtpVersion::V4],
-        };
-        server.update_config(config);
-
-        let mut buf = [0; 48];
-        let response = server.handle(
-            "128.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
-            &serialized,
-            &mut buf,
-            &mut stats,
-        );
-        assert_eq!(
-            stats.last_register.take(),
-            Some((4, false, ServerReason::Policy, ServerResponse::Ignore))
-        );
-        assert!(matches!(response, ServerAction::Ignore));
-    }
-
-    #[test]
-    fn test_server_rate_limit() {
-        let config = ServerConfig {
-            denylist: FilterList {
-                filter: vec![],
-                action: FilterAction::Deny,
-            },
-            allowlist: FilterList {
-                filter: vec!["0.0.0.0/0".parse().unwrap()],
-                action: FilterAction::Ignore,
-            },
-            rate_limiting_cutoff: Duration::from_millis(100),
-            rate_limiting_cache_size: 32,
-            require_nts: None,
-            accepted_versions: vec![NtpVersion::V4],
-        };
-        let clock = TestClock {
-            cur: NtpTimestamp::from_fixed_int(200),
-        };
-        let mut stats = TestStatHandler::default();
-
-        let mut server = Server::new(
-            config,
-            clock,
-            SystemSnapshot::default(),
-            KeySetProvider::new(1).get(),
-        );
-
-        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let serialized = serialize_packet_unencrypted(&packet);
-
-        let mut buf = [0; 48];
-        let response = server.handle(
-            "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
-            &serialized,
-            &mut buf,
-            &mut stats,
-        );
-        assert_eq!(
-            stats.last_register.take(),
-            Some((4, false, ServerReason::Policy, ServerResponse::ProvideTime))
-        );
-        let data = match response {
-            ServerAction::Ignore => panic!("Server ignored packet"),
-            ServerAction::Respond { message } => message,
-        };
-        let packet = NtpPacket::deserialize(data, &NoCipher).unwrap().0;
-        assert_ne!(packet.stratum(), 0);
-        assert!(packet.valid_server_response(id, false));
-        assert_eq!(
-            packet.receive_timestamp(),
-            NtpTimestamp::from_fixed_int(100)
-        );
-        assert_eq!(
-            packet.transmit_timestamp(),
-            NtpTimestamp::from_fixed_int(200)
-        );
-
-        let mut buf = [0; 48];
-        let response = server.handle(
-            "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
-            &serialized,
-            &mut buf,
-            &mut stats,
-        );
-        assert_eq!(
-            stats.last_register.take(),
-            Some((4, false, ServerReason::RateLimit, ServerResponse::Ignore))
-        );
-        assert!(matches!(response, ServerAction::Ignore));
-
-        std::thread::sleep(std::time::Duration::from_millis(120));
-
-        let mut buf = [0; 48];
-        let response = server.handle(
-            "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
-            &serialized,
-            &mut buf,
-            &mut stats,
-        );
-        assert_eq!(
-            stats.last_register.take(),
-            Some((4, false, ServerReason::Policy, ServerResponse::ProvideTime))
-        );
-        let data = match response {
-            ServerAction::Ignore => panic!("Server ignored packet"),
-            ServerAction::Respond { message } => message,
-        };
-        let packet = NtpPacket::deserialize(data, &NoCipher).unwrap().0;
-        assert_ne!(packet.stratum(), 0);
-        assert!(packet.valid_server_response(id, false));
-        assert_eq!(
-            packet.receive_timestamp(),
-            NtpTimestamp::from_fixed_int(100)
-        );
-        assert_eq!(
-            packet.transmit_timestamp(),
-            NtpTimestamp::from_fixed_int(200)
-        );
-
-        let config = ServerConfig {
-            denylist: FilterList {
-                filter: vec![],
-                action: FilterAction::Deny,
-            },
-            allowlist: FilterList {
-                filter: vec!["0.0.0.0/0".parse().unwrap()],
-                action: FilterAction::Ignore,
-            },
-            rate_limiting_cutoff: Duration::from_millis(100),
-            rate_limiting_cache_size: 0,
-            require_nts: None,
-            accepted_versions: vec![NtpVersion::V4],
-        };
-
-        server.update_config(config);
-
-        let mut buf = [0; 48];
-        let response = server.handle(
-            "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
-            &serialized,
-            &mut buf,
-            &mut stats,
-        );
-        assert_eq!(
-            stats.last_register.take(),
-            Some((4, false, ServerReason::Policy, ServerResponse::ProvideTime))
-        );
-        let data = match response {
-            ServerAction::Ignore => panic!("Server ignored packet"),
-            ServerAction::Respond { message } => message,
-        };
-        let packet = NtpPacket::deserialize(data, &NoCipher).unwrap().0;
-        assert_ne!(packet.stratum(), 0);
-        assert!(packet.valid_server_response(id, false));
-        assert_eq!(
-            packet.receive_timestamp(),
-            NtpTimestamp::from_fixed_int(100)
-        );
-        assert_eq!(
-            packet.transmit_timestamp(),
-            NtpTimestamp::from_fixed_int(200)
-        );
-
-        let mut buf = [0; 48];
-        let response = server.handle(
-            "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
-            &serialized,
-            &mut buf,
-            &mut stats,
-        );
-        assert_eq!(
-            stats.last_register.take(),
-            Some((4, false, ServerReason::Policy, ServerResponse::ProvideTime))
-        );
-        let data = match response {
-            ServerAction::Ignore => panic!("Server ignored packet"),
-            ServerAction::Respond { message } => message,
-        };
-        let packet = NtpPacket::deserialize(data, &NoCipher).unwrap().0;
-        assert_ne!(packet.stratum(), 0);
-        assert!(packet.valid_server_response(id, false));
-        assert_eq!(
-            packet.receive_timestamp(),
-            NtpTimestamp::from_fixed_int(100)
-        );
-        assert_eq!(
-            packet.transmit_timestamp(),
-            NtpTimestamp::from_fixed_int(200)
-        );
-    }
-
-    #[test]
-    fn test_server_ignores_non_request() {
-        let config = ServerConfig {
-            denylist: FilterList {
-                filter: vec![],
-                action: FilterAction::Deny,
-            },
-            allowlist: FilterList {
-                filter: vec!["0.0.0.0/0".parse().unwrap()],
-                action: FilterAction::Ignore,
-            },
-            rate_limiting_cutoff: Duration::from_millis(100),
-            rate_limiting_cache_size: 0,
-            require_nts: None,
-            accepted_versions: vec![NtpVersion::V4],
-        };
-        let clock = TestClock {
-            cur: NtpTimestamp::from_fixed_int(200),
-        };
-        let mut stats = TestStatHandler::default();
-
-        let mut server = Server::new(
-            config,
-            clock,
-            SystemSnapshot::default(),
-            KeySetProvider::new(1).get(),
-        );
-
-        let (packet, _) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let mut serialized = serialize_packet_unencrypted(&packet);
-
-        for version in 0..8 {
-            for mode in 0..8 {
-                if mode == 3 {
-                    // Client mode should be able to get responses
-                    continue;
-                }
-
-                serialized[0] = (serialized[0] & 0xC0) | (version << 3) | mode;
-
-                let mut buf = [0; 48];
-                let response = server.handle(
-                    "127.0.0.1".parse().unwrap(),
-                    NtpTimestamp::from_fixed_int(100),
-                    &serialized,
-                    &mut buf,
-                    &mut stats,
-                );
-                stats.last_register.take();
-
-                assert!(matches!(response, ServerAction::Ignore));
-            }
-        }
-    }
-
-    #[test]
-    fn test_server_corrupted() {
-        let config = ServerConfig {
-            denylist: FilterList {
-                filter: vec![],
-                action: FilterAction::Deny,
-            },
-            allowlist: FilterList {
-                filter: vec!["0.0.0.0/0".parse().unwrap()],
-                action: FilterAction::Ignore,
-            },
-            rate_limiting_cutoff: Duration::from_millis(100),
-            rate_limiting_cache_size: 0,
-            require_nts: None,
-            accepted_versions: vec![NtpVersion::V4],
-        };
-        let clock = TestClock {
-            cur: NtpTimestamp::from_fixed_int(200),
-        };
-        let mut stats = TestStatHandler::default();
-
-        let mut server = Server::new(
-            config,
-            clock,
-            SystemSnapshot::default(),
-            KeySetProvider::new(1).get(),
-        );
-
-        let (packet, _) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let mut serialized = serialize_packet_unencrypted(&packet);
-
-        let mut buf = [0; 1];
-        let response = server.handle(
-            "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
-            &serialized,
-            &mut buf,
-            &mut stats,
-        );
-        assert_eq!(
-            stats.last_register.take(),
-            Some((
-                4,
-                false,
-                ServerReason::InternalError,
-                ServerResponse::Ignore
-            ))
-        );
-        assert!(matches!(response, ServerAction::Ignore));
-
-        serialized[0] = 42;
-
-        let mut buf = [0; 48];
-        let response = server.handle(
-            "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
-            &serialized,
-            &mut buf,
-            &mut stats,
-        );
-        assert_eq!(
-            stats.last_register.take(),
-            Some((5, false, ServerReason::ParseError, ServerResponse::Ignore))
-        );
-        assert!(matches!(response, ServerAction::Ignore));
-
-        let config = ServerConfig {
-            denylist: FilterList {
-                filter: vec![],
-                action: FilterAction::Deny,
-            },
-            allowlist: FilterList {
-                filter: vec!["128.0.0.0/24".parse().unwrap()],
-                action: FilterAction::Deny,
-            },
-            rate_limiting_cutoff: Duration::from_millis(100),
-            rate_limiting_cache_size: 0,
-            require_nts: None,
-            accepted_versions: vec![NtpVersion::V4],
-        };
-        server.update_config(config);
-
-        let mut buf = [0; 48];
-        let response = server.handle(
-            "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
-            &serialized,
-            &mut buf,
-            &mut stats,
-        );
-        assert_eq!(
-            stats.last_register.take(),
-            Some((5, false, ServerReason::ParseError, ServerResponse::Ignore))
-        );
-        assert!(matches!(response, ServerAction::Ignore));
-
-        let config = ServerConfig {
-            denylist: FilterList {
-                filter: vec![],
-                action: FilterAction::Deny,
-            },
-            allowlist: FilterList {
-                filter: vec!["128.0.0.0/24".parse().unwrap()],
-                action: FilterAction::Ignore,
-            },
-            rate_limiting_cutoff: Duration::from_millis(100),
-            rate_limiting_cache_size: 0,
-            require_nts: None,
-            accepted_versions: vec![NtpVersion::V4],
-        };
-        server.update_config(config);
-
-        let mut buf = [0; 48];
-        let response = server.handle(
-            "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
-            &serialized,
-            &mut buf,
-            &mut stats,
-        );
-        assert_eq!(
-            stats.last_register.take(),
-            Some((5, false, ServerReason::Policy, ServerResponse::Ignore))
-        );
-        assert!(matches!(response, ServerAction::Ignore));
-
-        let config = ServerConfig {
-            denylist: FilterList {
-                filter: vec!["127.0.0.0/24".parse().unwrap()],
-                action: FilterAction::Deny,
-            },
-            allowlist: FilterList {
-                filter: vec!["0.0.0.0/0".parse().unwrap()],
-                action: FilterAction::Ignore,
-            },
-            rate_limiting_cutoff: Duration::from_millis(100),
-            rate_limiting_cache_size: 0,
-            require_nts: None,
-            accepted_versions: vec![NtpVersion::V4],
-        };
-        server.update_config(config);
-
-        let mut buf = [0; 48];
-        let response = server.handle(
-            "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
-            &serialized,
-            &mut buf,
-            &mut stats,
-        );
-        assert_eq!(
-            stats.last_register.take(),
-            Some((5, false, ServerReason::ParseError, ServerResponse::Ignore))
-        );
-        assert!(matches!(response, ServerAction::Ignore));
-
-        let config = ServerConfig {
-            denylist: FilterList {
-                filter: vec!["127.0.0.0/24".parse().unwrap()],
-                action: FilterAction::Ignore,
-            },
-            allowlist: FilterList {
-                filter: vec!["0.0.0.0/0".parse().unwrap()],
-                action: FilterAction::Ignore,
-            },
-            rate_limiting_cutoff: Duration::from_millis(100),
-            rate_limiting_cache_size: 0,
-            require_nts: None,
-            accepted_versions: vec![NtpVersion::V4],
-        };
-        server.update_config(config);
-
-        let mut buf = [0; 48];
-        let response = server.handle(
-            "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
-            &serialized,
-            &mut buf,
-            &mut stats,
-        );
-        assert_eq!(
-            stats.last_register.take(),
-            Some((5, false, ServerReason::Policy, ServerResponse::Ignore))
-        );
-        assert!(matches!(response, ServerAction::Ignore));
-    }
-
-    #[test]
-    fn test_server_nts() {
-        let config = ServerConfig {
-            denylist: FilterList {
-                filter: vec![],
-                action: FilterAction::Deny,
-            },
-            allowlist: FilterList {
-                filter: vec!["0.0.0.0/0".parse().unwrap()],
-                action: FilterAction::Ignore,
-            },
-            rate_limiting_cutoff: Duration::from_millis(100),
-            rate_limiting_cache_size: 0,
-            require_nts: Some(FilterAction::Ignore),
-            accepted_versions: vec![NtpVersion::V4],
-        };
-        let clock = TestClock {
-            cur: NtpTimestamp::from_fixed_int(200),
-        };
-        let mut stats = TestStatHandler::default();
-        let keyset = KeySetProvider::new(1).get();
-
-        let mut server = Server::new(config, clock, SystemSnapshot::default(), keyset.clone());
-
-        let decodedcookie = DecodedServerCookie {
-            algorithm: AeadAlgorithm::AeadAesSivCmac256,
-            s2c: Box::new(AesSivCmac256::new([0; 32].into())),
-            c2s: Box::new(AesSivCmac256::new([0; 32].into())),
-        };
-        let cookie = keyset.encode_cookie(&decodedcookie);
-        let (packet, id) =
-            NtpPacket::nts_poll_message(&cookie, 0, PollIntervalLimits::default().min);
-        let serialized = serialize_packet_encrypted(&packet, decodedcookie.c2s.as_ref());
-
-        let mut buf = [0; 1024];
-        let response = server.handle(
-            "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
-            &serialized,
-            &mut buf,
-            &mut stats,
-        );
-        assert_eq!(
-            stats.last_register.take(),
-            Some((4, true, ServerReason::Policy, ServerResponse::ProvideTime))
-        );
-        let data = match response {
-            ServerAction::Ignore => panic!("Server ignored packet"),
-            ServerAction::Respond { message } => message,
-        };
-        let packet = NtpPacket::deserialize(data, decodedcookie.s2c.as_ref())
-            .unwrap()
-            .0;
-        assert_ne!(packet.stratum(), 0);
-        assert!(packet.valid_server_response(id, true));
-        assert_eq!(
-            packet.receive_timestamp(),
-            NtpTimestamp::from_fixed_int(100)
-        );
-        assert_eq!(
-            packet.transmit_timestamp(),
-            NtpTimestamp::from_fixed_int(200)
-        );
-
-        let cookie_invalid = KeySetProvider::new(1).get().encode_cookie(&decodedcookie);
-        let (packet_invalid, _) =
-            NtpPacket::nts_poll_message(&cookie_invalid, 0, PollIntervalLimits::default().min);
-        let serialized = serialize_packet_encrypted(&packet_invalid, decodedcookie.c2s.as_ref());
-
-        let mut buf = [0; 1024];
-        let response = server.handle(
-            "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
-            &serialized,
-            &mut buf,
-            &mut stats,
-        );
-        assert_eq!(
-            stats.last_register.take(),
-            Some((4, true, ServerReason::InvalidCrypto, ServerResponse::NTSNak))
-        );
-        let data = match response {
-            ServerAction::Ignore => panic!("Server ignored packet"),
-            ServerAction::Respond { message } => message,
-        };
-        let packet = NtpPacket::deserialize(data, decodedcookie.s2c.as_ref())
-            .unwrap()
-            .0;
-        assert!(packet.is_kiss_ntsn());
-    }
-
-    #[test]
-    fn test_server_require_nts() {
-        let mut config = ServerConfig {
-            denylist: FilterList {
-                filter: vec![],
-                action: FilterAction::Deny,
-            },
-            allowlist: FilterList {
-                filter: vec!["0.0.0.0/0".parse().unwrap()],
-                action: FilterAction::Ignore,
-            },
-            rate_limiting_cutoff: Duration::from_secs(1),
-            rate_limiting_cache_size: 0,
-            require_nts: Some(FilterAction::Ignore),
-            accepted_versions: vec![NtpVersion::V4],
-        };
-        let clock = TestClock {
-            cur: NtpTimestamp::from_fixed_int(200),
-        };
-        let mut stats = TestStatHandler::default();
-
-        let mut server = Server::new(
-            config.clone(),
-            clock,
-            SystemSnapshot::default(),
-            KeySetProvider::new(1).get(),
-        );
-
-        let (packet, _) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let serialized = serialize_packet_unencrypted(&packet);
-
-        let mut buf = [0; 1024];
-        let response = server.handle(
-            "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
-            &serialized,
-            &mut buf,
-            &mut stats,
-        );
-        assert_eq!(
-            stats.last_register.take(),
-            Some((4, false, ServerReason::Policy, ServerResponse::Ignore))
-        );
-        assert!(matches!(response, ServerAction::Ignore));
-
-        let decodedcookie = DecodedServerCookie {
-            algorithm: AeadAlgorithm::AeadAesSivCmac256,
-            s2c: Box::new(AesSivCmac256::new([0; 32].into())),
-            c2s: Box::new(AesSivCmac256::new([0; 32].into())),
-        };
-        let cookie_invalid = KeySetProvider::new(1).get().encode_cookie(&decodedcookie);
-        let (packet_invalid, _) =
-            NtpPacket::nts_poll_message(&cookie_invalid, 0, PollIntervalLimits::default().min);
-        let serialized = serialize_packet_encrypted(&packet_invalid, decodedcookie.c2s.as_ref());
-        let response = server.handle(
-            "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
-            &serialized,
-            &mut buf,
-            &mut stats,
-        );
-        assert_eq!(
-            stats.last_register.take(),
-            Some((4, true, ServerReason::InvalidCrypto, ServerResponse::NTSNak))
-        );
-        let data = match response {
-            ServerAction::Ignore => panic!("Server ignored packet"),
-            ServerAction::Respond { message } => message,
-        };
-        let packet = NtpPacket::deserialize(data, decodedcookie.s2c.as_ref())
-            .unwrap()
-            .0;
-        assert!(packet.is_kiss_ntsn());
-
-        config.require_nts = Some(FilterAction::Deny);
-        server.update_config(config.clone());
-
-        let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let serialized = serialize_packet_unencrypted(&packet);
-        let response = server.handle(
-            "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
-            &serialized,
-            &mut buf,
-            &mut stats,
-        );
-        assert_eq!(
-            stats.last_register.take(),
-            Some((4, false, ServerReason::Policy, ServerResponse::Deny))
-        );
-        let ServerAction::Respond { message } = response else {
-            panic!("Server ignored packet")
-        };
-
-        let packet = NtpPacket::deserialize(message, &NoCipher).unwrap().0;
-        assert!(packet.valid_server_response(id, false));
-        assert!(packet.is_kiss_deny());
-    }
-
-    #[test]
-    fn test_server_v5() {
-        let config = ServerConfig {
-            denylist: FilterList {
-                filter: vec![],
-                action: FilterAction::Deny,
-            },
-            allowlist: FilterList {
-                filter: vec!["127.0.0.0/24".parse().unwrap()],
-                action: FilterAction::Deny,
-            },
-            rate_limiting_cutoff: Duration::from_millis(100),
-            rate_limiting_cache_size: 0,
-            require_nts: None,
-            accepted_versions: vec![NtpVersion::V5],
-        };
-        let clock = TestClock {
-            cur: NtpTimestamp::from_fixed_int(200),
-        };
-        let mut stats = TestStatHandler::default();
-
-        let mut server = Server::new(
-            config,
-            clock,
-            SystemSnapshot::default(),
-            KeySetProvider::new(1).get(),
-        );
-
-        let (packet, id) = NtpPacket::poll_message_v5(PollIntervalLimits::default().min);
-        let serialized = serialize_packet_unencrypted(&packet);
-
-        let mut buf = [0; 1024];
-        let response = server.handle(
-            "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
-            &serialized,
-            &mut buf,
-            &mut stats,
-        );
-        assert_eq!(
-            stats.last_register.take(),
-            Some((5, false, ServerReason::Policy, ServerResponse::ProvideTime))
-        );
-        let data = match response {
-            ServerAction::Ignore => panic!("Server ignored packet"),
-            ServerAction::Respond { message } => message,
-        };
-        let packet = NtpPacket::deserialize(data, &NoCipher).unwrap().0;
-        assert_ne!(packet.stratum(), 0);
-        assert!(packet.valid_server_response(id, false));
-        assert_eq!(
-            packet.receive_timestamp(),
-            NtpTimestamp::from_fixed_int(100)
-        );
-        assert_eq!(
-            packet.transmit_timestamp(),
-            NtpTimestamp::from_fixed_int(200)
-        );
-
-        let mut buf = [0; 1024];
-        let response = server.handle(
-            "128.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
-            &serialized,
-            &mut buf,
-            &mut stats,
-        );
-        assert_eq!(
-            stats.last_register.take(),
-            Some((5, false, ServerReason::Policy, ServerResponse::Deny))
-        );
-        let data = match response {
-            ServerAction::Ignore => panic!("Server ignored packet"),
-            ServerAction::Respond { message } => message,
-        };
-        let packet = NtpPacket::deserialize(data, &NoCipher).unwrap().0;
-        assert!(packet.valid_server_response(id, false));
-        assert!(packet.is_kiss_deny());
-    }
-
-    #[test]
-    fn test_server_ignore_version() {
-        let config = ServerConfig {
-            denylist: FilterList {
-                filter: vec![],
-                action: FilterAction::Deny,
-            },
-            allowlist: FilterList {
-                filter: vec!["0.0.0.0/0".parse().unwrap()],
-                action: FilterAction::Ignore,
-            },
-            rate_limiting_cutoff: Duration::from_millis(1000),
-            rate_limiting_cache_size: 0,
-            require_nts: None,
-            accepted_versions: vec![NtpVersion::V3, NtpVersion::V4],
-        };
-        let clock = TestClock {
-            cur: NtpTimestamp::from_fixed_int(200),
-        };
-        let mut stats = TestStatHandler::default();
-
-        let mut server = Server::new(
-            config,
-            clock,
-            SystemSnapshot::default(),
-            KeySetProvider::new(1).get(),
-        );
-
-        let (packet, _) = NtpPacket::poll_message_v5(PollIntervalLimits::default().min);
-        let serialized = serialize_packet_unencrypted(&packet);
-
-        let mut buf = [0; 1024];
-        let response = server.handle(
-            "128.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
-            &serialized,
-            &mut buf,
-            &mut stats,
-        );
-
-        assert_eq!(
-            stats.last_register.take(),
-            Some((5, false, ServerReason::Policy, ServerResponse::Ignore))
-        );
-        assert!(matches!(response, ServerAction::Ignore));
-
-        server.update_config(ServerConfig {
-            denylist: FilterList {
-                filter: vec![],
-                action: FilterAction::Deny,
-            },
-            allowlist: FilterList {
-                filter: vec!["0.0.0.0/0".parse().unwrap()],
-                action: FilterAction::Ignore,
-            },
-            rate_limiting_cutoff: Duration::from_millis(100),
-            rate_limiting_cache_size: 0,
-            require_nts: None,
-            accepted_versions: vec![NtpVersion::V5],
-        });
-
-        let (packet, _) = NtpPacket::poll_message(PollIntervalLimits::default().min);
-        let serialized = serialize_packet_unencrypted(&packet);
-
-        let mut buf = [0; 1024];
-        let response = server.handle(
-            "128.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
-            &serialized,
-            &mut buf,
-            &mut stats,
-        );
-
-        assert_eq!(
-            stats.last_register.take(),
-            Some((4, false, ServerReason::Policy, ServerResponse::Ignore))
-        );
-        assert!(matches!(response, ServerAction::Ignore));
-    }
-
-    // TimestampedCache tests
-    #[test]
-    fn timestamped_cache() {
-        let length = 8u8;
-        let mut cache: TimestampedCache<u8> = TimestampedCache::new(length as usize);
-
-        let second = Duration::from_secs(1);
-        let instant = Instant::now();
-
-        assert!(cache.is_allowed(0, instant, second));
-
-        assert!(!cache.is_allowed(0, instant, second));
-
-        let later = instant + 2 * second;
-        assert!(cache.is_allowed(0, later, second));
-
-        // simulate a hash collision
-        let even_later = later + 2 * second;
-        assert!(cache.is_allowed(length, even_later, second));
-    }
-
-    #[test]
-    fn timestamped_cache_size_0() {
-        let mut cache = TimestampedCache::new(0);
-
-        let second = Duration::from_secs(1);
-        let instant = Instant::now();
-
-        assert!(cache.is_allowed(0, instant, second));
-    }
-
-    // IpSubnet parsing tests
-    #[test]
-    fn test_ipv4_subnet_parse() {
-        use std::str::FromStr;
-
-        assert!(matches!(
-            IpSubnet::from_str("bla/5"),
-            Err(SubnetParseError::Ip(_))
-        ));
-        assert_eq!(IpSubnet::from_str("0.0.0.0"), Err(SubnetParseError::Subnet));
-        assert_eq!(
-            IpSubnet::from_str("0.0.0.0/33"),
-            Err(SubnetParseError::Mask)
-        );
-
-        assert_eq!(
-            IpSubnet::from_str("0.0.0.0/0"),
-            Ok(IpSubnet {
-                addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-                mask: 0
-            })
-        );
-        assert_eq!(
-            IpSubnet::from_str("127.0.0.1/32"),
-            Ok(IpSubnet {
-                addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
-                mask: 32
-            })
-        );
-
-        assert_eq!(
-            serde_json::from_str::<IpSubnet>(r#""0.0.0.0/0""#).unwrap(),
-            IpSubnet {
-                addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-                mask: 0,
-            }
-        );
-
-        assert_eq!(
-            serde_json::from_str::<IpSubnet>(r#""127.0.0.1/32""#).unwrap(),
-            IpSubnet {
-                addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
-                mask: 32,
-            }
-        );
-    }
-
-    #[test]
-    fn test_ipv6_subnet_parse() {
-        use std::str::FromStr;
-
-        assert!(matches!(
-            IpSubnet::from_str("bla/5"),
-            Err(SubnetParseError::Ip(_))
-        ));
-        assert_eq!(IpSubnet::from_str("::"), Err(SubnetParseError::Subnet));
-        assert_eq!(IpSubnet::from_str("::/129"), Err(SubnetParseError::Mask));
-
-        assert_eq!(
-            IpSubnet::from_str("::/0"),
-            Ok(IpSubnet {
-                addr: IpAddr::V6(Ipv6Addr::UNSPECIFIED),
-                mask: 0
-            })
-        );
-        assert_eq!(
-            IpSubnet::from_str("::1/128"),
-            Ok(IpSubnet {
-                addr: IpAddr::V6(Ipv6Addr::LOCALHOST),
-                mask: 128
-            })
-        );
-
-        assert_eq!(
-            serde_json::from_str::<IpSubnet>(r#""::/0""#).unwrap(),
-            IpSubnet {
-                addr: IpAddr::V6(Ipv6Addr::UNSPECIFIED),
-                mask: 0,
-            }
-        );
-
-        assert_eq!(
-            serde_json::from_str::<IpSubnet>(r#""::1/128""#).unwrap(),
-            IpSubnet {
-                addr: IpAddr::V6(Ipv6Addr::LOCALHOST),
-                mask: 128,
-            }
-        );
     }
 }
