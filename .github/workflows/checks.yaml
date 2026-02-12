@@ -263,6 +263,9 @@ jobs:
           - fuzz_target: ipfilter
             corpus: ""
             features: ''
+          - fuzz_target: handle
+            corpus: ""
+            features: ''
           - fuzz_target: key_exchange_response_parsing
             corpus: ""
             features: ''

@@ -55,6 +55,12 @@ test = false
 doc = false
 
 [[bin]]
+name = "handle"
+path = "fuzz_targets/handle.rs"
+test = false
+doc = false
+
+[[bin]]
 name = "ipfilter"
 path = "fuzz_targets/ipfilter.rs"
 test = false

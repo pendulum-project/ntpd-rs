@@ -393,7 +393,7 @@ dependencies = [
 
 [[package]]
 name = "ntp-proto"
-version = "1.7.0-alpha.20260122"
+version = "1.7.0"
 dependencies = [
  "aead",
  "aes-siv",
