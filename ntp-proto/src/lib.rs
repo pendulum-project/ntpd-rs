@@ -240,6 +240,8 @@ mod exports {
         Cipher, CipherProvider, EncryptResult, ExtensionHeaderVersion, NoCipher,
         NtpAssociationMode, NtpLeapIndicator, NtpPacket, PacketParsingError,
     };
+    #[cfg(feature = "__internal-fuzz")]
+    pub use super::server::HandleInnerData;
     pub use super::server::{
         FilterAction, FilterList, IpSubnet, Server, ServerAction, ServerConfig, ServerReason,
         ServerResponse, ServerStatHandler, SubnetParseError,

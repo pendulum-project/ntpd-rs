@@ -10,8 +10,8 @@ use std::{
 use serde::{Deserialize, Deserializer, de};
 
 use crate::{
-    KeySet, NtpClock, NtpPacket, NtpTimestamp, NtpVersion, PacketParsingError, SystemSnapshot,
-    ipfilter::IpFilter,
+    Cipher, KeySet, NtpClock, NtpPacket, NtpTimestamp, NtpVersion, PacketParsingError,
+    SystemSnapshot, ipfilter::IpFilter,
 };
 
 pub enum ServerAction<'a> {
@@ -164,14 +164,22 @@ impl<C> Server<C> {
     }
 }
 
+pub struct HandleInnerData<'a> {
+    pub action: ServerResponse,
+    pub reason: ServerReason,
+    pub version: NtpVersion,
+    pub nts: bool,
+    pub packet: NtpPacket<'a>,
+    pub cipher: Option<Box<dyn Cipher>>,
+    pub desired_size: Option<usize>,
+}
+
 impl<C: NtpClock> Server<C> {
     /// Handle a packet sent to the server
     ///
     /// If the buffer isn't large enough to encode the reply, this
     /// will log an error and ignore the incoming packet. A buffer
     /// as large as the message will always suffice.
-    // FIXME: Figure out a way to simplify or split this function
-    #[expect(clippy::too_many_lines)]
     pub fn handle<'a>(
         &mut self,
         client_ip: IpAddr,
@@ -180,12 +188,55 @@ impl<C: NtpClock> Server<C> {
         buffer: &'a mut [u8],
         stats_handler: &mut impl ServerStatHandler,
     ) -> ServerAction<'a> {
-        let (mut action, mut reason) = self.intended_action(client_ip);
+        let HandleInnerData {
+            action,
+            reason,
+            version,
+            nts,
+            packet,
+            cipher,
+            desired_size,
+        } = match self.handle_inner(client_ip, recv_timestamp, message, stats_handler) {
+            Ok(value) => value,
+            Err(value) => return value,
+        };
 
+        let mut cursor = Cursor::new(buffer);
+        match packet.serialize(&mut cursor, &cipher.as_deref(), desired_size) {
+            Ok(_) => {
+                stats_handler.register(version.into(), nts, reason, action);
+                let length = cursor.position();
+                ServerAction::Respond {
+                    message: &cursor.into_inner()[..length as _],
+                }
+            }
+            Err(e) => {
+                tracing::debug!("Could not serialize response: {}", e);
+                stats_handler.register(
+                    version.into(),
+                    nts,
+                    ServerReason::InternalError,
+                    ServerResponse::Ignore,
+                );
+                ServerAction::Ignore
+            }
+        }
+    }
+
+    // FIXME: Figure out a way to split this
+    #[expect(clippy::too_many_lines)]
+    fn handle_inner<'a>(
+        &mut self,
+        client_ip: IpAddr,
+        recv_timestamp: NtpTimestamp,
+        message: &'a [u8],
+        stats_handler: &mut impl ServerStatHandler,
+    ) -> Result<HandleInnerData<'a>, ServerAction<'static>> {
+        let (mut action, mut reason) = self.intended_action(client_ip);
         if action == ServerResponse::Ignore {
             // Early exit for ignore
             stats_handler.register(fallback_message_version(message), false, reason, action);
-            return ServerAction::Ignore;
+            return Err(ServerAction::Ignore);
         }
 
         // Try and parse the message
@@ -199,7 +250,7 @@ impl<C: NtpClock> Server<C> {
                         ServerReason::ParseError,
                         ServerResponse::Ignore,
                     );
-                    return ServerAction::Ignore;
+                    return Err(ServerAction::Ignore);
                 }
             },
             Err(PacketParsingError::DecryptError(packet)) => {
@@ -217,7 +268,7 @@ impl<C: NtpClock> Server<C> {
                     ServerReason::ParseError,
                     ServerResponse::Ignore,
                 );
-                return ServerAction::Ignore;
+                return Err(ServerAction::Ignore);
             }
         };
 
@@ -232,7 +283,7 @@ impl<C: NtpClock> Server<C> {
                 ServerReason::Policy,
                 ServerResponse::Ignore,
             );
-            return ServerAction::Ignore;
+            return Err(ServerAction::Ignore);
         }
 
         let nts = cookie.is_some() || action == ServerResponse::NTSNak;
@@ -246,7 +297,7 @@ impl<C: NtpClock> Server<C> {
                     ServerReason::Policy,
                     ServerResponse::Ignore,
                 );
-                return ServerAction::Ignore;
+                return Err(ServerAction::Ignore);
             }
             action = ServerResponse::Deny;
             reason = ServerReason::Policy;
@@ -291,26 +342,26 @@ impl<C: NtpClock> Server<C> {
             ServerResponse::Ignore => unreachable!(),
         };
 
-        let mut cursor = Cursor::new(buffer);
-        match packet.serialize(&mut cursor, &cipher.as_deref(), desired_size) {
-            Ok(_) => {
-                stats_handler.register(version.into(), nts, reason, action);
-                let length = cursor.position();
-                ServerAction::Respond {
-                    message: &cursor.into_inner()[..length as _],
-                }
-            }
-            Err(e) => {
-                tracing::debug!("Could not serialize response: {}", e);
-                stats_handler.register(
-                    version.into(),
-                    nts,
-                    ServerReason::InternalError,
-                    ServerResponse::Ignore,
-                );
-                ServerAction::Ignore
-            }
-        }
+        Ok(HandleInnerData {
+            action,
+            reason,
+            version,
+            nts,
+            packet,
+            cipher,
+            desired_size,
+        })
+    }
+
+    #[cfg(feature = "__internal-fuzz")]
+    pub fn fuzz_handle_inner<'a>(
+        &mut self,
+        client_ip: IpAddr,
+        recv_timestamp: NtpTimestamp,
+        message: &'a [u8],
+        stats_handler: &mut impl ServerStatHandler,
+    ) -> Result<HandleInnerData<'a>, ServerAction<'static>> {
+        self.handle_inner(client_ip, recv_timestamp, message, stats_handler)
     }
 }
 
