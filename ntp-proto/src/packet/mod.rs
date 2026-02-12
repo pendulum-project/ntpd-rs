@@ -477,7 +477,9 @@ impl<'a> NtpPacket<'a> {
             mac.serialize(&mut *w)?;
         }
 
-        if let Some(desired_size) = desired_size {
+        if matches!(self.header, NtpHeader::V5(_))
+            && let Some(desired_size) = desired_size
+        {
             let written = (w.position() - start) as usize;
             if desired_size > written {
                 ExtensionField::Padding(desired_size - written).serialize(
