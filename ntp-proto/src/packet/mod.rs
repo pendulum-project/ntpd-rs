@@ -4,7 +4,7 @@ use rand::{Rng, thread_rng};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    NtpVersion,
+    MAX_COOKIES, NtpVersion,
     clock::NtpClock,
     identifiers::ReferenceId,
     io::NonBlockingWrite,
@@ -708,6 +708,7 @@ impl<'a> NtpPacket<'a> {
             })
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn nts_timestamp_response<C: NtpClock>(
         system: &SystemSnapshot,
         input: Self,
@@ -731,6 +732,7 @@ impl<'a> NtpPacket<'a> {
                         .authenticated
                         .iter()
                         .chain(input.efdata.encrypted.iter())
+                        .take(MAX_COOKIES)
                         .filter_map(|f| match f {
                             ExtensionField::NtsCookiePlaceholder { cookie_length } => {
                                 let new_cookie = keyset.encode_cookie(cookie);
@@ -775,6 +777,7 @@ impl<'a> NtpPacket<'a> {
                         .authenticated
                         .iter()
                         .chain(input.efdata.encrypted.iter())
+                        .take(MAX_COOKIES)
                         .filter_map(|f| match f {
                             ExtensionField::NtsCookiePlaceholder { cookie_length } => {
                                 let new_cookie = keyset.encode_cookie(cookie);
