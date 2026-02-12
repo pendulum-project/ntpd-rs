@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.7.1]
+
+### Changed
+- Updated dependencies.
+
+### Fixed
+- Fixed issue that could result in excessive CPU usage on receiving NTS messages asking for many cookies.
+- Fixed network-triggerable log spam.
+
 ## [1.7.0]
 
 ### Added
