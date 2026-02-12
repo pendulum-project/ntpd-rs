@@ -299,7 +299,7 @@ impl<C: NtpClock> Server<C> {
                 }
             }
             Err(e) => {
-                tracing::error!("Could not serialize response: {}", e);
+                tracing::debug!("Could not serialize response: {}", e);
                 stats_handler.register(
                     version.into(),
                     nts,
