@@ -10,8 +10,8 @@ use std::{
 use serde::{Deserialize, Deserializer, de};
 
 use crate::{
-    KeySet, NoCipher, NtpClock, NtpPacket, NtpTimestamp, NtpVersion, PacketParsingError,
-    SystemSnapshot, ipfilter::IpFilter,
+    KeySet, NtpClock, NtpPacket, NtpTimestamp, NtpVersion, PacketParsingError, SystemSnapshot,
+    ipfilter::IpFilter,
 };
 
 pub enum ServerAction<'a> {
@@ -252,45 +252,47 @@ impl<C: NtpClock> Server<C> {
             reason = ServerReason::Policy;
         }
 
-        let mut cursor = Cursor::new(buffer);
-        let result = match action {
-            ServerResponse::NTSNak => {
-                NtpPacket::nts_nak_response(packet).serialize(&mut cursor, &NoCipher, None)
-            }
+        let (packet, cipher, desired_size) = match action {
+            ServerResponse::NTSNak => (NtpPacket::nts_nak_response(packet), None, None),
             ServerResponse::Deny => {
                 if let Some(cookie) = cookie {
-                    NtpPacket::nts_deny_response(packet).serialize(
-                        &mut cursor,
-                        cookie.s2c.as_ref(),
-                        None,
-                    )
+                    (NtpPacket::nts_deny_response(packet), Some(cookie.s2c), None)
                 } else {
-                    NtpPacket::deny_response(packet).serialize(&mut cursor, &NoCipher, None)
+                    (NtpPacket::deny_response(packet), None, None)
                 }
             }
             ServerResponse::ProvideTime => {
                 if let Some(cookie) = cookie {
-                    NtpPacket::nts_timestamp_response(
-                        &self.system,
-                        packet,
-                        recv_timestamp,
-                        &self.clock,
-                        &cookie,
-                        &self.keyset,
-                    )
-                    .serialize(
-                        &mut cursor,
-                        cookie.s2c.as_ref(),
+                    (
+                        NtpPacket::nts_timestamp_response(
+                            &self.system,
+                            packet,
+                            recv_timestamp,
+                            &self.clock,
+                            &cookie,
+                            &self.keyset,
+                        ),
+                        Some(cookie.s2c),
                         Some(message.len()),
                     )
                 } else {
-                    NtpPacket::timestamp_response(&self.system, packet, recv_timestamp, &self.clock)
-                        .serialize(&mut cursor, &NoCipher, Some(message.len()))
+                    (
+                        NtpPacket::timestamp_response(
+                            &self.system,
+                            packet,
+                            recv_timestamp,
+                            &self.clock,
+                        ),
+                        None,
+                        Some(message.len()),
+                    )
                 }
             }
             ServerResponse::Ignore => unreachable!(),
         };
-        match result {
+
+        let mut cursor = Cursor::new(buffer);
+        match packet.serialize(&mut cursor, &cipher.as_deref(), desired_size) {
             Ok(_) => {
                 stats_handler.register(version.into(), nts, reason, action);
                 let length = cursor.position();
@@ -442,7 +444,7 @@ mod tests {
     use std::net::{Ipv4Addr, Ipv6Addr};
 
     use crate::{
-        Cipher, DecodedServerCookie, KeySetProvider, NtpDuration, NtpLeapIndicator,
+        Cipher, DecodedServerCookie, KeySetProvider, NoCipher, NtpDuration, NtpLeapIndicator,
         PollIntervalLimits, nts::AeadAlgorithm, packet::AesSivCmac256,
     };
 
