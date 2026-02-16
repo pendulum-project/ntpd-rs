@@ -33,7 +33,7 @@ jobs:
           components: "llvm-tools"
 
       - name: Install cross, cargo-deb and cargo-generate-rpm
-        uses: taiki-e/install-action@887bc4e03483810873d617344dd5189cd82e7b8b
+        uses: taiki-e/install-action@288875dd3d64326724fa6d9593062d9f8ba0b131
         with:
           tool: cross, cargo-deb, cargo-generate-rpm
 
