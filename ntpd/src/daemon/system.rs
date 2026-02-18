@@ -85,7 +85,7 @@ impl<T: Wait> Wait for SingleshotSleep<T> {
 }
 
 pub struct DaemonChannels {
-    pub source_snapshots: Arc<std::sync::RwLock<HashMap<ClockId, ObservableSourceState<ClockId>>>>,
+    pub source_snapshots: Arc<std::sync::RwLock<HashMap<ClockId, ObservableSourceState>>>,
     pub server_data_receiver: tokio::sync::watch::Receiver<Vec<ServerData>>,
     pub system_snapshot_receiver: tokio::sync::watch::Receiver<SystemSnapshot>,
 }
@@ -185,7 +185,7 @@ struct SystemTask<C: NtpClock, Controller: TimeSyncController<Clock = C>, T: Wai
     system_snapshot_sender: tokio::sync::watch::Sender<SystemSnapshot>,
     system_update_sender:
         tokio::sync::broadcast::Sender<SystemSourceUpdate<Controller::ControllerMessage>>,
-    source_snapshots: Arc<std::sync::RwLock<HashMap<ClockId, ObservableSourceState<ClockId>>>>,
+    source_snapshots: Arc<std::sync::RwLock<HashMap<ClockId, ObservableSourceState>>>,
     server_data_sender: tokio::sync::watch::Sender<Vec<ServerData>>,
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
     ip_list: tokio::sync::watch::Receiver<Arc<[IpAddr]>>,
