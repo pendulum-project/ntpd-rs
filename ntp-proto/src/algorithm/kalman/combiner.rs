@@ -1,15 +1,15 @@
-use crate::{packet::NtpLeapIndicator, time_types::NtpDuration};
+use crate::{ClockId, packet::NtpLeapIndicator, time_types::NtpDuration};
 
 use super::{SourceSnapshot, config::AlgorithmConfig, source::KalmanState};
 
-pub(super) struct Combine<Index: Copy> {
+pub(super) struct Combine {
     pub estimate: KalmanState,
-    pub sources: Vec<Index>,
+    pub sources: Vec<ClockId>,
     pub delay: NtpDuration,
     pub leap_indicator: Option<NtpLeapIndicator>,
 }
 
-fn vote_leap<Index: Copy>(selection: &[SourceSnapshot<Index>]) -> Option<NtpLeapIndicator> {
+fn vote_leap(selection: &[SourceSnapshot]) -> Option<NtpLeapIndicator> {
     let mut votes_59 = 0;
     let mut votes_61 = 0;
     let mut votes_none = 0;
@@ -36,10 +36,10 @@ fn vote_leap<Index: Copy>(selection: &[SourceSnapshot<Index>]) -> Option<NtpLeap
     }
 }
 
-pub(super) fn combine<Index: Copy>(
-    selection: &[SourceSnapshot<Index>],
+pub(super) fn combine(
+    selection: &[SourceSnapshot],
     algo_config: &AlgorithmConfig,
-) -> Option<Combine<Index>> {
+) -> Option<Combine> {
     selection.first().map(|first| {
         let mut estimate = first.state;
         if !algo_config.ignore_server_dispersion {
@@ -93,9 +93,9 @@ mod tests {
         state: Vector<2>,
         uncertainty: Matrix<2, 2>,
         source_uncertainty: f64,
-    ) -> SourceSnapshot<usize> {
+    ) -> SourceSnapshot {
         SourceSnapshot {
-            index: 0,
+            index: ClockId(0),
             state: KalmanState {
                 state,
                 uncertainty,
@@ -113,7 +113,7 @@ mod tests {
 
     #[test]
     fn test_none() {
-        let selected: Vec<SourceSnapshot<usize>> = vec![];
+        let selected: Vec<SourceSnapshot> = vec![];
         let algconfig = AlgorithmConfig::default();
         assert!(combine(&selected, &algconfig).is_none());
     }
@@ -189,14 +189,14 @@ mod tests {
                 1e-3,
             ),
         ];
-        selected[0].index = 0;
-        selected[1].index = 1;
+        selected[0].index = ClockId(0);
+        selected[1].index = ClockId(1);
 
         let algconfig = AlgorithmConfig {
             ..Default::default()
         };
         let result = combine(&selected, &algconfig).unwrap();
-        assert_eq!(result.sources, vec![0, 1]);
+        assert_eq!(result.sources, vec![ClockId(0), ClockId(1)]);
 
         let mut selected = vec![
             snapshot_for_state(
@@ -210,19 +210,19 @@ mod tests {
                 1e-3,
             ),
         ];
-        selected[0].index = 0;
-        selected[1].index = 1;
+        selected[0].index = ClockId(0);
+        selected[1].index = ClockId(1);
 
         let algconfig = AlgorithmConfig {
             ..Default::default()
         };
         let result = combine(&selected, &algconfig).unwrap();
-        assert_eq!(result.sources, vec![1, 0]);
+        assert_eq!(result.sources, vec![ClockId(1), ClockId(0)]);
     }
 
-    fn snapshot_for_leap(leap: NtpLeapIndicator) -> SourceSnapshot<usize> {
+    fn snapshot_for_leap(leap: NtpLeapIndicator) -> SourceSnapshot {
         SourceSnapshot {
-            index: 0,
+            index: ClockId(0),
             state: KalmanState {
                 state: Vector::new_vector([0.0, 0.0]),
                 uncertainty: Matrix::new([[1e-6, 0.0], [0.0, 1e-12]]),

@@ -312,7 +312,7 @@ mod tests {
 
         let index = ClockId::new();
         let clock = TestClock {};
-        let mut system: ntp_proto::System<_, KalmanClockController<_, _>> = ntp_proto::System::new(
+        let mut system: ntp_proto::System<KalmanClockController<_>> = ntp_proto::System::new(
             clock.clone(),
             SynchronizationConfig::default(),
             AlgorithmConfig::default(),
