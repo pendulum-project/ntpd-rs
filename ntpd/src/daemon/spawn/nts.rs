@@ -12,7 +12,7 @@ use crate::daemon::spawn::resolve_single_ntp_server;
 
 use super::super::config::NtsSourceConfig;
 
-use super::{SourceId, SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId};
+use super::{ClockId, SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId};
 
 pub struct NtsSpawner {
     config: NtsSourceConfig,
@@ -144,7 +144,7 @@ impl Spawner for NtsSpawner {
                         .send(SpawnEvent::new(
                             self.id,
                             SpawnAction::create_ntp(
-                                SourceId::new(),
+                                ClockId::new(),
                                 address,
                                 self.config.address.deref().clone(),
                                 ke.protocol_version,
