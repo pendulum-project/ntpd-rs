@@ -1,7 +1,6 @@
 use std::{future::Future, net::SocketAddr, path::PathBuf, sync::atomic::AtomicU64};
 
-use ntp_proto::{ProtocolVersion, SourceConfig, SourceNtsData};
-use serde::{Deserialize, Serialize};
+use ntp_proto::{ClockId, ProtocolVersion, SourceConfig, SourceNtsData};
 use tokio::{
     sync::mpsc,
     time::{Instant, timeout},
@@ -34,31 +33,6 @@ impl SpawnerId {
 impl Default for SpawnerId {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-/// Unique identifier for a source.
-/// This source id makes sure that even if the network address is the same
-/// that we always know which specific spawned source we are talking about.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Serialize, Deserialize)]
-pub struct ClockId(u64);
-
-impl ClockId {
-    pub fn new() -> ClockId {
-        static COUNTER: AtomicU64 = AtomicU64::new(1);
-        ClockId(COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
-    }
-}
-
-impl Default for ClockId {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl std::fmt::Display for ClockId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
     }
 }
 
