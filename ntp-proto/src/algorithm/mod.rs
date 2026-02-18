@@ -3,10 +3,9 @@ use std::{fmt::Debug, time::Duration};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::{
-    ClockId, PollInterval,
+    ClockId, NtpLeapIndicator, NtpPacket, PollInterval,
     clock::NtpClock,
     config::{SourceConfig, SynchronizationConfig},
-    source::Measurement,
     system::TimeSnapshot,
     time_types::{NtpDuration, NtpTimestamp},
 };
@@ -126,3 +125,39 @@ pub use kalman::{
     KalmanClockController, KalmanControllerMessage, KalmanSourceController, KalmanSourceMessage,
     TwoWayKalmanSourceController, config::AlgorithmConfig,
 };
+
+#[derive(Debug, Copy, Clone)]
+pub struct Measurement<D: Debug + Copy + Clone> {
+    pub delay: D,
+    pub offset: NtpDuration,
+    pub localtime: NtpTimestamp,
+
+    pub stratum: u8,
+    pub root_delay: NtpDuration,
+    pub root_dispersion: NtpDuration,
+    pub leap: NtpLeapIndicator,
+    pub precision: i8,
+}
+
+impl Measurement<NtpDuration> {
+    pub(crate) fn from_packet(
+        packet: &NtpPacket,
+        send_timestamp: NtpTimestamp,
+        recv_timestamp: NtpTimestamp,
+    ) -> Self {
+        Self {
+            delay: (recv_timestamp - send_timestamp)
+                - (packet.transmit_timestamp() - packet.receive_timestamp()),
+            offset: ((packet.receive_timestamp() - send_timestamp)
+                + (packet.transmit_timestamp() - recv_timestamp))
+                / 2,
+            localtime: send_timestamp + (recv_timestamp - send_timestamp) / 2,
+
+            stratum: packet.stratum(),
+            root_delay: packet.root_delay(),
+            root_dispersion: packet.root_dispersion(),
+            leap: packet.leap(),
+            precision: packet.precision(),
+        }
+    }
+}
