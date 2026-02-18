@@ -10,7 +10,7 @@ use tracing::{Instrument, Span, debug, error, instrument, warn};
 
 use crate::daemon::{exitcode, ntp_source::MsgForSystem};
 
-use super::{ntp_source::SourceChannels, spawn::SourceId};
+use super::{ntp_source::SourceChannels, spawn::ClockId};
 
 struct PpsDeviceFetchTask {
     pps: PpsDevice,
@@ -32,7 +32,7 @@ pub(crate) struct PpsSourceTask<
     C: 'static + NtpClock + Send,
     Controller: SourceController<MeasurementDelay = ()>,
 > {
-    index: SourceId,
+    index: ClockId,
     clock: C,
     channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
     path: PathBuf,
@@ -141,7 +141,7 @@ where
 
     #[instrument(level = tracing::Level::ERROR, name = "Pps Source", skip(clock, channels, source))]
     pub fn spawn(
-        index: SourceId,
+        index: ClockId,
         device_path: PathBuf,
         clock: C,
         channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
