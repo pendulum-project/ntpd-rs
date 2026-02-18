@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use ntp_proto::{
-    Measurement, NtpClock, NtpDuration, NtpInstant, NtpLeapIndicator, OneWaySource,
-    OneWaySourceSnapshot, OneWaySourceUpdate, ReferenceId, SourceController, SystemSourceUpdate,
+    Measurement, NtpClock, NtpDuration, NtpLeapIndicator, OneWaySource, OneWaySourceSnapshot,
+    OneWaySourceUpdate, ReferenceId, SourceController, SystemSourceUpdate,
 };
 use pps_time::PpsDevice;
 use tokio::sync::mpsc;
@@ -85,7 +85,6 @@ where
                             delay: (),
                             offset: NtpDuration::from_seconds(offset),
                             localtime: time,
-                            monotime: NtpInstant::now(),
 
                             stratum: 0,
                             root_delay: NtpDuration::ZERO,
