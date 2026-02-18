@@ -1,9 +1,8 @@
 use super::server::ServerStats;
 use super::sockets::create_unix_socket_with_permissions;
-use super::spawn::ClockId;
 use super::system::ServerData;
 use libc::{ECONNABORTED, EMFILE, ENFILE, ENOBUFS, ENOMEM};
-use ntp_proto::{NtpClock, NtpTimestamp, ObservableSourceState, SystemSnapshot};
+use ntp_proto::{ClockId, NtpClock, NtpTimestamp, ObservableSourceState, SystemSnapshot};
 use std::collections::HashMap;
 use std::convert::Into;
 use std::os::unix::fs::PermissionsExt;

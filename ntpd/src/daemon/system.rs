@@ -12,7 +12,7 @@ use super::{
     ntp_source::{MsgForSystem, SourceChannels, SourceTask, Wait},
     server::{ServerStats, ServerTask},
     spawn::{
-        ClockId, SourceRemovalReason, SpawnAction, SpawnEvent, Spawner, SpawnerId, SystemEvent,
+        SourceRemovalReason, SpawnAction, SpawnEvent, Spawner, SpawnerId, SystemEvent,
         nts::NtsSpawner, pool::PoolSpawner, sock::SockSpawner, standard::StandardSpawner,
     },
 };
@@ -30,7 +30,7 @@ use std::{
 };
 
 use ntp_proto::{
-    KeySet, NtpClock, ObservableSourceState, SourceConfig, SynchronizationConfig, System,
+    ClockId, KeySet, NtpClock, ObservableSourceState, SourceConfig, SynchronizationConfig, System,
     SystemActionIterator, SystemSnapshot, SystemSourceUpdate, TimeSyncController,
 };
 use timestamped_socket::interface::InterfaceName;

@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use ntp_proto::{
-    Measurement, NtpClock, NtpDuration, NtpLeapIndicator, OneWaySource, OneWaySourceSnapshot,
-    OneWaySourceUpdate, ReferenceId, SourceController, SystemSourceUpdate,
+    ClockId, Measurement, NtpClock, NtpDuration, NtpLeapIndicator, OneWaySource,
+    OneWaySourceSnapshot, OneWaySourceUpdate, ReferenceId, SourceController, SystemSourceUpdate,
 };
 use pps_time::PpsDevice;
 use tokio::sync::mpsc;
@@ -10,7 +10,7 @@ use tracing::{Instrument, Span, debug, error, instrument, warn};
 
 use crate::daemon::{exitcode, ntp_source::MsgForSystem};
 
-use super::{ntp_source::SourceChannels, spawn::ClockId};
+use super::ntp_source::SourceChannels;
 
 struct PpsDeviceFetchTask {
     pps: PpsDevice,

@@ -2,8 +2,8 @@ use std::path::PathBuf;
 use std::{fmt::Display, path::Path};
 
 use ntp_proto::{
-    Measurement, NtpClock, NtpDuration, NtpLeapIndicator, OneWaySource, OneWaySourceSnapshot,
-    OneWaySourceUpdate, ReferenceId, SourceController, SystemSourceUpdate,
+    ClockId, Measurement, NtpClock, NtpDuration, NtpLeapIndicator, OneWaySource,
+    OneWaySourceSnapshot, OneWaySourceUpdate, ReferenceId, SourceController, SystemSourceUpdate,
 };
 use tracing::debug;
 use tracing::{Instrument, Span, error, instrument};
@@ -12,7 +12,7 @@ use tokio::net::UnixDatagram;
 
 use crate::daemon::{exitcode, ntp_source::MsgForSystem};
 
-use super::{ntp_source::SourceChannels, spawn::ClockId};
+use super::ntp_source::SourceChannels;
 
 // Based on https://gitlab.com/gpsd/gpsd/-/blob/master/gpsd/timehint.c#L268
 #[derive(Debug)]
@@ -241,7 +241,7 @@ mod tests {
     };
 
     use ntp_proto::{
-        AlgorithmConfig, KalmanClockController, NtpClock, NtpDuration, NtpLeapIndicator,
+        AlgorithmConfig, ClockId, KalmanClockController, NtpClock, NtpDuration, NtpLeapIndicator,
         NtpTimestamp, ReferenceId, SourceConfig, SynchronizationConfig,
     };
     use tokio::sync::mpsc;
@@ -250,7 +250,6 @@ mod tests {
         daemon::{
             ntp_source::{MsgForSystem, SourceChannels},
             sock_source::{SOCK_MAGIC, SampleError, SockSourceTask, create_socket},
-            spawn::ClockId,
             util::EPOCH_OFFSET,
         },
         test::alloc_port,
