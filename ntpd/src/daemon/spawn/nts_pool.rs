@@ -15,10 +15,10 @@ use crate::daemon::spawn::resolve_single_ntp_server;
 
 use super::super::config::NtsPoolSourceConfig;
 
-use super::{SourceId, SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId};
+use super::{ClockId, SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId};
 
 struct PoolSource {
-    id: SourceId,
+    id: ClockId,
     remote: String,
 }
 
@@ -183,7 +183,7 @@ impl Spawner for NtsPoolSpawner {
                     ))
                     .await
                     {
-                        let id = SourceId::new();
+                        let id = ClockId::new();
                         self.current_sources.push(PoolSource {
                             id,
                             remote: remote_name.unwrap_or(ke.remote),
