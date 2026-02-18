@@ -121,7 +121,6 @@ impl<C: NtpClock> SingleShotController<C> {
 
 impl<C: NtpClock> TimeSyncController for SingleShotController<C> {
     type Clock = C;
-    type SourceId = ClockId;
     type AlgorithmConfig = SingleShotControllerConfig;
     type ControllerMessage = SingleShotControllerMessage;
     type SourceMessage = Measurements;
@@ -147,11 +146,7 @@ impl<C: NtpClock> TimeSyncController for SingleShotController<C> {
         Ok(())
     }
 
-    fn add_source(
-        &mut self,
-        _id: Self::SourceId,
-        config: SourceConfig,
-    ) -> Self::NtpSourceController {
+    fn add_source(&mut self, _id: ClockId, config: SourceConfig) -> Self::NtpSourceController {
         SingleShotSourceController::<NtpDuration> {
             delay_type: PhantomData,
             min_poll_interval: config.poll_interval_limits.min,
@@ -162,7 +157,7 @@ impl<C: NtpClock> TimeSyncController for SingleShotController<C> {
 
     fn add_one_way_source(
         &mut self,
-        _id: Self::SourceId,
+        _id: ClockId,
         config: SourceConfig,
         _measurement_noise_estimate: f64,
         period: Option<f64>,
@@ -175,11 +170,11 @@ impl<C: NtpClock> TimeSyncController for SingleShotController<C> {
         }
     }
 
-    fn remove_source(&mut self, id: Self::SourceId) {
+    fn remove_source(&mut self, id: ClockId) {
         self.sources.remove(&id);
     }
 
-    fn source_update(&mut self, id: Self::SourceId, usable: bool) {
+    fn source_update(&mut self, id: ClockId, usable: bool) {
         if !usable {
             self.sources.remove(&id);
         }
@@ -187,16 +182,16 @@ impl<C: NtpClock> TimeSyncController for SingleShotController<C> {
 
     fn source_message(
         &mut self,
-        id: Self::SourceId,
+        id: ClockId,
         message: Self::SourceMessage,
-    ) -> ntp_proto::StateUpdate<Self::SourceId, Self::ControllerMessage> {
+    ) -> ntp_proto::StateUpdate<Self::ControllerMessage> {
         self.sources.insert(id, message);
         // TODO, check and update time once we have sufficient sources
         self.try_steer();
         ntp_proto::StateUpdate::default()
     }
 
-    fn time_update(&mut self) -> ntp_proto::StateUpdate<Self::SourceId, Self::ControllerMessage> {
+    fn time_update(&mut self) -> ntp_proto::StateUpdate<Self::ControllerMessage> {
         // no need for action
         ntp_proto::StateUpdate::default()
     }

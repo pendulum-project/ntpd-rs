@@ -110,7 +110,7 @@ fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
 
         ::tracing::debug!("Configuration loaded, spawning daemon jobs");
         let clock = clock_config.clock;
-        let (main_loop_handle, channels) = spawn::<KalmanClockController<_, _>>(
+        let (main_loop_handle, channels) = spawn::<KalmanClockController<_>>(
             config.synchronization.synchronization_base,
             config.synchronization.algorithm,
             config.source_defaults,
