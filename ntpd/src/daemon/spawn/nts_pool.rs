@@ -10,12 +10,12 @@ use ntp_proto::{KeyExchangeClient, NtsClientConfig, NtsError, SourceConfig};
 
 use super::super::config::NtsPoolSourceConfig;
 
-use super::{SourceId, SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId};
+use super::{ClockId, SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId};
 
 use super::nts::resolve_addr;
 
 struct PoolSource {
-    id: SourceId,
+    id: ClockId,
     remote: String,
 }
 
@@ -109,7 +109,7 @@ impl Spawner for NtsPoolSpawner {
             {
                 Ok(Ok(ke)) if !self.contains_source(&ke.remote) => {
                     if let Some(address) = resolve_addr((ke.remote.as_str(), ke.port)).await {
-                        let id = SourceId::new();
+                        let id = ClockId::new();
                         self.current_sources.push(PoolSource {
                             id,
                             remote: ke.remote,

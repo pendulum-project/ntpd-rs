@@ -1,6 +1,6 @@
 use super::server::ServerStats;
 use super::sockets::create_unix_socket_with_permissions;
-use super::spawn::SourceId;
+use super::spawn::ClockId;
 use super::system::ServerData;
 use libc::{ECONNABORTED, EMFILE, ENFILE, ENOBUFS, ENOMEM};
 use ntp_proto::{NtpClock, NtpTimestamp, ObservableSourceState, SystemSnapshot};
@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 pub struct ObservableState {
     pub program: ProgramData,
     pub system: SystemSnapshot,
-    pub sources: Vec<ObservableSourceState<SourceId>>,
+    pub sources: Vec<ObservableSourceState<ClockId>>,
     pub servers: Vec<ObservableServerState>,
 }
 
@@ -71,7 +71,7 @@ impl From<&ServerData> for ObservableServerState {
 #[instrument(level = tracing::Level::ERROR, skip_all, name = "Observer", fields(path = debug(config.observation_path.clone())))]
 pub fn spawn<C: 'static + NtpClock + Send>(
     config: &super::config::ObservabilityConfig,
-    sources_reader: Arc<std::sync::RwLock<HashMap<SourceId, ObservableSourceState<SourceId>>>>,
+    sources_reader: Arc<std::sync::RwLock<HashMap<ClockId, ObservableSourceState<ClockId>>>>,
     server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
     system_reader: tokio::sync::watch::Receiver<SystemSnapshot>,
     clock: C,
@@ -93,7 +93,7 @@ pub fn spawn<C: 'static + NtpClock + Send>(
 
 async fn observer<C: 'static + NtpClock + Send>(
     config: super::config::ObservabilityConfig,
-    sources_reader: Arc<std::sync::RwLock<HashMap<SourceId, ObservableSourceState<SourceId>>>>,
+    sources_reader: Arc<std::sync::RwLock<HashMap<ClockId, ObservableSourceState<ClockId>>>>,
     server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
     system_reader: tokio::sync::watch::Receiver<SystemSnapshot>,
     clock: C,
@@ -175,7 +175,7 @@ async fn observer<C: 'static + NtpClock + Send>(
 async fn handle_connection(
     stream: &mut (impl tokio::io::AsyncWrite + Unpin),
     start_time: Instant,
-    sources_reader: &std::sync::RwLock<HashMap<SourceId, ObservableSourceState<SourceId>>>,
+    sources_reader: &std::sync::RwLock<HashMap<ClockId, ObservableSourceState<ClockId>>>,
     server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
     system_reader: tokio::sync::watch::Receiver<SystemSnapshot>,
     now: NtpTimestamp,
@@ -263,7 +263,7 @@ mod tests {
         };
 
         let mut source_snapshots = HashMap::new();
-        let id = SourceId::new();
+        let id = ClockId::new();
         source_snapshots.insert(
             id,
             ObservableSourceState {
@@ -338,7 +338,7 @@ mod tests {
         };
 
         let mut source_snapshots = HashMap::new();
-        let id = SourceId::new();
+        let id = ClockId::new();
         source_snapshots.insert(
             id,
             ObservableSourceState {

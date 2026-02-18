@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 use crate::daemon::config::SockSourceConfig;
 
 use super::{
-    SockSourceCreateParameters, SourceCreateParameters, SourceId, SourceRemovalReason,
+    ClockId, SockSourceCreateParameters, SourceCreateParameters, SourceRemovalReason,
     SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId, standard::StandardSpawnError,
 };
 
@@ -37,7 +37,7 @@ impl Spawner for SockSpawner {
             .send(SpawnEvent::new(
                 self.id,
                 SpawnAction::Create(SourceCreateParameters::Sock(SockSourceCreateParameters {
-                    id: SourceId::new(),
+                    id: ClockId::new(),
                     path: self.config.path.clone(),
                     config: self.source_config,
                     noise_estimate: self.config.precision.powi(2),

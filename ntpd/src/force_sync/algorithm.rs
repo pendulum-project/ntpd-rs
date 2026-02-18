@@ -7,7 +7,7 @@ use ntp_proto::{
 };
 use serde::Deserialize;
 
-use crate::daemon::spawn::SourceId;
+use crate::daemon::spawn::ClockId;
 
 #[derive(Debug, Clone)]
 pub enum Measurements {
@@ -42,7 +42,7 @@ impl WrapMeasurements<()> for Measurement<()> {
 
 pub(crate) struct SingleShotController<C> {
     pub(super) clock: C,
-    sources: HashMap<SourceId, Measurements>,
+    sources: HashMap<ClockId, Measurements>,
     min_agreeing: usize,
 }
 
@@ -123,7 +123,7 @@ impl<C: NtpClock> SingleShotController<C> {
 
 impl<C: NtpClock> TimeSyncController for SingleShotController<C> {
     type Clock = C;
-    type SourceId = SourceId;
+    type SourceId = ClockId;
     type AlgorithmConfig = SingleShotControllerConfig;
     type ControllerMessage = SingleShotControllerMessage;
     type SourceMessage = Measurements;

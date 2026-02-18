@@ -12,7 +12,7 @@ use tokio::net::UnixDatagram;
 
 use crate::daemon::{exitcode, ntp_source::MsgForSystem};
 
-use super::{ntp_source::SourceChannels, spawn::SourceId};
+use super::{ntp_source::SourceChannels, spawn::ClockId};
 
 // Based on https://gitlab.com/gpsd/gpsd/-/blob/master/gpsd/timehint.c#L268
 #[derive(Debug)]
@@ -83,7 +83,7 @@ pub(crate) struct SockSourceTask<
     C: 'static + NtpClock + Send,
     Controller: SourceController<MeasurementDelay = ()>,
 > {
-    index: SourceId,
+    index: ClockId,
     socket: UnixDatagram,
     clock: C,
     path: PathBuf,
@@ -207,7 +207,7 @@ where
 
     #[instrument(level = tracing::Level::ERROR, name = "Sock Source", skip(clock, channels, source))]
     pub fn spawn(
-        index: SourceId,
+        index: ClockId,
         socket_path: PathBuf,
         clock: C,
         channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
@@ -250,7 +250,7 @@ mod tests {
         daemon::{
             ntp_source::{MsgForSystem, SourceChannels},
             sock_source::{SOCK_MAGIC, SampleError, SockSourceTask, create_socket},
-            spawn::SourceId,
+            spawn::ClockId,
             util::EPOCH_OFFSET,
         },
         test::alloc_port,
@@ -311,7 +311,7 @@ mod tests {
         let (_system_update_sender, system_update_receiver) = tokio::sync::broadcast::channel(1);
         let (msg_for_system_sender, mut msg_for_system_receiver) = mpsc::channel(1);
 
-        let index = SourceId::new();
+        let index = ClockId::new();
         let clock = TestClock {};
         let mut system: ntp_proto::System<_, KalmanClockController<_, _>> = ntp_proto::System::new(
             clock.clone(),
