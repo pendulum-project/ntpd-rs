@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::{fmt::Display, path::Path};
 
 use ntp_proto::{
-    Measurement, NtpClock, NtpDuration, NtpInstant, NtpLeapIndicator, OneWaySource,
+    ClockId, Measurement, NtpClock, NtpDuration, NtpLeapIndicator, OneWaySource,
     OneWaySourceSnapshot, OneWaySourceUpdate, ReferenceId, SourceController, SystemSourceUpdate,
 };
 use tracing::debug;
@@ -12,7 +12,7 @@ use tokio::net::UnixDatagram;
 
 use crate::daemon::{exitcode, ntp_source::MsgForSystem};
 
-use super::{ntp_source::SourceChannels, spawn::SourceId};
+use super::ntp_source::SourceChannels;
 
 // Based on https://gitlab.com/gpsd/gpsd/-/blob/master/gpsd/timehint.c#L268
 #[derive(Debug)]
@@ -79,11 +79,8 @@ fn deserialize_sample(
     Ok(sample)
 }
 
-pub(crate) struct SockSourceTask<
-    C: 'static + NtpClock + Send,
-    Controller: SourceController<MeasurementDelay = ()>,
-> {
-    index: SourceId,
+pub(crate) struct SockSourceTask<C: 'static + NtpClock + Send, Controller: SourceController> {
+    index: ClockId,
     socket: UnixDatagram,
     clock: C,
     path: PathBuf,
@@ -102,7 +99,7 @@ fn create_socket<T: AsRef<Path>>(path: T) -> std::io::Result<UnixDatagram> {
     Ok(socket)
 }
 
-impl<C, Controller: SourceController<MeasurementDelay = ()>> SockSourceTask<C, Controller>
+impl<C, Controller: SourceController> SockSourceTask<C, Controller>
 where
     C: 'static + NtpClock + Send + Sync,
 {
@@ -149,10 +146,10 @@ where
                         };
 
                         let measurement = Measurement {
-                            delay: (),
-                            offset: NtpDuration::from_seconds(sample.offset),
-                            localtime: time,
-                            monotime: NtpInstant::now(),
+                            sender_id: self.index,
+                            receiver_id: ClockId::SYSTEM,
+                            sender_ts: time - NtpDuration::from_seconds(sample.offset),
+                            receiver_ts: time,
 
                             stratum: 0,
                             root_delay: NtpDuration::ZERO,
@@ -208,7 +205,7 @@ where
 
     #[instrument(level = tracing::Level::ERROR, name = "Sock Source", skip(clock, channels, source))]
     pub fn spawn(
-        index: SourceId,
+        index: ClockId,
         socket_path: PathBuf,
         clock: C,
         channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
@@ -242,7 +239,7 @@ mod tests {
     };
 
     use ntp_proto::{
-        AlgorithmConfig, KalmanClockController, NtpClock, NtpDuration, NtpLeapIndicator,
+        AlgorithmConfig, ClockId, KalmanClockController, NtpClock, NtpDuration, NtpLeapIndicator,
         NtpTimestamp, ReferenceId, SourceConfig, SynchronizationConfig,
     };
     use tokio::sync::mpsc;
@@ -251,7 +248,6 @@ mod tests {
         daemon::{
             ntp_source::{MsgForSystem, SourceChannels},
             sock_source::{SOCK_MAGIC, SampleError, SockSourceTask, create_socket},
-            spawn::SourceId,
             util::EPOCH_OFFSET,
         },
         test::alloc_port,
@@ -312,9 +308,9 @@ mod tests {
         let (_system_update_sender, system_update_receiver) = tokio::sync::broadcast::channel(1);
         let (msg_for_system_sender, mut msg_for_system_receiver) = mpsc::channel(1);
 
-        let index = SourceId::new();
+        let index = ClockId::new();
         let clock = TestClock {};
-        let mut system: ntp_proto::System<_, KalmanClockController<_, _>> = ntp_proto::System::new(
+        let mut system: ntp_proto::System<KalmanClockController<_>> = ntp_proto::System::new(
             clock.clone(),
             SynchronizationConfig::default(),
             AlgorithmConfig::default(),

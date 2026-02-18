@@ -219,11 +219,38 @@ mod generic {
     }
 }
 
+/// Unique identifier for a source.
+/// This source id makes sure that even if the network address is the same
+/// that we always know which specific spawned source we are talking about.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Serialize, Deserialize)]
+pub struct ClockId(u64);
+
+impl ClockId {
+    pub const SYSTEM: ClockId = ClockId(0);
+
+    pub fn new() -> ClockId {
+        static COUNTER: AtomicU64 = AtomicU64::new(1);
+        ClockId(COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+    }
+}
+
+impl Default for ClockId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Display for ClockId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 mod exports {
     pub use super::algorithm::{
         AlgorithmConfig, KalmanClockController, KalmanControllerMessage, KalmanSourceController,
-        KalmanSourceMessage, ObservableSourceTimedata, SourceController, StateUpdate,
-        TimeSyncController, TwoWayKalmanSourceController,
+        KalmanSourceMessage, Measurement, ObservableSourceTimedata, SourceController, StateUpdate,
+        TimeSyncController, TwoWayKalmanSourceController, TwoWaySourceControllerWrapper,
     };
     pub use super::clock::NtpClock;
     pub use super::config::{SourceConfig, StepThreshold, SynchronizationConfig};
@@ -249,10 +276,9 @@ mod exports {
     #[cfg(feature = "__internal-test")]
     pub use super::source::source_snapshot;
     pub use super::source::{
-        AcceptSynchronizationError, Measurement, NtpSource, NtpSourceAction,
-        NtpSourceActionIterator, NtpSourceSnapshot, NtpSourceUpdate, ObservableSourceState,
-        OneWaySource, OneWaySourceSnapshot, OneWaySourceUpdate, ProtocolVersion, Reach,
-        SourceNtsData,
+        AcceptSynchronizationError, NtpSource, NtpSourceAction, NtpSourceActionIterator,
+        NtpSourceSnapshot, NtpSourceUpdate, ObservableSourceState, OneWaySource,
+        OneWaySourceSnapshot, OneWaySourceUpdate, ProtocolVersion, Reach, SourceNtsData,
     };
     pub use super::system::{
         System, SystemAction, SystemActionIterator, SystemSnapshot, SystemSourceUpdate,
@@ -262,7 +288,7 @@ mod exports {
     #[cfg(feature = "__internal-fuzz")]
     pub use super::time_types::fuzz_duration_from_seconds;
     pub use super::time_types::{
-        FrequencyTolerance, NtpDuration, NtpInstant, NtpTimestamp, PollInterval, PollIntervalLimits,
+        FrequencyTolerance, NtpDuration, NtpTimestamp, PollInterval, PollIntervalLimits,
     };
 
     #[cfg(feature = "__internal-fuzz")]
@@ -283,8 +309,11 @@ mod exports {
     pub use super::generic::NtpVersion;
 }
 
+use std::sync::atomic::AtomicU64;
+
 #[cfg(feature = "__internal-api")]
 pub use exports::*;
 
 #[cfg(not(feature = "__internal-api"))]
 pub(crate) use exports::*;
+use serde::{Deserialize, Serialize};
