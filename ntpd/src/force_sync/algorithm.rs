@@ -2,12 +2,10 @@ use std::fmt::Debug;
 use std::{collections::HashMap, marker::PhantomData};
 
 use ntp_proto::{
-    Measurement, NtpClock, NtpDuration, PollInterval, SourceConfig, SourceController,
+    ClockId, Measurement, NtpClock, NtpDuration, PollInterval, SourceConfig, SourceController,
     TimeSyncController,
 };
 use serde::Deserialize;
-
-use crate::daemon::spawn::ClockId;
 
 #[derive(Debug, Clone)]
 pub enum Measurements {
