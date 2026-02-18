@@ -584,9 +584,9 @@ mod tests {
     }
 
     async fn test_startup<T: Wait>() -> (
-        SourceTask<TestClock, TwoWayKalmanSourceController<ClockId>, T>,
+        SourceTask<TestClock, TwoWayKalmanSourceController, T>,
         Socket<SocketAddr, Open>,
-        mpsc::Receiver<MsgForSystem<KalmanSourceMessage<ClockId>>>,
+        mpsc::Receiver<MsgForSystem<KalmanSourceMessage>>,
         broadcast::Sender<SystemSourceUpdate<KalmanControllerMessage>>,
     ) {
         let port_base = alloc_port();
@@ -600,7 +600,7 @@ mod tests {
         let (msg_for_system_sender, msg_for_system_receiver) = mpsc::channel(1);
 
         let index = ClockId::new();
-        let mut system: ntp_proto::System<_, KalmanClockController<_, _>> = ntp_proto::System::new(
+        let mut system: ntp_proto::System<KalmanClockController<_>> = ntp_proto::System::new(
             TestClock {},
             SynchronizationConfig::default(),
             AlgorithmConfig::default(),
