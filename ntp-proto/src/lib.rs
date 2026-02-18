@@ -229,6 +229,8 @@ mod generic {
 pub struct ClockId(u64);
 
 impl ClockId {
+    pub const SYSTEM: ClockId = ClockId(0);
+
     pub fn new() -> ClockId {
         static COUNTER: AtomicU64 = AtomicU64::new(1);
         ClockId(COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
@@ -251,7 +253,7 @@ mod exports {
     pub use super::algorithm::{
         AlgorithmConfig, KalmanClockController, KalmanControllerMessage, KalmanSourceController,
         KalmanSourceMessage, Measurement, ObservableSourceTimedata, SourceController, StateUpdate,
-        TimeSyncController, TwoWayKalmanSourceController,
+        TimeSyncController, TwoWayKalmanSourceController, TwoWaySourceControllerWrapper,
     };
     pub use super::clock::NtpClock;
     pub use super::config::{SourceConfig, StepThreshold, SynchronizationConfig};
