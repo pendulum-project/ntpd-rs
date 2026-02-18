@@ -15,7 +15,7 @@ use crate::{
 
 use self::{combiner::combine, config::AlgorithmConfig, source::KalmanState};
 
-use super::{ObservableSourceTimedata, StateUpdate, TimeSyncController};
+use super::{InternalTimeSyncController, ObservableSourceTimedata, StateUpdate};
 
 mod combiner;
 pub(super) mod config;
@@ -365,7 +365,7 @@ impl<C: NtpClock> KalmanClockController<C> {
     }
 }
 
-impl<C: NtpClock> TimeSyncController for KalmanClockController<C> {
+impl<C: NtpClock> InternalTimeSyncController for KalmanClockController<C> {
     type Clock = C;
     type AlgorithmConfig = AlgorithmConfig;
     type ControllerMessage = KalmanControllerMessage;
@@ -467,8 +467,7 @@ mod tests {
 
     use matrix::{Matrix, Vector};
 
-    use crate::SourceController;
-    use crate::algorithm::Measurement;
+    use crate::algorithm::{InternalMeasurement, InternalSourceController};
     use crate::config::StepThreshold;
 
     use super::*;
@@ -549,7 +548,7 @@ mod tests {
             algo.clock.current_time += NtpDuration::from_seconds(1.0);
             noise += 1e-9;
 
-            let message = source.handle_measurement(Measurement {
+            let message = source.handle_measurement(InternalMeasurement {
                 delay: NtpDuration::from_seconds(0.001 + noise),
                 offset: NtpDuration::from_seconds(1700.0 + noise),
                 localtime: algo.clock.current_time,
@@ -797,7 +796,7 @@ mod tests {
             algo.clock.current_time += NtpDuration::from_seconds(1800.0);
             noise += 1e-9;
 
-            let message = source.handle_measurement(Measurement {
+            let message = source.handle_measurement(InternalMeasurement {
                 delay: NtpDuration::from_seconds(0.001 + noise),
                 offset: NtpDuration::from_seconds(1700.0 + noise),
                 localtime: algo.clock.current_time,
@@ -852,7 +851,7 @@ mod tests {
             algo.clock.current_time += NtpDuration::from_seconds(1.0);
             noise *= -1.0;
 
-            let message = source.handle_measurement(Measurement {
+            let message = source.handle_measurement(InternalMeasurement {
                 delay: NtpDuration::from_seconds(0.001 + noise),
                 offset: NtpDuration::from_seconds(-3600.0 + noise),
                 localtime: algo.clock.current_time,

@@ -77,7 +77,9 @@ use tracing::{debug, trace};
 
 use crate::{
     ClockId, ObservableSourceTimedata,
-    algorithm::{KalmanControllerMessage, KalmanSourceMessage, Measurement, SourceController},
+    algorithm::{
+        InternalMeasurement, InternalSourceController, KalmanControllerMessage, KalmanSourceMessage,
+    },
     config::SourceConfig,
     time_types::{NtpDuration, NtpTimestamp, PollInterval, PollIntervalLimits},
 };
@@ -392,7 +394,7 @@ struct InitialSourceFilter<
 > {
     noise_estimator: N,
     init_offset: AveragingBuffer,
-    last_measurement: Option<Measurement<D>>,
+    last_measurement: Option<InternalMeasurement<D>>,
 
     samples: i32,
 }
@@ -430,7 +432,7 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
         }
     }
 
-    fn update(&mut self, measurement: Measurement<D>, period: Option<f64>) {
+    fn update(&mut self, measurement: InternalMeasurement<D>, period: Option<f64>) {
         let mut offset = measurement.offset.to_seconds();
         if let Some(period) = period {
             while offset - self.cur_avg() > period / 2.0 {
@@ -468,7 +470,7 @@ struct SourceFilter<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<Measur
     poll_score: i32,
     desired_poll_interval: PollInterval,
 
-    last_measurement: Measurement<D>,
+    last_measurement: InternalMeasurement<D>,
     last_monotime: tokio::time::Instant,
     prev_was_outlier: bool,
 
@@ -489,7 +491,7 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
     /// Absorb knowledge from a measurement
     fn absorb_measurement(
         &mut self,
-        measurement: Measurement<D>,
+        measurement: InternalMeasurement<D>,
         period: Option<f64>,
     ) -> (f64, f64, f64) {
         // Measurement parameters
@@ -613,7 +615,7 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
         &mut self,
         source_config: &SourceConfig,
         algo_config: &AlgorithmConfig,
-        measurement: Measurement<D>,
+        measurement: InternalMeasurement<D>,
         period: Option<f64>,
     ) -> bool {
         // Always update the root_delay, root_dispersion, leap second status and stratum, as they always represent the most accurate state.
@@ -714,7 +716,7 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
         &mut self,
         source_config: &SourceConfig,
         algo_config: &AlgorithmConfig,
-        mut measurement: Measurement<D>,
+        mut measurement: InternalMeasurement<D>,
         period: Option<f64>,
     ) -> bool {
         // preprocessing
@@ -731,7 +733,7 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
         &mut self,
         source_config: &SourceConfig,
         algo_config: &AlgorithmConfig,
-        measurement: Measurement<D>,
+        measurement: InternalMeasurement<D>,
         period: Option<f64>,
     ) -> bool {
         match &mut self.0 {
@@ -924,7 +926,7 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
 impl<
     D: Debug + Copy + Clone + Send + 'static,
     N: MeasurementNoiseEstimator<MeasurementDelay = D> + Clone + Send + 'static,
-> SourceController for KalmanSourceController<D, N>
+> InternalSourceController for KalmanSourceController<D, N>
 {
     type ControllerMessage = KalmanControllerMessage;
     type SourceMessage = KalmanSourceMessage;
@@ -943,7 +945,7 @@ impl<
 
     fn handle_measurement(
         &mut self,
-        measurement: Measurement<Self::MeasurementDelay>,
+        measurement: InternalMeasurement<Self::MeasurementDelay>,
     ) -> Option<Self::SourceMessage> {
         if self.state.update_self_using_measurement(
             &self.source_config,
@@ -1012,7 +1014,7 @@ mod tests {
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
             last_monotime: Instant::now(),
-            last_measurement: Measurement {
+            last_measurement: InternalMeasurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base,
@@ -1030,7 +1032,7 @@ mod tests {
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
@@ -1060,7 +1062,7 @@ mod tests {
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
             last_monotime: Instant::now(),
-            last_measurement: Measurement {
+            last_measurement: InternalMeasurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base,
@@ -1079,7 +1081,7 @@ mod tests {
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
@@ -1109,7 +1111,7 @@ mod tests {
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
             last_monotime: Instant::now(),
-            last_measurement: Measurement {
+            last_measurement: InternalMeasurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base,
@@ -1128,7 +1130,7 @@ mod tests {
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base + NtpDuration::from_seconds(2800.0),
@@ -1164,7 +1166,7 @@ mod tests {
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
             last_monotime: Instant::now(),
-            last_measurement: Measurement {
+            last_measurement: InternalMeasurement {
                 delay,
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base,
@@ -1202,7 +1204,7 @@ mod tests {
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
             last_monotime: Instant::now(),
-            last_measurement: Measurement {
+            last_measurement: InternalMeasurement {
                 delay,
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base,
@@ -1232,7 +1234,7 @@ mod tests {
         source.update_self_using_raw_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay,
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
@@ -1280,7 +1282,7 @@ mod tests {
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
             last_monotime: Instant::now(),
-            last_measurement: Measurement {
+            last_measurement: InternalMeasurement {
                 delay,
                 offset: NtpDuration::from_seconds(-20e-3),
                 localtime: base,
@@ -1310,7 +1312,7 @@ mod tests {
         source.update_self_using_raw_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay,
                 offset: NtpDuration::from_seconds(-20e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
@@ -1382,7 +1384,7 @@ mod tests {
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
             last_monotime: Instant::now(),
-            last_measurement: Measurement {
+            last_measurement: InternalMeasurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(0.4),
                 localtime: base,
@@ -1446,7 +1448,7 @@ mod tests {
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
             last_monotime: Instant::now(),
-            last_measurement: Measurement {
+            last_measurement: InternalMeasurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(0.4),
                 localtime: base,
@@ -1464,7 +1466,7 @@ mod tests {
         source.update_self_using_raw_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay: NtpDuration::ZERO,
                 offset: NtpDuration::from_seconds(-0.3),
                 localtime: base,
@@ -1502,7 +1504,7 @@ mod tests {
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay: NtpDuration::ZERO,
                 offset: NtpDuration::from_seconds(0.48),
                 localtime: base + NtpDuration::from_seconds(1.0),
@@ -1526,7 +1528,7 @@ mod tests {
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay: NtpDuration::ZERO,
                 offset: NtpDuration::from_seconds(0.49),
                 localtime: base + NtpDuration::from_seconds(2.0),
@@ -1550,7 +1552,7 @@ mod tests {
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay: NtpDuration::ZERO,
                 offset: NtpDuration::from_seconds(0.50),
                 localtime: base + NtpDuration::from_seconds(3.0),
@@ -1574,7 +1576,7 @@ mod tests {
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay: NtpDuration::ZERO,
                 offset: NtpDuration::from_seconds(-0.49),
                 localtime: base + NtpDuration::from_seconds(4.0),
@@ -1598,7 +1600,7 @@ mod tests {
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay: NtpDuration::ZERO,
                 offset: NtpDuration::from_seconds(-0.48),
                 localtime: base + NtpDuration::from_seconds(5.0),
@@ -1622,7 +1624,7 @@ mod tests {
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay: NtpDuration::ZERO,
                 offset: NtpDuration::from_seconds(-0.47),
                 localtime: base + NtpDuration::from_seconds(6.0),
@@ -1646,7 +1648,7 @@ mod tests {
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay: NtpDuration::ZERO,
                 offset: NtpDuration::from_seconds(-0.46),
                 localtime: base + NtpDuration::from_seconds(7.0),
@@ -1670,7 +1672,7 @@ mod tests {
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay: NtpDuration::ZERO,
                 offset: NtpDuration::from_seconds(-0.45),
                 localtime: base + NtpDuration::from_seconds(8.0),
@@ -1721,7 +1723,7 @@ mod tests {
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
             last_monotime: Instant::now(),
-            last_measurement: Measurement {
+            last_measurement: InternalMeasurement {
                 delay,
                 offset: NtpDuration::from_seconds(0.0),
                 localtime: base,
@@ -1757,7 +1759,7 @@ mod tests {
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
             last_monotime: Instant::now(),
-            last_measurement: Measurement {
+            last_measurement: InternalMeasurement {
                 delay,
                 offset: NtpDuration::from_seconds(0.0),
                 localtime: base,
@@ -1831,7 +1833,7 @@ mod tests {
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay,
                 offset: NtpDuration::from_seconds(0e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
@@ -1855,7 +1857,7 @@ mod tests {
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay,
                 offset: NtpDuration::from_seconds(1e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
@@ -1879,7 +1881,7 @@ mod tests {
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay,
                 offset: NtpDuration::from_seconds(2e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
@@ -1903,7 +1905,7 @@ mod tests {
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay,
                 offset: NtpDuration::from_seconds(3e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
@@ -1927,7 +1929,7 @@ mod tests {
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay,
                 offset: NtpDuration::from_seconds(4e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
@@ -1951,7 +1953,7 @@ mod tests {
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay,
                 offset: NtpDuration::from_seconds(5e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
@@ -1975,7 +1977,7 @@ mod tests {
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay,
                 offset: NtpDuration::from_seconds(6e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
@@ -1999,7 +2001,7 @@ mod tests {
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay,
                 offset: NtpDuration::from_seconds(7e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
@@ -2061,7 +2063,7 @@ mod tests {
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(4e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
@@ -2085,7 +2087,7 @@ mod tests {
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(5e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
@@ -2109,7 +2111,7 @@ mod tests {
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(6e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
@@ -2133,7 +2135,7 @@ mod tests {
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(7e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
@@ -2158,7 +2160,7 @@ mod tests {
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(4e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
@@ -2182,7 +2184,7 @@ mod tests {
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(5e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
@@ -2206,7 +2208,7 @@ mod tests {
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(6e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
@@ -2230,7 +2232,7 @@ mod tests {
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
-            Measurement {
+            InternalMeasurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(7e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
@@ -2288,7 +2290,7 @@ mod tests {
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
             last_monotime: Instant::now(),
-            last_measurement: Measurement {
+            last_measurement: InternalMeasurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(0.0),
                 localtime: base,
@@ -2413,7 +2415,7 @@ mod tests {
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
             last_monotime: Instant::now(),
-            last_measurement: Measurement {
+            last_measurement: InternalMeasurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(0.0),
                 localtime: base,
