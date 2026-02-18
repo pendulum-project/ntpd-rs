@@ -1,5 +1,6 @@
 use crate::{
     NtpVersion,
+    algorithm::Measurement,
     packet::{
         ExtensionField, NtpHeader,
         v5::server_reference_id::{BloomFilter, RemoteBloomFilter},
@@ -10,7 +11,7 @@ use crate::{
     config::SourceConfig,
     cookiestash::CookieStash,
     identifiers::ReferenceId,
-    packet::{Cipher, NtpAssociationMode, NtpLeapIndicator, NtpPacket, RequestIdentifier},
+    packet::{Cipher, NtpAssociationMode, NtpPacket, RequestIdentifier},
     system::{SystemSnapshot, SystemSourceUpdate},
     time_types::{NtpDuration, NtpTimestamp, PollInterval},
 };
@@ -130,42 +131,6 @@ impl<Controller: SourceController<MeasurementDelay = ()>> OneWaySource<Controlle
             name,
             address,
             id,
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct Measurement<D: Debug + Copy + Clone> {
-    pub delay: D,
-    pub offset: NtpDuration,
-    pub localtime: NtpTimestamp,
-
-    pub stratum: u8,
-    pub root_delay: NtpDuration,
-    pub root_dispersion: NtpDuration,
-    pub leap: NtpLeapIndicator,
-    pub precision: i8,
-}
-
-impl Measurement<NtpDuration> {
-    fn from_packet(
-        packet: &NtpPacket,
-        send_timestamp: NtpTimestamp,
-        recv_timestamp: NtpTimestamp,
-    ) -> Self {
-        Self {
-            delay: (recv_timestamp - send_timestamp)
-                - (packet.transmit_timestamp() - packet.receive_timestamp()),
-            offset: ((packet.receive_timestamp() - send_timestamp)
-                + (packet.transmit_timestamp() - recv_timestamp))
-                / 2,
-            localtime: send_timestamp + (recv_timestamp - send_timestamp) / 2,
-
-            stratum: packet.stratum(),
-            root_delay: packet.root_delay(),
-            root_dispersion: packet.root_dispersion(),
-            leap: packet.leap(),
-            precision: packet.precision(),
         }
     }
 }
@@ -873,7 +838,7 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
 )]
 mod test {
     use crate::{
-        NtpClock,
+        NtpClock, NtpLeapIndicator,
         packet::{AesSivCmac256, NoCipher},
         time_types::PollIntervalLimits,
     };

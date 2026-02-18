@@ -77,9 +77,8 @@ use tracing::{debug, trace};
 
 use crate::{
     ClockId, ObservableSourceTimedata,
-    algorithm::{KalmanControllerMessage, KalmanSourceMessage, SourceController},
+    algorithm::{KalmanControllerMessage, KalmanSourceMessage, Measurement, SourceController},
     config::SourceConfig,
-    source::Measurement,
     time_types::{NtpDuration, NtpTimestamp, PollInterval, PollIntervalLimits},
 };
 
