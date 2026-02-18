@@ -4,56 +4,7 @@ use rand::{
 };
 use serde::{Deserialize, Serialize, de::Unexpected};
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
-use std::time::{Duration, Instant};
-
-/// NtpInstant is a monotonically increasing value modelling the uptime of the NTP service
-///
-/// It is used to validate packets that we send out, and to order internal operations.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord)]
-pub struct NtpInstant {
-    instant: Instant,
-}
-
-impl NtpInstant {
-    pub fn now() -> Self {
-        Self {
-            instant: Instant::now(),
-        }
-    }
-
-    pub fn abs_diff(self, rhs: Self) -> NtpDuration {
-        // our code should always give the bigger argument first.
-        debug_assert!(
-            self >= rhs,
-            "self >= rhs, this could indicate another program adjusted the clock"
-        );
-
-        // NOTE: `std::time::Duration` cannot be negative, so a simple `lhs - rhs` could give an
-        // empty duration. In our logic, we're always interested in the absolute delta between two
-        // points in time.
-        let duration = if self.instant >= rhs.instant {
-            self.instant - rhs.instant
-        } else {
-            rhs.instant - self.instant
-        };
-
-        NtpDuration::from_system_duration(duration)
-    }
-
-    pub fn elapsed(&self) -> std::time::Duration {
-        self.instant.elapsed()
-    }
-}
-
-impl Add<Duration> for NtpInstant {
-    type Output = NtpInstant;
-
-    fn add(mut self, rhs: Duration) -> Self::Output {
-        self.instant += rhs;
-
-        self
-    }
-}
+use std::time::Duration;
 
 /// NtpTimestamp represents an ntp timestamp without the era number.
 #[derive(Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Default, Serialize, Deserialize)]
