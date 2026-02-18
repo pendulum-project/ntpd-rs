@@ -3,8 +3,8 @@ use std::{
 };
 
 use ntp_proto::{
-    NtpClock, NtpDuration, NtpSource, NtpSourceActionIterator, NtpSourceUpdate, NtpTimestamp,
-    ObservableSourceState, OneWaySourceUpdate, SourceController, SystemSourceUpdate,
+    ClockId, NtpClock, NtpDuration, NtpSource, NtpSourceActionIterator, NtpSourceUpdate,
+    NtpTimestamp, ObservableSourceState, OneWaySourceUpdate, SourceController, SystemSourceUpdate,
 };
 #[cfg(target_os = "linux")]
 use timestamped_socket::socket::open_interface_udp;
@@ -16,7 +16,7 @@ use tracing::{Instrument, Span, debug, error, instrument, warn};
 
 use tokio::time::{Instant, Sleep};
 
-use super::{config::TimestampMode, exitcode, spawn::ClockId, util::convert_net_timestamp};
+use super::{config::TimestampMode, exitcode, util::convert_net_timestamp};
 
 /// Trait needed to allow injecting of futures other than `tokio::time::Sleep` for testing
 pub trait Wait: Future<Output = ()> {
