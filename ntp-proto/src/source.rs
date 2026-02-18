@@ -1,5 +1,5 @@
 use crate::{
-    NtpVersion,
+    ClockId, NtpVersion,
     algorithm::Measurement,
     packet::{
         ExtensionField, NtpHeader,
@@ -117,12 +117,7 @@ impl<Controller: SourceController<MeasurementDelay = ()>> OneWaySource<Controlle
         self.controller.handle_message(message);
     }
 
-    pub fn observe<SourceId>(
-        &self,
-        name: String,
-        address: String,
-        id: SourceId,
-    ) -> ObservableSourceState<SourceId> {
+    pub fn observe(&self, name: String, address: String, id: ClockId) -> ObservableSourceState {
         ObservableSourceState {
             timedata: self.controller.observe(),
             unanswered_polls: 0,
@@ -432,7 +427,7 @@ macro_rules! actions {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ObservableSourceState<SourceId> {
+pub struct ObservableSourceState {
     #[serde(flatten)]
     pub timedata: ObservableSourceTimedata,
     pub unanswered_polls: u32,
@@ -440,7 +435,7 @@ pub struct ObservableSourceState<SourceId> {
     pub nts_cookies: Option<usize>,
     pub name: String,
     pub address: String,
-    pub id: SourceId,
+    pub id: ClockId,
 }
 
 impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Controller> {
@@ -482,7 +477,7 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
         )
     }
 
-    pub fn observe<SourceId>(&self, name: String, id: SourceId) -> ObservableSourceState<SourceId> {
+    pub fn observe(&self, name: String, id: ClockId) -> ObservableSourceState {
         ObservableSourceState {
             timedata: self.controller.observe(),
             unanswered_polls: self.reach.unanswered_polls(),
