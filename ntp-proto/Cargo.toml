@@ -26,7 +26,7 @@ __internal-api = []
 # Note: md5 is needed to calculate ReferenceIDs for IPv6 addresses per RFC5905
 rand.workspace = true
 tracing.workspace = true
-tokio = { workspace = true, features = ["io-util"] }
+tokio = { workspace = true, features = ["io-util", "time"] }
 tokio-rustls.workspace = true
 serde.workspace = true
 rustls23.workspace = true
@@ -43,4 +43,4 @@ openssl = { workspace = true, optional = true }
 
 [dev-dependencies]
 serde_json.workspace = true
-tokio = { workspace = true, features = ["rt", "macros"] }
+tokio = { workspace = true, features = ["rt", "macros", "test-util"] }

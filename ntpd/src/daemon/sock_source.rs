@@ -2,8 +2,8 @@ use std::path::PathBuf;
 use std::{fmt::Display, path::Path};
 
 use ntp_proto::{
-    Measurement, NtpClock, NtpDuration, NtpInstant, NtpLeapIndicator, OneWaySource,
-    OneWaySourceSnapshot, OneWaySourceUpdate, ReferenceId, SourceController, SystemSourceUpdate,
+    Measurement, NtpClock, NtpDuration, NtpLeapIndicator, OneWaySource, OneWaySourceSnapshot,
+    OneWaySourceUpdate, ReferenceId, SourceController, SystemSourceUpdate,
 };
 use tracing::debug;
 use tracing::{Instrument, Span, error, instrument};
@@ -152,7 +152,6 @@ where
                             delay: (),
                             offset: NtpDuration::from_seconds(sample.offset),
                             localtime: time,
-                            monotime: NtpInstant::now(),
 
                             stratum: 0,
                             root_delay: NtpDuration::ZERO,
