@@ -219,6 +219,31 @@ mod generic {
     }
 }
 
+/// Unique identifier for a source.
+/// This source id makes sure that even if the network address is the same
+/// that we always know which specific spawned source we are talking about.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Serialize, Deserialize)]
+pub struct ClockId(u64);
+
+impl ClockId {
+    pub fn new() -> ClockId {
+        static COUNTER: AtomicU64 = AtomicU64::new(1);
+        ClockId(COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+    }
+}
+
+impl Default for ClockId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Display for ClockId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 mod exports {
     pub use super::algorithm::{
         AlgorithmConfig, KalmanClockController, KalmanControllerMessage, KalmanSourceController,
@@ -283,8 +308,11 @@ mod exports {
     pub use super::generic::NtpVersion;
 }
 
+use std::sync::atomic::AtomicU64;
+
 #[cfg(feature = "__internal-api")]
 pub use exports::*;
 
 #[cfg(not(feature = "__internal-api"))]
 pub(crate) use exports::*;
+use serde::{Deserialize, Serialize};
