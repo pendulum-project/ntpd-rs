@@ -1,13 +1,13 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
-use std::{fmt::Debug, hash::Hash};
 
 use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
 use crate::source::{NtpSourceUpdate, SourceSnapshot};
-use crate::{NtpTimestamp, OneWaySource, OneWaySourceUpdate};
+use crate::{ClockId, NtpTimestamp, OneWaySource, OneWaySourceUpdate};
 use crate::{
     algorithm::{StateUpdate, TimeSyncController},
     clock::NtpClock,
@@ -199,20 +199,18 @@ macro_rules! actions {
     }
 }
 
-pub struct System<SourceId, Controller> {
+pub struct System<Controller> {
     synchronization_config: SynchronizationConfig,
     system: SystemSnapshot,
     ip_list: Arc<[IpAddr]>,
 
-    sources: HashMap<SourceId, Option<SourceSnapshot>>,
+    sources: HashMap<ClockId, Option<SourceSnapshot>>,
 
     controller: Controller,
     controller_took_control: bool,
 }
 
-impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId = SourceId>>
-    System<SourceId, Controller>
-{
+impl<Controller: TimeSyncController> System<Controller> {
     pub fn new(
         clock: Controller::Clock,
         synchronization_config: SynchronizationConfig,
@@ -260,7 +258,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
 
     pub fn create_sock_source(
         &mut self,
-        id: SourceId,
+        id: ClockId,
         source_config: SourceConfig,
         measurement_noise_estimate: f64,
         measurement_accuracy_estimate: f64,
@@ -282,7 +280,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
 
     pub fn create_pps_source(
         &mut self,
-        id: SourceId,
+        id: ClockId,
         source_config: SourceConfig,
         measurement_noise_estimate: f64,
         measurement_accuracy_estimate: f64,
@@ -306,7 +304,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
     #[expect(clippy::type_complexity)]
     pub fn create_ntp_source(
         &mut self,
-        id: SourceId,
+        id: ClockId,
         source_config: SourceConfig,
         source_addr: SocketAddr,
         protocol_version: ProtocolVersion,
@@ -332,7 +330,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
 
     pub fn handle_source_remove(
         &mut self,
-        id: SourceId,
+        id: ClockId,
     ) -> Result<(), <Controller::Clock as NtpClock>::Error> {
         self.controller.remove_source(id);
         self.sources.remove(&id);
@@ -341,7 +339,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
 
     pub fn handle_source_update(
         &mut self,
-        id: SourceId,
+        id: ClockId,
         update: NtpSourceUpdate<Controller::SourceMessage>,
     ) -> Result<
         SystemActionIterator<Controller::ControllerMessage>,
@@ -367,7 +365,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
 
     pub fn handle_one_way_source_update(
         &mut self,
-        id: SourceId,
+        id: ClockId,
         update: OneWaySourceUpdate<Controller::SourceMessage>,
     ) -> Result<
         SystemActionIterator<Controller::ControllerMessage>,
@@ -385,7 +383,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
 
     fn handle_algorithm_state_update(
         &mut self,
-        update: StateUpdate<SourceId, Controller::ControllerMessage>,
+        update: StateUpdate<Controller::ControllerMessage>,
     ) -> SystemActionIterator<Controller::ControllerMessage> {
         let mut actions = vec![];
         if let Some(ref used_sources) = update.used_sources {
