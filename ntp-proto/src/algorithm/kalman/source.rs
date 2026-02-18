@@ -76,7 +76,7 @@
 use tracing::{debug, trace};
 
 use crate::{
-    ObservableSourceTimedata,
+    ClockId, ObservableSourceTimedata,
     algorithm::{KalmanControllerMessage, KalmanSourceMessage, SourceController},
     config::SourceConfig,
     source::Measurement,
@@ -805,12 +805,12 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
         }
     }
 
-    fn snapshot<Index: Copy>(
+    fn snapshot(
         &self,
-        index: Index,
+        index: ClockId,
         config: &AlgorithmConfig,
         period: Option<f64>,
-    ) -> Option<SourceSnapshot<Index>> {
+    ) -> Option<SourceSnapshot> {
         match &self.0 {
             SourceStateInner::Initial(InitialSourceFilter {
                 noise_estimator,
@@ -895,31 +895,25 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
 
 #[derive(Debug)]
 pub struct KalmanSourceController<
-    SourceId,
     D: Debug + Copy + Clone,
     N: MeasurementNoiseEstimator<MeasurementDelay = D> + Clone,
 > {
-    index: SourceId,
+    index: ClockId,
     state: SourceState<D, N>,
     period: Option<f64>,
     algo_config: AlgorithmConfig,
     source_config: SourceConfig,
 }
 
-pub type TwoWayKalmanSourceController<SourceId> =
-    KalmanSourceController<SourceId, NtpDuration, AveragingBuffer>;
+pub type TwoWayKalmanSourceController = KalmanSourceController<NtpDuration, AveragingBuffer>;
 
-pub type OneWayKalmanSourceController<SourceId> =
-    KalmanSourceController<SourceId, (), FixedMeasurementNoise>;
+pub type OneWayKalmanSourceController = KalmanSourceController<(), FixedMeasurementNoise>;
 
-impl<
-    SourceId: Copy,
-    D: Debug + Copy + Clone,
-    N: MeasurementNoiseEstimator<MeasurementDelay = D> + Clone,
-> KalmanSourceController<SourceId, D, N>
+impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D> + Clone>
+    KalmanSourceController<D, N>
 {
     pub(super) fn new(
-        index: SourceId,
+        index: ClockId,
         algo_config: AlgorithmConfig,
         period: Option<f64>,
         source_config: SourceConfig,
@@ -936,13 +930,12 @@ impl<
 }
 
 impl<
-    SourceId: std::fmt::Debug + Copy + Send + 'static,
     D: Debug + Copy + Clone + Send + 'static,
     N: MeasurementNoiseEstimator<MeasurementDelay = D> + Clone + Send + 'static,
-> SourceController for KalmanSourceController<SourceId, D, N>
+> SourceController for KalmanSourceController<D, N>
 {
     type ControllerMessage = KalmanControllerMessage;
-    type SourceMessage = KalmanSourceMessage<SourceId>;
+    type SourceMessage = KalmanSourceMessage;
     type MeasurementDelay = D;
 
     fn handle_message(&mut self, message: Self::ControllerMessage) {
@@ -981,7 +974,7 @@ impl<
 
     fn observe(&self) -> super::super::ObservableSourceTimedata {
         self.state
-            .snapshot(&self.index, &self.algo_config, self.period)
+            .snapshot(self.index, &self.algo_config, self.period)
             .map_or(
                 ObservableSourceTimedata {
                     offset: NtpDuration::ZERO,
@@ -1197,7 +1190,7 @@ mod tests {
         source.process_offset_steering(20e-3, None);
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .unwrap()
                 .state
                 .offset()
@@ -1235,7 +1228,7 @@ mod tests {
         source.process_offset_steering(20e-3, None);
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .unwrap()
                 .state
                 .offset()
@@ -1264,7 +1257,7 @@ mod tests {
         assert!(
             dbg!(
                 (source
-                    .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                    .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                     .unwrap()
                     .state
                     .offset()
@@ -1274,7 +1267,7 @@ mod tests {
         );
         assert!(
             (source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .unwrap()
                 .state
                 .frequency()
@@ -1313,7 +1306,7 @@ mod tests {
         source.process_offset_steering(-20e-3, None);
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .unwrap()
                 .state
                 .offset()
@@ -1342,7 +1335,7 @@ mod tests {
         assert!(
             dbg!(
                 (source
-                    .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                    .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                     .unwrap()
                     .state
                     .offset()
@@ -1352,7 +1345,7 @@ mod tests {
         );
         assert!(
             (source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .unwrap()
                 .state
                 .frequency()
@@ -1422,7 +1415,7 @@ mod tests {
         source.process_offset_steering(-0.2, Some(1.0));
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), Some(1.0))
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), Some(1.0))
                 .unwrap()
                 .offset()
                 + 0.4
@@ -1432,7 +1425,7 @@ mod tests {
         source.process_offset_steering(100.5, Some(1.0));
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), Some(1.0))
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), Some(1.0))
                 .unwrap()
                 .offset()
                 - 0.1
@@ -1501,7 +1494,7 @@ mod tests {
         );
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), Some(1.0))
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), Some(1.0))
                 .unwrap()
                 .offset()
                 + 0.45
@@ -1518,7 +1511,7 @@ mod tests {
         });
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .is_none()
         );
         source.update_self_using_measurement(
@@ -1539,7 +1532,7 @@ mod tests {
         );
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), Some(1.0))
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), Some(1.0))
                 .unwrap()
                 .offset()
                 .abs()
@@ -1563,7 +1556,7 @@ mod tests {
         );
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), Some(1.0))
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), Some(1.0))
                 .unwrap()
                 .offset()
                 .abs()
@@ -1587,7 +1580,7 @@ mod tests {
         );
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), Some(1.0))
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), Some(1.0))
                 .unwrap()
                 .offset()
                 .abs()
@@ -1611,7 +1604,7 @@ mod tests {
         );
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), Some(1.0))
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), Some(1.0))
                 .unwrap()
                 .offset()
                 .abs()
@@ -1635,7 +1628,7 @@ mod tests {
         );
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), Some(1.0))
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), Some(1.0))
                 .unwrap()
                 .offset()
                 .abs()
@@ -1659,7 +1652,7 @@ mod tests {
         );
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), Some(1.0))
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), Some(1.0))
                 .unwrap()
                 .offset()
                 .abs()
@@ -1683,7 +1676,7 @@ mod tests {
         );
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), Some(1.0))
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), Some(1.0))
                 .unwrap()
                 .offset()
                 .abs()
@@ -1707,7 +1700,7 @@ mod tests {
         );
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), Some(1.0))
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), Some(1.0))
                 .unwrap()
                 .offset()
                 .abs()
@@ -1715,7 +1708,7 @@ mod tests {
         );
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), Some(1.0))
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), Some(1.0))
                 .unwrap()
                 .offset_uncertainty()
                 < 0.1
@@ -1797,7 +1790,7 @@ mod tests {
         source.process_frequency_steering(base + NtpDuration::from_seconds(5.0), 200e-6, None);
         assert!(
             (source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .unwrap()
                 .state
                 .frequency()
@@ -1807,7 +1800,7 @@ mod tests {
         );
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .unwrap()
                 .state
                 .offset()
@@ -1817,7 +1810,7 @@ mod tests {
         source.process_frequency_steering(base + NtpDuration::from_seconds(10.0), -200e-6, None);
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .unwrap()
                 .state
                 .frequency()
@@ -1826,7 +1819,7 @@ mod tests {
         );
         assert!(
             (source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .unwrap()
                 .state
                 .offset()
@@ -1847,7 +1840,7 @@ mod tests {
         let mut source = SourceState::new(noise_estimator);
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .is_none()
         );
         source.update_self_using_measurement(
@@ -1868,7 +1861,7 @@ mod tests {
         );
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .unwrap()
                 .state
                 .frequency_variance()
@@ -1892,7 +1885,7 @@ mod tests {
         );
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .unwrap()
                 .state
                 .frequency_variance()
@@ -1916,7 +1909,7 @@ mod tests {
         );
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .unwrap()
                 .state
                 .frequency_variance()
@@ -1940,7 +1933,7 @@ mod tests {
         );
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .unwrap()
                 .state
                 .frequency_variance()
@@ -1964,7 +1957,7 @@ mod tests {
         );
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .unwrap()
                 .state
                 .frequency_variance()
@@ -1988,7 +1981,7 @@ mod tests {
         );
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .unwrap()
                 .state
                 .frequency_variance()
@@ -2012,7 +2005,7 @@ mod tests {
         );
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .unwrap()
                 .state
                 .frequency_variance()
@@ -2036,7 +2029,7 @@ mod tests {
         );
         assert!(
             (source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .unwrap()
                 .state
                 .offset()
@@ -2046,7 +2039,7 @@ mod tests {
         );
         assert!(
             (source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .unwrap()
                 .state
                 .offset_variance()
@@ -2083,7 +2076,7 @@ mod tests {
         let mut source = SourceState::new(AveragingBuffer::default());
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .is_none()
         );
         source.update_self_using_measurement(
@@ -2104,7 +2097,7 @@ mod tests {
         );
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .unwrap()
                 .state
                 .frequency_variance()
@@ -2128,7 +2121,7 @@ mod tests {
         );
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .unwrap()
                 .state
                 .frequency_variance()
@@ -2152,7 +2145,7 @@ mod tests {
         );
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .unwrap()
                 .state
                 .frequency_variance()
@@ -2177,7 +2170,7 @@ mod tests {
         source.process_offset_steering(4e-3, None);
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .unwrap()
                 .state
                 .frequency_variance()
@@ -2201,7 +2194,7 @@ mod tests {
         );
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .unwrap()
                 .state
                 .frequency_variance()
@@ -2225,7 +2218,7 @@ mod tests {
         );
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .unwrap()
                 .state
                 .frequency_variance()
@@ -2249,7 +2242,7 @@ mod tests {
         );
         assert!(
             source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .unwrap()
                 .state
                 .frequency_variance()
@@ -2273,7 +2266,7 @@ mod tests {
         );
         assert!(
             (source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .unwrap()
                 .state
                 .offset()
@@ -2283,7 +2276,7 @@ mod tests {
         );
         assert!(
             (source
-                .snapshot(0_usize, &AlgorithmConfig::default(), None)
+                .snapshot(ClockId(0), &AlgorithmConfig::default(), None)
                 .unwrap()
                 .state
                 .offset_variance()

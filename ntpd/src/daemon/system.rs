@@ -91,7 +91,7 @@ pub struct DaemonChannels {
 }
 
 /// Spawn the NTP daemon
-pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper, SourceId = ClockId>>(
+pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper>>(
     synchronization_config: SynchronizationConfig,
     algorithm_config: Controller::AlgorithmConfig,
     source_defaults_config: SourceConfig,
@@ -178,13 +178,9 @@ struct SystemSpawnerData {
     notify_tx: mpsc::Sender<SystemEvent>,
 }
 
-struct SystemTask<
-    C: NtpClock,
-    Controller: TimeSyncController<SourceId = ClockId, Clock = C>,
-    T: Wait,
-> {
+struct SystemTask<C: NtpClock, Controller: TimeSyncController<Clock = C>, T: Wait> {
     _wait: PhantomData<SingleshotSleep<T>>,
-    system: System<ClockId, Controller>,
+    system: System<Controller>,
 
     system_snapshot_sender: tokio::sync::watch::Sender<SystemSnapshot>,
     system_update_sender:
@@ -213,7 +209,7 @@ struct SystemTask<
     interface: Option<InterfaceName>,
 }
 
-impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C, SourceId = ClockId>, T: Wait>
+impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C>, T: Wait>
     SystemTask<C, Controller, T>
 {
     #[expect(clippy::too_many_arguments)]
