@@ -247,7 +247,7 @@ impl std::fmt::Display for ClockId {
 mod exports {
     pub use super::algorithm::{
         AlgorithmConfig, KalmanClockController, KalmanControllerMessage, KalmanSourceController,
-        KalmanSourceMessage, ObservableSourceTimedata, SourceController, StateUpdate,
+        KalmanSourceMessage, Measurement, ObservableSourceTimedata, SourceController, StateUpdate,
         TimeSyncController, TwoWayKalmanSourceController,
     };
     pub use super::clock::NtpClock;
@@ -274,10 +274,9 @@ mod exports {
     #[cfg(feature = "__internal-test")]
     pub use super::source::source_snapshot;
     pub use super::source::{
-        AcceptSynchronizationError, Measurement, NtpSource, NtpSourceAction,
-        NtpSourceActionIterator, NtpSourceSnapshot, NtpSourceUpdate, ObservableSourceState,
-        OneWaySource, OneWaySourceSnapshot, OneWaySourceUpdate, ProtocolVersion, Reach,
-        SourceNtsData,
+        AcceptSynchronizationError, NtpSource, NtpSourceAction, NtpSourceActionIterator,
+        NtpSourceSnapshot, NtpSourceUpdate, ObservableSourceState, OneWaySource,
+        OneWaySourceSnapshot, OneWaySourceUpdate, ProtocolVersion, Reach, SourceNtsData,
     };
     pub use super::system::{
         System, SystemAction, SystemActionIterator, SystemSnapshot, SystemSourceUpdate,

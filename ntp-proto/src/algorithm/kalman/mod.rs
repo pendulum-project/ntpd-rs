@@ -468,8 +468,8 @@ mod tests {
     use matrix::{Matrix, Vector};
 
     use crate::SourceController;
+    use crate::algorithm::Measurement;
     use crate::config::StepThreshold;
-    use crate::source::Measurement;
 
     use super::*;
 
