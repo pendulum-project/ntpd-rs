@@ -16,7 +16,7 @@ use tracing::{Instrument, Span, debug, error, instrument, warn};
 
 use tokio::time::{Instant, Sleep};
 
-use super::{config::TimestampMode, exitcode, spawn::SourceId, util::convert_net_timestamp};
+use super::{config::TimestampMode, exitcode, spawn::ClockId, util::convert_net_timestamp};
 
 /// Trait needed to allow injecting of futures other than `tokio::time::Sleep` for testing
 pub trait Wait: Future<Output = ()> {
@@ -33,15 +33,15 @@ impl Wait for Sleep {
 #[expect(clippy::large_enum_variant)]
 pub enum MsgForSystem<SourceMessage> {
     /// Received a Kiss-o'-Death and must demobilize
-    MustDemobilize(SourceId),
+    MustDemobilize(ClockId),
     /// Experienced a network issue and must be restarted
-    NetworkIssue(SourceId),
+    NetworkIssue(ClockId),
     /// Source is unreachable, and should be restarted with new resolved addr.
-    Unreachable(SourceId),
+    Unreachable(ClockId),
     /// Update from source
-    SourceUpdate(SourceId, NtpSourceUpdate<SourceMessage>),
+    SourceUpdate(ClockId, NtpSourceUpdate<SourceMessage>),
     /// Update from sock source
-    OneWaySourceUpdate(SourceId, OneWaySourceUpdate<SourceMessage>),
+    OneWaySourceUpdate(ClockId, OneWaySourceUpdate<SourceMessage>),
 }
 
 #[derive(Debug)]
@@ -49,8 +49,7 @@ pub struct SourceChannels<ControllerMessage, SourceMessage> {
     pub msg_for_system_sender: tokio::sync::mpsc::Sender<MsgForSystem<SourceMessage>>,
     pub system_update_receiver:
         tokio::sync::broadcast::Receiver<SystemSourceUpdate<ControllerMessage>>,
-    pub source_snapshots:
-        Arc<std::sync::RwLock<HashMap<SourceId, ObservableSourceState<SourceId>>>>,
+    pub source_snapshots: Arc<std::sync::RwLock<HashMap<ClockId, ObservableSourceState<ClockId>>>>,
 }
 
 pub(crate) struct SourceTask<
@@ -59,7 +58,7 @@ pub(crate) struct SourceTask<
     T: Wait,
 > {
     _wait: PhantomData<T>,
-    index: SourceId,
+    index: ClockId,
     clock: C,
     interface: Option<InterfaceName>,
     timestamp_mode: TimestampMode,
@@ -333,7 +332,7 @@ where
     #[expect(clippy::too_many_arguments)]
     #[instrument(level = tracing::Level::ERROR, name = "Ntp Source", skip(timestamp_mode, clock, channels, source, initial_actions))]
     pub fn spawn(
-        index: SourceId,
+        index: ClockId,
         name: String,
         source_addr: SocketAddr,
         interface: Option<InterfaceName>,
@@ -585,9 +584,9 @@ mod tests {
     }
 
     async fn test_startup<T: Wait>() -> (
-        SourceTask<TestClock, TwoWayKalmanSourceController<SourceId>, T>,
+        SourceTask<TestClock, TwoWayKalmanSourceController<ClockId>, T>,
         Socket<SocketAddr, Open>,
-        mpsc::Receiver<MsgForSystem<KalmanSourceMessage<SourceId>>>,
+        mpsc::Receiver<MsgForSystem<KalmanSourceMessage<ClockId>>>,
         broadcast::Sender<SystemSourceUpdate<KalmanControllerMessage>>,
     ) {
         let port_base = alloc_port();
@@ -600,7 +599,7 @@ mod tests {
         let (system_update_sender, system_update_receiver) = tokio::sync::broadcast::channel(1);
         let (msg_for_system_sender, msg_for_system_receiver) = mpsc::channel(1);
 
-        let index = SourceId::new();
+        let index = ClockId::new();
         let mut system: ntp_proto::System<_, KalmanClockController<_, _>> = ntp_proto::System::new(
             TestClock {},
             SynchronizationConfig::default(),

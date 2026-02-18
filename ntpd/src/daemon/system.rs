@@ -12,7 +12,7 @@ use super::{
     ntp_source::{MsgForSystem, SourceChannels, SourceTask, Wait},
     server::{ServerStats, ServerTask},
     spawn::{
-        SourceId, SourceRemovalReason, SpawnAction, SpawnEvent, Spawner, SpawnerId, SystemEvent,
+        ClockId, SourceRemovalReason, SpawnAction, SpawnEvent, Spawner, SpawnerId, SystemEvent,
         nts::NtsSpawner, pool::PoolSpawner, sock::SockSpawner, standard::StandardSpawner,
     },
 };
@@ -85,14 +85,13 @@ impl<T: Wait> Wait for SingleshotSleep<T> {
 }
 
 pub struct DaemonChannels {
-    pub source_snapshots:
-        Arc<std::sync::RwLock<HashMap<SourceId, ObservableSourceState<SourceId>>>>,
+    pub source_snapshots: Arc<std::sync::RwLock<HashMap<ClockId, ObservableSourceState<ClockId>>>>,
     pub server_data_receiver: tokio::sync::watch::Receiver<Vec<ServerData>>,
     pub system_snapshot_receiver: tokio::sync::watch::Receiver<SystemSnapshot>,
 }
 
 /// Spawn the NTP daemon
-pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper, SourceId = SourceId>>(
+pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper, SourceId = ClockId>>(
     synchronization_config: SynchronizationConfig,
     algorithm_config: Controller::AlgorithmConfig,
     source_defaults_config: SourceConfig,
@@ -181,16 +180,16 @@ struct SystemSpawnerData {
 
 struct SystemTask<
     C: NtpClock,
-    Controller: TimeSyncController<SourceId = SourceId, Clock = C>,
+    Controller: TimeSyncController<SourceId = ClockId, Clock = C>,
     T: Wait,
 > {
     _wait: PhantomData<SingleshotSleep<T>>,
-    system: System<SourceId, Controller>,
+    system: System<ClockId, Controller>,
 
     system_snapshot_sender: tokio::sync::watch::Sender<SystemSnapshot>,
     system_update_sender:
         tokio::sync::broadcast::Sender<SystemSourceUpdate<Controller::ControllerMessage>>,
-    source_snapshots: Arc<std::sync::RwLock<HashMap<SourceId, ObservableSourceState<SourceId>>>>,
+    source_snapshots: Arc<std::sync::RwLock<HashMap<ClockId, ObservableSourceState<ClockId>>>>,
     server_data_sender: tokio::sync::watch::Sender<Vec<ServerData>>,
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
     ip_list: tokio::sync::watch::Receiver<Arc<[IpAddr]>>,
@@ -200,7 +199,7 @@ struct SystemTask<
     spawn_tx: mpsc::Sender<SpawnEvent>,
     spawn_rx: mpsc::Receiver<SpawnEvent>,
 
-    sources: HashMap<SourceId, SourceState>,
+    sources: HashMap<ClockId, SourceState>,
     servers: Vec<ServerData>,
     spawners: Vec<SystemSpawnerData>,
 
@@ -214,7 +213,7 @@ struct SystemTask<
     interface: Option<InterfaceName>,
 }
 
-impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C, SourceId = SourceId>, T: Wait>
+impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C, SourceId = ClockId>, T: Wait>
     SystemTask<C, Controller, T>
 {
     #[expect(clippy::too_many_arguments)]
@@ -401,7 +400,7 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C, SourceId = So
         Ok(())
     }
 
-    async fn handle_source_network_issue(&mut self, index: SourceId) -> std::io::Result<()> {
+    async fn handle_source_network_issue(&mut self, index: ClockId) -> std::io::Result<()> {
         self.system
             .handle_source_remove(index)
             .map_err(std::io::Error::other)?;
@@ -425,7 +424,7 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C, SourceId = So
         Ok(())
     }
 
-    async fn handle_source_unreachable(&mut self, index: SourceId) -> std::io::Result<()> {
+    async fn handle_source_unreachable(&mut self, index: ClockId) -> std::io::Result<()> {
         self.system
             .handle_source_remove(index)
             .map_err(std::io::Error::other)?;
@@ -449,7 +448,7 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C, SourceId = So
         Ok(())
     }
 
-    async fn handle_source_demobilize(&mut self, index: SourceId) -> Result<(), C::Error> {
+    async fn handle_source_demobilize(&mut self, index: ClockId) -> Result<(), C::Error> {
         self.system.handle_source_remove(index)?;
 
         // Restart the source reusing its configuration.
@@ -474,7 +473,7 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C, SourceId = So
         &mut self,
         spawner_id: SpawnerId,
         mut params: SourceCreateParameters,
-    ) -> Result<SourceId, C::Error> {
+    ) -> Result<ClockId, C::Error> {
         let source_id = params.get_id();
         info!(source_id=?source_id, addr=?params.get_addr(), spawner=?spawner_id, "new source");
         self.sources.insert(
@@ -594,7 +593,7 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C, SourceId = So
 #[derive(Debug)]
 struct SourceState {
     spawner_id: SpawnerId,
-    source_id: SourceId,
+    source_id: ClockId,
 }
 
 #[derive(Debug, Clone)]

@@ -41,22 +41,22 @@ impl Default for SpawnerId {
 /// This source id makes sure that even if the network address is the same
 /// that we always know which specific spawned source we are talking about.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Serialize, Deserialize)]
-pub struct SourceId(u64);
+pub struct ClockId(u64);
 
-impl SourceId {
-    pub fn new() -> SourceId {
+impl ClockId {
+    pub fn new() -> ClockId {
         static COUNTER: AtomicU64 = AtomicU64::new(1);
-        SourceId(COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+        ClockId(COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
     }
 }
 
-impl Default for SourceId {
+impl Default for ClockId {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl std::fmt::Display for SourceId {
+impl std::fmt::Display for ClockId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
@@ -88,14 +88,14 @@ pub enum SystemEvent {
 }
 
 impl SystemEvent {
-    pub fn source_removed(id: SourceId, reason: SourceRemovalReason) -> SystemEvent {
+    pub fn source_removed(id: ClockId, reason: SourceRemovalReason) -> SystemEvent {
         SystemEvent::SourceRemoved(SourceRemovedEvent { id, reason })
     }
 }
 
 #[derive(Debug)]
 pub struct SourceRemovedEvent {
-    pub id: SourceId,
+    pub id: ClockId,
     pub reason: SourceRemovalReason,
 }
 
@@ -117,7 +117,7 @@ pub enum SpawnAction {
 
 impl SpawnAction {
     pub fn create_ntp(
-        id: SourceId,
+        id: ClockId,
         addr: SocketAddr,
         normalized_addr: NormalizedAddress,
         protocol_version: ProtocolVersion,
@@ -144,7 +144,7 @@ pub enum SourceCreateParameters {
 }
 
 impl SourceCreateParameters {
-    pub fn get_id(&self) -> SourceId {
+    pub fn get_id(&self) -> ClockId {
         match self {
             Self::Ntp(params) => params.id,
             Self::Sock(params) => params.id,
@@ -165,7 +165,7 @@ impl SourceCreateParameters {
 
 #[derive(Debug)]
 pub struct NtpSourceCreateParameters {
-    pub id: SourceId,
+    pub id: ClockId,
     pub addr: SocketAddr,
     pub normalized_addr: NormalizedAddress,
     pub protocol_version: ProtocolVersion,
@@ -175,7 +175,7 @@ pub struct NtpSourceCreateParameters {
 
 #[derive(Debug)]
 pub struct SockSourceCreateParameters {
-    pub id: SourceId,
+    pub id: ClockId,
     pub path: PathBuf,
     pub config: SourceConfig,
     pub noise_estimate: f64,
@@ -184,7 +184,7 @@ pub struct SockSourceCreateParameters {
 #[cfg(feature = "pps")]
 #[derive(Debug)]
 pub struct PpsSourceCreateParameters {
-    pub id: SourceId,
+    pub id: ClockId,
     pub path: PathBuf,
     pub config: SourceConfig,
     pub noise_estimate: f64,
