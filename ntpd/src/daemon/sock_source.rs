@@ -79,10 +79,7 @@ fn deserialize_sample(
     Ok(sample)
 }
 
-pub(crate) struct SockSourceTask<
-    C: 'static + NtpClock + Send,
-    Controller: SourceController<MeasurementDelay = ()>,
-> {
+pub(crate) struct SockSourceTask<C: 'static + NtpClock + Send, Controller: SourceController> {
     index: ClockId,
     socket: UnixDatagram,
     clock: C,
@@ -102,7 +99,7 @@ fn create_socket<T: AsRef<Path>>(path: T) -> std::io::Result<UnixDatagram> {
     Ok(socket)
 }
 
-impl<C, Controller: SourceController<MeasurementDelay = ()>> SockSourceTask<C, Controller>
+impl<C, Controller: SourceController> SockSourceTask<C, Controller>
 where
     C: 'static + NtpClock + Send + Sync,
 {
@@ -149,9 +146,10 @@ where
                         };
 
                         let measurement = Measurement {
-                            delay: (),
-                            offset: NtpDuration::from_seconds(sample.offset),
-                            localtime: time,
+                            sender_id: self.index,
+                            receiver_id: ClockId::SYSTEM,
+                            sender_ts: time - NtpDuration::from_seconds(sample.offset),
+                            receiver_ts: time,
 
                             stratum: 0,
                             root_delay: NtpDuration::ZERO,
