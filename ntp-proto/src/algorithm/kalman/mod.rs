@@ -16,7 +16,7 @@ use crate::{
 
 use self::{combiner::combine, config::AlgorithmConfig, source::KalmanState};
 
-use super::{InternalTimeSyncController, ObservableSourceTimedata, StateUpdate};
+use super::{InternalStateUpdate, InternalTimeSyncController, ObservableSourceTimedata};
 
 mod combiner;
 pub(super) mod config;
@@ -101,7 +101,7 @@ pub struct KalmanClockController<C: NtpClock> {
 impl<C: NtpClock> KalmanClockController<C> {
     // FIXME: Figure out a way to simplify and/or split this function.
     #[expect(clippy::too_many_lines)]
-    fn update_clock(&mut self, time: NtpTimestamp) -> StateUpdate<KalmanControllerMessage> {
+    fn update_clock(&mut self, time: NtpTimestamp) -> InternalStateUpdate<KalmanControllerMessage> {
         // ensure all filters represent the same (current) time
         if self
             .sources
@@ -109,7 +109,7 @@ impl<C: NtpClock> KalmanClockController<C> {
             .filter_map(|(_, (state, _))| state.map(|v| v.state.time))
             .any(|sourcetime| time - sourcetime < NtpDuration::ZERO)
         {
-            return StateUpdate {
+            return InternalStateUpdate {
                 source_message: None,
                 used_sources: None,
                 time_snapshot: Some(self.timedata),
@@ -185,7 +185,7 @@ impl<C: NtpClock> KalmanClockController<C> {
                             * freq_delta.signum(),
                 )
             } else {
-                StateUpdate::default()
+                InternalStateUpdate::default()
             };
 
             self.timedata.root_delay = combined.delay;
@@ -215,16 +215,16 @@ impl<C: NtpClock> KalmanClockController<C> {
             // After a successful measurement we are out of startup.
             self.in_startup = false;
 
-            StateUpdate {
+            InternalStateUpdate {
                 used_sources: Some(combined.sources),
                 time_snapshot: Some(self.timedata),
                 ..next_update
             }
         } else {
             info!("No consensus on current time");
-            StateUpdate {
+            InternalStateUpdate {
                 time_snapshot: Some(self.timedata),
-                ..StateUpdate::default()
+                ..InternalStateUpdate::default()
             }
         }
     }
@@ -271,7 +271,7 @@ impl<C: NtpClock> KalmanClockController<C> {
         &mut self,
         change: f64,
         freq_delta: f64,
-    ) -> StateUpdate<KalmanControllerMessage> {
+    ) -> InternalStateUpdate<KalmanControllerMessage> {
         if change.abs() > self.algo_config.step_threshold {
             // jump
             self.check_offset_steer(change);
@@ -291,11 +291,11 @@ impl<C: NtpClock> KalmanClockController<C> {
             } else {
                 info!("Jumped offset by {}ms", change * 1e3);
             }
-            StateUpdate {
+            InternalStateUpdate {
                 source_message: Some(KalmanControllerMessage {
                     inner: KalmanControllerMessageInner::Step { steer: change },
                 }),
-                ..StateUpdate::default()
+                ..InternalStateUpdate::default()
             }
         } else {
             // start slew
@@ -310,7 +310,7 @@ impl<C: NtpClock> KalmanClockController<C> {
                 duration.as_secs_f64(),
             );
             let update = self.change_desired_frequency(-freq * change.signum(), freq_delta);
-            StateUpdate {
+            InternalStateUpdate {
                 next_update: Some(duration),
                 ..update
             }
@@ -321,13 +321,13 @@ impl<C: NtpClock> KalmanClockController<C> {
         &mut self,
         new_freq: f64,
         freq_delta: f64,
-    ) -> StateUpdate<KalmanControllerMessage> {
+    ) -> InternalStateUpdate<KalmanControllerMessage> {
         let change = self.desired_freq - new_freq + freq_delta;
         self.desired_freq = new_freq;
         self.steer_frequency(change)
     }
 
-    fn steer_frequency(&mut self, change: f64) -> StateUpdate<KalmanControllerMessage> {
+    fn steer_frequency(&mut self, change: f64) -> InternalStateUpdate<KalmanControllerMessage> {
         let new_freq_offset = ((1.0 + self.freq_offset) * (1.0 + change) - 1.0).clamp(
             -self.algo_config.maximum_frequency_steer,
             self.algo_config.maximum_frequency_steer,
@@ -353,14 +353,14 @@ impl<C: NtpClock> KalmanClockController<C> {
             self.freq_offset * 1e6,
             self.desired_freq * 1e6,
         );
-        StateUpdate {
+        InternalStateUpdate {
             source_message: Some(KalmanControllerMessage {
                 inner: KalmanControllerMessageInner::FreqChange {
                     steer: actual_change,
                     time: freq_update,
                 },
             }),
-            ..StateUpdate::default()
+            ..InternalStateUpdate::default()
         }
     }
 }
@@ -444,7 +444,7 @@ impl<C: NtpClock> InternalTimeSyncController for KalmanClockController<C> {
             state.1 = usable;
         }
     }
-    fn time_update(&mut self) -> StateUpdate<Self::ControllerMessage> {
+    fn time_update(&mut self) -> InternalStateUpdate<Self::ControllerMessage> {
         // End slew
         self.change_desired_frequency(0.0, 0.0)
     }
@@ -453,14 +453,14 @@ impl<C: NtpClock> InternalTimeSyncController for KalmanClockController<C> {
         &mut self,
         id: ClockId,
         message: Self::SourceMessage,
-    ) -> StateUpdate<Self::ControllerMessage> {
+    ) -> InternalStateUpdate<Self::ControllerMessage> {
         if let Some(source) = self.sources.get_mut(&id) {
             let time = message.inner.last_update;
             source.0 = Some(message.inner);
             self.update_clock(time)
         } else {
             error!("Internal error: Update from non-existing source");
-            StateUpdate::default()
+            InternalStateUpdate::default()
         }
     }
 }

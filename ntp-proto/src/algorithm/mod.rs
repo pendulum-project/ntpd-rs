@@ -23,6 +23,32 @@ pub struct ObservableSourceTimedata {
 }
 
 #[derive(Debug, Clone)]
+pub struct InternalStateUpdate<ControllerMessage> {
+    // Message for all sources, if any
+    pub source_message: Option<ControllerMessage>,
+    // Update to the time snapshot, if any
+    pub time_snapshot: Option<TimeSnapshot>,
+    // Update to the used sources, if any
+    pub used_sources: Option<Vec<ClockId>>,
+    // Requested timestamp for next non-measurement update
+    pub next_update: Option<Duration>,
+}
+
+// Note: this default implementation is necessary since the
+// derive only works if ControllerMessage is Default (which it isn't
+// necessarily)
+impl<ControllerMessage> Default for InternalStateUpdate<ControllerMessage> {
+    fn default() -> Self {
+        Self {
+            source_message: None,
+            time_snapshot: None,
+            used_sources: None,
+            next_update: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct StateUpdate<ControllerMessage> {
     // Message for all sources, if any
     pub source_message: Option<ControllerMessage>,
@@ -44,6 +70,19 @@ impl<ControllerMessage> Default for StateUpdate<ControllerMessage> {
             time_snapshot: None,
             used_sources: None,
             next_update: None,
+        }
+    }
+}
+
+impl<ControllerMessage> From<InternalStateUpdate<ControllerMessage>>
+    for StateUpdate<ControllerMessage>
+{
+    fn from(internal: InternalStateUpdate<ControllerMessage>) -> Self {
+        Self {
+            source_message: internal.source_message,
+            time_snapshot: internal.time_snapshot,
+            used_sources: internal.used_sources,
+            next_update: internal.next_update,
         }
     }
 }
@@ -98,9 +137,9 @@ pub trait InternalTimeSyncController: Sized + Send + 'static {
         &mut self,
         id: ClockId,
         message: Self::SourceMessage,
-    ) -> StateUpdate<Self::ControllerMessage>;
+    ) -> InternalStateUpdate<Self::ControllerMessage>;
     /// Non-message driven update (queued via next_update)
-    fn time_update(&mut self) -> StateUpdate<Self::ControllerMessage>;
+    fn time_update(&mut self) -> InternalStateUpdate<Self::ControllerMessage>;
 }
 
 pub trait InternalSourceController: Sized + Send + 'static {
@@ -269,11 +308,11 @@ impl<T: InternalTimeSyncController> TimeSyncController for T {
         id: ClockId,
         message: Self::SourceMessage,
     ) -> StateUpdate<Self::ControllerMessage> {
-        T::source_message(self, id, message)
+        T::source_message(self, id, message).into()
     }
 
     fn time_update(&mut self) -> StateUpdate<Self::ControllerMessage> {
-        T::time_update(self)
+        T::time_update(self).into()
     }
 }
 
