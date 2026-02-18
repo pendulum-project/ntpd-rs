@@ -470,6 +470,7 @@ struct SourceFilter<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<Measur
     desired_poll_interval: PollInterval,
 
     last_measurement: Measurement<D>,
+    last_monotime: tokio::time::Instant,
     prev_was_outlier: bool,
 
     // Last time a packet was processed
@@ -520,6 +521,7 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
 
         self.state = new_state;
         self.last_measurement = measurement;
+        self.last_monotime = tokio::time::Instant::now();
 
         trace!(
             stats.observe_probability,
@@ -752,6 +754,7 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
                         precision_score: 0,
                         poll_score: 0,
                         desired_poll_interval: source_config.initial_poll_interval,
+                        last_monotime: tokio::time::Instant::now(),
                         last_measurement: measurement,
                         prev_was_outlier: false,
                         last_iter: measurement.localtime,
@@ -767,9 +770,12 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
                 // need to revert back to the initial state.
                 let localtime_difference =
                     measurement.localtime - filter.last_measurement.localtime;
-                let monotime_difference = measurement
-                    .monotime
-                    .abs_diff(filter.last_measurement.monotime);
+                let current_monotime = tokio::time::Instant::now();
+                let monotime_difference = NtpDuration::from_system_duration(
+                    current_monotime
+                        .checked_duration_since(filter.last_monotime)
+                        .unwrap_or(std::time::Duration::ZERO),
+                );
 
                 if localtime_difference.abs_diff(monotime_difference)
                     > algo_config.meddling_threshold
@@ -988,14 +994,15 @@ impl<
     reason = "Long tests are not really a big problem"
 )]
 mod tests {
-    use crate::{packet::NtpLeapIndicator, time_types::NtpInstant};
+    use tokio::time::Instant;
+
+    use crate::packet::NtpLeapIndicator;
 
     use super::*;
 
-    #[test]
-    fn test_meddling_detection() {
+    #[tokio::test(start_paused = true)]
+    async fn test_meddling_detection() {
         let base = NtpTimestamp::from_fixed_int(0);
-        let basei = NtpInstant::now();
 
         let mut source = SourceState(SourceStateInner::Stable(SourceFilter {
             state: KalmanState {
@@ -1011,11 +1018,11 @@ mod tests {
             precision_score: 0,
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
+            last_monotime: Instant::now(),
             last_measurement: Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base,
-                monotime: basei,
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1026,6 +1033,7 @@ mod tests {
             prev_was_outlier: false,
             last_iter: base,
         }));
+        tokio::time::sleep(std::time::Duration::from_secs(2800)).await;
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
@@ -1033,7 +1041,6 @@ mod tests {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei + std::time::Duration::from_secs(2800),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1059,11 +1066,11 @@ mod tests {
             precision_score: 0,
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
+            last_monotime: Instant::now(),
             last_measurement: Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base,
-                monotime: basei,
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1075,6 +1082,7 @@ mod tests {
             last_iter: base,
         }));
         source.process_offset_steering(-1800.0, None);
+        tokio::time::sleep(std::time::Duration::from_secs(2800)).await;
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
@@ -1082,7 +1090,6 @@ mod tests {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei + std::time::Duration::from_secs(2800),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1108,11 +1115,11 @@ mod tests {
             precision_score: 0,
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
+            last_monotime: Instant::now(),
             last_measurement: Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base,
-                monotime: basei,
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1124,6 +1131,7 @@ mod tests {
             last_iter: base,
         }));
         source.process_offset_steering(1800.0, None);
+        tokio::time::sleep(std::time::Duration::from_secs(1000)).await;
         source.update_self_using_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
@@ -1131,7 +1139,6 @@ mod tests {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base + NtpDuration::from_seconds(2800.0),
-                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1144,7 +1151,7 @@ mod tests {
         assert!(matches!(source, SourceState(SourceStateInner::Stable(_))));
     }
 
-    fn test_offset_steering_and_measurements<
+    async fn test_offset_steering_and_measurements<
         D: Debug + Clone + Copy,
         N: MeasurementNoiseEstimator<MeasurementDelay = D> + Clone,
     >(
@@ -1152,7 +1159,6 @@ mod tests {
         delay: D,
     ) {
         let base = NtpTimestamp::from_fixed_int(0);
-        let basei = NtpInstant::now();
         let mut source = SourceState(SourceStateInner::Stable(SourceFilter {
             state: KalmanState {
                 state: Vector::new_vector([20e-3, 0.]),
@@ -1164,11 +1170,11 @@ mod tests {
             precision_score: 0,
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
+            last_monotime: Instant::now(),
             last_measurement: Measurement {
                 delay,
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base,
-                monotime: basei,
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1202,11 +1208,11 @@ mod tests {
             precision_score: 0,
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
+            last_monotime: Instant::now(),
             last_measurement: Measurement {
                 delay,
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base,
-                monotime: basei,
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1229,6 +1235,7 @@ mod tests {
                 < 1e-7
         );
 
+        tokio::time::sleep(std::time::Duration::from_secs(1000)).await;
         source.update_self_using_raw_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
@@ -1236,7 +1243,6 @@ mod tests {
                 delay,
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1280,11 +1286,11 @@ mod tests {
             precision_score: 0,
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
+            last_monotime: Instant::now(),
             last_measurement: Measurement {
                 delay,
                 offset: NtpDuration::from_seconds(-20e-3),
                 localtime: base,
-                monotime: basei,
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1307,6 +1313,7 @@ mod tests {
                 < 1e-7
         );
 
+        tokio::time::sleep(std::time::Duration::from_secs(1000)).await;
         source.update_self_using_raw_measurement(
             &SourceConfig::default(),
             &AlgorithmConfig::default(),
@@ -1314,7 +1321,6 @@ mod tests {
                 delay,
                 offset: NtpDuration::from_seconds(-20e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1348,26 +1354,26 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_offset_steering_and_measurements_normal() {
+    #[tokio::test(start_paused = true)]
+    async fn test_offset_steering_and_measurements_normal() {
         test_offset_steering_and_measurements(
             AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
             },
             NtpDuration::from_seconds(0.0),
-        );
+        )
+        .await;
     }
 
-    #[test]
-    fn test_offset_steering_and_measurements_constant_noise_estimate() {
-        test_offset_steering_and_measurements(1e-9, ());
+    #[tokio::test(start_paused = true)]
+    async fn test_offset_steering_and_measurements_constant_noise_estimate() {
+        test_offset_steering_and_measurements(1e-9, ()).await;
     }
 
     #[test]
     fn test_offset_steering_periodic() {
         let base = NtpTimestamp::from_fixed_int(0);
-        let basei = NtpInstant::now();
         let mut source = SourceState(SourceStateInner::Stable(SourceFilter {
             state: KalmanState {
                 state: Vector::new_vector([0.4, 0.]),
@@ -1382,11 +1388,11 @@ mod tests {
             precision_score: 0,
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
+            last_monotime: Instant::now(),
             last_measurement: Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(0.4),
                 localtime: base,
-                monotime: basei,
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1422,7 +1428,6 @@ mod tests {
     #[test]
     fn test_periodic_measurement() {
         let base = NtpTimestamp::from_fixed_int(0);
-        let basei = NtpInstant::now();
         let mut source = SourceState(SourceStateInner::Stable(SourceFilter {
             state: KalmanState {
                 state: Vector::new_vector([0.4, 0.]),
@@ -1447,11 +1452,11 @@ mod tests {
             precision_score: 0,
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
+            last_monotime: Instant::now(),
             last_measurement: Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(0.4),
                 localtime: base,
-                monotime: basei,
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1470,7 +1475,6 @@ mod tests {
                 delay: NtpDuration::ZERO,
                 offset: NtpDuration::from_seconds(-0.3),
                 localtime: base,
-                monotime: basei,
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1493,7 +1497,6 @@ mod tests {
     #[test]
     fn test_periodic_measurement_init() {
         let base = NtpTimestamp::from_fixed_int(0);
-        let basei = NtpInstant::now();
         let mut source = SourceState::new(AveragingBuffer {
             data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
             next_idx: 0,
@@ -1510,7 +1513,6 @@ mod tests {
                 delay: NtpDuration::ZERO,
                 offset: NtpDuration::from_seconds(0.48),
                 localtime: base + NtpDuration::from_seconds(1.0),
-                monotime: basei + std::time::Duration::from_secs(1),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1535,7 +1537,6 @@ mod tests {
                 delay: NtpDuration::ZERO,
                 offset: NtpDuration::from_seconds(0.49),
                 localtime: base + NtpDuration::from_seconds(2.0),
-                monotime: basei + std::time::Duration::from_secs(2),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1560,7 +1561,6 @@ mod tests {
                 delay: NtpDuration::ZERO,
                 offset: NtpDuration::from_seconds(0.50),
                 localtime: base + NtpDuration::from_seconds(3.0),
-                monotime: basei + std::time::Duration::from_secs(3),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1585,7 +1585,6 @@ mod tests {
                 delay: NtpDuration::ZERO,
                 offset: NtpDuration::from_seconds(-0.49),
                 localtime: base + NtpDuration::from_seconds(4.0),
-                monotime: basei + std::time::Duration::from_secs(4),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1610,7 +1609,6 @@ mod tests {
                 delay: NtpDuration::ZERO,
                 offset: NtpDuration::from_seconds(-0.48),
                 localtime: base + NtpDuration::from_seconds(5.0),
-                monotime: basei + std::time::Duration::from_secs(5),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1635,7 +1633,6 @@ mod tests {
                 delay: NtpDuration::ZERO,
                 offset: NtpDuration::from_seconds(-0.47),
                 localtime: base + NtpDuration::from_seconds(6.0),
-                monotime: basei + std::time::Duration::from_secs(6),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1660,7 +1657,6 @@ mod tests {
                 delay: NtpDuration::ZERO,
                 offset: NtpDuration::from_seconds(-0.46),
                 localtime: base + NtpDuration::from_seconds(7.0),
-                monotime: basei + std::time::Duration::from_secs(7),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1685,7 +1681,6 @@ mod tests {
                 delay: NtpDuration::ZERO,
                 offset: NtpDuration::from_seconds(-0.45),
                 localtime: base + NtpDuration::from_seconds(8.0),
-                monotime: basei + std::time::Duration::from_secs(8),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1721,7 +1716,6 @@ mod tests {
         let delay = NtpDuration::from_seconds(0.0);
 
         let base = NtpTimestamp::from_fixed_int(0);
-        let basei = NtpInstant::now();
         let mut source = SourceFilter {
             state: KalmanState {
                 state: Vector::new_vector([0.0, 0.]),
@@ -1733,11 +1727,11 @@ mod tests {
             precision_score: 0,
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
+            last_monotime: Instant::now(),
             last_measurement: Measurement {
                 delay,
                 offset: NtpDuration::from_seconds(0.0),
                 localtime: base,
-                monotime: basei,
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1769,11 +1763,11 @@ mod tests {
             precision_score: 0,
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
+            last_monotime: Instant::now(),
             last_measurement: Measurement {
                 delay,
                 offset: NtpDuration::from_seconds(0.0),
                 localtime: base,
-                monotime: basei,
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1835,7 +1829,6 @@ mod tests {
         delay: D,
     ) {
         let base = NtpTimestamp::from_fixed_int(0);
-        let basei = NtpInstant::now();
         let mut source = SourceState::new(noise_estimator);
         assert!(
             source
@@ -1849,7 +1842,6 @@ mod tests {
                 delay,
                 offset: NtpDuration::from_seconds(0e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1874,7 +1866,6 @@ mod tests {
                 delay,
                 offset: NtpDuration::from_seconds(1e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1899,7 +1890,6 @@ mod tests {
                 delay,
                 offset: NtpDuration::from_seconds(2e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1924,7 +1914,6 @@ mod tests {
                 delay,
                 offset: NtpDuration::from_seconds(3e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1949,7 +1938,6 @@ mod tests {
                 delay,
                 offset: NtpDuration::from_seconds(4e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1974,7 +1962,6 @@ mod tests {
                 delay,
                 offset: NtpDuration::from_seconds(5e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -1999,7 +1986,6 @@ mod tests {
                 delay,
                 offset: NtpDuration::from_seconds(6e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -2024,7 +2010,6 @@ mod tests {
                 delay,
                 offset: NtpDuration::from_seconds(7e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -2074,7 +2059,6 @@ mod tests {
     #[test]
     fn test_steer_during_init() {
         let base = NtpTimestamp::from_fixed_int(0);
-        let basei = NtpInstant::now();
         let mut source = SourceState::new(AveragingBuffer::default());
         assert!(
             source
@@ -2088,7 +2072,6 @@ mod tests {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(4e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -2113,7 +2096,6 @@ mod tests {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(5e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -2138,7 +2120,6 @@ mod tests {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(6e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -2163,7 +2144,6 @@ mod tests {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(7e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -2189,7 +2169,6 @@ mod tests {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(4e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -2214,7 +2193,6 @@ mod tests {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(5e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -2239,7 +2217,6 @@ mod tests {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(6e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -2264,7 +2241,6 @@ mod tests {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(7e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
-                monotime: basei + std::time::Duration::from_secs(1000),
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -2304,7 +2280,6 @@ mod tests {
         };
 
         let base = NtpTimestamp::from_fixed_int(0);
-        let basei = NtpInstant::now();
         let mut source = SourceFilter {
             state: KalmanState {
                 state: Vector::new_vector([0.0, 0.]),
@@ -2319,11 +2294,11 @@ mod tests {
             precision_score: 0,
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
+            last_monotime: Instant::now(),
             last_measurement: Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(0.0),
                 localtime: base,
-                monotime: basei,
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -2430,7 +2405,6 @@ mod tests {
         };
 
         let base = NtpTimestamp::from_fixed_int(0);
-        let basei = NtpInstant::now();
         let mut source = SourceFilter {
             state: KalmanState {
                 state: Vector::new_vector([0.0, 0.]),
@@ -2445,11 +2419,11 @@ mod tests {
             precision_score: 0,
             poll_score: 0,
             desired_poll_interval: PollIntervalLimits::default().min,
+            last_monotime: Instant::now(),
             last_measurement: Measurement {
                 delay: NtpDuration::from_seconds(0.0),
                 offset: NtpDuration::from_seconds(0.0),
                 localtime: base,
-                monotime: basei,
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),

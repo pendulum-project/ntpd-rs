@@ -3,8 +3,8 @@ use std::{
 };
 
 use ntp_proto::{
-    NtpClock, NtpDuration, NtpInstant, NtpSource, NtpSourceActionIterator, NtpSourceUpdate,
-    NtpTimestamp, ObservableSourceState, OneWaySourceUpdate, SourceController, SystemSourceUpdate,
+    NtpClock, NtpDuration, NtpSource, NtpSourceActionIterator, NtpSourceUpdate, NtpTimestamp,
+    ObservableSourceState, OneWaySourceUpdate, SourceController, SystemSourceUpdate,
 };
 #[cfg(target_os = "linux")]
 use timestamped_socket::socket::open_interface_udp;
@@ -159,12 +159,9 @@ where
                                     continue;
                                 }
                             };
-                            let actions = self.source.handle_incoming(
-                                packet,
-                                NtpInstant::now(),
-                                send_timestamp,
-                                recv_timestamp,
-                            );
+                            let actions =
+                                self.source
+                                    .handle_incoming(packet, send_timestamp, recv_timestamp);
                             self.channels
                                 .source_snapshots
                                 .write()

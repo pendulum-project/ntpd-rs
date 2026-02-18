@@ -12,7 +12,7 @@ use crate::{
     identifiers::ReferenceId,
     packet::{Cipher, NtpAssociationMode, NtpLeapIndicator, NtpPacket, RequestIdentifier},
     system::{SystemSnapshot, SystemSourceUpdate},
-    time_types::{NtpDuration, NtpInstant, NtpTimestamp, PollInterval},
+    time_types::{NtpDuration, NtpTimestamp, PollInterval},
 };
 use rand::{Rng, thread_rng};
 use serde::{Deserialize, Serialize};
@@ -70,7 +70,7 @@ pub struct NtpSource<Controller: SourceController<MeasurementDelay = NtpDuration
     // Identifier of the last request sent to the server. This is correlated
     // with any received response from the server to guard against replay
     // attacks and packet reordering.
-    current_request_identifier: Option<(RequestIdentifier, NtpInstant)>,
+    current_request_identifier: Option<(RequestIdentifier, tokio::time::Instant)>,
 
     // Whether we have seen a DENY/RSTR KISS response since the last succesfull
     // interaction
@@ -139,7 +139,6 @@ pub struct Measurement<D: Debug + Copy + Clone> {
     pub delay: D,
     pub offset: NtpDuration,
     pub localtime: NtpTimestamp,
-    pub monotime: NtpInstant,
 
     pub stratum: u8,
     pub root_delay: NtpDuration,
@@ -153,7 +152,6 @@ impl Measurement<NtpDuration> {
         packet: &NtpPacket,
         send_timestamp: NtpTimestamp,
         recv_timestamp: NtpTimestamp,
-        local_clock_time: NtpInstant,
     ) -> Self {
         Self {
             delay: (recv_timestamp - send_timestamp)
@@ -162,7 +160,6 @@ impl Measurement<NtpDuration> {
                 + (packet.transmit_timestamp() - recv_timestamp))
                 / 2,
             localtime: send_timestamp + (recv_timestamp - send_timestamp) / 2,
-            monotime: local_clock_time,
 
             stratum: packet.stratum(),
             root_delay: packet.root_delay(),
@@ -600,7 +597,8 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
                 }
             },
         };
-        self.current_request_identifier = Some((identifier, NtpInstant::now() + POLL_WINDOW));
+        self.current_request_identifier =
+            Some((identifier, tokio::time::Instant::now() + POLL_WINDOW));
 
         if let NtpHeader::V5(header) = packet.header() {
             let req_ef = self.bloom_filter.next_request(header.client_cookie);
@@ -650,7 +648,6 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
     pub fn handle_incoming(
         &mut self,
         message: &[u8],
-        local_clock_time: NtpInstant,
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
     ) -> NtpSourceActionIterator<Controller::SourceMessage> {
@@ -676,7 +673,7 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
         }
 
         let request_identifier = match self.current_request_identifier {
-            Some((next_expected_origin, validity)) if validity >= NtpInstant::now() => {
+            Some((next_expected_origin, validity)) if validity >= tokio::time::Instant::now() => {
                 next_expected_origin
             }
             _ => {
@@ -752,14 +749,13 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
             warn!("Received packet with invalid mode");
             actions!()
         } else {
-            self.process_message(message, local_clock_time, send_time, recv_time)
+            self.process_message(message, send_time, recv_time)
         }
     }
 
     fn process_message(
         &mut self,
         message: NtpPacket,
-        local_clock_time: NtpInstant,
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
     ) -> NtpSourceActionIterator<Controller::SourceMessage> {
@@ -819,8 +815,7 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
         }
 
         // generate and handle measurement
-        let measurement =
-            Measurement::from_packet(&message, send_time, recv_time, local_clock_time);
+        let measurement = Measurement::from_packet(&message, send_time, recv_time);
 
         let controller_message = self.controller.handle_measurement(measurement);
 
@@ -960,8 +955,6 @@ mod test {
 
     #[test]
     fn test_measurement_from_packet() {
-        let instant = NtpInstant::now();
-
         let mut packet = NtpPacket::test();
         packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(1));
         packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(2));
@@ -969,7 +962,6 @@ mod test {
             &packet,
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(3),
-            instant,
         );
         assert_eq!(result.offset, NtpDuration::from_fixed_int(0));
         assert_eq!(result.delay, NtpDuration::from_fixed_int(2));
@@ -980,7 +972,6 @@ mod test {
             &packet,
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(3),
-            instant,
         );
         assert_eq!(result.offset, NtpDuration::from_fixed_int(1));
         assert_eq!(result.delay, NtpDuration::from_fixed_int(2));
@@ -991,7 +982,6 @@ mod test {
             &packet,
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(3),
-            instant,
         );
         assert_eq!(result.offset, NtpDuration::from_fixed_int(1));
         assert_eq!(result.delay, NtpDuration::from_fixed_int(-2));
@@ -1119,7 +1109,6 @@ mod test {
 
     #[test]
     fn test_handle_incoming() {
-        let base = NtpInstant::now();
         let mut source = NtpSource::test_ntp_source(NoopController);
 
         let actions = source.handle_timer();
@@ -1144,7 +1133,6 @@ mod test {
 
         let actions = source.handle_incoming(
             &packet.serialize_without_encryption_vec(None).unwrap(),
-            base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(400),
         );
@@ -1159,7 +1147,6 @@ mod test {
         }
         let mut actions = source.handle_incoming(
             &packet.serialize_without_encryption_vec(None).unwrap(),
-            base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(500),
         );
@@ -1196,7 +1183,6 @@ mod test {
 
     #[test]
     fn test_running_unreachable() {
-        let base = NtpInstant::now();
         let mut source = NtpSource::test_ntp_source(NoopController);
 
         let actions = source.handle_timer();
@@ -1220,7 +1206,6 @@ mod test {
         packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(200));
         let actions = source.handle_incoming(
             &packet.serialize_without_encryption_vec(None).unwrap(),
-            base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(400),
         );
@@ -1296,7 +1281,6 @@ mod test {
 
     #[test]
     fn test_stratum_checks() {
-        let base = NtpInstant::now();
         let mut source = NtpSource::test_ntp_source(NoopController);
 
         let actions = source.handle_timer();
@@ -1320,7 +1304,6 @@ mod test {
         packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(200));
         let mut actions = source.handle_incoming(
             &packet.serialize_without_encryption_vec(None).unwrap(),
-            base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(500),
         );
@@ -1329,7 +1312,6 @@ mod test {
         packet.set_stratum(0);
         let mut actions = source.handle_incoming(
             &packet.serialize_without_encryption_vec(None).unwrap(),
-            base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(500),
         );
@@ -1338,7 +1320,6 @@ mod test {
 
     #[test]
     fn test_handle_kod() {
-        let base = NtpInstant::now();
         let mut source = NtpSource::test_ntp_source(NoopController);
 
         let mut packet = NtpPacket::test();
@@ -1346,7 +1327,6 @@ mod test {
         packet.set_mode(NtpAssociationMode::Server);
         let mut actions = source.handle_incoming(
             &packet.serialize_without_encryption_vec(None).unwrap(),
-            base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(100),
         );
@@ -1372,7 +1352,6 @@ mod test {
         packet.set_mode(NtpAssociationMode::Server);
         let mut actions = source.handle_incoming(
             &packet.serialize_without_encryption_vec(None).unwrap(),
-            base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(100),
         );
@@ -1385,7 +1364,6 @@ mod test {
         packet.set_mode(NtpAssociationMode::Server);
         let mut actions = source.handle_incoming(
             &packet.serialize_without_encryption_vec(None).unwrap(),
-            base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(100),
         );
@@ -1411,7 +1389,6 @@ mod test {
         packet.set_mode(NtpAssociationMode::Server);
         let mut actions = source.handle_incoming(
             &packet.serialize_without_encryption_vec(None).unwrap(),
-            base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(100),
         );
@@ -1425,7 +1402,6 @@ mod test {
         packet.set_mode(NtpAssociationMode::Server);
         let mut actions = source.handle_incoming(
             &packet.serialize_without_encryption_vec(None).unwrap(),
-            base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(100),
         );
@@ -1452,7 +1428,6 @@ mod test {
         packet.set_mode(NtpAssociationMode::Server);
         let mut actions = source.handle_incoming(
             &packet.serialize_without_encryption_vec(None).unwrap(),
-            base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(100),
         );
@@ -1502,12 +1477,8 @@ mod test {
             // Kill the reference timestamp
             response[16] = 0;
 
-            let actions = source.handle_incoming(
-                &response,
-                NtpInstant::now(),
-                NtpTimestamp::default(),
-                NtpTimestamp::default(),
-            );
+            let actions =
+                source.handle_incoming(&response, NtpTimestamp::default(), NtpTimestamp::default());
             for action in actions {
                 assert!(!matches!(
                     action,
@@ -1571,12 +1542,8 @@ mod test {
             .serialize_without_encryption_vec(Some(poll_len))
             .unwrap();
 
-        let actions = source.handle_incoming(
-            &response,
-            NtpInstant::now(),
-            NtpTimestamp::default(),
-            NtpTimestamp::default(),
-        );
+        let actions =
+            source.handle_incoming(&response, NtpTimestamp::default(), NtpTimestamp::default());
         for action in actions {
             assert!(!matches!(
                 action,
@@ -1615,12 +1582,8 @@ mod test {
             .serialize_without_encryption_vec(Some(poll_len))
             .unwrap();
 
-        let actions = source.handle_incoming(
-            &response,
-            NtpInstant::now(),
-            NtpTimestamp::default(),
-            NtpTimestamp::default(),
-        );
+        let actions =
+            source.handle_incoming(&response, NtpTimestamp::default(), NtpTimestamp::default());
         for action in actions {
             assert!(!matches!(
                 action,
@@ -1670,12 +1633,8 @@ mod test {
             .serialize_without_encryption_vec(Some(poll_len))
             .unwrap();
 
-        let actions = source.handle_incoming(
-            &response,
-            NtpInstant::now(),
-            NtpTimestamp::default(),
-            NtpTimestamp::default(),
-        );
+        let actions =
+            source.handle_incoming(&response, NtpTimestamp::default(), NtpTimestamp::default());
         for action in actions {
             assert!(!matches!(
                 action,
@@ -1761,7 +1720,6 @@ mod test {
 
             let actions = client.handle_incoming(
                 &resp_bytes,
-                NtpInstant::now(),
                 NtpTimestamp::default(),
                 NtpTimestamp::default(),
             );

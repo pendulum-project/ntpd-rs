@@ -475,7 +475,6 @@ mod tests {
     use crate::SourceController;
     use crate::config::StepThreshold;
     use crate::source::Measurement;
-    use crate::time_types::NtpInstant;
 
     use super::*;
 
@@ -540,7 +539,6 @@ mod tests {
             algo_config,
         )
         .unwrap();
-        let mut cur_instant = NtpInstant::now();
 
         // ignore startup steer of frequency.
         *algo.clock.has_steered.borrow_mut() = false;
@@ -553,7 +551,6 @@ mod tests {
         let mut noise = 1e-9;
 
         while !*algo.clock.has_steered.borrow() {
-            cur_instant = cur_instant + std::time::Duration::from_secs(1);
             algo.clock.current_time += NtpDuration::from_seconds(1.0);
             noise += 1e-9;
 
@@ -561,7 +558,6 @@ mod tests {
                 delay: NtpDuration::from_seconds(0.001 + noise),
                 offset: NtpDuration::from_seconds(1700.0 + noise),
                 localtime: algo.clock.current_time,
-                monotime: cur_instant,
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -771,7 +767,6 @@ mod tests {
             algo_config,
         )
         .unwrap();
-        let mut cur_instant = NtpInstant::now();
 
         // ignore startup steer of frequency.
         *algo.clock.has_steered.borrow_mut() = false;
@@ -782,7 +777,6 @@ mod tests {
         let mut noise = 1e-9;
 
         loop {
-            cur_instant = cur_instant + std::time::Duration::from_secs(1);
             algo.clock.current_time += NtpDuration::from_seconds(1800.0);
             noise += 1e-9;
 
@@ -790,7 +784,6 @@ mod tests {
                 delay: NtpDuration::from_seconds(0.001 + noise),
                 offset: NtpDuration::from_seconds(1700.0 + noise),
                 localtime: algo.clock.current_time,
-                monotime: cur_instant,
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
@@ -829,7 +822,6 @@ mod tests {
             algo_config,
         )
         .unwrap();
-        let mut cur_instant = NtpInstant::now();
 
         // ignore startup steer of frequency.
         *algo.clock.has_steered.borrow_mut() = false;
@@ -840,7 +832,6 @@ mod tests {
         let mut noise = 1e-9;
 
         while !*algo.clock.has_steered.borrow() {
-            cur_instant = cur_instant + std::time::Duration::from_secs(1);
             algo.clock.current_time += NtpDuration::from_seconds(1.0);
             noise *= -1.0;
 
@@ -848,7 +839,6 @@ mod tests {
                 delay: NtpDuration::from_seconds(0.001 + noise),
                 offset: NtpDuration::from_seconds(-3600.0 + noise),
                 localtime: algo.clock.current_time,
-                monotime: cur_instant,
 
                 stratum: 0,
                 root_delay: NtpDuration::default(),
