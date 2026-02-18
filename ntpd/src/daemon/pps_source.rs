@@ -1,14 +1,14 @@
 use std::path::PathBuf;
 
 use ntp_proto::{
-    ClockId, Measurement, NtpClock, NtpDuration, NtpLeapIndicator, OneWaySource,
-    OneWaySourceSnapshot, OneWaySourceUpdate, ReferenceId, SourceController, SystemSourceUpdate,
+    ClockId, Measurement, NtpDuration, NtpLeapIndicator, OneWaySource, OneWaySourceSnapshot,
+    OneWaySourceUpdate, ReferenceId, SourceController, SystemSourceUpdate,
 };
 use pps_time::PpsDevice;
 use tokio::sync::mpsc;
 use tracing::{Instrument, Span, debug, error, instrument, warn};
 
-use crate::daemon::{exitcode, ntp_source::MsgForSystem};
+use crate::daemon::{ntp_source::MsgForSystem, util::convert_unix_timestamp};
 
 use super::ntp_source::SourceChannels;
 
@@ -28,22 +28,15 @@ impl PpsDeviceFetchTask {
     }
 }
 
-pub(crate) struct PpsSourceTask<
-    C: 'static + NtpClock + Send,
-    Controller: SourceController<MeasurementDelay = ()>,
-> {
+pub(crate) struct PpsSourceTask<Controller: SourceController> {
     index: ClockId,
-    clock: C,
     channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
     path: PathBuf,
     source: OneWaySource<Controller>,
     fetch_receiver: mpsc::Receiver<pps_time::pps::pps_fdata>,
 }
 
-impl<C, Controller: SourceController<MeasurementDelay = ()>> PpsSourceTask<C, Controller>
-where
-    C: 'static + NtpClock + Send + Sync,
-{
+impl<Controller: SourceController> PpsSourceTask<Controller> {
     async fn run(&mut self) {
         loop {
             enum SelectResult<Controller: SourceController> {
@@ -70,21 +63,14 @@ where
                     Some(data) => {
                         debug!("received {:?}", data);
 
-                        let time = match self.clock.now() {
-                            Ok(time) => time,
-                            Err(e) => {
-                                error!(error = ?e, "There was an error retrieving the current time");
-                                std::process::exit(exitcode::NOPERM);
-                            }
-                        };
-
-                        let offset = f64::from(-data.info.assert_tu.nsec) / 1_000_000_000.;
-                        debug!("offset: {}", offset);
-
                         let measurement = Measurement {
-                            delay: (),
-                            offset: NtpDuration::from_seconds(offset),
-                            localtime: time,
+                            sender_id: self.index,
+                            receiver_id: ClockId::SYSTEM,
+                            sender_ts: convert_unix_timestamp(data.info.assert_tu.sec as _, 0),
+                            receiver_ts: convert_unix_timestamp(
+                                data.info.assert_tu.sec as _,
+                                data.info.assert_tu.nsec as _,
+                            ),
 
                             stratum: 0,
                             root_delay: NtpDuration::ZERO,
@@ -139,11 +125,10 @@ where
         }
     }
 
-    #[instrument(level = tracing::Level::ERROR, name = "Pps Source", skip(clock, channels, source))]
+    #[instrument(level = tracing::Level::ERROR, name = "Pps Source", skip(channels, source))]
     pub fn spawn(
         index: ClockId,
         device_path: PathBuf,
-        clock: C,
         channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
         source: OneWaySource<Controller>,
     ) -> tokio::task::JoinHandle<()> {
@@ -165,7 +150,6 @@ where
             (async move {
                 let mut process = PpsSourceTask {
                     index,
-                    clock,
                     channels,
                     path: device_path,
                     source,
