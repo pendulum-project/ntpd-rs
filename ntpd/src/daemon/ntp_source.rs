@@ -49,7 +49,7 @@ pub struct SourceChannels<ControllerMessage, SourceMessage> {
     pub msg_for_system_sender: tokio::sync::mpsc::Sender<MsgForSystem<SourceMessage>>,
     pub system_update_receiver:
         tokio::sync::broadcast::Receiver<SystemSourceUpdate<ControllerMessage>>,
-    pub source_snapshots: Arc<std::sync::RwLock<HashMap<ClockId, ObservableSourceState<ClockId>>>>,
+    pub source_snapshots: Arc<std::sync::RwLock<HashMap<ClockId, ObservableSourceState>>>,
 }
 
 pub(crate) struct SourceTask<

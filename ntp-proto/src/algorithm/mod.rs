@@ -35,7 +35,7 @@ pub struct StateUpdate<ControllerMessage> {
 }
 
 // Note: this default implementation is necessary since the
-// derive only works if SourceId is Default (which it isn't
+// derive only works if ControllerMessage is Default (which it isn't
 // necessarily)
 impl<ControllerMessage> Default for StateUpdate<ControllerMessage> {
     fn default() -> Self {
