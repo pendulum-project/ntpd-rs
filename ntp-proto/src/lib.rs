@@ -262,7 +262,7 @@ mod exports {
     #[cfg(feature = "__internal-fuzz")]
     pub use super::time_types::fuzz_duration_from_seconds;
     pub use super::time_types::{
-        FrequencyTolerance, NtpDuration, NtpInstant, NtpTimestamp, PollInterval, PollIntervalLimits,
+        FrequencyTolerance, NtpDuration, NtpTimestamp, PollInterval, PollIntervalLimits,
     };
 
     #[cfg(feature = "__internal-fuzz")]
