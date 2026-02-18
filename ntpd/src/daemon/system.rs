@@ -535,7 +535,6 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C>, T: Wait>
                 PpsSourceTask::spawn(
                     source_id,
                     params.path.clone(),
-                    self.clock.clone(),
                     SourceChannels {
                         msg_for_system_sender: self.msg_for_system_tx.clone(),
                         system_update_receiver: self.system_update_sender.subscribe(),

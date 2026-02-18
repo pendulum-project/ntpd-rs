@@ -13,7 +13,7 @@ use crate::{
     identifiers::ReferenceId,
     packet::{Cipher, NtpAssociationMode, NtpPacket, RequestIdentifier},
     system::{SystemSnapshot, SystemSourceUpdate},
-    time_types::{NtpDuration, NtpTimestamp, PollInterval},
+    time_types::{NtpTimestamp, PollInterval},
 };
 use rand::{Rng, thread_rng};
 use serde::{Deserialize, Serialize};
@@ -59,7 +59,7 @@ impl std::fmt::Debug for SourceNtsData {
 }
 
 #[derive(Debug)]
-pub struct NtpSource<Controller: SourceController<MeasurementDelay = NtpDuration>> {
+pub struct NtpSource<Controller: SourceController> {
     nts: Option<Box<SourceNtsData>>,
 
     // Poll interval used when sending last poll message.
@@ -95,20 +95,22 @@ pub struct NtpSource<Controller: SourceController<MeasurementDelay = NtpDuration
 
     // TODO we only need this if we run as a server
     bloom_filter: RemoteBloomFilter,
+
+    id: ClockId,
 }
 
-pub struct OneWaySource<Controller: SourceController<MeasurementDelay = ()>> {
+pub struct OneWaySource<Controller: SourceController> {
     controller: Controller,
 }
 
-impl<Controller: SourceController<MeasurementDelay = ()>> OneWaySource<Controller> {
+impl<Controller: SourceController> OneWaySource<Controller> {
     pub(crate) fn new(controller: Controller) -> OneWaySource<Controller> {
         OneWaySource { controller }
     }
 
     pub fn handle_measurement(
         &mut self,
-        measurement: Measurement<()>,
+        measurement: Measurement,
     ) -> Option<Controller::SourceMessage> {
         self.controller.handle_measurement(measurement)
     }
@@ -266,9 +268,7 @@ impl NtpSourceSnapshot {
         Ok(())
     }
 
-    pub fn from_source<Controller: SourceController<MeasurementDelay = NtpDuration>>(
-        source: &NtpSource<Controller>,
-    ) -> Self {
+    pub fn from_source<Controller: SourceController>(source: &NtpSource<Controller>) -> Self {
         Self {
             source_addr: source.source_addr,
             source_id: source.source_id,
@@ -438,13 +438,14 @@ pub struct ObservableSourceState {
     pub id: ClockId,
 }
 
-impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Controller> {
+impl<Controller: SourceController> NtpSource<Controller> {
     pub(crate) fn new(
         source_addr: SocketAddr,
         source_config: SourceConfig,
         protocol_version: ProtocolVersion,
         controller: Controller,
         nts: Option<Box<SourceNtsData>>,
+        id: ClockId,
     ) -> (Self, NtpSourceActionIterator<Controller::SourceMessage>) {
         (
             Self {
@@ -472,6 +473,8 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
                 protocol_version, // TODO make this configurable
 
                 bloom_filter: RemoteBloomFilter::new(16).expect("16 is a valid chunk size"),
+
+                id,
             },
             actions!(NtpSourceAction::SetTimer(Duration::from_secs(0))),
         )
@@ -774,10 +777,13 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
             }
         }
 
-        // generate and handle measurement
-        let measurement = Measurement::from_packet(&message, send_time, recv_time);
+        let (measurement_outgoing, measurement_incoming) =
+            measurements_from_packet(&message, self.id, send_time, recv_time);
+        let controller_message_1 = self.controller.handle_measurement(measurement_outgoing);
+        let controller_message_2 = self.controller.handle_measurement(measurement_incoming);
 
-        let controller_message = self.controller.handle_measurement(measurement);
+        // FIXME: Get rid of messages from controller. For now this works as we "know" the second controller message is the only one that is filled.
+        let controller_message = controller_message_1.or(controller_message_2);
 
         // Process new cookies
         if let Some(nts) = self.nts.as_mut() {
@@ -822,8 +828,42 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
             protocol_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
 
             bloom_filter: RemoteBloomFilter::new(16).unwrap(),
+
+            id: ClockId(1),
         }
     }
+}
+
+fn measurements_from_packet(
+    message: &NtpPacket,
+    id: ClockId,
+    send_time: NtpTimestamp,
+    recv_time: NtpTimestamp,
+) -> (Measurement, Measurement) {
+    (
+        Measurement {
+            sender_id: ClockId::SYSTEM,
+            receiver_id: id,
+            sender_ts: send_time,
+            receiver_ts: message.receive_timestamp(),
+            stratum: message.stratum(),
+            root_delay: message.root_delay(),
+            root_dispersion: message.root_dispersion(),
+            leap: message.leap(),
+            precision: message.precision(),
+        },
+        Measurement {
+            sender_id: id,
+            receiver_id: ClockId::SYSTEM,
+            sender_ts: message.transmit_timestamp(),
+            receiver_ts: recv_time,
+            stratum: message.stratum(),
+            root_delay: message.root_delay(),
+            root_dispersion: message.root_dispersion(),
+            leap: message.leap(),
+            precision: message.precision(),
+        },
+    )
 }
 
 #[cfg(test)]
@@ -833,7 +873,7 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
 )]
 mod test {
     use crate::{
-        NtpClock, NtpLeapIndicator,
+        NtpClock, NtpDuration, NtpLeapIndicator,
         packet::{AesSivCmac256, NoCipher},
         time_types::PollIntervalLimits,
     };
@@ -890,16 +930,12 @@ mod test {
     impl SourceController for NoopController {
         type ControllerMessage = ();
         type SourceMessage = ();
-        type MeasurementDelay = NtpDuration;
 
         fn handle_message(&mut self, _: Self::ControllerMessage) {
             // do nothing
         }
 
-        fn handle_measurement(
-            &mut self,
-            _: Measurement<NtpDuration>,
-        ) -> Option<Self::SourceMessage> {
+        fn handle_measurement(&mut self, _: Measurement) -> Option<Self::SourceMessage> {
             // do nothing
             Some(())
         }
@@ -911,40 +947,6 @@ mod test {
         fn observe(&self) -> crate::ObservableSourceTimedata {
             panic!("Not implemented on noop controller");
         }
-    }
-
-    #[test]
-    fn test_measurement_from_packet() {
-        let mut packet = NtpPacket::test();
-        packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(1));
-        packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(2));
-        let result = Measurement::from_packet(
-            &packet,
-            NtpTimestamp::from_fixed_int(0),
-            NtpTimestamp::from_fixed_int(3),
-        );
-        assert_eq!(result.offset, NtpDuration::from_fixed_int(0));
-        assert_eq!(result.delay, NtpDuration::from_fixed_int(2));
-
-        packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(2));
-        packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(3));
-        let result = Measurement::from_packet(
-            &packet,
-            NtpTimestamp::from_fixed_int(0),
-            NtpTimestamp::from_fixed_int(3),
-        );
-        assert_eq!(result.offset, NtpDuration::from_fixed_int(1));
-        assert_eq!(result.delay, NtpDuration::from_fixed_int(2));
-
-        packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(0));
-        packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(5));
-        let result = Measurement::from_packet(
-            &packet,
-            NtpTimestamp::from_fixed_int(0),
-            NtpTimestamp::from_fixed_int(3),
-        );
-        assert_eq!(result.offset, NtpDuration::from_fixed_int(1));
-        assert_eq!(result.delay, NtpDuration::from_fixed_int(-2));
     }
 
     #[test]
@@ -1012,14 +1014,10 @@ mod test {
         impl SourceController for PollIntervalController {
             type ControllerMessage = ();
             type SourceMessage = ();
-            type MeasurementDelay = NtpDuration;
 
             fn handle_message(&mut self, _: Self::ControllerMessage) {}
 
-            fn handle_measurement(
-                &mut self,
-                _: Measurement<NtpDuration>,
-            ) -> Option<Self::SourceMessage> {
+            fn handle_measurement(&mut self, _: Measurement) -> Option<Self::SourceMessage> {
                 None
             }
 

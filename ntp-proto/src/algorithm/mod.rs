@@ -3,7 +3,7 @@ use std::{fmt::Debug, time::Duration};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::{
-    ClockId, NtpLeapIndicator, NtpPacket, PollInterval,
+    ClockId, NtpLeapIndicator, PollInterval,
     clock::NtpClock,
     config::{SourceConfig, SynchronizationConfig},
     system::TimeSnapshot,
@@ -139,55 +139,18 @@ pub struct InternalMeasurement<D: Debug + Copy + Clone> {
     pub precision: i8,
 }
 
-impl<D: Debug + Copy + Clone> From<Measurement<D>> for InternalMeasurement<D> {
-    fn from(value: Measurement<D>) -> Self {
-        Self {
-            delay: value.delay,
-            offset: value.offset,
-            localtime: value.localtime,
-            stratum: value.stratum,
-            root_delay: value.root_delay,
-            root_dispersion: value.root_dispersion,
-            leap: value.leap,
-            precision: value.precision,
-        }
-    }
-}
-
 #[derive(Debug, Copy, Clone)]
-pub struct Measurement<D: Debug + Copy + Clone> {
-    pub delay: D,
-    pub offset: NtpDuration,
-    pub localtime: NtpTimestamp,
+pub struct Measurement {
+    pub sender_id: ClockId,
+    pub receiver_id: ClockId,
+    pub sender_ts: NtpTimestamp,
+    pub receiver_ts: NtpTimestamp,
 
     pub stratum: u8,
     pub root_delay: NtpDuration,
     pub root_dispersion: NtpDuration,
     pub leap: NtpLeapIndicator,
     pub precision: i8,
-}
-
-impl Measurement<NtpDuration> {
-    pub(crate) fn from_packet(
-        packet: &NtpPacket,
-        send_timestamp: NtpTimestamp,
-        recv_timestamp: NtpTimestamp,
-    ) -> Self {
-        Self {
-            delay: (recv_timestamp - send_timestamp)
-                - (packet.transmit_timestamp() - packet.receive_timestamp()),
-            offset: ((packet.receive_timestamp() - send_timestamp)
-                + (packet.transmit_timestamp() - recv_timestamp))
-                / 2,
-            localtime: send_timestamp + (recv_timestamp - send_timestamp) / 2,
-
-            stratum: packet.stratum(),
-            root_delay: packet.root_delay(),
-            root_dispersion: packet.root_dispersion(),
-            leap: packet.leap(),
-            precision: packet.precision(),
-        }
-    }
 }
 
 pub trait TimeSyncController: Sized + Send + 'static {
@@ -198,12 +161,10 @@ pub trait TimeSyncController: Sized + Send + 'static {
     type NtpSourceController: SourceController<
             ControllerMessage = Self::ControllerMessage,
             SourceMessage = Self::SourceMessage,
-            MeasurementDelay = NtpDuration,
         >;
     type OneWaySourceController: SourceController<
             ControllerMessage = Self::ControllerMessage,
             SourceMessage = Self::SourceMessage,
-            MeasurementDelay = (),
         >;
 
     /// Create a new clock controller controlling the given clock
@@ -249,7 +210,7 @@ impl<T: InternalTimeSyncController> TimeSyncController for T {
     type AlgorithmConfig = T::AlgorithmConfig;
     type ControllerMessage = T::ControllerMessage;
     type SourceMessage = T::SourceMessage;
-    type NtpSourceController = T::NtpSourceController;
+    type NtpSourceController = TwoWaySourceControllerWrapper<T::NtpSourceController>;
     type OneWaySourceController = T::OneWaySourceController;
 
     fn new(
@@ -269,7 +230,10 @@ impl<T: InternalTimeSyncController> TimeSyncController for T {
         id: ClockId,
         source_config: SourceConfig,
     ) -> Self::NtpSourceController {
-        T::add_source(self, id, source_config)
+        TwoWaySourceControllerWrapper {
+            inner: T::add_source(self, id, source_config),
+            last_outgoing_measurement: None,
+        }
     }
 
     fn add_one_way_source(
@@ -306,34 +270,38 @@ impl<T: InternalTimeSyncController> TimeSyncController for T {
 pub trait SourceController: Sized + Send + 'static {
     type ControllerMessage: Debug + Clone + Send + 'static;
     type SourceMessage: Debug + Clone + Send + 'static;
-    type MeasurementDelay: Debug + Copy + Clone;
 
     fn handle_message(&mut self, message: Self::ControllerMessage);
 
-    fn handle_measurement(
-        &mut self,
-        measurement: Measurement<Self::MeasurementDelay>,
-    ) -> Option<Self::SourceMessage>;
+    fn handle_measurement(&mut self, measurement: Measurement) -> Option<Self::SourceMessage>;
 
     fn desired_poll_interval(&self) -> PollInterval;
 
     fn observe(&self) -> ObservableSourceTimedata;
 }
 
-impl<T: InternalSourceController> SourceController for T {
+impl<T: InternalSourceController<MeasurementDelay = ()>> SourceController for T {
     type ControllerMessage = T::ControllerMessage;
     type SourceMessage = T::SourceMessage;
-    type MeasurementDelay = T::MeasurementDelay;
 
     fn handle_message(&mut self, message: Self::ControllerMessage) {
         T::handle_message(self, message);
     }
 
-    fn handle_measurement(
-        &mut self,
-        measurement: Measurement<Self::MeasurementDelay>,
-    ) -> Option<Self::SourceMessage> {
-        T::handle_measurement(self, measurement.into())
+    fn handle_measurement(&mut self, measurement: Measurement) -> Option<Self::SourceMessage> {
+        T::handle_measurement(
+            self,
+            InternalMeasurement {
+                delay: (),
+                offset: measurement.sender_ts - measurement.receiver_ts,
+                localtime: measurement.receiver_ts,
+                stratum: measurement.stratum,
+                root_delay: measurement.root_delay,
+                root_dispersion: measurement.root_dispersion,
+                leap: measurement.leap,
+                precision: measurement.precision,
+            },
+        )
     }
 
     fn desired_poll_interval(&self) -> PollInterval {
@@ -342,5 +310,179 @@ impl<T: InternalSourceController> SourceController for T {
 
     fn observe(&self) -> ObservableSourceTimedata {
         T::observe(self)
+    }
+}
+
+pub struct TwoWaySourceControllerWrapper<
+    T: InternalSourceController<MeasurementDelay = NtpDuration>,
+> {
+    inner: T,
+    last_outgoing_measurement: Option<Measurement>,
+}
+
+impl<T: InternalSourceController<MeasurementDelay = NtpDuration>> SourceController
+    for TwoWaySourceControllerWrapper<T>
+{
+    type ControllerMessage = T::ControllerMessage;
+    type SourceMessage = T::SourceMessage;
+
+    fn handle_message(&mut self, message: Self::ControllerMessage) {
+        self.inner.handle_message(message);
+    }
+
+    fn handle_measurement(&mut self, measurement: Measurement) -> Option<Self::SourceMessage> {
+        if measurement.sender_id == ClockId::SYSTEM {
+            // This is an outgoing measurement, store it for later
+            self.last_outgoing_measurement = Some(measurement);
+            None
+        } else {
+            // This is an incoming measurement, we need to have an outgoing one to compute the delay
+            let last_outgoing = self.last_outgoing_measurement.take()?;
+            self.inner.handle_measurement(InternalMeasurement {
+                delay: (measurement.receiver_ts - last_outgoing.sender_ts)
+                    - (measurement.sender_ts - last_outgoing.receiver_ts),
+                offset: ((last_outgoing.receiver_ts - last_outgoing.sender_ts)
+                    + (measurement.sender_ts - measurement.receiver_ts))
+                    / 2,
+                localtime: measurement.receiver_ts,
+                stratum: measurement.stratum,
+                root_delay: measurement.root_delay,
+                root_dispersion: measurement.root_dispersion,
+                leap: measurement.leap,
+                precision: measurement.precision,
+            })
+        }
+    }
+
+    fn desired_poll_interval(&self) -> PollInterval {
+        self.inner.desired_poll_interval()
+    }
+
+    fn observe(&self) -> ObservableSourceTimedata {
+        self.inner.observe()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestInternalSourceController {
+        last_measurement: Option<InternalMeasurement<NtpDuration>>,
+    }
+
+    impl InternalSourceController for TestInternalSourceController {
+        type ControllerMessage = ();
+        type SourceMessage = ();
+        type MeasurementDelay = NtpDuration;
+
+        fn handle_message(&mut self, _message: Self::ControllerMessage) {
+            unimplemented!()
+        }
+
+        fn handle_measurement(
+            &mut self,
+            measurement: InternalMeasurement<Self::MeasurementDelay>,
+        ) -> Option<Self::SourceMessage> {
+            self.last_measurement = Some(measurement);
+            None
+        }
+
+        fn desired_poll_interval(&self) -> PollInterval {
+            unimplemented!()
+        }
+
+        fn observe(&self) -> ObservableSourceTimedata {
+            unimplemented!()
+        }
+    }
+
+    #[test]
+    fn test_measurements_from_packet() {
+        let mut measurement_outgoing = Measurement {
+            sender_id: ClockId::SYSTEM,
+            receiver_id: ClockId(1),
+            sender_ts: NtpTimestamp::from_fixed_int(0),
+            receiver_ts: NtpTimestamp::from_fixed_int(1),
+            stratum: 0,
+            root_delay: NtpDuration::from_fixed_int(0),
+            root_dispersion: NtpDuration::from_fixed_int(0),
+            leap: NtpLeapIndicator::NoWarning,
+            precision: 0,
+        };
+        let mut measurement_incoming = Measurement {
+            sender_id: ClockId(1),
+            receiver_id: ClockId::SYSTEM,
+            sender_ts: NtpTimestamp::from_fixed_int(2),
+            receiver_ts: NtpTimestamp::from_fixed_int(3),
+            stratum: 0,
+            root_delay: NtpDuration::from_fixed_int(0),
+            root_dispersion: NtpDuration::from_fixed_int(0),
+            leap: NtpLeapIndicator::NoWarning,
+            precision: 0,
+        };
+
+        let mut controller = TwoWaySourceControllerWrapper {
+            inner: TestInternalSourceController {
+                last_measurement: None,
+            },
+            last_outgoing_measurement: None,
+        };
+        measurement_outgoing.sender_ts = NtpTimestamp::from_fixed_int(0);
+        measurement_outgoing.receiver_ts = NtpTimestamp::from_fixed_int(1);
+        measurement_incoming.sender_ts = NtpTimestamp::from_fixed_int(2);
+        measurement_incoming.receiver_ts = NtpTimestamp::from_fixed_int(3);
+        controller.handle_measurement(measurement_outgoing);
+        controller.handle_measurement(measurement_incoming);
+        assert_eq!(
+            controller.inner.last_measurement.unwrap().offset,
+            NtpDuration::from_fixed_int(0)
+        );
+        assert_eq!(
+            controller.inner.last_measurement.unwrap().delay,
+            NtpDuration::from_fixed_int(2)
+        );
+
+        let mut controller = TwoWaySourceControllerWrapper {
+            inner: TestInternalSourceController {
+                last_measurement: None,
+            },
+            last_outgoing_measurement: None,
+        };
+        measurement_outgoing.sender_ts = NtpTimestamp::from_fixed_int(0);
+        measurement_outgoing.receiver_ts = NtpTimestamp::from_fixed_int(2);
+        measurement_incoming.sender_ts = NtpTimestamp::from_fixed_int(3);
+        measurement_incoming.receiver_ts = NtpTimestamp::from_fixed_int(3);
+        controller.handle_measurement(measurement_outgoing);
+        controller.handle_measurement(measurement_incoming);
+        assert_eq!(
+            controller.inner.last_measurement.unwrap().offset,
+            NtpDuration::from_fixed_int(1)
+        );
+        assert_eq!(
+            controller.inner.last_measurement.unwrap().delay,
+            NtpDuration::from_fixed_int(2)
+        );
+
+        let mut controller = TwoWaySourceControllerWrapper {
+            inner: TestInternalSourceController {
+                last_measurement: None,
+            },
+            last_outgoing_measurement: None,
+        };
+        measurement_outgoing.sender_ts = NtpTimestamp::from_fixed_int(0);
+        measurement_outgoing.receiver_ts = NtpTimestamp::from_fixed_int(0);
+        measurement_incoming.sender_ts = NtpTimestamp::from_fixed_int(5);
+        measurement_incoming.receiver_ts = NtpTimestamp::from_fixed_int(3);
+        controller.handle_measurement(measurement_outgoing);
+        controller.handle_measurement(measurement_incoming);
+        assert_eq!(
+            controller.inner.last_measurement.unwrap().offset,
+            NtpDuration::from_fixed_int(1)
+        );
+        assert_eq!(
+            controller.inner.last_measurement.unwrap().delay,
+            NtpDuration::from_fixed_int(-2)
+        );
     }
 }
