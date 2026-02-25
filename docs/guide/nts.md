@@ -49,6 +49,16 @@ certificate-authority = "/path/to/certificate/authority.pem"
     certificate authority and use that CA to sign the certificate for the
     server, or choose an alternative NTS server.
 
+### Using only 1 or 2 NTS sources
+
+With hand-selected NTS sources, there is likely more trust in the time received from them, and lower risk of interference with the communication with those sources. Therefore, the protection in depth offered by requiring a minimum number of time sources to agree before modifying the clock is not as necessary, and can inhibit running with only one or two sources.
+
+To disable this protection, include the following snippet in your `ntp.toml`
+```toml
+[synchronization]
+minimum-agreeing-sources = 1
+```
+
 ## NTS protocol
 When using NTS, both the client and server sign and partially encrypt the NTP
 messages they exchange using symmetric key cryptography. For this, the client

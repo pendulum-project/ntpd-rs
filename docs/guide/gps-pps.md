@@ -56,3 +56,11 @@ path = "/dev/pps0"
 precision = 1e-7
 period = 0.1
 ```
+
+## Running with GPS/PPS sources only
+
+When running without any other sources but a GPS and/or PPS device, your setup likely has less than 3 sources. This means you will also need to update the minimum number of sources that need to agree on the time before it is accepted. With only GPS/PPS as a source, the defense in depth of more than one agreeing source is less necessary as those are harder to attack, and this can be disabled by adding the following snippet to your `ntp.toml`
+```toml
+[synchronization]
+minimum-agreeing-sources = 1
+```
