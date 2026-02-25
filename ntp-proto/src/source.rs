@@ -12,7 +12,7 @@ use crate::{
     cookiestash::CookieStash,
     identifiers::ReferenceId,
     packet::{Cipher, NtpAssociationMode, NtpPacket, RequestIdentifier},
-    system::{SystemSnapshot, SystemSourceUpdate},
+    system::SystemSnapshot,
     time_types::{NtpTimestamp, PollInterval},
 };
 use rand::{Rng, thread_rng};
@@ -108,15 +108,8 @@ impl<Controller: SourceController> OneWaySource<Controller> {
         OneWaySource { controller }
     }
 
-    pub fn handle_measurement(
-        &mut self,
-        measurement: Measurement,
-    ) -> Option<Controller::SourceMessage> {
-        self.controller.handle_measurement(measurement)
-    }
-
-    pub fn handle_message(&mut self, message: Controller::ControllerMessage) {
-        self.controller.handle_message(message);
+    pub fn handle_measurement(&mut self, measurement: Measurement) {
+        self.controller.handle_measurement(measurement);
     }
 
     pub fn observe(&self, name: String, address: String, id: ClockId) -> ObservableSourceState {
@@ -184,9 +177,8 @@ impl Reach {
 }
 
 #[derive(Debug, Clone)]
-pub struct OneWaySourceUpdate<SourceMessage> {
+pub struct OneWaySourceUpdate {
     pub snapshot: OneWaySourceSnapshot,
-    pub message: Option<SourceMessage>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -341,46 +333,25 @@ impl ProtocolVersion {
     }
 }
 
-pub struct NtpSourceUpdate<SourceMessage> {
+#[derive(Clone, Debug)]
+pub struct NtpSourceUpdate {
     pub(crate) snapshot: NtpSourceSnapshot,
-    pub(crate) message: Option<SourceMessage>,
-}
-
-impl<SourceMessage: Debug> std::fmt::Debug for NtpSourceUpdate<SourceMessage> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("NtpSourceUpdate")
-            .field("snapshot", &self.snapshot)
-            .field("message", &self.message)
-            .finish()
-    }
-}
-
-impl<SourceMessage: Clone> Clone for NtpSourceUpdate<SourceMessage> {
-    fn clone(&self) -> Self {
-        Self {
-            snapshot: self.snapshot,
-            message: self.message.clone(),
-        }
-    }
 }
 
 #[cfg(feature = "__internal-test")]
-impl<SourceMessage> NtpSourceUpdate<SourceMessage> {
+impl NtpSourceUpdate {
     pub fn snapshot(snapshot: NtpSourceSnapshot) -> Self {
-        NtpSourceUpdate {
-            snapshot,
-            message: None,
-        }
+        NtpSourceUpdate { snapshot }
     }
 }
 
 #[derive(Debug, Clone)]
 #[expect(clippy::large_enum_variant)]
-pub enum NtpSourceAction<SourceMessage> {
+pub enum NtpSourceAction {
     /// Send a message over the network. When this is issued, the network port maybe changed.
     Send(Vec<u8>),
     /// Send an update to [`System`](crate::system::System)
-    UpdateSystem(NtpSourceUpdate<SourceMessage>),
+    UpdateSystem(NtpSourceUpdate),
     /// Call [`NtpSource::handle_timer`] after given duration
     SetTimer(Duration),
     /// A complete reset of the connection is necessary, including a potential new NTSKE client session and/or DNS lookup.
@@ -389,29 +360,21 @@ pub enum NtpSourceAction<SourceMessage> {
     Demobilize,
 }
 
-#[derive(Debug)]
-pub struct NtpSourceActionIterator<SourceMessage> {
-    iter: <Vec<NtpSourceAction<SourceMessage>> as IntoIterator>::IntoIter,
+#[derive(Debug, Default)]
+pub struct NtpSourceActionIterator {
+    iter: <Vec<NtpSourceAction> as IntoIterator>::IntoIter,
 }
 
-impl<SourceMessage> Default for NtpSourceActionIterator<SourceMessage> {
-    fn default() -> Self {
-        Self {
-            iter: vec![].into_iter(),
-        }
-    }
-}
-
-impl<SourceMessage> Iterator for NtpSourceActionIterator<SourceMessage> {
-    type Item = NtpSourceAction<SourceMessage>;
+impl Iterator for NtpSourceActionIterator {
+    type Item = NtpSourceAction;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next()
     }
 }
 
-impl<SourceMessage> NtpSourceActionIterator<SourceMessage> {
-    fn from(data: Vec<NtpSourceAction<SourceMessage>>) -> Self {
+impl NtpSourceActionIterator {
+    fn from(data: Vec<NtpSourceAction>) -> Self {
         Self {
             iter: data.into_iter(),
         }
@@ -446,7 +409,7 @@ impl<Controller: SourceController> NtpSource<Controller> {
         controller: Controller,
         nts: Option<Box<SourceNtsData>>,
         id: ClockId,
-    ) -> (Self, NtpSourceActionIterator<Controller::SourceMessage>) {
+    ) -> (Self, NtpSourceActionIterator) {
         (
             Self {
                 nts,
@@ -498,7 +461,7 @@ impl<Controller: SourceController> NtpSource<Controller> {
             .max(self.remote_min_poll_interval)
     }
 
-    pub fn handle_timer(&mut self) -> NtpSourceActionIterator<Controller::SourceMessage> {
+    pub fn handle_timer(&mut self) -> NtpSourceActionIterator {
         if !self.reach.is_reachable() && self.tries >= STARTUP_TRIES_THRESHOLD {
             return if self.have_deny_rstr_response {
                 // There were kiss of death responses, so we should probably demobilize instead
@@ -587,10 +550,7 @@ impl<Controller: SourceController> NtpSource<Controller> {
 
         actions!(
             NtpSourceAction::Send(result.into()),
-            NtpSourceAction::UpdateSystem(NtpSourceUpdate {
-                snapshot,
-                message: None
-            }),
+            NtpSourceAction::UpdateSystem(NtpSourceUpdate { snapshot }),
             // randomize the poll interval a little to make it harder to predict poll requests
             NtpSourceAction::SetTimer(
                 poll_interval
@@ -600,20 +560,12 @@ impl<Controller: SourceController> NtpSource<Controller> {
         )
     }
 
-    pub fn handle_system_update(
-        &mut self,
-        update: SystemSourceUpdate<Controller::ControllerMessage>,
-    ) -> NtpSourceActionIterator<Controller::SourceMessage> {
-        self.controller.handle_message(update.message);
-        actions!()
-    }
-
     pub fn handle_incoming(
         &mut self,
         message: &[u8],
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
-    ) -> NtpSourceActionIterator<Controller::SourceMessage> {
+    ) -> NtpSourceActionIterator {
         let message =
             match NtpPacket::deserialize(message, &self.nts.as_ref().map(|nts| nts.s2c.as_ref())) {
                 Ok((packet, _)) => packet,
@@ -721,7 +673,7 @@ impl<Controller: SourceController> NtpSource<Controller> {
         message: NtpPacket,
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
-    ) -> NtpSourceActionIterator<Controller::SourceMessage> {
+    ) -> NtpSourceActionIterator {
         trace!("Packet accepted for processing");
         // For reachability, mark that we have had a response
         self.reach.received_packet();
@@ -779,11 +731,8 @@ impl<Controller: SourceController> NtpSource<Controller> {
 
         let (measurement_outgoing, measurement_incoming) =
             measurements_from_packet(&message, self.id, send_time, recv_time);
-        let controller_message_1 = self.controller.handle_measurement(measurement_outgoing);
-        let controller_message_2 = self.controller.handle_measurement(measurement_incoming);
-
-        // FIXME: Get rid of messages from controller. For now this works as we "know" the second controller message is the only one that is filled.
-        let controller_message = controller_message_1.or(controller_message_2);
+        self.controller.handle_measurement(measurement_outgoing);
+        self.controller.handle_measurement(measurement_incoming);
 
         // Process new cookies
         if let Some(nts) = self.nts.as_mut() {
@@ -794,7 +743,6 @@ impl<Controller: SourceController> NtpSource<Controller> {
 
         actions!(NtpSourceAction::UpdateSystem(NtpSourceUpdate {
             snapshot: NtpSourceSnapshot::from_source(self),
-            message: controller_message,
         }))
     }
 
@@ -928,16 +876,8 @@ mod test {
 
     struct NoopController;
     impl SourceController for NoopController {
-        type ControllerMessage = ();
-        type SourceMessage = ();
-
-        fn handle_message(&mut self, _: Self::ControllerMessage) {
+        fn handle_measurement(&mut self, _: Measurement) {
             // do nothing
-        }
-
-        fn handle_measurement(&mut self, _: Measurement) -> Option<Self::SourceMessage> {
-            // do nothing
-            Some(())
         }
 
         fn desired_poll_interval(&self) -> PollInterval {
@@ -1012,13 +952,8 @@ mod test {
     fn test_poll_interval() {
         struct PollIntervalController(PollInterval);
         impl SourceController for PollIntervalController {
-            type ControllerMessage = ();
-            type SourceMessage = ();
-
-            fn handle_message(&mut self, _: Self::ControllerMessage) {}
-
-            fn handle_measurement(&mut self, _: Measurement) -> Option<Self::SourceMessage> {
-                None
+            fn handle_measurement(&mut self, _: Measurement) {
+                // no action
             }
 
             fn desired_poll_interval(&self) -> PollInterval {

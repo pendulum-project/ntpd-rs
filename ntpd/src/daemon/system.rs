@@ -9,7 +9,7 @@ use super::spawn::nts_pool::NtsPoolSpawner;
 use super::{
     clock::NtpClockWrapper,
     config::{ClockConfig, NtpSourceConfig, ServerConfig, TimestampMode},
-    ntp_source::{MsgForSystem, SourceChannels, SourceTask, Wait},
+    ntp_source::{MsgForSystem, SourceChannels, SourceTask},
     server::{ServerStats, ServerTask},
     spawn::{
         SourceRemovalReason, SpawnAction, SpawnEvent, Spawner, SpawnerId, SystemEvent,
@@ -22,16 +22,13 @@ use super::spawn::pps::PpsSpawner;
 
 use std::{
     collections::HashMap,
-    future::Future,
-    marker::PhantomData,
     net::IpAddr,
-    pin::Pin,
     sync::{Arc, RwLock},
 };
 
 use ntp_proto::{
     ClockId, KeySet, NtpClock, ObservableSourceState, SourceConfig, SynchronizationConfig, System,
-    SystemActionIterator, SystemSnapshot, SystemSourceUpdate, TimeSyncController,
+    SystemSnapshot, TimeSyncController,
 };
 use timestamped_socket::interface::InterfaceName;
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -40,49 +37,6 @@ use tracing::{debug, info};
 pub const NETWORK_WAIT_PERIOD: std::time::Duration = std::time::Duration::from_secs(1);
 
 pub const MESSAGE_BUFFER_SIZE: usize = 32;
-
-struct SingleshotSleep<T> {
-    enabled: bool,
-    sleep: Pin<Box<T>>,
-}
-
-impl<T: Wait> SingleshotSleep<T> {
-    fn new_disabled(t: T) -> Self {
-        SingleshotSleep {
-            enabled: false,
-            sleep: Box::pin(t),
-        }
-    }
-}
-
-impl<T: Wait> Future for SingleshotSleep<T> {
-    type Output = ();
-
-    fn poll(
-        self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Self::Output> {
-        let this = self.get_mut();
-        if !this.enabled {
-            return std::task::Poll::Pending;
-        }
-        match this.sleep.as_mut().poll(cx) {
-            std::task::Poll::Ready(v) => {
-                this.enabled = false;
-                std::task::Poll::Ready(v)
-            }
-            u => u,
-        }
-    }
-}
-
-impl<T: Wait> Wait for SingleshotSleep<T> {
-    fn reset(self: Pin<&mut Self>, deadline: tokio::time::Instant) {
-        let this = self.get_mut();
-        this.enabled = true;
-        this.sleep.as_mut().reset(deadline);
-    }
-}
 
 pub struct DaemonChannels {
     pub source_snapshots: Arc<std::sync::RwLock<HashMap<ClockId, ObservableSourceState>>>,
@@ -102,7 +56,7 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper>>(
 ) -> std::io::Result<(JoinHandle<std::io::Result<()>>, DaemonChannels)> {
     let ip_list = super::local_ip_provider::spawn()?;
 
-    let (mut system, channels) = SystemTask::<_, Controller, _>::new(
+    let (mut system, channels) = SystemTask::<_, Controller>::new(
         clock_config.clock,
         clock_config.interface,
         clock_config.timestamp_mode,
@@ -163,12 +117,7 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper>>(
         system.add_server(server_config.to_owned()).await;
     }
 
-    let handle = tokio::spawn(async move {
-        let sleep =
-            SingleshotSleep::new_disabled(tokio::time::sleep_until(tokio::time::Instant::now()));
-        tokio::pin!(sleep);
-        system.run(sleep).await
-    });
+    let handle = tokio::spawn(async move { system.run().await });
 
     Ok((handle, channels))
 }
@@ -178,20 +127,17 @@ struct SystemSpawnerData {
     notify_tx: mpsc::Sender<SystemEvent>,
 }
 
-struct SystemTask<C: NtpClock, Controller: TimeSyncController<Clock = C>, T: Wait> {
-    _wait: PhantomData<SingleshotSleep<T>>,
-    system: System<Controller>,
+struct SystemTask<C: NtpClock, Controller: TimeSyncController<Clock = C>> {
+    system: Arc<System<Controller>>,
 
     system_snapshot_sender: tokio::sync::watch::Sender<SystemSnapshot>,
-    system_update_sender:
-        tokio::sync::broadcast::Sender<SystemSourceUpdate<Controller::ControllerMessage>>,
     source_snapshots: Arc<std::sync::RwLock<HashMap<ClockId, ObservableSourceState>>>,
     server_data_sender: tokio::sync::watch::Sender<Vec<ServerData>>,
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
     ip_list: tokio::sync::watch::Receiver<Arc<[IpAddr]>>,
 
-    msg_for_system_rx: mpsc::Receiver<MsgForSystem<Controller::SourceMessage>>,
-    msg_for_system_tx: mpsc::Sender<MsgForSystem<Controller::SourceMessage>>,
+    msg_for_system_rx: mpsc::Receiver<MsgForSystem>,
+    msg_for_system_tx: mpsc::Sender<MsgForSystem>,
     spawn_tx: mpsc::Sender<SpawnEvent>,
     spawn_rx: mpsc::Receiver<SpawnEvent>,
 
@@ -209,9 +155,7 @@ struct SystemTask<C: NtpClock, Controller: TimeSyncController<Clock = C>, T: Wai
     interface: Option<InterfaceName>,
 }
 
-impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C>, T: Wait>
-    SystemTask<C, Controller, T>
-{
+impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C>> SystemTask<C, Controller> {
     #[expect(clippy::too_many_arguments)]
     fn new(
         clock: C,
@@ -223,7 +167,7 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C>, T: Wait>
         ip_list: tokio::sync::watch::Receiver<Arc<[IpAddr]>>,
         have_sources: bool,
     ) -> (Self, DaemonChannels) {
-        let Ok(mut system) = System::new(
+        let Ok(system) = System::new(
             clock.clone(),
             synchronization_config,
             algorithm_config,
@@ -245,17 +189,14 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C>, T: Wait>
         let (server_data_sender, server_data_receiver) = tokio::sync::watch::channel(vec![]);
         let (msg_for_system_sender, msg_for_system_receiver) =
             tokio::sync::mpsc::channel(MESSAGE_BUFFER_SIZE);
-        let (system_update_sender, _) = tokio::sync::broadcast::channel(MESSAGE_BUFFER_SIZE);
         let (spawn_tx, spawn_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
         // Build System and its channels
         (
             SystemTask {
-                _wait: PhantomData,
-                system,
+                system: Arc::new(system),
 
                 system_snapshot_sender,
-                system_update_sender,
                 source_snapshots: source_snapshots.clone(),
                 server_data_sender,
                 keyset: keyset.clone(),
@@ -293,78 +234,61 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C>, T: Wait>
         id
     }
 
-    async fn run(&mut self, mut wait: Pin<&mut SingleshotSleep<T>>) -> std::io::Result<()> {
-        loop {
-            tokio::select! {
-                opt_msg_for_system = self.msg_for_system_rx.recv() => {
-                    match opt_msg_for_system {
-                        None => {
-                            // the channel closed and has no more messages in it
-                            break
-                        }
-                        Some(msg_for_system) => {
-                            self.handle_source_update(msg_for_system, &mut wait)
-                                .await?;
-                        }
-                    }
-                }
-                opt_spawn_event = self.spawn_rx.recv() => {
-                    match opt_spawn_event {
-                        None => {
-                            let msg = "the spawn channel closed unexpectedly. ntpd-rs is likely in an invalid state!";
-                            tracing::warn!(msg);
-                        }
-                        Some(spawn_event) => {
-                            if let Err(e) = self.handle_spawn_event(spawn_event).await {
-                                tracing::error!("Could not spawn source: {}", e);
+    async fn run(&mut self) -> std::io::Result<()> {
+        let proto_system = self.system.clone();
+        let proto_system_run = proto_system.run();
+
+        let sender = self.system_snapshot_sender.clone();
+        let proto_system = self.system.clone();
+        let timer_loop = async move {
+            loop {
+                sender.send(proto_system.system_snapshot()).ok();
+                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+            }
+        };
+
+        let event_loop = async move {
+            loop {
+                tokio::select! {
+                    opt_msg_for_system = self.msg_for_system_rx.recv() => {
+                        match opt_msg_for_system {
+                            None => {
+                                // the channel closed and has no more messages in it
+                                break
+                            }
+                            Some(msg_for_system) => {
+                                self.handle_source_update(msg_for_system)
+                                    .await?;
                             }
                         }
                     }
-                }
-                _ = self.ip_list.changed(), if self.ip_list.has_changed().is_ok() => {
-                    self.system.update_ip_list(self.ip_list.borrow_and_update().clone());
-                }
-                () = &mut wait => {
-                    let timer = self.system.handle_timer();
-                    self.handle_state_update(timer, &mut wait);
-                }
-            }
-        }
-
-        // the channel closed and has no more messages in it
-        Ok(())
-    }
-
-    fn handle_state_update(
-        &mut self,
-        actions: SystemActionIterator<Controller::ControllerMessage>,
-        wait: &mut Pin<&mut SingleshotSleep<T>>,
-    ) {
-        // Don't care if there is no receiver.
-        let _ = self
-            .system_snapshot_sender
-            .send(self.system.system_snapshot());
-
-        for action in actions {
-            match action {
-                ntp_proto::SystemAction::UpdateSources(update) => {
-                    let _ = self.system_update_sender.send(update);
-                }
-                ntp_proto::SystemAction::SetTimer(duration) => {
-                    if let Some(deadline) = tokio::time::Instant::now().checked_add(duration) {
-                        // If it overflows, it is so far in the future we may as well not set the timer.
-                        wait.as_mut().reset(deadline);
+                    opt_spawn_event = self.spawn_rx.recv() => {
+                        match opt_spawn_event {
+                            None => {
+                                let msg = "the spawn channel closed unexpectedly. ntpd-rs is likely in an invalid state!";
+                                tracing::warn!(msg);
+                            }
+                            Some(spawn_event) => {
+                                if let Err(e) = self.handle_spawn_event(spawn_event).await {
+                                    tracing::error!("Could not spawn source: {}", e);
+                                }
+                            }
+                        }
+                    }
+                    _ = self.ip_list.changed(), if self.ip_list.has_changed().is_ok() => {
+                        self.system.update_ip_list(self.ip_list.borrow_and_update().clone());
                     }
                 }
             }
-        }
+
+            // the channel closed and has no more messages in it
+            Ok(())
+        };
+
+        tokio::join!(event_loop, timer_loop, proto_system_run).0
     }
 
-    async fn handle_source_update(
-        &mut self,
-        msg: MsgForSystem<Controller::SourceMessage>,
-        wait: &mut Pin<&mut SingleshotSleep<T>>,
-    ) -> std::io::Result<()> {
+    async fn handle_source_update(&mut self, msg: MsgForSystem) -> std::io::Result<()> {
         tracing::debug!(?msg, "updating source");
 
         match msg {
@@ -374,16 +298,14 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C>, T: Wait>
                 }
             }
             MsgForSystem::SourceUpdate(index, update) => {
-                match self.system.handle_source_update(index, update) {
-                    Err(e) => unreachable!("Could not process source measurement: {}", e),
-                    Ok(timer) => self.handle_state_update(timer, wait),
-                }
+                self.system
+                    .handle_source_update(index, update)
+                    .expect("Could not process source measurement");
             }
             MsgForSystem::OneWaySourceUpdate(index, update) => {
-                match self.system.handle_one_way_source_update(index, update) {
-                    Err(e) => unreachable!("Could not process source measurement: {}", e),
-                    Ok(timer) => self.handle_state_update(timer, wait),
-                }
+                self.system
+                    .handle_one_way_source_update(index, update)
+                    .expect("Could not process source measurement");
             }
             MsgForSystem::NetworkIssue(index) => {
                 self.handle_source_network_issue(index).await?;
@@ -499,7 +421,6 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C>, T: Wait>
                     self.timestamp_mode,
                     SourceChannels {
                         msg_for_system_sender: self.msg_for_system_tx.clone(),
-                        system_update_receiver: self.system_update_sender.subscribe(),
                         source_snapshots: self.source_snapshots.clone(),
                     },
                     source,
@@ -518,7 +439,6 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C>, T: Wait>
                     self.clock.clone(),
                     SourceChannels {
                         msg_for_system_sender: self.msg_for_system_tx.clone(),
-                        system_update_receiver: self.system_update_sender.subscribe(),
                         source_snapshots: self.source_snapshots.clone(),
                     },
                     source,
@@ -537,7 +457,6 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C>, T: Wait>
                     params.path.clone(),
                     SourceChannels {
                         msg_for_system_sender: self.msg_for_system_tx.clone(),
-                        system_update_receiver: self.system_update_sender.subscribe(),
                         source_snapshots: self.source_snapshots.clone(),
                     },
                     source,
