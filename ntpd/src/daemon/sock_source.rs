@@ -3,7 +3,7 @@ use std::{fmt::Display, path::Path};
 
 use ntp_proto::{
     ClockId, Measurement, NtpClock, NtpDuration, NtpLeapIndicator, OneWaySource,
-    OneWaySourceSnapshot, OneWaySourceUpdate, ReferenceId, SourceController, SystemSourceUpdate,
+    OneWaySourceSnapshot, OneWaySourceUpdate, ReferenceId, SourceController,
 };
 use tracing::debug;
 use tracing::{Instrument, Span, error, instrument};
@@ -84,7 +84,7 @@ pub(crate) struct SockSourceTask<C: 'static + NtpClock + Send, Controller: Sourc
     socket: UnixDatagram,
     clock: C,
     path: PathBuf,
-    channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
+    channels: SourceChannels,
     source: OneWaySource<Controller>,
 }
 
@@ -105,25 +105,16 @@ where
 {
     async fn run(&mut self) {
         loop {
-            enum SelectResult<Controller: SourceController> {
+            enum SelectResult {
                 SockRecv(Result<usize, std::io::Error>),
-                SystemUpdate(
-                    Result<
-                        SystemSourceUpdate<Controller::ControllerMessage>,
-                        tokio::sync::broadcast::error::RecvError,
-                    >,
-                ),
             }
 
             let mut buf = [0; SOCK_SAMPLE_SIZE];
 
-            let selected: SelectResult<Controller> = tokio::select! {
+            let selected: SelectResult = tokio::select! {
                 result = self.socket.recv(&mut buf) => {
                     SelectResult::SockRecv(result)
                 },
-                result = self.channels.system_update_receiver.recv() => {
-                    SelectResult::SystemUpdate(result)
-                }
             };
 
             match selected {
@@ -158,14 +149,13 @@ where
                             precision: 0, // TODO: compute on startup?
                         };
 
-                        let controller_message = self.source.handle_measurement(measurement);
+                        self.source.handle_measurement(measurement);
 
                         let update = OneWaySourceUpdate {
                             snapshot: OneWaySourceSnapshot {
                                 source_id: ReferenceId::SOCK,
                                 stratum: 0,
                             },
-                            message: controller_message,
                         };
                         self.channels
                             .msg_for_system_sender
@@ -190,14 +180,6 @@ where
                         error!("Error deserializing sample: {}", e);
                     }
                 },
-                SelectResult::SystemUpdate(result) => match result {
-                    Ok(update) => {
-                        self.source.handle_message(update.message);
-                    }
-                    Err(e) => {
-                        error!("Error receiving system update: {:?}", e);
-                    }
-                },
             }
         }
     }
@@ -207,7 +189,7 @@ where
         index: ClockId,
         socket_path: PathBuf,
         clock: C,
-        channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
+        channels: SourceChannels,
         source: OneWaySource<Controller>,
     ) -> tokio::task::JoinHandle<()> {
         let socket = create_socket(&socket_path).expect("Could not create socket");
@@ -239,7 +221,7 @@ mod tests {
 
     use ntp_proto::{
         AlgorithmConfig, ClockId, KalmanClockController, NtpClock, NtpDuration, NtpLeapIndicator,
-        NtpTimestamp, ReferenceId, SourceConfig, SynchronizationConfig,
+        NtpTimestamp, ReferenceId, SourceConfig, SynchronizationConfig, TimeSyncControllerWrapper,
     };
     use tokio::sync::mpsc;
 
@@ -304,18 +286,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_sock() {
-        let (_system_update_sender, system_update_receiver) = tokio::sync::broadcast::channel(1);
         let (msg_for_system_sender, mut msg_for_system_receiver) = mpsc::channel(1);
 
         let index = ClockId::new();
         let clock = TestClock {};
-        let mut system: ntp_proto::System<KalmanClockController<_>> = ntp_proto::System::new(
-            clock.clone(),
-            SynchronizationConfig::default(),
-            AlgorithmConfig::default(),
-            Arc::new([]),
-        )
-        .unwrap();
+        let system: ntp_proto::System<TimeSyncControllerWrapper<KalmanClockController<_>>> =
+            ntp_proto::System::new(
+                clock.clone(),
+                SynchronizationConfig::default(),
+                AlgorithmConfig::default(),
+                Arc::new([]),
+            )
+            .unwrap();
 
         let socket_path = std::env::temp_dir().join(format!("ntp-test-stream-{}", alloc_port()));
         let _socket = create_socket(&socket_path).unwrap(); // should be overwritten by SockSource's own socket
@@ -326,7 +308,6 @@ mod tests {
             clock,
             SourceChannels {
                 msg_for_system_sender,
-                system_update_receiver,
                 source_snapshots: Arc::new(RwLock::new(HashMap::new())),
             },
             system

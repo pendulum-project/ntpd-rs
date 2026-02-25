@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use ntp_proto::{
     ClockId, Measurement, NtpDuration, NtpLeapIndicator, OneWaySource, OneWaySourceSnapshot,
-    OneWaySourceUpdate, ReferenceId, SourceController, SystemSourceUpdate,
+    OneWaySourceUpdate, ReferenceId, SourceController,
 };
 use pps_time::PpsDevice;
 use tokio::sync::mpsc;
@@ -30,7 +30,7 @@ impl PpsDeviceFetchTask {
 
 pub(crate) struct PpsSourceTask<Controller: SourceController> {
     index: ClockId,
-    channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
+    channels: SourceChannels,
     path: PathBuf,
     source: OneWaySource<Controller>,
     fetch_receiver: mpsc::Receiver<pps_time::pps::pps_fdata>,
@@ -39,23 +39,14 @@ pub(crate) struct PpsSourceTask<Controller: SourceController> {
 impl<Controller: SourceController> PpsSourceTask<Controller> {
     async fn run(&mut self) {
         loop {
-            enum SelectResult<Controller: SourceController> {
+            enum SelectResult {
                 PpsRecv(Option<pps_time::pps::pps_fdata>),
-                SystemUpdate(
-                    Result<
-                        SystemSourceUpdate<Controller::ControllerMessage>,
-                        tokio::sync::broadcast::error::RecvError,
-                    >,
-                ),
             }
 
-            let selected: SelectResult<Controller> = tokio::select! {
+            let selected: SelectResult = tokio::select! {
                 result = self.fetch_receiver.recv() => {
                     SelectResult::PpsRecv(result)
                 },
-                result = self.channels.system_update_receiver.recv() => {
-                    SelectResult::SystemUpdate(result)
-                }
             };
 
             match selected {
@@ -79,14 +70,13 @@ impl<Controller: SourceController> PpsSourceTask<Controller> {
                             precision: 0,
                         };
 
-                        let controller_message = self.source.handle_measurement(measurement);
+                        self.source.handle_measurement(measurement);
 
                         let update = OneWaySourceUpdate {
                             snapshot: OneWaySourceSnapshot {
                                 source_id: ReferenceId::PPS,
                                 stratum: 0,
                             },
-                            message: controller_message,
                         };
 
                         self.channels
@@ -112,14 +102,6 @@ impl<Controller: SourceController> PpsSourceTask<Controller> {
                         warn!("Did not receive any new PPS data");
                     }
                 },
-                SelectResult::SystemUpdate(result) => match result {
-                    Ok(update) => {
-                        self.source.handle_message(update.message);
-                    }
-                    Err(e) => {
-                        error!("Error receiving system update: {:?}", e);
-                    }
-                },
             }
         }
     }
@@ -128,7 +110,7 @@ impl<Controller: SourceController> PpsSourceTask<Controller> {
     pub fn spawn(
         index: ClockId,
         device_path: PathBuf,
-        channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
+        channels: SourceChannels,
         source: OneWaySource<Controller>,
     ) -> tokio::task::JoinHandle<()> {
         let pps = PpsDevice::new(device_path.clone()).expect("Could not open PPS device");
