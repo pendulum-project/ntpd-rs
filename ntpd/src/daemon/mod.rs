@@ -19,7 +19,7 @@ use std::{error::Error, io::IsTerminal, path::PathBuf};
 
 use ::tracing::info;
 pub use config::Config;
-use ntp_proto::KalmanClockController;
+use ntp_proto::{KalmanClockController, TimeSyncControllerWrapper};
 pub use observer::ObservableState;
 pub use system::spawn;
 use tokio::runtime::Builder;
@@ -53,6 +53,7 @@ pub fn main() -> Result<(), Box<dyn Error>> {
 pub(crate) enum Application {
     Deamon,
     MetricsExporter,
+    #[expect(unused)]
     Ctl,
 }
 
@@ -141,16 +142,17 @@ fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
 
         ::tracing::debug!("Configuration loaded, spawning daemon jobs");
         let clock = clock_config.clock;
-        let (main_loop_handle, channels) = spawn::<KalmanClockController<_>>(
-            config.synchronization.synchronization_base,
-            config.synchronization.algorithm,
-            config.source_defaults,
-            clock_config,
-            &config.sources,
-            &config.servers,
-            keyset.clone(),
-        )
-        .await?;
+        let (main_loop_handle, channels) =
+            spawn::<TimeSyncControllerWrapper<KalmanClockController<_>>>(
+                config.synchronization.synchronization_base,
+                config.synchronization.algorithm,
+                config.source_defaults,
+                clock_config,
+                &config.sources,
+                &config.servers,
+                keyset.clone(),
+            )
+            .await?;
 
         for nts_ke_config in config.nts_ke {
             let _join_handle = keyexchange::spawn(nts_ke_config, keyset.clone());
