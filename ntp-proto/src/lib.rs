@@ -249,8 +249,9 @@ impl std::fmt::Display for ClockId {
 mod exports {
     pub use super::algorithm::{
         AlgorithmConfig, KalmanClockController, KalmanControllerMessage, KalmanSourceController,
-        KalmanSourceMessage, Measurement, ObservableSourceTimedata, SourceController, StateUpdate,
-        TimeSyncController, TwoWayKalmanSourceController, TwoWaySourceControllerWrapper,
+        KalmanSourceMessage, Measurement, ObservableSourceTimedata, OneWaySourceControllerWrapper,
+        SourceController, TimeSyncController, TimeSyncControllerWrapper,
+        TwoWayKalmanSourceController, TwoWaySourceControllerWrapper,
     };
     pub use super::clock::NtpClock;
     pub use super::config::{SourceConfig, StepThreshold, SynchronizationConfig};
@@ -280,10 +281,7 @@ mod exports {
         NtpSourceSnapshot, NtpSourceUpdate, ObservableSourceState, OneWaySource,
         OneWaySourceSnapshot, OneWaySourceUpdate, ProtocolVersion, Reach, SourceNtsData,
     };
-    pub use super::system::{
-        System, SystemAction, SystemActionIterator, SystemSnapshot, SystemSourceUpdate,
-        TimeSnapshot,
-    };
+    pub use super::system::{System, SystemSnapshot, TimeSnapshot};
 
     #[cfg(feature = "__internal-fuzz")]
     pub use super::time_types::fuzz_duration_from_seconds;

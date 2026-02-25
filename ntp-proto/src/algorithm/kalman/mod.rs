@@ -459,7 +459,7 @@ impl<C: NtpClock> InternalTimeSyncController for KalmanClockController<C> {
             source.0 = Some(message.inner);
             self.update_clock(time)
         } else {
-            error!("Internal error: Update from non-existing source");
+            error!("Internal error: Update from non-existing source {}", id);
             InternalStateUpdate::default()
         }
     }

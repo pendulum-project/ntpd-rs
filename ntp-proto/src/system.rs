@@ -2,14 +2,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
 
 use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
 use crate::source::{NtpSourceUpdate, SourceSnapshot};
 use crate::{ClockId, NtpTimestamp, OneWaySource, OneWaySourceUpdate};
 use crate::{
-    algorithm::{StateUpdate, TimeSyncController},
+    algorithm::TimeSyncController,
     clock::NtpClock,
     config::{SourceConfig, SynchronizationConfig},
     identifiers::ReferenceId,
@@ -134,80 +133,15 @@ impl Default for SystemSnapshot {
     }
 }
 
-pub struct SystemSourceUpdate<ControllerMessage> {
-    pub message: ControllerMessage,
-}
-
-impl<ControllerMessage: Debug> std::fmt::Debug for SystemSourceUpdate<ControllerMessage> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SystemSourceUpdate")
-            .field("message", &self.message)
-            .finish()
-    }
-}
-
-impl<ControllerMessage: Clone> Clone for SystemSourceUpdate<ControllerMessage> {
-    fn clone(&self) -> Self {
-        Self {
-            message: self.message.clone(),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum SystemAction<ControllerMessage> {
-    UpdateSources(SystemSourceUpdate<ControllerMessage>),
-    SetTimer(Duration),
-}
-
-#[derive(Debug)]
-pub struct SystemActionIterator<ControllerMessage> {
-    iter: <Vec<SystemAction<ControllerMessage>> as IntoIterator>::IntoIter,
-}
-
-impl<ControllerMessage> Default for SystemActionIterator<ControllerMessage> {
-    fn default() -> Self {
-        Self {
-            iter: vec![].into_iter(),
-        }
-    }
-}
-
-impl<ControllerMessage> From<Vec<SystemAction<ControllerMessage>>>
-    for SystemActionIterator<ControllerMessage>
-{
-    fn from(value: Vec<SystemAction<ControllerMessage>>) -> Self {
-        Self {
-            iter: value.into_iter(),
-        }
-    }
-}
-
-impl<ControllerMessage> Iterator for SystemActionIterator<ControllerMessage> {
-    type Item = SystemAction<ControllerMessage>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
-    }
-}
-
-macro_rules! actions {
-    [$($action:expr),*] => {
-        {
-            SystemActionIterator::from(vec![$($action),*])
-        }
-    }
-}
-
 pub struct System<Controller> {
     synchronization_config: SynchronizationConfig,
-    system: SystemSnapshot,
-    ip_list: Arc<[IpAddr]>,
+    system: Mutex<SystemSnapshot>,
+    ip_list: Mutex<Arc<[IpAddr]>>,
 
-    sources: HashMap<ClockId, Option<SourceSnapshot>>,
+    sources: Mutex<HashMap<ClockId, Option<SourceSnapshot>>>,
 
     controller: Controller,
-    controller_took_control: bool,
+    controller_took_control: Mutex<bool>,
 }
 
 impl<Controller: TimeSyncController> System<Controller> {
@@ -232,32 +166,34 @@ impl<Controller: TimeSyncController> System<Controller> {
 
         Ok(System {
             synchronization_config,
-            system,
-            ip_list,
-            sources: HashMap::new(),
+            system: Mutex::new(system),
+            ip_list: Mutex::new(ip_list),
+            sources: Mutex::new(HashMap::new()),
             controller: Controller::new(clock, synchronization_config, algorithm_config)?,
-            controller_took_control: false,
+            controller_took_control: Mutex::new(false),
         })
     }
 
     pub fn system_snapshot(&self) -> SystemSnapshot {
-        self.system
+        *self.system.lock().unwrap()
     }
 
-    pub fn check_clock_access(&mut self) -> Result<(), <Controller::Clock as NtpClock>::Error> {
+    pub fn check_clock_access(&self) -> Result<(), <Controller::Clock as NtpClock>::Error> {
         self.ensure_controller_control()
     }
 
-    fn ensure_controller_control(&mut self) -> Result<(), <Controller::Clock as NtpClock>::Error> {
-        if !self.controller_took_control {
+    fn ensure_controller_control(&self) -> Result<(), <Controller::Clock as NtpClock>::Error> {
+        // FIXME: the take control pattern needs to go. Until that time this is not ideal but will do.
+        let mut controller_took_control = self.controller_took_control.lock().unwrap();
+        if !*controller_took_control {
             self.controller.take_control()?;
-            self.controller_took_control = true;
+            *controller_took_control = true;
         }
         Ok(())
     }
 
     pub fn create_sock_source(
-        &mut self,
+        &self,
         id: ClockId,
         source_config: SourceConfig,
         measurement_noise_estimate: f64,
@@ -274,12 +210,12 @@ impl<Controller: TimeSyncController> System<Controller> {
             measurement_accuracy_estimate,
             None,
         );
-        self.sources.insert(id, None);
+        self.sources.lock().unwrap().insert(id, None);
         Ok(OneWaySource::new(controller))
     }
 
     pub fn create_pps_source(
-        &mut self,
+        &self,
         id: ClockId,
         source_config: SourceConfig,
         measurement_noise_estimate: f64,
@@ -297,13 +233,13 @@ impl<Controller: TimeSyncController> System<Controller> {
             measurement_accuracy_estimate,
             Some(period),
         );
-        self.sources.insert(id, None);
+        self.sources.lock().unwrap().insert(id, None);
         Ok(OneWaySource::new(controller))
     }
 
     #[expect(clippy::type_complexity)]
     pub fn create_ntp_source(
-        &mut self,
+        &self,
         id: ClockId,
         source_config: SourceConfig,
         source_addr: SocketAddr,
@@ -312,13 +248,13 @@ impl<Controller: TimeSyncController> System<Controller> {
     ) -> Result<
         (
             NtpSource<Controller::NtpSourceController>,
-            NtpSourceActionIterator<Controller::SourceMessage>,
+            NtpSourceActionIterator,
         ),
         <Controller::Clock as NtpClock>::Error,
     > {
         self.ensure_controller_control()?;
         let controller = self.controller.add_source(id, source_config);
-        self.sources.insert(id, None);
+        self.sources.lock().unwrap().insert(id, None);
         Ok(NtpSource::new(
             source_addr,
             source_config,
@@ -330,92 +266,75 @@ impl<Controller: TimeSyncController> System<Controller> {
     }
 
     pub fn handle_source_remove(
-        &mut self,
+        &self,
         id: ClockId,
     ) -> Result<(), <Controller::Clock as NtpClock>::Error> {
         self.controller.remove_source(id);
-        self.sources.remove(&id);
+        self.sources.lock().unwrap().remove(&id);
         Ok(())
     }
 
     pub fn handle_source_update(
-        &mut self,
+        &self,
         id: ClockId,
-        update: NtpSourceUpdate<Controller::SourceMessage>,
-    ) -> Result<
-        SystemActionIterator<Controller::ControllerMessage>,
-        <Controller::Clock as NtpClock>::Error,
-    > {
+        update: &NtpSourceUpdate,
+    ) -> Result<(), <Controller::Clock as NtpClock>::Error> {
+        let system = self.system_snapshot();
+        let ip_list = self.ip_list.lock().unwrap().clone();
         let usable = update
             .snapshot
             .accept_synchronization(
                 self.synchronization_config.local_stratum,
-                self.ip_list.as_ref(),
-                &self.system,
+                ip_list.as_ref(),
+                &system,
             )
             .is_ok();
         self.controller.source_update(id, usable);
-        *self.sources.get_mut(&id).unwrap() = Some(SourceSnapshot::Ntp(update.snapshot));
-        if let Some(message) = update.message {
-            let update = self.controller.source_message(id, message);
-            Ok(self.handle_algorithm_state_update(update))
-        } else {
-            Ok(actions!())
-        }
+        *self.sources.lock().unwrap().get_mut(&id).unwrap() =
+            Some(SourceSnapshot::Ntp(update.snapshot));
+        Ok(())
     }
 
     pub fn handle_one_way_source_update(
-        &mut self,
+        &self,
         id: ClockId,
-        update: OneWaySourceUpdate<Controller::SourceMessage>,
-    ) -> Result<
-        SystemActionIterator<Controller::ControllerMessage>,
-        <Controller::Clock as NtpClock>::Error,
-    > {
+        update: &OneWaySourceUpdate,
+    ) -> Result<(), <Controller::Clock as NtpClock>::Error> {
         self.controller.source_update(id, true);
-        *self.sources.get_mut(&id).unwrap() = Some(SourceSnapshot::OneWay(update.snapshot));
-        if let Some(message) = update.message {
-            let update = self.controller.source_message(id, message);
-            Ok(self.handle_algorithm_state_update(update))
-        } else {
-            Ok(actions!())
-        }
+        *self.sources.lock().unwrap().get_mut(&id).unwrap() =
+            Some(SourceSnapshot::OneWay(update.snapshot));
+        Ok(())
     }
 
-    fn handle_algorithm_state_update(
-        &mut self,
-        update: StateUpdate<Controller::ControllerMessage>,
-    ) -> SystemActionIterator<Controller::ControllerMessage> {
-        let mut actions = vec![];
-        if let Some(ref used_sources) = update.used_sources {
-            self.system
-                .update_used_sources(used_sources.iter().map(|v| {
-                    self.sources.get(v).and_then(|snapshot| *snapshot).expect(
+    pub fn update_ip_list(&self, ip_list: Arc<[IpAddr]>) {
+        *self.ip_list.lock().unwrap() = ip_list;
+    }
+
+    pub fn run(self: Arc<Self>) -> impl Future<Output = ()> + 'static {
+        let this = self.clone();
+        let update_pusher = async move {
+            loop {
+                // Scope here is needed to keep this future sync and send.
+                {
+                    let (time_snaphsot, used_sources) = this.controller.synchronization_state();
+                    let sources = this.sources.lock().unwrap();
+                    let mut system = this.system.lock().unwrap();
+                    system.update_used_sources(used_sources.iter().map(|v| {
+                        sources.get(v).and_then(|snapshot| *snapshot).expect(
                     "Critical error: Source used for synchronization that is not known to system",
                 )
-                }));
-        }
-        if let Some(time_snapshot) = update.time_snapshot {
-            self.system
-                .update_timedata(time_snapshot, &self.synchronization_config);
-        }
-        if let Some(timeout) = update.next_update {
-            actions.push(SystemAction::SetTimer(timeout));
-        }
-        if let Some(message) = update.source_message {
-            actions.push(SystemAction::UpdateSources(SystemSourceUpdate { message }));
-        }
-        actions.into()
-    }
+                    }));
+                    system.update_timedata(time_snaphsot, &this.synchronization_config);
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+        };
 
-    pub fn handle_timer(&mut self) -> SystemActionIterator<Controller::ControllerMessage> {
-        tracing::debug!("Timer expired");
-        let update = self.controller.time_update();
-        self.handle_algorithm_state_update(update)
-    }
+        let controller_run = async move { self.controller.run().await };
 
-    pub fn update_ip_list(&mut self, ip_list: Arc<[IpAddr]>) {
-        self.ip_list = ip_list;
+        async move {
+            tokio::join!(update_pusher, controller_run);
+        }
     }
 }
 
