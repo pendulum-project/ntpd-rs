@@ -176,22 +176,11 @@ impl Reach {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct OneWaySourceUpdate {
-    pub snapshot: OneWaySourceSnapshot,
-}
-
 #[derive(Debug, Clone, Copy)]
 #[expect(clippy::large_enum_variant)]
 pub enum SourceSnapshot {
     Ntp(NtpSourceSnapshot),
-    OneWay(OneWaySourceSnapshot),
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct OneWaySourceSnapshot {
-    pub source_id: ReferenceId,
-    pub stratum: u8,
+    External { stratum: u8, source_id: ReferenceId },
 }
 
 #[derive(Debug, Clone, Copy)]
