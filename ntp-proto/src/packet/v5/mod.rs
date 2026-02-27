@@ -196,13 +196,13 @@ impl NtpHeaderV5 {
         Self {
             leap: system.time_snapshot.leap_indicator,
             mode: NtpMode::Response,
-            stratum: system.stratum,
+            stratum: system.ntp_snapshot.stratum,
             poll: input.poll,
             precision: system.time_snapshot.precision.log2(),
             timescale: NtpTimescale::Utc,
             era: NtpEra(0),
             flags: NtpFlags {
-                synchronized: system.stratum < 16,
+                synchronized: system.ntp_snapshot.stratum < 16,
                 interleaved_mode: false,
                 authnak: false,
             },

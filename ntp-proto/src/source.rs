@@ -5,6 +5,7 @@ use crate::{
         ExtensionField, NtpHeader,
         v5::server_reference_id::{BloomFilter, RemoteBloomFilter},
     },
+    system::NtpSnapshot,
 };
 use crate::{
     algorithm::{ObservableSourceTimedata, SourceController},
@@ -12,7 +13,6 @@ use crate::{
     cookiestash::CookieStash,
     identifiers::ReferenceId,
     packet::{Cipher, NtpAssociationMode, NtpPacket, RequestIdentifier},
-    system::SystemSnapshot,
     time_types::{NtpTimestamp, PollInterval},
 };
 use rand::{Rng, thread_rng};
@@ -216,7 +216,7 @@ impl NtpSourceSnapshot {
         &self,
         local_stratum: u8,
         local_ips: &[IpAddr],
-        system: &SystemSnapshot,
+        snapshot: &NtpSnapshot,
     ) -> Result<(), AcceptSynchronizationError> {
         use AcceptSynchronizationError::*;
 
@@ -244,7 +244,7 @@ impl NtpSourceSnapshot {
         }
 
         match self.bloom_filter {
-            Some(filter) if filter.contains_id(&system.server_id) => {
+            Some(filter) if filter.contains_id(&snapshot.server_id) => {
                 debug!("Source rejected because of detected synchronization loop (bloom filter)");
                 return Err(Loop);
             }
@@ -821,7 +821,7 @@ fn measurements_from_packet(
 )]
 mod test {
     use crate::{
-        NtpClock, NtpDuration, NtpLeapIndicator,
+        NtpClock, NtpDuration, NtpLeapIndicator, SystemSnapshot,
         packet::{AesSivCmac256, NoCipher},
         time_types::PollIntervalLimits,
     };
@@ -925,12 +925,12 @@ mod test {
 
         let mut source = NtpSource::test_ntp_source(NoopController);
 
-        let system = SystemSnapshot::default();
+        let ntps = NtpSnapshot::default();
 
         macro_rules! accept {
             () => {{
                 let snapshot = NtpSourceSnapshot::from_source(&source);
-                snapshot.accept_synchronization(16, &["127.0.0.1".parse().unwrap()], &system)
+                snapshot.accept_synchronization(16, &["127.0.0.1".parse().unwrap()], &ntps)
             }};
         }
 
@@ -1586,7 +1586,10 @@ mod test {
         let clock = TestClock::default();
 
         let server_system = SystemSnapshot {
-            bloom_filter: server_filter,
+            ntp_snapshot: NtpSnapshot {
+                bloom_filter: server_filter,
+                ..Default::default()
+            },
             ..Default::default()
         };
 
