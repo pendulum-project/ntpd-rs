@@ -4,7 +4,7 @@ use std::{
 
 use ntp_proto::{
     ClockId, NtpClock, NtpSource, NtpSourceActionIterator, NtpSourceUpdate, NtpTimestamp,
-    ObservableSourceState, OneWaySourceUpdate, SourceController,
+    ObservableSourceState, SourceController,
 };
 #[cfg(target_os = "linux")]
 use timestamped_socket::socket::open_interface_udp;
@@ -40,8 +40,6 @@ pub enum MsgForSystem {
     Unreachable(ClockId),
     /// Update from source
     SourceUpdate(ClockId, NtpSourceUpdate),
-    /// Update from sock source
-    OneWaySourceUpdate(ClockId, OneWaySourceUpdate),
 }
 
 #[derive(Debug)]
