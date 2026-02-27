@@ -273,7 +273,7 @@ fn print_state_plain(output: &ObservableState) {
         "\tDelay:\t\t{:.6}s",
         output.system.time_snapshot.root_delay.to_seconds()
     );
-    println!("\tStratum:\t{}", output.system.stratum);
+    println!("\tStratum:\t{}", output.system.ntp_snapshot.stratum);
     println!();
     println!();
     println!("Sources:");
