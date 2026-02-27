@@ -1,14 +1,13 @@
 use std::path::PathBuf;
 
 use ntp_proto::{
-    ClockId, Measurement, NtpDuration, NtpLeapIndicator, OneWaySource, OneWaySourceSnapshot,
-    OneWaySourceUpdate, ReferenceId, SourceController,
+    ClockId, Measurement, NtpDuration, NtpLeapIndicator, OneWaySource, SourceController,
 };
 use pps_time::PpsDevice;
 use tokio::sync::mpsc;
 use tracing::{Instrument, Span, debug, error, instrument, warn};
 
-use crate::daemon::{ntp_source::MsgForSystem, util::convert_unix_timestamp};
+use crate::daemon::util::convert_unix_timestamp;
 
 use super::ntp_source::SourceChannels;
 
@@ -70,19 +69,6 @@ impl<Controller: SourceController> PpsSourceTask<Controller> {
                         };
 
                         self.source.handle_measurement(measurement);
-
-                        let update = OneWaySourceUpdate {
-                            snapshot: OneWaySourceSnapshot {
-                                source_id: ReferenceId::PPS,
-                                stratum: 0,
-                            },
-                        };
-
-                        self.channels
-                            .msg_for_system_sender
-                            .send(MsgForSystem::OneWaySourceUpdate(self.index, update))
-                            .await
-                            .ok();
 
                         self.channels
                             .source_snapshots
