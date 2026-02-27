@@ -557,7 +557,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(1700.0 + noise),
                 localtime: algo.clock.current_time,
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -805,7 +804,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(1700.0 + noise),
                 localtime: algo.clock.current_time,
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -860,7 +858,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(-3600.0 + noise),
                 localtime: algo.clock.current_time,
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
