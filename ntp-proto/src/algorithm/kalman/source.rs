@@ -628,7 +628,6 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
         // Always update the root_delay, root_dispersion, leap second status and stratum, as they always represent the most accurate state.
         self.last_measurement.root_delay = measurement.root_delay;
         self.last_measurement.root_dispersion = measurement.root_dispersion;
-        self.last_measurement.stratum = measurement.stratum;
         self.last_measurement.leap = measurement.leap;
 
         if measurement.localtime.is_before(self.state.time) {
@@ -1026,7 +1025,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base,
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1044,7 +1042,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1074,7 +1071,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base,
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1093,7 +1089,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1123,7 +1118,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base,
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1142,7 +1136,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base + NtpDuration::from_seconds(2800.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1178,7 +1171,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base,
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1216,7 +1208,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base,
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1246,7 +1237,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(20e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1294,7 +1284,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(-20e-3),
                 localtime: base,
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1324,7 +1313,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(-20e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1403,7 +1391,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(0.4),
                 localtime: base,
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1467,7 +1454,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(0.4),
                 localtime: base,
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1485,7 +1471,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(-0.3),
                 localtime: base,
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1523,7 +1508,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(0.48),
                 localtime: base + NtpDuration::from_seconds(1.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1547,7 +1531,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(0.49),
                 localtime: base + NtpDuration::from_seconds(2.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1571,7 +1554,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(0.50),
                 localtime: base + NtpDuration::from_seconds(3.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1595,7 +1577,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(-0.49),
                 localtime: base + NtpDuration::from_seconds(4.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1619,7 +1600,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(-0.48),
                 localtime: base + NtpDuration::from_seconds(5.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1643,7 +1623,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(-0.47),
                 localtime: base + NtpDuration::from_seconds(6.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1667,7 +1646,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(-0.46),
                 localtime: base + NtpDuration::from_seconds(7.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1691,7 +1669,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(-0.45),
                 localtime: base + NtpDuration::from_seconds(8.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1742,7 +1719,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(0.0),
                 localtime: base,
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1778,7 +1754,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(0.0),
                 localtime: base,
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1852,7 +1827,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(0e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1876,7 +1850,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(1e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1900,7 +1873,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(2e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1924,7 +1896,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(3e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1948,7 +1919,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(4e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1972,7 +1942,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(5e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -1996,7 +1965,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(6e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -2020,7 +1988,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(7e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -2088,7 +2055,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(4e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -2112,7 +2078,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(5e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -2136,7 +2101,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(6e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -2160,7 +2124,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(7e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -2185,7 +2148,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(4e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -2209,7 +2171,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(5e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -2233,7 +2194,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(6e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -2257,7 +2217,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(7e-3),
                 localtime: base + NtpDuration::from_seconds(1000.0),
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -2315,7 +2274,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(0.0),
                 localtime: base,
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,
@@ -2440,7 +2398,6 @@ mod tests {
                 offset: NtpDuration::from_seconds(0.0),
                 localtime: base,
 
-                stratum: 0,
                 root_delay: NtpDuration::default(),
                 root_dispersion: NtpDuration::default(),
                 leap: NtpLeapIndicator::NoWarning,

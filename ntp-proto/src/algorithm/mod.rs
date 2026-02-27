@@ -138,7 +138,6 @@ pub struct InternalMeasurement<D: Debug + Copy + Clone> {
     pub offset: NtpDuration,
     pub localtime: NtpTimestamp,
 
-    pub stratum: u8,
     pub root_delay: NtpDuration,
     pub root_dispersion: NtpDuration,
     pub leap: NtpLeapIndicator,
@@ -152,7 +151,6 @@ pub struct Measurement {
     pub sender_ts: NtpTimestamp,
     pub receiver_ts: NtpTimestamp,
 
-    pub stratum: u8,
     pub root_delay: NtpDuration,
     pub root_dispersion: NtpDuration,
     pub leap: NtpLeapIndicator,
@@ -372,7 +370,6 @@ impl<T: InternalSourceController<MeasurementDelay = ()>> SourceController
                 // Remote (which is the send timestamp) - local (which is the receive timestamp)
                 offset: measurement.sender_ts - measurement.receiver_ts,
                 localtime: measurement.receiver_ts,
-                stratum: measurement.stratum,
                 root_delay: measurement.root_delay,
                 root_dispersion: measurement.root_dispersion,
                 leap: measurement.leap,
@@ -424,7 +421,6 @@ impl<T: InternalSourceController<MeasurementDelay = NtpDuration>> SourceControll
                             + (measurement.sender_ts - measurement.receiver_ts))
                             / 2,
                         localtime: measurement.receiver_ts,
-                        stratum: measurement.stratum,
                         root_delay: measurement.root_delay,
                         root_dispersion: measurement.root_dispersion,
                         leap: measurement.leap,
@@ -530,7 +526,6 @@ mod tests {
             receiver_id: ClockId(1),
             sender_ts: NtpTimestamp::from_fixed_int(0),
             receiver_ts: NtpTimestamp::from_fixed_int(1),
-            stratum: 0,
             root_delay: NtpDuration::from_fixed_int(0),
             root_dispersion: NtpDuration::from_fixed_int(0),
             leap: NtpLeapIndicator::NoWarning,
@@ -541,7 +536,6 @@ mod tests {
             receiver_id: ClockId::SYSTEM,
             sender_ts: NtpTimestamp::from_fixed_int(2),
             receiver_ts: NtpTimestamp::from_fixed_int(3),
-            stratum: 0,
             root_delay: NtpDuration::from_fixed_int(0),
             root_dispersion: NtpDuration::from_fixed_int(0),
             leap: NtpLeapIndicator::NoWarning,

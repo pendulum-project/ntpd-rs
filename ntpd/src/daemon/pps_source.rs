@@ -63,7 +63,6 @@ impl<Controller: SourceController> PpsSourceTask<Controller> {
                                 data.info.assert_tu.nsec as _,
                             ),
 
-                            stratum: 0,
                             root_delay: NtpDuration::ZERO,
                             root_dispersion: NtpDuration::ZERO,
                             leap: NtpLeapIndicator::NoWarning,
