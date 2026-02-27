@@ -302,11 +302,6 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C>> SystemTask<C
                     .handle_source_update(index, update)
                     .expect("Could not process source measurement");
             }
-            MsgForSystem::OneWaySourceUpdate(index, update) => {
-                self.system
-                    .handle_one_way_source_update(index, update)
-                    .expect("Could not process source measurement");
-            }
             MsgForSystem::NetworkIssue(index) => {
                 self.handle_source_network_issue(index).await?;
             }

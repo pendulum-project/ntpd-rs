@@ -2,15 +2,14 @@ use std::path::PathBuf;
 use std::{fmt::Display, path::Path};
 
 use ntp_proto::{
-    ClockId, Measurement, NtpClock, NtpDuration, NtpLeapIndicator, OneWaySource,
-    OneWaySourceSnapshot, OneWaySourceUpdate, ReferenceId, SourceController,
+    ClockId, Measurement, NtpClock, NtpDuration, NtpLeapIndicator, OneWaySource, SourceController,
 };
 use tracing::debug;
 use tracing::{Instrument, Span, error, instrument};
 
 use tokio::net::UnixDatagram;
 
-use crate::daemon::{exitcode, ntp_source::MsgForSystem};
+use crate::daemon::exitcode;
 
 use super::ntp_source::SourceChannels;
 
@@ -150,18 +149,6 @@ where
 
                         self.source.handle_measurement(measurement);
 
-                        let update = OneWaySourceUpdate {
-                            snapshot: OneWaySourceSnapshot {
-                                source_id: ReferenceId::SOCK,
-                                stratum: 0,
-                            },
-                        };
-                        self.channels
-                            .msg_for_system_sender
-                            .send(MsgForSystem::OneWaySourceUpdate(self.index, update))
-                            .await
-                            .ok();
-
                         self.channels
                             .source_snapshots
                             .write()
@@ -221,13 +208,13 @@ mod tests {
 
     use ntp_proto::{
         AlgorithmConfig, ClockId, KalmanClockController, NtpClock, NtpDuration, NtpLeapIndicator,
-        NtpTimestamp, ReferenceId, SourceConfig, SynchronizationConfig, TimeSyncControllerWrapper,
+        NtpTimestamp, SourceConfig, SynchronizationConfig, TimeSyncControllerWrapper,
     };
     use tokio::sync::mpsc;
 
     use crate::{
         daemon::{
-            ntp_source::{MsgForSystem, SourceChannels},
+            ntp_source::SourceChannels,
             sock_source::{SOCK_MAGIC, SampleError, SockSourceTask, create_socket},
             util::EPOCH_OFFSET,
         },
@@ -286,7 +273,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_sock() {
-        let (msg_for_system_sender, mut msg_for_system_receiver) = mpsc::channel(1);
+        let (msg_for_system_sender, _) = mpsc::channel(1);
 
         let index = ClockId::new();
         let clock = TestClock {};
@@ -323,19 +310,6 @@ mod tests {
             119, 19, 65, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 75, 67, 79, 83,
         ];
         sock.send(&buf).unwrap();
-
-        // Receive system update
-        let msg = msg_for_system_receiver.recv().await.unwrap();
-        let update = match msg {
-            MsgForSystem::OneWaySourceUpdate(source_id, sock_source_update) => {
-                assert_eq!(source_id, index);
-                sock_source_update
-            }
-            _ => panic!("wrong message type"),
-        };
-
-        assert_eq!(update.snapshot.source_id, ReferenceId::SOCK);
-        assert_eq!(update.snapshot.stratum, 0);
 
         handle.abort();
     }

@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
 use crate::source::{NtpSourceUpdate, SourceSnapshot};
-use crate::{ClockId, NtpTimestamp, OneWaySource, OneWaySourceUpdate};
+use crate::{ClockId, NtpTimestamp, OneWaySource};
 use crate::{
     algorithm::TimeSyncController,
     clock::NtpClock,
@@ -108,7 +108,7 @@ impl NtpSnapshot {
         if let Some(system_source_snapshot) = used_sources.peek() {
             let (stratum, source_id) = match system_source_snapshot {
                 SourceSnapshot::Ntp(snapshot) => (snapshot.stratum, snapshot.source_id),
-                SourceSnapshot::OneWay(snapshot) => (snapshot.stratum, snapshot.source_id),
+                SourceSnapshot::External { stratum, source_id } => (*stratum, *source_id),
             };
 
             self.stratum = stratum.saturating_add(1);
@@ -216,7 +216,14 @@ impl<Controller: TimeSyncController> System<Controller> {
         let controller =
             self.controller
                 .add_one_way_source(id, source_config, measurement_noise_estimate, None);
-        self.sources.lock().unwrap().insert(id, None);
+        self.sources.lock().unwrap().insert(
+            id,
+            Some(SourceSnapshot::External {
+                stratum: 0,
+                source_id: ReferenceId::SOCK,
+            }),
+        );
+        self.controller.source_update(id, true);
         Ok(OneWaySource::new(controller))
     }
 
@@ -237,7 +244,14 @@ impl<Controller: TimeSyncController> System<Controller> {
             measurement_noise_estimate,
             Some(period),
         );
-        self.sources.lock().unwrap().insert(id, None);
+        self.sources.lock().unwrap().insert(
+            id,
+            Some(SourceSnapshot::External {
+                stratum: 0,
+                source_id: ReferenceId::PPS,
+            }),
+        );
+        self.controller.source_update(id, true);
         Ok(OneWaySource::new(controller))
     }
 
@@ -296,17 +310,6 @@ impl<Controller: TimeSyncController> System<Controller> {
         self.controller.source_update(id, usable);
         *self.sources.lock().unwrap().get_mut(&id).unwrap() =
             Some(SourceSnapshot::Ntp(update.snapshot));
-        Ok(())
-    }
-
-    pub fn handle_one_way_source_update(
-        &self,
-        id: ClockId,
-        update: OneWaySourceUpdate,
-    ) -> Result<(), <Controller::Clock as NtpClock>::Error> {
-        self.controller.source_update(id, true);
-        *self.sources.lock().unwrap().get_mut(&id).unwrap() =
-            Some(SourceSnapshot::OneWay(update.snapshot));
         Ok(())
     }
 
