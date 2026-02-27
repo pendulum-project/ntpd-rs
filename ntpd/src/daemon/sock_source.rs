@@ -142,7 +142,6 @@ where
                             sender_ts: time - NtpDuration::from_seconds(sample.offset),
                             receiver_ts: time,
 
-                            stratum: 0,
                             root_delay: NtpDuration::ZERO,
                             root_dispersion: NtpDuration::ZERO,
                             leap,
