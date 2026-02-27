@@ -241,10 +241,10 @@ impl NtpHeaderV3V4 {
     ) -> Self {
         Self {
             mode: NtpAssociationMode::Server,
-            stratum: system.stratum,
+            stratum: system.ntp_snapshot.stratum,
             origin_timestamp: input.transmit_timestamp,
             receive_timestamp: recv_timestamp,
-            reference_id: system.reference_id,
+            reference_id: system.ntp_snapshot.reference_id,
             poll: input.poll,
             precision: system.time_snapshot.precision.log2(),
             root_delay: system.time_snapshot.root_delay,
@@ -684,7 +684,8 @@ impl<'a> NtpPacket<'a> {
                         .filter_map(|ef| match ef {
                             uid @ ExtensionField::UniqueIdentifier(_) => Some(uid),
                             ExtensionField::ReferenceIdRequest(req) => {
-                                let response = req.to_response(&system.bloom_filter)?;
+                                let response =
+                                    req.to_response(&system.ntp_snapshot.bloom_filter)?;
                                 Some(ExtensionField::ReferenceIdResponse(response).into_owned())
                             }
                             _ => None,
@@ -807,7 +808,8 @@ impl<'a> NtpPacket<'a> {
                         .filter_map(|ef| match ef {
                             uid @ ExtensionField::UniqueIdentifier(_) => Some(uid),
                             ExtensionField::ReferenceIdRequest(req) => {
-                                let response = req.to_response(&system.bloom_filter)?;
+                                let response =
+                                    req.to_response(&system.ntp_snapshot.bloom_filter)?;
                                 Some(ExtensionField::ReferenceIdResponse(response).into_owned())
                             }
                             _ => None,

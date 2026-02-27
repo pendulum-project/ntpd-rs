@@ -281,7 +281,7 @@ mod exports {
         NtpSourceSnapshot, NtpSourceUpdate, ObservableSourceState, OneWaySource,
         OneWaySourceSnapshot, OneWaySourceUpdate, ProtocolVersion, Reach, SourceNtsData,
     };
-    pub use super::system::{System, SystemSnapshot, TimeSnapshot};
+    pub use super::system::{NtpSnapshot, System, SystemSnapshot, TimeSnapshot};
 
     #[cfg(feature = "__internal-fuzz")]
     pub use super::time_types::fuzz_duration_from_seconds;

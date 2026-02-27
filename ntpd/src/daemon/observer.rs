@@ -202,8 +202,8 @@ mod tests {
 
     use ntp_proto::v5::{BloomFilter, ServerId};
     use ntp_proto::{
-        NtpDuration, NtpLeapIndicator, NtpTimestamp, ObservableSourceTimedata, PollIntervalLimits,
-        Reach, ReferenceId, TimeSnapshot,
+        NtpDuration, NtpLeapIndicator, NtpSnapshot, NtpTimestamp, ObservableSourceTimedata,
+        PollIntervalLimits, Reach, ReferenceId, TimeSnapshot,
     };
     use tokio::{io::AsyncReadExt, net::UnixStream};
 
@@ -281,8 +281,12 @@ mod tests {
         let (_, servers_reader) = tokio::sync::watch::channel(vec![]);
 
         let (_, system_reader) = tokio::sync::watch::channel(SystemSnapshot {
-            stratum: 1,
-            reference_id: ReferenceId::NONE,
+            ntp_snapshot: NtpSnapshot {
+                stratum: 1,
+                reference_id: ReferenceId::NONE,
+                bloom_filter: BloomFilter::new(),
+                server_id: ServerId::default(),
+            },
             accumulated_steps_threshold: None,
             time_snapshot: TimeSnapshot {
                 precision: NtpDuration::from_seconds(1e-3),
@@ -295,8 +299,6 @@ mod tests {
                 leap_indicator: NtpLeapIndicator::Leap59,
                 accumulated_steps: NtpDuration::ZERO,
             },
-            bloom_filter: BloomFilter::new(),
-            server_id: ServerId::default(),
         });
 
         let handle = tokio::spawn(async move {
@@ -357,8 +359,12 @@ mod tests {
         let (mut server_writer, servers_reader) = tokio::sync::watch::channel(vec![]);
 
         let (mut system_writer, system_reader) = tokio::sync::watch::channel(SystemSnapshot {
-            stratum: 1,
-            reference_id: ReferenceId::NONE,
+            ntp_snapshot: NtpSnapshot {
+                stratum: 1,
+                reference_id: ReferenceId::NONE,
+                bloom_filter: BloomFilter::new(),
+                server_id: ServerId::default(),
+            },
             accumulated_steps_threshold: None,
             time_snapshot: TimeSnapshot {
                 precision: NtpDuration::from_seconds(1e-3),
@@ -371,8 +377,6 @@ mod tests {
                 leap_indicator: NtpLeapIndicator::Leap59,
                 accumulated_steps: NtpDuration::ZERO,
             },
-            bloom_filter: BloomFilter::new(),
-            server_id: ServerId::default(),
         });
 
         let handle = tokio::spawn(async move {

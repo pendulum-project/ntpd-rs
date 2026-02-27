@@ -13,9 +13,9 @@ use ntp_proto::{
     test_cookie,
     v5::{BloomFilter, ServerId},
     EncryptResult, ExtensionField, ExtensionHeaderVersion, FilterAction, FilterList,
-    HandleInnerData, KeySetProvider, NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp,
-    NtpVersion, ReferenceId, Server, ServerConfig, ServerReason, ServerResponse, ServerStatHandler,
-    SystemSnapshot, TimeSnapshot,
+    HandleInnerData, KeySetProvider, NtpClock, NtpDuration, NtpLeapIndicator, NtpSnapshot,
+    NtpTimestamp, NtpVersion, ReferenceId, Server, ServerConfig, ServerReason, ServerResponse,
+    ServerStatHandler, SystemSnapshot, TimeSnapshot,
 };
 use rand::{rngs::StdRng, set_thread_rng, SeedableRng};
 
@@ -106,8 +106,12 @@ fuzz_target!(|parts: (
             cur: NtpTimestamp::from_seconds_nanos_since_ntp_era(100, 0),
         },
         SystemSnapshot {
-            stratum: 1,
-            reference_id: ReferenceId::NONE,
+            ntp_snapshot: NtpSnapshot {
+                stratum: 1,
+                reference_id: ReferenceId::NONE,
+                bloom_filter: BloomFilter::new(),
+                server_id: ServerId::new(&mut rand::thread_rng()),
+            },
             accumulated_steps_threshold: Some(NtpDuration::from_seconds(0.0)),
             time_snapshot: TimeSnapshot {
                 precision: NtpDuration::from_seconds(0.00001),
@@ -120,8 +124,6 @@ fuzz_target!(|parts: (
                 leap_indicator: NtpLeapIndicator::NoWarning,
                 accumulated_steps: NtpDuration::from_seconds(0.0),
             },
-            bloom_filter: BloomFilter::new(),
-            server_id: ServerId::new(&mut rand::thread_rng()),
         },
         keyset,
     );

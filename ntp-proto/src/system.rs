@@ -69,17 +69,31 @@ impl Default for TimeSnapshot {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
 pub struct SystemSnapshot {
-    /// Log of the precision of the local clock
-    pub stratum: u8,
-    /// Reference ID of current primary time source
-    pub reference_id: ReferenceId,
     /// Crossing this amount of stepping will cause a Panic
     pub accumulated_steps_threshold: Option<NtpDuration>,
     /// Timekeeping data
     #[serde(flatten)]
     pub time_snapshot: TimeSnapshot,
+    /// NTP specific data
+    #[serde(flatten)]
+    pub ntp_snapshot: NtpSnapshot,
+}
+
+impl SystemSnapshot {
+    pub fn update_timedata(&mut self, timedata: TimeSnapshot, config: &SynchronizationConfig) {
+        self.time_snapshot = timedata;
+        self.accumulated_steps_threshold = config.accumulated_step_panic_threshold;
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct NtpSnapshot {
+    /// Log of the precision of the local clock
+    pub stratum: u8,
+    /// Reference ID of current primary time source
+    pub reference_id: ReferenceId,
     /// Bloom filter that contains all currently used time sources
     #[serde(skip)]
     pub bloom_filter: BloomFilter,
@@ -88,12 +102,7 @@ pub struct SystemSnapshot {
     pub server_id: ServerId,
 }
 
-impl SystemSnapshot {
-    pub fn update_timedata(&mut self, timedata: TimeSnapshot, config: &SynchronizationConfig) {
-        self.time_snapshot = timedata;
-        self.accumulated_steps_threshold = config.accumulated_step_panic_threshold;
-    }
-
+impl NtpSnapshot {
     pub fn update_used_sources(&mut self, used_sources: impl Iterator<Item = SourceSnapshot>) {
         let mut used_sources = used_sources.peekable();
         if let Some(system_source_snapshot) = used_sources.peek() {
@@ -120,13 +129,11 @@ impl SystemSnapshot {
     }
 }
 
-impl Default for SystemSnapshot {
+impl Default for NtpSnapshot {
     fn default() -> Self {
         Self {
             stratum: 16,
             reference_id: ReferenceId::NONE,
-            accumulated_steps_threshold: None,
-            time_snapshot: TimeSnapshot::default(),
             bloom_filter: BloomFilter::new(),
             server_id: ServerId::default(),
         }
@@ -153,7 +160,10 @@ impl<Controller: TimeSyncController> System<Controller> {
     ) -> Result<Self, <Controller::Clock as NtpClock>::Error> {
         // Setup system snapshot
         let mut system = SystemSnapshot {
-            stratum: synchronization_config.local_stratum,
+            ntp_snapshot: NtpSnapshot {
+                stratum: synchronization_config.local_stratum,
+                ..Default::default()
+            },
             ..Default::default()
         };
 
@@ -161,7 +171,8 @@ impl<Controller: TimeSyncController> System<Controller> {
             // We are a stratum 1 server so mark our selves synchronized.
             system.time_snapshot.leap_indicator = NtpLeapIndicator::NoWarning;
             // Set the reference id for the system
-            system.reference_id = synchronization_config.reference_id.to_reference_id();
+            system.ntp_snapshot.reference_id =
+                synchronization_config.reference_id.to_reference_id();
         }
 
         Ok(System {
@@ -279,7 +290,7 @@ impl<Controller: TimeSyncController> System<Controller> {
             .accept_synchronization(
                 self.synchronization_config.local_stratum,
                 ip_list.as_ref(),
-                &system,
+                &system.ntp_snapshot,
             )
             .is_ok();
         self.controller.source_update(id, usable);
@@ -312,11 +323,13 @@ impl<Controller: TimeSyncController> System<Controller> {
                     let (time_snaphsot, used_sources) = this.controller.synchronization_state();
                     let sources = this.sources.lock().unwrap();
                     let mut system = this.system.lock().unwrap();
-                    system.update_used_sources(used_sources.iter().map(|v| {
-                        sources.get(v).and_then(|snapshot| *snapshot).expect(
+                    system
+                        .ntp_snapshot
+                        .update_used_sources(used_sources.iter().map(|v| {
+                            sources.get(v).and_then(|snapshot| *snapshot).expect(
                     "Critical error: Source used for synchronization that is not known to system",
                 )
-                    }));
+                        }));
                     system.update_timedata(time_snaphsot, &this.synchronization_config);
                 }
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -341,20 +354,20 @@ mod tests {
 
     #[test]
     fn test_empty_source_update() {
-        let mut system = SystemSnapshot::default();
+        let mut ntps = NtpSnapshot::default();
 
         // Should do nothing
-        system.update_used_sources(std::iter::empty());
+        ntps.update_used_sources(std::iter::empty());
 
-        assert_eq!(system.stratum, 16);
-        assert_eq!(system.reference_id, ReferenceId::NONE);
+        assert_eq!(ntps.stratum, 16);
+        assert_eq!(ntps.reference_id, ReferenceId::NONE);
     }
 
     #[test]
     fn test_source_update() {
-        let mut system = SystemSnapshot::default();
+        let mut ntps = NtpSnapshot::default();
 
-        system.update_used_sources(
+        ntps.update_used_sources(
             vec![
                 SourceSnapshot::Ntp(NtpSourceSnapshot {
                     source_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
@@ -380,8 +393,8 @@ mod tests {
             .into_iter(),
         );
 
-        assert_eq!(system.stratum, 3);
-        assert_eq!(system.reference_id, ReferenceId::KISS_DENY);
+        assert_eq!(ntps.stratum, 3);
+        assert_eq!(ntps.reference_id, ReferenceId::KISS_DENY);
     }
 
     #[test]

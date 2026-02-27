@@ -250,7 +250,7 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
                     .to_seconds(),
                 output.system.time_snapshot.root_delay.to_seconds()
             );
-            println!("Stratum: {}", output.system.stratum);
+            println!("Stratum: {}", output.system.ntp_snapshot.stratum);
             println!();
             println!("Sources:");
             for source in &output.sources {
