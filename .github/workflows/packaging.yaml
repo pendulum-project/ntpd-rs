@@ -105,7 +105,7 @@ jobs:
         run: echo "release_version=$(cargo read-manifest --manifest-path ntpd/Cargo.toml | jq -r .version)" >> "$GITHUB_ENV"
 
       - name: Version in Cargo.toml must match the branch name
-        run: test "release/$release_version" == "${{ github.ref_name }}"
+        run: test "release/$release_version" == "${{ github.ref_name }}" # zizmor: ignore[template-injection] attacker can't push to arbitrary branch on our repo
 
       - name: Ensure there is not already a released tag with a non-draft release
         run: test "$(gh release view "v$release_version" --json isDraft --jq .isDraft 2>/dev/null || echo "true")" == "true"
