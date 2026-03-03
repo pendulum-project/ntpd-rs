@@ -121,20 +121,13 @@ jobs:
           release_notes_version="$(echo "$release_notes_header" | cut -d' ' -f2 | sed 's/[][]//g')"
           echo "Found version '$release_notes_version' in release notes"
           test "$release_notes_version" == "${{ env.release_version }}"
-          {
-            echo "release_notes_body<<RELEASE_NOTES_EOF"
-            echo "$release_notes_body"
-            echo RELEASE_NOTES_EOF
-          } >> "$GITHUB_ENV"
+          echo "$release_notes_body" > release_notes.md
 
-      - name: Create a draft release
-        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
-        with:
-          draft: true
-          fail_on_unmatched_files: true
-          tag_name: "v${{ env.release_version }}"
-          target_commitish: "${{ github.sha }}"
-          name: "Version ${{ env.release_version }}"
-          files: target/pkg/*
-          body: "${{ env.release_notes_body }}"
-
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ env.release_version }}" --draft \
+            --target "${{ github.sha }}" \
+            --title "Version ${{ env.release_version }}" \
+            --notes-file release_notes.md target/pkg/*
