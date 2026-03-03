@@ -1,7 +1,6 @@
 name: packaging
 
-permissions:
-  contents: read
+permissions: {}
 
 on:
   push:

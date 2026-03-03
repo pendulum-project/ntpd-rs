@@ -1,7 +1,6 @@
 name: docker
 
 permissions:
-  contents: read
   packages: write
 
 on:

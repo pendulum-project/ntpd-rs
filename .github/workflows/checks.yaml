@@ -1,7 +1,6 @@
 name: checks
 
-permissions:
-  contents: read
+permissions: {}
 
 on:
   push:

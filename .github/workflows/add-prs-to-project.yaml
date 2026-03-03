@@ -1,5 +1,7 @@
 name: Add issues to nts-pool project
 
+permissions: {}
+
 on:
   pull_request_target:
     types:

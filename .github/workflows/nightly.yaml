@@ -1,7 +1,6 @@
 name: nightly
 
-permissions:
-  contents: read
+permissions: {}
 
 on:
   push:
