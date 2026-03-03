@@ -96,11 +96,10 @@ jobs:
           components: "llvm-tools"
 
       - name: Check that the release commit is verified
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          commit_url="${{ github.api_url }}/repos/${{ github.repository }}/commits/${{ github.sha }}"
-          json_accept_header="Accept: application/vnd.github+json"
-          auth_bearer_header="Authorization: Bearer ${{ github.token }}"
-          test "$(curl -sf -H "$json_accept_header" -H "$auth_bearer_header" "$commit_url" | jq .commit.verification.verified)" == "true"
+          test "$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}" --jq .commit.verification.verified)" == "true"
 
       - name: Read the version from the manifest file
         run: echo "release_version=$(cargo read-manifest --manifest-path ntpd/Cargo.toml | jq -r .version)" >> "$GITHUB_ENV"
