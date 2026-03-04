@@ -81,13 +81,6 @@ pub struct SystemSnapshot {
     pub ntp_snapshot: NtpSnapshot,
 }
 
-impl SystemSnapshot {
-    pub fn update_timedata(&mut self, timedata: TimeSnapshot, config: &SynchronizationConfig) {
-        self.time_snapshot = timedata;
-        self.accumulated_steps_threshold = config.accumulated_step_panic_threshold;
-    }
-}
-
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct NtpSnapshot {
     /// Log of the precision of the local clock
@@ -333,19 +326,24 @@ impl<Controller: TimeSyncController> System<Controller> {
             loop {
                 // Scope here is needed to keep this future sync and send.
                 {
-                    let (time_snaphsot, used_sources) = this.controller.synchronization_state();
+                    let (time_snapshot, used_sources) = this.controller.synchronization_state();
                     let sources = this.sources.lock().unwrap();
-                    let mut system = this.system.lock().unwrap();
-                    system.ntp_snapshot = NtpSnapshot::from_used_sources(
-                        this.synchronization_config.local_stratum,
-                        this.server_id,
-                        used_sources.iter().map(|v| {
-                            sources.get(v).and_then(|snapshot| *snapshot).expect(
-                    "Critical error: Source used for synchronization that is not known to system",
-                )
-                        }),
-                    );
-                    system.update_timedata(time_snaphsot, &this.synchronization_config);
+
+                    *this.system.lock().unwrap() = SystemSnapshot {
+                        ntp_snapshot: NtpSnapshot::from_used_sources(
+                            this.synchronization_config.local_stratum,
+                            this.server_id,
+                            used_sources.iter().map(|v| {
+                                sources.get(v).and_then(|snapshot| *snapshot).expect(
+                                    "Critical error: Source used for synchronization that is not known to system",
+                                )
+                            }),
+                        ),
+                        time_snapshot,
+                        accumulated_steps_threshold: this
+                            .synchronization_config
+                            .accumulated_step_panic_threshold,
+                    };
                 }
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
@@ -408,32 +406,5 @@ mod tests {
 
         assert_eq!(ntps.stratum, 3);
         assert_eq!(ntps.reference_id, ReferenceId::KISS_DENY);
-    }
-
-    #[test]
-    fn test_timedata_update() {
-        let mut system = SystemSnapshot::default();
-
-        let new_root_delay = NtpDuration::from_seconds(1.0);
-        let new_accumulated_threshold = NtpDuration::from_seconds(2.0);
-
-        let snapshot = TimeSnapshot {
-            root_delay: new_root_delay,
-            ..Default::default()
-        };
-        system.update_timedata(
-            snapshot,
-            &SynchronizationConfig {
-                accumulated_step_panic_threshold: Some(new_accumulated_threshold),
-                ..Default::default()
-            },
-        );
-
-        assert_eq!(system.time_snapshot, snapshot);
-
-        assert_eq!(
-            system.accumulated_steps_threshold,
-            Some(new_accumulated_threshold),
-        );
     }
 }
