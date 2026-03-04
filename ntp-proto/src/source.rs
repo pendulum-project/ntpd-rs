@@ -808,8 +808,9 @@ fn measurements_from_packet(
 )]
 mod test {
     use crate::{
-        NtpClock, NtpDuration, NtpLeapIndicator, NtpSnapshot, SystemSnapshot,
+        NtpClock, NtpDuration, NtpLeapIndicator, NtpSnapshot,
         packet::{AesSivCmac256, NoCipher},
+        system::NtpServerInfo,
         time_types::PollIntervalLimits,
     };
 
@@ -1347,7 +1348,7 @@ mod test {
             assert!(poll.is_upgrade());
 
             let response = NtpPacket::timestamp_response(
-                &SystemSnapshot::default(),
+                NtpServerInfo::default(),
                 poll,
                 NtpTimestamp::default(),
                 &clock,
@@ -1415,7 +1416,7 @@ mod test {
         assert!(poll.is_upgrade());
 
         let response = NtpPacket::timestamp_response(
-            &SystemSnapshot::default(),
+            NtpServerInfo::default(),
             poll,
             NtpTimestamp::default(),
             &clock,
@@ -1455,7 +1456,7 @@ mod test {
         assert_eq!(poll.version(), NtpVersion::V5);
 
         let response = NtpPacket::timestamp_response(
-            &SystemSnapshot::default(),
+            NtpServerInfo::default(),
             poll,
             NtpTimestamp::default(),
             &clock,
@@ -1506,7 +1507,7 @@ mod test {
         assert!(poll.is_upgrade());
 
         let response = NtpPacket::timestamp_response(
-            &SystemSnapshot::default(),
+            NtpServerInfo::default(),
             poll,
             NtpTimestamp::default(),
             &clock,
@@ -1574,7 +1575,7 @@ mod test {
 
         let clock = TestClock::default();
 
-        let server_system = SystemSnapshot {
+        let server_info = NtpServerInfo {
             ntp_snapshot: NtpSnapshot {
                 bloom_filter: server_filter,
                 ..Default::default()
@@ -1600,7 +1601,7 @@ mod test {
 
             let (req, _) = NtpPacket::deserialize(&req, &NoCipher).unwrap();
             let response =
-                NtpPacket::timestamp_response(&server_system, req, NtpTimestamp::default(), &clock);
+                NtpPacket::timestamp_response(server_info, req, NtpTimestamp::default(), &clock);
             let resp_bytes = response.serialize_without_encryption_vec(None).unwrap();
 
             let actions = client.handle_incoming(

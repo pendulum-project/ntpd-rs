@@ -417,7 +417,7 @@ mod tests {
 
     use ntp_proto::{
         AlgorithmConfig, KalmanClockController, NoCipher, NtpDuration, NtpLeapIndicator, NtpPacket,
-        ProtocolVersion, SourceConfig, SynchronizationConfig, SystemSnapshot, TimeSnapshot,
+        NtpServerInfo, ProtocolVersion, SourceConfig, SynchronizationConfig, TimeSnapshot,
         TimeSyncControllerWrapper, TwoWayKalmanSourceController, TwoWaySourceControllerWrapper,
     };
     use timestamped_socket::socket::{GeneralTimestampMode, Open, open_ip};
@@ -634,7 +634,7 @@ mod tests {
         // Note: Ports must be unique among tests to deal with parallelism
         let (mut process, mut socket, mut msg_recv) = test_startup().await;
 
-        let system = SystemSnapshot {
+        let server_info = NtpServerInfo {
             time_snapshot: TimeSnapshot {
                 leap_indicator: NtpLeapIndicator::NoWarning,
                 ..Default::default()
@@ -663,7 +663,7 @@ mod tests {
 
         let rec_packet = NtpPacket::deserialize(&buf, &NoCipher).unwrap().0;
         let send_packet = NtpPacket::timestamp_response(
-            &system,
+            server_info,
             rec_packet,
             convert_net_timestamp(timestamp),
             &clock,

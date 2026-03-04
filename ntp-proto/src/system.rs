@@ -2,11 +2,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
 use crate::source::{NtpSourceUpdate, SourceSnapshot};
-use crate::{ClockId, NtpSourceSnapshot, NtpTimestamp, OneWaySource};
+use crate::{ClockId, KeySet, NtpSourceSnapshot, NtpTimestamp, OneWaySource, Server, ServerConfig};
 use crate::{
     algorithm::TimeSyncController,
     clock::NtpClock,
@@ -194,6 +194,15 @@ impl<Controller: TimeSyncController> System<Controller> {
         })
     }
 
+    pub fn new_ntp_server<C>(
+        &self,
+        config: ServerConfig,
+        clock: C,
+        keyset: Arc<KeySet>,
+    ) -> Server<C> {
+        self.ntp_manager.new_server(config, clock, keyset)
+    }
+
     pub fn system_snapshot(&self) -> SystemSnapshot {
         *self.system.lock().unwrap()
     }
@@ -315,6 +324,7 @@ impl<Controller: TimeSyncController> System<Controller> {
                 {
                     let (time_snapshot, used_sources) = this.controller.synchronization_state();
                     let sources = this.sources.lock().unwrap();
+                    this.ntp_manager.update_time_snapshot(time_snapshot);
                     let ntp_snapshot =
                         this.ntp_manager
                             .update_used_sources(used_sources.iter().map(|id| {
@@ -346,11 +356,19 @@ impl<Controller: TimeSyncController> System<Controller> {
     }
 }
 
+#[derive(Default, Copy, Clone)]
+pub struct NtpServerInfo {
+    pub time_snapshot: TimeSnapshot,
+    pub ntp_snapshot: NtpSnapshot,
+}
+
 pub struct NtpManager {
     synchronization_config: SynchronizationConfig,
     server_id: ServerId,
     source_snapshots: Mutex<HashMap<ClockId, NtpSourceSnapshot>>,
     ip_list: Mutex<Arc<[IpAddr]>>,
+
+    server_info: Arc<RwLock<NtpServerInfo>>,
 }
 
 impl NtpManager {
@@ -360,7 +378,13 @@ impl NtpManager {
             server_id: ServerId::default(),
             source_snapshots: Mutex::new(HashMap::new()),
             ip_list: Mutex::new(ip_list),
+
+            server_info: Arc::default(),
         }
+    }
+
+    pub fn new_server<C>(&self, config: ServerConfig, clock: C, keyset: Arc<KeySet>) -> Server<C> {
+        Server::new_internal(config, clock, self.server_info.clone(), keyset)
     }
 
     pub fn update_ip_list(&self, ip_list: Arc<[IpAddr]>) {
@@ -389,7 +413,7 @@ impl NtpManager {
         sources: impl Iterator<Item = (ClockId, SourceType)>,
     ) -> NtpSnapshot {
         let source_snapshots = self.source_snapshots.lock().unwrap();
-        NtpSnapshot::from_used_sources(
+        let snapshot = NtpSnapshot::from_used_sources(
             self.synchronization_config.local_stratum,
             self.server_id,
             sources.map(|(id, sourcetype)| match sourcetype {
@@ -399,7 +423,16 @@ impl NtpManager {
                     "Critical error: NTP source used for synchronization never produced source updates",
                 )),
             }),
-        )
+        );
+        drop(source_snapshots);
+
+        self.server_info.write().unwrap().ntp_snapshot = snapshot;
+
+        snapshot
+    }
+
+    pub fn update_time_snapshot(&self, time_snapshot: TimeSnapshot) {
+        self.server_info.write().unwrap().time_snapshot = time_snapshot;
     }
 }
 

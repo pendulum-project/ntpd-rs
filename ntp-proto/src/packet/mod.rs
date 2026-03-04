@@ -9,7 +9,7 @@ use crate::{
     identifiers::ReferenceId,
     io::NonBlockingWrite,
     keyset::{DecodedServerCookie, KeySet},
-    system::SystemSnapshot,
+    system::NtpServerInfo,
     time_types::{NtpDuration, NtpTimestamp, PollInterval},
 };
 
@@ -234,24 +234,24 @@ impl NtpHeaderV3V4 {
     }
 
     fn timestamp_response<C: NtpClock>(
-        system: &SystemSnapshot,
+        server_info: &NtpServerInfo,
         input: Self,
         recv_timestamp: NtpTimestamp,
         clock: &C,
     ) -> Self {
         Self {
             mode: NtpAssociationMode::Server,
-            stratum: system.ntp_snapshot.stratum,
+            stratum: server_info.ntp_snapshot.stratum,
             origin_timestamp: input.transmit_timestamp,
             receive_timestamp: recv_timestamp,
-            reference_id: system.ntp_snapshot.reference_id,
+            reference_id: server_info.ntp_snapshot.reference_id,
             poll: input.poll,
-            precision: system.time_snapshot.precision.log2(),
-            root_delay: system.time_snapshot.root_delay,
-            root_dispersion: system.time_snapshot.root_dispersion(recv_timestamp),
+            precision: server_info.time_snapshot.precision.log2(),
+            root_delay: server_info.time_snapshot.root_delay,
+            root_dispersion: server_info.time_snapshot.root_dispersion(recv_timestamp),
             // Timestamp must be last to make it as accurate as possible.
             transmit_timestamp: clock.now().expect("Failed to read time"),
-            leap: system.time_snapshot.leap_indicator,
+            leap: server_info.time_snapshot.leap_indicator,
             reference_timestamp: recv_timestamp.truncated_second_bits(7),
         }
     }
@@ -621,7 +621,7 @@ impl<'a> NtpPacket<'a> {
     }
 
     pub fn timestamp_response<C: NtpClock>(
-        system: &SystemSnapshot,
+        server_info: NtpServerInfo,
         input: Self,
         recv_timestamp: NtpTimestamp,
         clock: &C,
@@ -629,7 +629,7 @@ impl<'a> NtpPacket<'a> {
         match &input.header {
             NtpHeader::V3(header) => NtpPacket {
                 header: NtpHeader::V3(NtpHeaderV3V4::timestamp_response(
-                    system,
+                    &server_info,
                     *header,
                     recv_timestamp,
                     clock,
@@ -639,7 +639,7 @@ impl<'a> NtpPacket<'a> {
             },
             NtpHeader::V4(header) => {
                 let mut response_header =
-                    NtpHeaderV3V4::timestamp_response(system, *header, recv_timestamp, clock);
+                    NtpHeaderV3V4::timestamp_response(&server_info, *header, recv_timestamp, clock);
 
                 // Respond with the upgrade timestamp (NTP5NTP5) iff the input had it and the packet
                 // had the correct draft identification
@@ -667,7 +667,7 @@ impl<'a> NtpPacket<'a> {
             NtpHeader::V5(header) => NtpPacket {
                 // TODO deduplicate extension handling with V4
                 header: NtpHeader::V5(v5::NtpHeaderV5::timestamp_response(
-                    system,
+                    &server_info,
                     *header,
                     recv_timestamp,
                     clock,
@@ -685,7 +685,7 @@ impl<'a> NtpPacket<'a> {
                             uid @ ExtensionField::UniqueIdentifier(_) => Some(uid),
                             ExtensionField::ReferenceIdRequest(req) => {
                                 let response =
-                                    req.to_response(&system.ntp_snapshot.bloom_filter)?;
+                                    req.to_response(&server_info.ntp_snapshot.bloom_filter)?;
                                 Some(ExtensionField::ReferenceIdResponse(response).into_owned())
                             }
                             _ => None,
@@ -713,7 +713,7 @@ impl<'a> NtpPacket<'a> {
 
     #[allow(clippy::too_many_lines)]
     pub fn nts_timestamp_response<C: NtpClock>(
-        system: &SystemSnapshot,
+        server_info: NtpServerInfo,
         input: Self,
         recv_timestamp: NtpTimestamp,
         clock: &C,
@@ -724,7 +724,7 @@ impl<'a> NtpPacket<'a> {
             NtpHeader::V3(_) => unreachable!("NTS shouldn't work with NTPv3"),
             NtpHeader::V4(header) => NtpPacket {
                 header: NtpHeader::V4(NtpHeaderV3V4::timestamp_response(
-                    system,
+                    &server_info,
                     header,
                     recv_timestamp,
                     clock,
@@ -769,7 +769,7 @@ impl<'a> NtpPacket<'a> {
             },
             NtpHeader::V5(header) => NtpPacket {
                 header: NtpHeader::V5(v5::NtpHeaderV5::timestamp_response(
-                    system,
+                    &server_info,
                     header,
                     recv_timestamp,
                     clock,
@@ -809,7 +809,7 @@ impl<'a> NtpPacket<'a> {
                             uid @ ExtensionField::UniqueIdentifier(_) => Some(uid),
                             ExtensionField::ReferenceIdRequest(req) => {
                                 let response =
-                                    req.to_response(&system.ntp_snapshot.bloom_filter)?;
+                                    req.to_response(&server_info.ntp_snapshot.bloom_filter)?;
                                 Some(ExtensionField::ReferenceIdResponse(response).into_owned())
                             }
                             _ => None,
@@ -1683,7 +1683,7 @@ mod tests {
         let (packet, id) =
             NtpPacket::nts_poll_message(&cookie, 0, PollIntervalLimits::default().min);
         let mut response = NtpPacket::timestamp_response(
-            &SystemSnapshot::default(),
+            NtpServerInfo::default(),
             packet,
             NtpTimestamp::from_fixed_int(0),
             &TestClock {
@@ -1738,7 +1738,7 @@ mod tests {
         let (packet, _) = NtpPacket::poll_message_upgrade_request(PollInterval::default());
 
         let response = NtpPacket::timestamp_response(
-            &SystemSnapshot::default(),
+            NtpServerInfo::default(),
             packet,
             NtpTimestamp::from_fixed_int(0),
             &TestClock {
@@ -1781,7 +1781,7 @@ mod tests {
             })
             .unwrap();
         let response = NtpPacket::timestamp_response(
-            &SystemSnapshot {
+            NtpServerInfo {
                 time_snapshot: TimeSnapshot {
                     leap_indicator: NtpLeapIndicator::Leap59,
                     ..Default::default()
@@ -1836,7 +1836,7 @@ mod tests {
             })
             .unwrap();
         let response = NtpPacket::timestamp_response(
-            &SystemSnapshot::default(),
+            NtpServerInfo::default(),
             packet,
             NtpTimestamp::from_fixed_int(0),
             &TestClock {
@@ -1880,7 +1880,7 @@ mod tests {
             })
             .unwrap();
         let response = NtpPacket::nts_timestamp_response(
-            &SystemSnapshot::default(),
+            NtpServerInfo::default(),
             packet,
             NtpTimestamp::from_fixed_int(0),
             &TestClock {
@@ -1918,7 +1918,7 @@ mod tests {
             &mut packet.efdata.untrusted,
         );
         let response = NtpPacket::nts_timestamp_response(
-            &SystemSnapshot::default(),
+            NtpServerInfo::default(),
             packet,
             NtpTimestamp::from_fixed_int(0),
             &TestClock {
@@ -1964,7 +1964,7 @@ mod tests {
         let (packet, _) =
             NtpPacket::nts_poll_message(&cookie, 1, PollIntervalLimits::default().min);
         let response = NtpPacket::nts_timestamp_response(
-            &SystemSnapshot::default(),
+            NtpServerInfo::default(),
             packet,
             NtpTimestamp::from_fixed_int(0),
             &TestClock {
@@ -1978,7 +1978,7 @@ mod tests {
         let (packet, _) =
             NtpPacket::nts_poll_message(&cookie, 2, PollIntervalLimits::default().min);
         let response = NtpPacket::nts_timestamp_response(
-            &SystemSnapshot::default(),
+            NtpServerInfo::default(),
             packet,
             NtpTimestamp::from_fixed_int(0),
             &TestClock {
@@ -1992,7 +1992,7 @@ mod tests {
         let (packet, _) =
             NtpPacket::nts_poll_message(&cookie, 3, PollIntervalLimits::default().min);
         let response = NtpPacket::nts_timestamp_response(
-            &SystemSnapshot::default(),
+            NtpServerInfo::default(),
             packet,
             NtpTimestamp::from_fixed_int(0),
             &TestClock {
@@ -2006,7 +2006,7 @@ mod tests {
         let (packet, _) =
             NtpPacket::nts_poll_message(&cookie, 4, PollIntervalLimits::default().min);
         let response = NtpPacket::nts_timestamp_response(
-            &SystemSnapshot::default(),
+            NtpServerInfo::default(),
             packet,
             NtpTimestamp::from_fixed_int(0),
             &TestClock {
