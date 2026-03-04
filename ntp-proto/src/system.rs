@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
 use crate::source::{NtpSourceUpdate, SourceSnapshot};
-use crate::{ClockId, NtpTimestamp, OneWaySource};
+use crate::{ClockId, NtpSourceSnapshot, NtpTimestamp, OneWaySource};
 use crate::{
     algorithm::TimeSyncController,
     clock::NtpClock,
@@ -142,13 +142,19 @@ impl Default for NtpSnapshot {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SourceType {
+    Pps,
+    Sock,
+    Ntp,
+}
+
 pub struct System<Controller> {
     synchronization_config: SynchronizationConfig,
     system: Mutex<SystemSnapshot>,
-    ip_list: Mutex<Arc<[IpAddr]>>,
-    server_id: ServerId,
+    ntp_manager: NtpManager,
 
-    sources: Mutex<HashMap<ClockId, Option<SourceSnapshot>>>,
+    sources: Mutex<HashMap<ClockId, SourceType>>,
 
     controller: Controller,
     controller_took_control: Mutex<bool>,
@@ -180,12 +186,11 @@ impl<Controller: TimeSyncController> System<Controller> {
 
         Ok(System {
             synchronization_config,
+            ntp_manager: NtpManager::new(synchronization_config, ip_list),
             system: Mutex::new(system),
-            ip_list: Mutex::new(ip_list),
             sources: Mutex::new(HashMap::new()),
             controller: Controller::new(clock, synchronization_config, algorithm_config)?,
             controller_took_control: Mutex::new(false),
-            server_id: ServerId::default(),
         })
     }
 
@@ -220,13 +225,7 @@ impl<Controller: TimeSyncController> System<Controller> {
         let controller =
             self.controller
                 .add_one_way_source(id, source_config, measurement_noise_estimate, None);
-        self.sources.lock().unwrap().insert(
-            id,
-            Some(SourceSnapshot::External {
-                stratum: 0,
-                source_id: ReferenceId::SOCK,
-            }),
-        );
+        self.sources.lock().unwrap().insert(id, SourceType::Sock);
         self.controller.source_update(id, true);
         Ok(OneWaySource::new(controller))
     }
@@ -248,13 +247,7 @@ impl<Controller: TimeSyncController> System<Controller> {
             measurement_noise_estimate,
             Some(period),
         );
-        self.sources.lock().unwrap().insert(
-            id,
-            Some(SourceSnapshot::External {
-                stratum: 0,
-                source_id: ReferenceId::PPS,
-            }),
-        );
+        self.sources.lock().unwrap().insert(id, SourceType::Pps);
         self.controller.source_update(id, true);
         Ok(OneWaySource::new(controller))
     }
@@ -276,7 +269,7 @@ impl<Controller: TimeSyncController> System<Controller> {
     > {
         self.ensure_controller_control()?;
         let controller = self.controller.add_source(id, source_config);
-        self.sources.lock().unwrap().insert(id, None);
+        self.sources.lock().unwrap().insert(id, SourceType::Ntp);
         Ok(NtpSource::new(
             source_addr,
             source_config,
@@ -296,28 +289,15 @@ impl<Controller: TimeSyncController> System<Controller> {
         Ok(())
     }
 
-    pub fn handle_source_update(
-        &self,
-        id: ClockId,
-        update: NtpSourceUpdate,
-    ) -> Result<(), <Controller::Clock as NtpClock>::Error> {
-        let ip_list = self.ip_list.lock().unwrap().clone();
-        let usable = update
-            .snapshot
-            .accept_synchronization(
-                self.synchronization_config.local_stratum,
-                ip_list.as_ref(),
-                self.server_id,
-            )
-            .is_ok();
-        self.controller.source_update(id, usable);
-        *self.sources.lock().unwrap().get_mut(&id).unwrap() =
-            Some(SourceSnapshot::Ntp(update.snapshot));
-        Ok(())
+    pub fn handle_source_update(&self, id: ClockId, update: NtpSourceUpdate) {
+        let (usability_change_id, usability_change_usable) =
+            self.ntp_manager.handle_source_update(id, update);
+        self.controller
+            .source_update(usability_change_id, usability_change_usable);
     }
 
     pub fn update_ip_list(&self, ip_list: Arc<[IpAddr]>) {
-        *self.ip_list.lock().unwrap() = ip_list;
+        self.ntp_manager.update_ip_list(ip_list);
     }
 
     pub fn run(self: Arc<Self>) -> impl Future<Output = ()> + 'static {
@@ -328,17 +308,19 @@ impl<Controller: TimeSyncController> System<Controller> {
                 {
                     let (time_snapshot, used_sources) = this.controller.synchronization_state();
                     let sources = this.sources.lock().unwrap();
+                    let ntp_snapshot =
+                        this.ntp_manager
+                            .update_used_sources(used_sources.iter().map(|id| {
+                                (
+                                    *id,
+                                    *sources.get(id).expect(
+                                        "Critical error: Unknown source used for synchronization",
+                                    ),
+                                )
+                            }));
 
                     *this.system.lock().unwrap() = SystemSnapshot {
-                        ntp_snapshot: NtpSnapshot::from_used_sources(
-                            this.synchronization_config.local_stratum,
-                            this.server_id,
-                            used_sources.iter().map(|v| {
-                                sources.get(v).and_then(|snapshot| *snapshot).expect(
-                                    "Critical error: Source used for synchronization that is not known to system",
-                                )
-                            }),
-                        ),
+                        ntp_snapshot,
                         time_snapshot,
                         accumulated_steps_threshold: this
                             .synchronization_config
@@ -354,6 +336,63 @@ impl<Controller: TimeSyncController> System<Controller> {
         async move {
             tokio::join!(update_pusher, controller_run);
         }
+    }
+}
+
+pub struct NtpManager {
+    synchronization_config: SynchronizationConfig,
+    server_id: ServerId,
+    source_snapshots: Mutex<HashMap<ClockId, NtpSourceSnapshot>>,
+    ip_list: Mutex<Arc<[IpAddr]>>,
+}
+
+impl NtpManager {
+    pub fn new(synchronization_config: SynchronizationConfig, ip_list: Arc<[IpAddr]>) -> Self {
+        Self {
+            synchronization_config,
+            server_id: ServerId::default(),
+            source_snapshots: Mutex::new(HashMap::new()),
+            ip_list: Mutex::new(ip_list),
+        }
+    }
+
+    pub fn update_ip_list(&self, ip_list: Arc<[IpAddr]>) {
+        *self.ip_list.lock().unwrap() = ip_list;
+    }
+
+    pub fn handle_source_update(&self, id: ClockId, update: NtpSourceUpdate) -> (ClockId, bool) {
+        let ip_list = self.ip_list.lock().unwrap().clone();
+        let usable = update
+            .snapshot
+            .accept_synchronization(
+                self.synchronization_config.local_stratum,
+                ip_list.as_ref(),
+                self.server_id,
+            )
+            .is_ok();
+        self.source_snapshots
+            .lock()
+            .unwrap()
+            .insert(id, update.snapshot);
+        (id, usable)
+    }
+
+    pub fn update_used_sources(
+        &self,
+        sources: impl Iterator<Item = (ClockId, SourceType)>,
+    ) -> NtpSnapshot {
+        let source_snapshots = self.source_snapshots.lock().unwrap();
+        NtpSnapshot::from_used_sources(
+            self.synchronization_config.local_stratum,
+            self.server_id,
+            sources.map(|(id, sourcetype)| match sourcetype {
+                SourceType::Pps => SourceSnapshot::External { stratum: 0, source_id: ReferenceId::PPS },
+                SourceType::Sock => SourceSnapshot::External { stratum: 0, source_id: ReferenceId::SOCK },
+                SourceType::Ntp => SourceSnapshot::Ntp(*source_snapshots.get(&id).expect(
+                    "Critical error: NTP source used for synchronization never produced source updates",
+                )),
+            }),
+        )
     }
 }
 
