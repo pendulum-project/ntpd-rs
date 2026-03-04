@@ -5,17 +5,16 @@ use std::{
     borrow::Cow,
     io::{Cursor, Write},
     net::IpAddr,
+    sync::{Arc, RwLock},
     time::Duration,
 };
 
 use libfuzzer_sys::fuzz_target;
 use ntp_proto::{
-    test_cookie,
-    v5::{BloomFilter, ServerId},
-    EncryptResult, ExtensionField, ExtensionHeaderVersion, FilterAction, FilterList,
-    HandleInnerData, KeySetProvider, NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp,
-    NtpVersion, ReferenceId, Server, ServerConfig, ServerReason, ServerResponse, ServerStatHandler,
-    SystemSnapshot, TimeSnapshot,
+    test_cookie, v5::BloomFilter, EncryptResult, ExtensionField, ExtensionHeaderVersion,
+    FilterAction, FilterList, HandleInnerData, KeySetProvider, NtpClock, NtpDuration,
+    NtpLeapIndicator, NtpServerInfo, NtpSnapshot, NtpTimestamp, NtpVersion, ReferenceId, Server,
+    ServerConfig, ServerReason, ServerResponse, ServerStatHandler, TimeSnapshot,
 };
 use rand::{rngs::StdRng, set_thread_rng, SeedableRng};
 
@@ -93,7 +92,7 @@ fuzz_target!(|parts: (
 
     let ip = IpAddr::from(parts.2);
 
-    let mut server = Server::new(
+    let mut server = Server::new_internal(
         ServerConfig {
             denylist,
             allowlist,
@@ -105,10 +104,12 @@ fuzz_target!(|parts: (
         TestClock {
             cur: NtpTimestamp::from_seconds_nanos_since_ntp_era(100, 0),
         },
-        SystemSnapshot {
-            stratum: 1,
-            reference_id: ReferenceId::NONE,
-            accumulated_steps_threshold: Some(NtpDuration::from_seconds(0.0)),
+        Arc::new(RwLock::new(NtpServerInfo {
+            ntp_snapshot: NtpSnapshot {
+                stratum: 1,
+                reference_id: ReferenceId::NONE,
+                bloom_filter: BloomFilter::new(),
+            },
             time_snapshot: TimeSnapshot {
                 precision: NtpDuration::from_seconds(0.00001),
                 root_delay: NtpDuration::from_seconds(0.01),
@@ -120,9 +121,7 @@ fuzz_target!(|parts: (
                 leap_indicator: NtpLeapIndicator::NoWarning,
                 accumulated_steps: NtpDuration::from_seconds(0.0),
             },
-            bloom_filter: BloomFilter::new(),
-            server_id: ServerId::new(&mut rand::thread_rng()),
-        },
+        })),
         keyset,
     );
 

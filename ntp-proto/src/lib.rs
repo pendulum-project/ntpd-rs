@@ -278,10 +278,10 @@ mod exports {
     pub use super::source::source_snapshot;
     pub use super::source::{
         AcceptSynchronizationError, NtpSource, NtpSourceAction, NtpSourceActionIterator,
-        NtpSourceSnapshot, NtpSourceUpdate, ObservableSourceState, OneWaySource,
-        OneWaySourceSnapshot, OneWaySourceUpdate, ProtocolVersion, Reach, SourceNtsData,
+        NtpSourceSnapshot, NtpSourceUpdate, ObservableSourceState, OneWaySource, ProtocolVersion,
+        Reach, SourceNtsData,
     };
-    pub use super::system::{System, SystemSnapshot, TimeSnapshot};
+    pub use super::system::{NtpServerInfo, NtpSnapshot, System, SystemSnapshot, TimeSnapshot};
 
     #[cfg(feature = "__internal-fuzz")]
     pub use super::time_types::fuzz_duration_from_seconds;

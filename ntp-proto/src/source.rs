@@ -5,6 +5,7 @@ use crate::{
         ExtensionField, NtpHeader,
         v5::server_reference_id::{BloomFilter, RemoteBloomFilter},
     },
+    v5::ServerId,
 };
 use crate::{
     algorithm::{ObservableSourceTimedata, SourceController},
@@ -12,7 +13,6 @@ use crate::{
     cookiestash::CookieStash,
     identifiers::ReferenceId,
     packet::{Cipher, NtpAssociationMode, NtpPacket, RequestIdentifier},
-    system::SystemSnapshot,
     time_types::{NtpTimestamp, PollInterval},
 };
 use rand::{Rng, thread_rng};
@@ -176,22 +176,11 @@ impl Reach {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct OneWaySourceUpdate {
-    pub snapshot: OneWaySourceSnapshot,
-}
-
 #[derive(Debug, Clone, Copy)]
 #[expect(clippy::large_enum_variant)]
 pub enum SourceSnapshot {
     Ntp(NtpSourceSnapshot),
-    OneWay(OneWaySourceSnapshot),
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct OneWaySourceSnapshot {
-    pub source_id: ReferenceId,
-    pub stratum: u8,
+    External { stratum: u8, source_id: ReferenceId },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -216,7 +205,7 @@ impl NtpSourceSnapshot {
         &self,
         local_stratum: u8,
         local_ips: &[IpAddr],
-        system: &SystemSnapshot,
+        server_id: ServerId,
     ) -> Result<(), AcceptSynchronizationError> {
         use AcceptSynchronizationError::*;
 
@@ -244,7 +233,7 @@ impl NtpSourceSnapshot {
         }
 
         match self.bloom_filter {
-            Some(filter) if filter.contains_id(&system.server_id) => {
+            Some(filter) if filter.contains_id(&server_id) => {
                 debug!("Source rejected because of detected synchronization loop (bloom filter)");
                 return Err(Loop);
             }
@@ -794,7 +783,6 @@ fn measurements_from_packet(
             receiver_id: id,
             sender_ts: send_time,
             receiver_ts: message.receive_timestamp(),
-            stratum: message.stratum(),
             root_delay: message.root_delay(),
             root_dispersion: message.root_dispersion(),
             leap: message.leap(),
@@ -805,7 +793,6 @@ fn measurements_from_packet(
             receiver_id: ClockId::SYSTEM,
             sender_ts: message.transmit_timestamp(),
             receiver_ts: recv_time,
-            stratum: message.stratum(),
             root_delay: message.root_delay(),
             root_dispersion: message.root_dispersion(),
             leap: message.leap(),
@@ -821,8 +808,9 @@ fn measurements_from_packet(
 )]
 mod test {
     use crate::{
-        NtpClock, NtpDuration, NtpLeapIndicator,
+        NtpClock, NtpDuration, NtpLeapIndicator, NtpSnapshot,
         packet::{AesSivCmac256, NoCipher},
+        system::NtpServerInfo,
         time_types::PollIntervalLimits,
     };
 
@@ -925,12 +913,14 @@ mod test {
 
         let mut source = NtpSource::test_ntp_source(NoopController);
 
-        let system = SystemSnapshot::default();
-
         macro_rules! accept {
             () => {{
                 let snapshot = NtpSourceSnapshot::from_source(&source);
-                snapshot.accept_synchronization(16, &["127.0.0.1".parse().unwrap()], &system)
+                snapshot.accept_synchronization(
+                    16,
+                    &["127.0.0.1".parse().unwrap()],
+                    ServerId::default(),
+                )
             }};
         }
 
@@ -1358,7 +1348,7 @@ mod test {
             assert!(poll.is_upgrade());
 
             let response = NtpPacket::timestamp_response(
-                &SystemSnapshot::default(),
+                NtpServerInfo::default(),
                 poll,
                 NtpTimestamp::default(),
                 &clock,
@@ -1426,7 +1416,7 @@ mod test {
         assert!(poll.is_upgrade());
 
         let response = NtpPacket::timestamp_response(
-            &SystemSnapshot::default(),
+            NtpServerInfo::default(),
             poll,
             NtpTimestamp::default(),
             &clock,
@@ -1466,7 +1456,7 @@ mod test {
         assert_eq!(poll.version(), NtpVersion::V5);
 
         let response = NtpPacket::timestamp_response(
-            &SystemSnapshot::default(),
+            NtpServerInfo::default(),
             poll,
             NtpTimestamp::default(),
             &clock,
@@ -1517,7 +1507,7 @@ mod test {
         assert!(poll.is_upgrade());
 
         let response = NtpPacket::timestamp_response(
-            &SystemSnapshot::default(),
+            NtpServerInfo::default(),
             poll,
             NtpTimestamp::default(),
             &clock,
@@ -1585,8 +1575,11 @@ mod test {
 
         let clock = TestClock::default();
 
-        let server_system = SystemSnapshot {
-            bloom_filter: server_filter,
+        let server_info = NtpServerInfo {
+            ntp_snapshot: NtpSnapshot {
+                bloom_filter: server_filter,
+                ..Default::default()
+            },
             ..Default::default()
         };
 
@@ -1608,7 +1601,7 @@ mod test {
 
             let (req, _) = NtpPacket::deserialize(&req, &NoCipher).unwrap();
             let response =
-                NtpPacket::timestamp_response(&server_system, req, NtpTimestamp::default(), &clock);
+                NtpPacket::timestamp_response(server_info, req, NtpTimestamp::default(), &clock);
             let resp_bytes = response.serialize_without_encryption_vec(None).unwrap();
 
             let actions = client.handle_incoming(

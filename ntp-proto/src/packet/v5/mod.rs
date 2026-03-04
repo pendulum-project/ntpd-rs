@@ -1,7 +1,7 @@
 #![warn(clippy::missing_const_for_fn)]
 use crate::{
-    NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, PollInterval, SystemSnapshot,
-    io::NonBlockingWrite,
+    NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, PollInterval, io::NonBlockingWrite,
+    system::NtpServerInfo,
 };
 use rand::random;
 
@@ -188,26 +188,26 @@ impl NtpHeaderV5 {
     }
 
     pub(crate) fn timestamp_response<C: NtpClock>(
-        system: &SystemSnapshot,
+        server_info: &NtpServerInfo,
         input: Self,
         recv_timestamp: NtpTimestamp,
         clock: &C,
     ) -> Self {
         Self {
-            leap: system.time_snapshot.leap_indicator,
+            leap: server_info.time_snapshot.leap_indicator,
             mode: NtpMode::Response,
-            stratum: system.stratum,
+            stratum: server_info.ntp_snapshot.stratum,
             poll: input.poll,
-            precision: system.time_snapshot.precision.log2(),
+            precision: server_info.time_snapshot.precision.log2(),
             timescale: NtpTimescale::Utc,
             era: NtpEra(0),
             flags: NtpFlags {
-                synchronized: system.stratum < 16,
+                synchronized: server_info.ntp_snapshot.stratum < 16,
                 interleaved_mode: false,
                 authnak: false,
             },
-            root_delay: system.time_snapshot.root_delay,
-            root_dispersion: system.time_snapshot.root_dispersion(recv_timestamp),
+            root_delay: server_info.time_snapshot.root_delay,
+            root_dispersion: server_info.time_snapshot.root_dispersion(recv_timestamp),
             server_cookie: NtpServerCookie::new_random(),
             client_cookie: input.client_cookie,
             receive_timestamp: recv_timestamp,

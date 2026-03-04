@@ -2,11 +2,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
 use crate::source::{NtpSourceUpdate, SourceSnapshot};
-use crate::{ClockId, NtpTimestamp, OneWaySource, OneWaySourceUpdate};
+use crate::{ClockId, KeySet, NtpSourceSnapshot, NtpTimestamp, OneWaySource, Server, ServerConfig};
 use crate::{
     algorithm::TimeSyncController,
     clock::NtpClock,
@@ -69,76 +69,92 @@ impl Default for TimeSnapshot {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
 pub struct SystemSnapshot {
-    /// Log of the precision of the local clock
-    pub stratum: u8,
-    /// Reference ID of current primary time source
-    pub reference_id: ReferenceId,
     /// Crossing this amount of stepping will cause a Panic
     pub accumulated_steps_threshold: Option<NtpDuration>,
     /// Timekeeping data
     #[serde(flatten)]
     pub time_snapshot: TimeSnapshot,
+    /// NTP specific data
+    #[serde(flatten)]
+    pub ntp_snapshot: NtpSnapshot,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct NtpSnapshot {
+    /// Log of the precision of the local clock
+    pub stratum: u8,
+    /// Reference ID of current primary time source
+    pub reference_id: ReferenceId,
     /// Bloom filter that contains all currently used time sources
     #[serde(skip)]
     pub bloom_filter: BloomFilter,
-    /// NTPv5 reference ID for this instance
-    #[serde(skip)]
-    pub server_id: ServerId,
 }
 
-impl SystemSnapshot {
-    pub fn update_timedata(&mut self, timedata: TimeSnapshot, config: &SynchronizationConfig) {
-        self.time_snapshot = timedata;
-        self.accumulated_steps_threshold = config.accumulated_step_panic_threshold;
-    }
+impl NtpSnapshot {
+    pub fn from_used_sources(
+        local_stratum: u8,
+        server_id: ServerId,
+        used_sources: impl Iterator<Item = SourceSnapshot>,
+    ) -> Self {
+        let mut stratum = local_stratum;
+        let mut reference_id = ReferenceId::NONE;
 
-    pub fn update_used_sources(&mut self, used_sources: impl Iterator<Item = SourceSnapshot>) {
         let mut used_sources = used_sources.peekable();
         if let Some(system_source_snapshot) = used_sources.peek() {
-            let (stratum, source_id) = match system_source_snapshot {
+            let (source_stratum, source_id) = match system_source_snapshot {
                 SourceSnapshot::Ntp(snapshot) => (snapshot.stratum, snapshot.source_id),
-                SourceSnapshot::OneWay(snapshot) => (snapshot.stratum, snapshot.source_id),
+                SourceSnapshot::External { stratum, source_id } => (*stratum, *source_id),
             };
 
-            self.stratum = stratum.saturating_add(1);
-            self.reference_id = source_id;
+            stratum = source_stratum.saturating_add(1);
+            reference_id = source_id;
         }
 
-        self.bloom_filter = BloomFilter::new();
+        let mut bloom_filter = BloomFilter::new();
         for source in used_sources {
             if let SourceSnapshot::Ntp(source) = source {
                 if let Some(bf) = &source.bloom_filter {
-                    self.bloom_filter.add(bf);
+                    bloom_filter.add(bf);
                 } else if let ProtocolVersion::V5 = source.protocol_version {
                     tracing::warn!("Using NTPv5 source without a bloom filter!");
                 }
             }
         }
-        self.bloom_filter.add_id(&self.server_id);
+        bloom_filter.add_id(&server_id);
+
+        Self {
+            stratum,
+            reference_id,
+            bloom_filter,
+        }
     }
 }
 
-impl Default for SystemSnapshot {
+impl Default for NtpSnapshot {
     fn default() -> Self {
         Self {
             stratum: 16,
             reference_id: ReferenceId::NONE,
-            accumulated_steps_threshold: None,
-            time_snapshot: TimeSnapshot::default(),
             bloom_filter: BloomFilter::new(),
-            server_id: ServerId::default(),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SourceType {
+    Pps,
+    Sock,
+    Ntp,
 }
 
 pub struct System<Controller> {
     synchronization_config: SynchronizationConfig,
     system: Mutex<SystemSnapshot>,
-    ip_list: Mutex<Arc<[IpAddr]>>,
+    ntp_manager: NtpManager,
 
-    sources: Mutex<HashMap<ClockId, Option<SourceSnapshot>>>,
+    sources: Mutex<HashMap<ClockId, SourceType>>,
 
     controller: Controller,
     controller_took_control: Mutex<bool>,
@@ -153,7 +169,10 @@ impl<Controller: TimeSyncController> System<Controller> {
     ) -> Result<Self, <Controller::Clock as NtpClock>::Error> {
         // Setup system snapshot
         let mut system = SystemSnapshot {
-            stratum: synchronization_config.local_stratum,
+            ntp_snapshot: NtpSnapshot {
+                stratum: synchronization_config.local_stratum,
+                ..Default::default()
+            },
             ..Default::default()
         };
 
@@ -161,17 +180,27 @@ impl<Controller: TimeSyncController> System<Controller> {
             // We are a stratum 1 server so mark our selves synchronized.
             system.time_snapshot.leap_indicator = NtpLeapIndicator::NoWarning;
             // Set the reference id for the system
-            system.reference_id = synchronization_config.reference_id.to_reference_id();
+            system.ntp_snapshot.reference_id =
+                synchronization_config.reference_id.to_reference_id();
         }
 
         Ok(System {
             synchronization_config,
+            ntp_manager: NtpManager::new(synchronization_config, ip_list),
             system: Mutex::new(system),
-            ip_list: Mutex::new(ip_list),
             sources: Mutex::new(HashMap::new()),
             controller: Controller::new(clock, synchronization_config, algorithm_config)?,
             controller_took_control: Mutex::new(false),
         })
+    }
+
+    pub fn new_ntp_server<C>(
+        &self,
+        config: ServerConfig,
+        clock: C,
+        keyset: Arc<KeySet>,
+    ) -> Server<C> {
+        self.ntp_manager.new_server(config, clock, keyset)
     }
 
     pub fn system_snapshot(&self) -> SystemSnapshot {
@@ -205,7 +234,8 @@ impl<Controller: TimeSyncController> System<Controller> {
         let controller =
             self.controller
                 .add_one_way_source(id, source_config, measurement_noise_estimate, None);
-        self.sources.lock().unwrap().insert(id, None);
+        self.sources.lock().unwrap().insert(id, SourceType::Sock);
+        self.controller.source_update(id, true);
         Ok(OneWaySource::new(controller))
     }
 
@@ -226,7 +256,8 @@ impl<Controller: TimeSyncController> System<Controller> {
             measurement_noise_estimate,
             Some(period),
         );
-        self.sources.lock().unwrap().insert(id, None);
+        self.sources.lock().unwrap().insert(id, SourceType::Pps);
+        self.controller.source_update(id, true);
         Ok(OneWaySource::new(controller))
     }
 
@@ -247,7 +278,7 @@ impl<Controller: TimeSyncController> System<Controller> {
     > {
         self.ensure_controller_control()?;
         let controller = self.controller.add_source(id, source_config);
-        self.sources.lock().unwrap().insert(id, None);
+        self.sources.lock().unwrap().insert(id, SourceType::Ntp);
         Ok(NtpSource::new(
             source_addr,
             source_config,
@@ -267,40 +298,15 @@ impl<Controller: TimeSyncController> System<Controller> {
         Ok(())
     }
 
-    pub fn handle_source_update(
-        &self,
-        id: ClockId,
-        update: NtpSourceUpdate,
-    ) -> Result<(), <Controller::Clock as NtpClock>::Error> {
-        let system = self.system_snapshot();
-        let ip_list = self.ip_list.lock().unwrap().clone();
-        let usable = update
-            .snapshot
-            .accept_synchronization(
-                self.synchronization_config.local_stratum,
-                ip_list.as_ref(),
-                &system,
-            )
-            .is_ok();
-        self.controller.source_update(id, usable);
-        *self.sources.lock().unwrap().get_mut(&id).unwrap() =
-            Some(SourceSnapshot::Ntp(update.snapshot));
-        Ok(())
-    }
-
-    pub fn handle_one_way_source_update(
-        &self,
-        id: ClockId,
-        update: OneWaySourceUpdate,
-    ) -> Result<(), <Controller::Clock as NtpClock>::Error> {
-        self.controller.source_update(id, true);
-        *self.sources.lock().unwrap().get_mut(&id).unwrap() =
-            Some(SourceSnapshot::OneWay(update.snapshot));
-        Ok(())
+    pub fn handle_source_update(&self, id: ClockId, update: NtpSourceUpdate) {
+        let (usability_change_id, usability_change_usable) =
+            self.ntp_manager.handle_source_update(id, update);
+        self.controller
+            .source_update(usability_change_id, usability_change_usable);
     }
 
     pub fn update_ip_list(&self, ip_list: Arc<[IpAddr]>) {
-        *self.ip_list.lock().unwrap() = ip_list;
+        self.ntp_manager.update_ip_list(ip_list);
     }
 
     pub fn run(self: Arc<Self>) -> impl Future<Output = ()> + 'static {
@@ -309,15 +315,27 @@ impl<Controller: TimeSyncController> System<Controller> {
             loop {
                 // Scope here is needed to keep this future sync and send.
                 {
-                    let (time_snaphsot, used_sources) = this.controller.synchronization_state();
+                    let (time_snapshot, used_sources) = this.controller.synchronization_state();
                     let sources = this.sources.lock().unwrap();
-                    let mut system = this.system.lock().unwrap();
-                    system.update_used_sources(used_sources.iter().map(|v| {
-                        sources.get(v).and_then(|snapshot| *snapshot).expect(
-                    "Critical error: Source used for synchronization that is not known to system",
-                )
-                    }));
-                    system.update_timedata(time_snaphsot, &this.synchronization_config);
+                    this.ntp_manager.update_time_snapshot(time_snapshot);
+                    let ntp_snapshot =
+                        this.ntp_manager
+                            .update_used_sources(used_sources.iter().map(|id| {
+                                (
+                                    *id,
+                                    *sources.get(id).expect(
+                                        "Critical error: Unknown source used for synchronization",
+                                    ),
+                                )
+                            }));
+
+                    *this.system.lock().unwrap() = SystemSnapshot {
+                        ntp_snapshot,
+                        time_snapshot,
+                        accumulated_steps_threshold: this
+                            .synchronization_config
+                            .accumulated_step_panic_threshold,
+                    };
                 }
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
@@ -331,6 +349,86 @@ impl<Controller: TimeSyncController> System<Controller> {
     }
 }
 
+#[derive(Default, Copy, Clone)]
+pub struct NtpServerInfo {
+    pub time_snapshot: TimeSnapshot,
+    pub ntp_snapshot: NtpSnapshot,
+}
+
+pub struct NtpManager {
+    synchronization_config: SynchronizationConfig,
+    server_id: ServerId,
+    source_snapshots: Mutex<HashMap<ClockId, NtpSourceSnapshot>>,
+    ip_list: Mutex<Arc<[IpAddr]>>,
+
+    server_info: Arc<RwLock<NtpServerInfo>>,
+}
+
+impl NtpManager {
+    pub fn new(synchronization_config: SynchronizationConfig, ip_list: Arc<[IpAddr]>) -> Self {
+        Self {
+            synchronization_config,
+            server_id: ServerId::default(),
+            source_snapshots: Mutex::new(HashMap::new()),
+            ip_list: Mutex::new(ip_list),
+
+            server_info: Arc::default(),
+        }
+    }
+
+    pub fn new_server<C>(&self, config: ServerConfig, clock: C, keyset: Arc<KeySet>) -> Server<C> {
+        Server::new_internal(config, clock, self.server_info.clone(), keyset)
+    }
+
+    pub fn update_ip_list(&self, ip_list: Arc<[IpAddr]>) {
+        *self.ip_list.lock().unwrap() = ip_list;
+    }
+
+    pub fn handle_source_update(&self, id: ClockId, update: NtpSourceUpdate) -> (ClockId, bool) {
+        let ip_list = self.ip_list.lock().unwrap().clone();
+        let usable = update
+            .snapshot
+            .accept_synchronization(
+                self.synchronization_config.local_stratum,
+                ip_list.as_ref(),
+                self.server_id,
+            )
+            .is_ok();
+        self.source_snapshots
+            .lock()
+            .unwrap()
+            .insert(id, update.snapshot);
+        (id, usable)
+    }
+
+    pub fn update_used_sources(
+        &self,
+        sources: impl Iterator<Item = (ClockId, SourceType)>,
+    ) -> NtpSnapshot {
+        let source_snapshots = self.source_snapshots.lock().unwrap();
+        let snapshot = NtpSnapshot::from_used_sources(
+            self.synchronization_config.local_stratum,
+            self.server_id,
+            sources.map(|(id, sourcetype)| match sourcetype {
+                SourceType::Pps => SourceSnapshot::External { stratum: 0, source_id: ReferenceId::PPS },
+                SourceType::Sock => SourceSnapshot::External { stratum: 0, source_id: ReferenceId::SOCK },
+                SourceType::Ntp => SourceSnapshot::Ntp(*source_snapshots.get(&id).expect(
+                    "Critical error: NTP source used for synchronization never produced source updates",
+                )),
+            }),
+        );
+        drop(source_snapshots);
+
+        self.server_info.write().unwrap().ntp_snapshot = snapshot;
+
+        snapshot
+    }
+
+    pub fn update_time_snapshot(&self, time_snapshot: TimeSnapshot) {
+        self.server_info.write().unwrap().time_snapshot = time_snapshot;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::net::{Ipv4Addr, SocketAddr};
@@ -341,20 +439,18 @@ mod tests {
 
     #[test]
     fn test_empty_source_update() {
-        let mut system = SystemSnapshot::default();
-
         // Should do nothing
-        system.update_used_sources(std::iter::empty());
+        let ntps = NtpSnapshot::from_used_sources(16, ServerId::default(), std::iter::empty());
 
-        assert_eq!(system.stratum, 16);
-        assert_eq!(system.reference_id, ReferenceId::NONE);
+        assert_eq!(ntps.stratum, 16);
+        assert_eq!(ntps.reference_id, ReferenceId::NONE);
     }
 
     #[test]
     fn test_source_update() {
-        let mut system = SystemSnapshot::default();
-
-        system.update_used_sources(
+        let ntps = NtpSnapshot::from_used_sources(
+            16,
+            ServerId::default(),
             vec![
                 SourceSnapshot::Ntp(NtpSourceSnapshot {
                     source_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
@@ -380,34 +476,7 @@ mod tests {
             .into_iter(),
         );
 
-        assert_eq!(system.stratum, 3);
-        assert_eq!(system.reference_id, ReferenceId::KISS_DENY);
-    }
-
-    #[test]
-    fn test_timedata_update() {
-        let mut system = SystemSnapshot::default();
-
-        let new_root_delay = NtpDuration::from_seconds(1.0);
-        let new_accumulated_threshold = NtpDuration::from_seconds(2.0);
-
-        let snapshot = TimeSnapshot {
-            root_delay: new_root_delay,
-            ..Default::default()
-        };
-        system.update_timedata(
-            snapshot,
-            &SynchronizationConfig {
-                accumulated_step_panic_threshold: Some(new_accumulated_threshold),
-                ..Default::default()
-            },
-        );
-
-        assert_eq!(system.time_snapshot, snapshot);
-
-        assert_eq!(
-            system.accumulated_steps_threshold,
-            Some(new_accumulated_threshold),
-        );
+        assert_eq!(ntps.stratum, 3);
+        assert_eq!(ntps.reference_id, ReferenceId::KISS_DENY);
     }
 }

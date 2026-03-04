@@ -6,9 +6,7 @@ use std::{
     time::Duration,
 };
 
-use ntp_proto::{
-    KeySet, NtpClock, Server, ServerReason, ServerResponse, ServerStatHandler, SystemSnapshot,
-};
+use ntp_proto::{KeySet, NtpClock, Server, ServerReason, ServerResponse, ServerStatHandler};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use timestamped_socket::socket::{RecvResult, open_ip};
 use tokio::task::JoinHandle;
@@ -103,7 +101,6 @@ impl<'de> Deserialize<'de> for Counter {
 pub struct ServerTask<C: 'static + NtpClock + Send> {
     config: ServerConfig,
     network_wait_period: std::time::Duration,
-    system_receiver: tokio::sync::watch::Receiver<SystemSnapshot>,
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
     server: Server<C>,
     stats: ServerStats,
@@ -112,26 +109,17 @@ pub struct ServerTask<C: 'static + NtpClock + Send> {
 impl<C: 'static + NtpClock + Send> ServerTask<C> {
     #[instrument(level = tracing::Level::ERROR, name = "Ntp Server", skip_all, fields(address = debug(config.listen)))]
     pub fn spawn(
+        server: Server<C>,
         config: ServerConfig,
         stats: ServerStats,
-        mut system_receiver: tokio::sync::watch::Receiver<SystemSnapshot>,
-        mut keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
-        clock: C,
+        keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
         network_wait_period: Duration,
     ) -> JoinHandle<()> {
         tokio::spawn(
             (async move {
-                let server = Server::new(
-                    config.clone().into(),
-                    clock,
-                    *system_receiver.borrow_and_update(),
-                    keyset.borrow_and_update().clone(),
-                );
-
                 let mut process = ServerTask {
                     config,
                     network_wait_period,
-                    system_receiver,
                     keyset,
                     server,
                     stats,
@@ -166,8 +154,6 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     };
 
                     // system and keyset may now be wildly out of date, ensure they are always updated.
-                    self.server
-                        .update_system(*self.system_receiver.borrow_and_update());
                     self.server
                         .update_keyset(self.keyset.borrow_and_update().clone());
 
@@ -216,9 +202,6 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                         }
                     }
                 },
-                _ = self.system_receiver.changed(), if self.system_receiver.has_changed().is_ok() => {
-                    self.server.update_system(*self.system_receiver.borrow_and_update());
-                }
                 _ = self.keyset.changed(), if self.keyset.has_changed().is_ok() => {
                     self.server.update_keyset(self.keyset.borrow_and_update().clone());
                 }
@@ -300,15 +283,22 @@ mod tests {
         let clock = TestClock {
             time: NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 1000),
         };
-        let (_, system_snapshots) = tokio::sync::watch::channel(SystemSnapshot::default());
+
+        let server_info = Arc::default();
         let (_, keyset) = tokio::sync::watch::channel(KeySetProvider::new(1).get());
 
+        let server = Server::new_internal(
+            config.clone().into(),
+            clock,
+            server_info,
+            keyset.borrow().clone(),
+        );
+
         let join = ServerTask::spawn(
+            server,
             config,
             ServerStats::default(),
-            system_snapshots,
             keyset,
-            clock,
             Duration::from_secs(0),
         );
 

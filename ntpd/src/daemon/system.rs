@@ -298,14 +298,7 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C>> SystemTask<C
                 }
             }
             MsgForSystem::SourceUpdate(index, update) => {
-                self.system
-                    .handle_source_update(index, update)
-                    .expect("Could not process source measurement");
-            }
-            MsgForSystem::OneWaySourceUpdate(index, update) => {
-                self.system
-                    .handle_one_way_source_update(index, update)
-                    .expect("Could not process source measurement");
+                self.system.handle_source_update(index, update);
             }
             MsgForSystem::NetworkIssue(index) => {
                 self.handle_source_network_issue(index).await?;
@@ -492,12 +485,16 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C>> SystemTask<C
             stats: stats.clone(),
             config: config.clone(),
         });
+        let server = self.system.new_ntp_server(
+            config.clone().into(),
+            self.clock.clone(),
+            self.keyset.borrow().clone(),
+        );
         ServerTask::spawn(
+            server,
             config,
             stats,
-            self.system_snapshot_sender.subscribe(),
             self.keyset.clone(),
-            self.clock.clone(),
             NETWORK_WAIT_PERIOD,
         );
         let _ = self.server_data_sender.send(self.servers.clone());
