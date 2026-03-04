@@ -487,12 +487,16 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C>> SystemTask<C
             stats: stats.clone(),
             config: config.clone(),
         });
+        let server = self.system.new_ntp_server(
+            config.clone().into(),
+            self.clock.clone(),
+            self.keyset.borrow().clone(),
+        );
         ServerTask::spawn(
+            server,
             config,
             stats,
-            self.system_snapshot_sender.subscribe(),
             self.keyset.clone(),
-            self.clock.clone(),
             NETWORK_WAIT_PERIOD,
         );
         let _ = self.server_data_sender.send(self.servers.clone());
