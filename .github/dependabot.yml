@@ -8,6 +8,8 @@ updates:
   groups:
     github-actions:
       patterns: ["*"]
+  cooldown:
+    default-days: 7
 
 - package-ecosystem: cargo
   directories: ["/", "/fuzz/"]
@@ -20,3 +22,5 @@ updates:
   groups:
     cargo:
       patterns: ["*"]
+  cooldown:
+    default-days: 7
