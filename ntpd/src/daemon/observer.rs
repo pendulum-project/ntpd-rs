@@ -199,7 +199,7 @@ async fn handle_connection(
 mod tests {
     use std::{borrow::BorrowMut, time::Duration};
 
-    use ntp_proto::v5::{BloomFilter, ServerId};
+    use ntp_proto::v5::BloomFilter;
     use ntp_proto::{
         NtpDuration, NtpLeapIndicator, NtpSnapshot, NtpTimestamp, ObservableSourceTimedata,
         PollIntervalLimits, Reach, ReferenceId, TimeSnapshot,
@@ -284,7 +284,6 @@ mod tests {
                 stratum: 1,
                 reference_id: ReferenceId::NONE,
                 bloom_filter: BloomFilter::new(),
-                server_id: ServerId::default(),
             },
             accumulated_steps_threshold: None,
             time_snapshot: TimeSnapshot {
@@ -362,7 +361,6 @@ mod tests {
                 stratum: 1,
                 reference_id: ReferenceId::NONE,
                 bloom_filter: BloomFilter::new(),
-                server_id: ServerId::default(),
             },
             accumulated_steps_threshold: None,
             time_snapshot: TimeSnapshot {

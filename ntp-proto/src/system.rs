@@ -97,35 +97,45 @@ pub struct NtpSnapshot {
     /// Bloom filter that contains all currently used time sources
     #[serde(skip)]
     pub bloom_filter: BloomFilter,
-    /// NTPv5 reference ID for this instance
-    #[serde(skip)]
-    pub server_id: ServerId,
 }
 
 impl NtpSnapshot {
-    pub fn update_used_sources(&mut self, used_sources: impl Iterator<Item = SourceSnapshot>) {
+    pub fn from_used_sources(
+        local_stratum: u8,
+        server_id: ServerId,
+        used_sources: impl Iterator<Item = SourceSnapshot>,
+    ) -> Self {
+        let mut stratum = local_stratum;
+        let mut reference_id = ReferenceId::NONE;
+
         let mut used_sources = used_sources.peekable();
         if let Some(system_source_snapshot) = used_sources.peek() {
-            let (stratum, source_id) = match system_source_snapshot {
+            let (source_stratum, source_id) = match system_source_snapshot {
                 SourceSnapshot::Ntp(snapshot) => (snapshot.stratum, snapshot.source_id),
                 SourceSnapshot::External { stratum, source_id } => (*stratum, *source_id),
             };
 
-            self.stratum = stratum.saturating_add(1);
-            self.reference_id = source_id;
+            stratum = source_stratum.saturating_add(1);
+            reference_id = source_id;
         }
 
-        self.bloom_filter = BloomFilter::new();
+        let mut bloom_filter = BloomFilter::new();
         for source in used_sources {
             if let SourceSnapshot::Ntp(source) = source {
                 if let Some(bf) = &source.bloom_filter {
-                    self.bloom_filter.add(bf);
+                    bloom_filter.add(bf);
                 } else if let ProtocolVersion::V5 = source.protocol_version {
                     tracing::warn!("Using NTPv5 source without a bloom filter!");
                 }
             }
         }
-        self.bloom_filter.add_id(&self.server_id);
+        bloom_filter.add_id(&server_id);
+
+        Self {
+            stratum,
+            reference_id,
+            bloom_filter,
+        }
     }
 }
 
@@ -135,7 +145,6 @@ impl Default for NtpSnapshot {
             stratum: 16,
             reference_id: ReferenceId::NONE,
             bloom_filter: BloomFilter::new(),
-            server_id: ServerId::default(),
         }
     }
 }
@@ -144,6 +153,7 @@ pub struct System<Controller> {
     synchronization_config: SynchronizationConfig,
     system: Mutex<SystemSnapshot>,
     ip_list: Mutex<Arc<[IpAddr]>>,
+    server_id: ServerId,
 
     sources: Mutex<HashMap<ClockId, Option<SourceSnapshot>>>,
 
@@ -182,6 +192,7 @@ impl<Controller: TimeSyncController> System<Controller> {
             sources: Mutex::new(HashMap::new()),
             controller: Controller::new(clock, synchronization_config, algorithm_config)?,
             controller_took_control: Mutex::new(false),
+            server_id: ServerId::default(),
         })
     }
 
@@ -304,14 +315,13 @@ impl<Controller: TimeSyncController> System<Controller> {
         id: ClockId,
         update: &NtpSourceUpdate,
     ) -> Result<(), <Controller::Clock as NtpClock>::Error> {
-        let system = self.system_snapshot();
         let ip_list = self.ip_list.lock().unwrap().clone();
         let usable = update
             .snapshot
             .accept_synchronization(
                 self.synchronization_config.local_stratum,
                 ip_list.as_ref(),
-                &system.ntp_snapshot,
+                self.server_id,
             )
             .is_ok();
         self.controller.source_update(id, usable);
@@ -333,13 +343,15 @@ impl<Controller: TimeSyncController> System<Controller> {
                     let (time_snaphsot, used_sources) = this.controller.synchronization_state();
                     let sources = this.sources.lock().unwrap();
                     let mut system = this.system.lock().unwrap();
-                    system
-                        .ntp_snapshot
-                        .update_used_sources(used_sources.iter().map(|v| {
+                    system.ntp_snapshot = NtpSnapshot::from_used_sources(
+                        this.synchronization_config.local_stratum,
+                        this.server_id,
+                        used_sources.iter().map(|v| {
                             sources.get(v).and_then(|snapshot| *snapshot).expect(
                     "Critical error: Source used for synchronization that is not known to system",
                 )
-                        }));
+                        }),
+                    );
                     system.update_timedata(time_snaphsot, &this.synchronization_config);
                 }
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -364,10 +376,8 @@ mod tests {
 
     #[test]
     fn test_empty_source_update() {
-        let mut ntps = NtpSnapshot::default();
-
         // Should do nothing
-        ntps.update_used_sources(std::iter::empty());
+        let ntps = NtpSnapshot::from_used_sources(16, ServerId::default(), std::iter::empty());
 
         assert_eq!(ntps.stratum, 16);
         assert_eq!(ntps.reference_id, ReferenceId::NONE);
@@ -375,9 +385,9 @@ mod tests {
 
     #[test]
     fn test_source_update() {
-        let mut ntps = NtpSnapshot::default();
-
-        ntps.update_used_sources(
+        let ntps = NtpSnapshot::from_used_sources(
+            16,
+            ServerId::default(),
             vec![
                 SourceSnapshot::Ntp(NtpSourceSnapshot {
                     source_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),

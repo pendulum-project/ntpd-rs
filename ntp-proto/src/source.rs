@@ -5,7 +5,7 @@ use crate::{
         ExtensionField, NtpHeader,
         v5::server_reference_id::{BloomFilter, RemoteBloomFilter},
     },
-    system::NtpSnapshot,
+    v5::ServerId,
 };
 use crate::{
     algorithm::{ObservableSourceTimedata, SourceController},
@@ -205,7 +205,7 @@ impl NtpSourceSnapshot {
         &self,
         local_stratum: u8,
         local_ips: &[IpAddr],
-        snapshot: &NtpSnapshot,
+        server_id: ServerId,
     ) -> Result<(), AcceptSynchronizationError> {
         use AcceptSynchronizationError::*;
 
@@ -233,7 +233,7 @@ impl NtpSourceSnapshot {
         }
 
         match self.bloom_filter {
-            Some(filter) if filter.contains_id(&snapshot.server_id) => {
+            Some(filter) if filter.contains_id(&server_id) => {
                 debug!("Source rejected because of detected synchronization loop (bloom filter)");
                 return Err(Loop);
             }
@@ -808,7 +808,7 @@ fn measurements_from_packet(
 )]
 mod test {
     use crate::{
-        NtpClock, NtpDuration, NtpLeapIndicator, SystemSnapshot,
+        NtpClock, NtpDuration, NtpLeapIndicator, NtpSnapshot, SystemSnapshot,
         packet::{AesSivCmac256, NoCipher},
         time_types::PollIntervalLimits,
     };
@@ -912,12 +912,14 @@ mod test {
 
         let mut source = NtpSource::test_ntp_source(NoopController);
 
-        let ntps = NtpSnapshot::default();
-
         macro_rules! accept {
             () => {{
                 let snapshot = NtpSourceSnapshot::from_source(&source);
-                snapshot.accept_synchronization(16, &["127.0.0.1".parse().unwrap()], &ntps)
+                snapshot.accept_synchronization(
+                    16,
+                    &["127.0.0.1".parse().unwrap()],
+                    ServerId::default(),
+                )
             }};
         }
 
