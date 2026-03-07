@@ -3,8 +3,8 @@ use std::{
 };
 
 use ntp_proto::{
-    NtpClock, NtpDuration, NtpInstant, NtpSource, NtpSourceActionIterator, NtpSourceUpdate,
-    NtpTimestamp, ObservableSourceState, OneWaySourceUpdate, SourceController, SystemSourceUpdate,
+    ClockId, NtpClock, NtpSource, NtpSourceActionIterator, NtpSourceUpdate, NtpTimestamp,
+    ObservableSourceState, OneWaySourceUpdate, SourceController,
 };
 #[cfg(target_os = "linux")]
 use timestamped_socket::socket::open_interface_udp;
@@ -16,7 +16,7 @@ use tracing::{Instrument, Span, debug, error, instrument, warn};
 
 use tokio::time::{Instant, Sleep};
 
-use super::{config::TimestampMode, exitcode, spawn::SourceId, util::convert_net_timestamp};
+use super::{config::TimestampMode, exitcode, util::convert_net_timestamp};
 
 /// Trait needed to allow injecting of futures other than `tokio::time::Sleep` for testing
 pub trait Wait: Future<Output = ()> {
@@ -31,42 +31,35 @@ impl Wait for Sleep {
 
 #[derive(Debug, Clone)]
 #[expect(clippy::large_enum_variant)]
-pub enum MsgForSystem<SourceMessage> {
+pub enum MsgForSystem {
     /// Received a Kiss-o'-Death and must demobilize
-    MustDemobilize(SourceId),
+    MustDemobilize(ClockId),
     /// Experienced a network issue and must be restarted
-    NetworkIssue(SourceId),
+    NetworkIssue(ClockId),
     /// Source is unreachable, and should be restarted with new resolved addr.
-    Unreachable(SourceId),
+    Unreachable(ClockId),
     /// Update from source
-    SourceUpdate(SourceId, NtpSourceUpdate<SourceMessage>),
+    SourceUpdate(ClockId, NtpSourceUpdate),
     /// Update from sock source
-    OneWaySourceUpdate(SourceId, OneWaySourceUpdate<SourceMessage>),
+    OneWaySourceUpdate(ClockId, OneWaySourceUpdate),
 }
 
 #[derive(Debug)]
-pub struct SourceChannels<ControllerMessage, SourceMessage> {
-    pub msg_for_system_sender: tokio::sync::mpsc::Sender<MsgForSystem<SourceMessage>>,
-    pub system_update_receiver:
-        tokio::sync::broadcast::Receiver<SystemSourceUpdate<ControllerMessage>>,
-    pub source_snapshots:
-        Arc<std::sync::RwLock<HashMap<SourceId, ObservableSourceState<SourceId>>>>,
+pub struct SourceChannels {
+    pub msg_for_system_sender: tokio::sync::mpsc::Sender<MsgForSystem>,
+    pub source_snapshots: Arc<std::sync::RwLock<HashMap<ClockId, ObservableSourceState>>>,
 }
 
-pub(crate) struct SourceTask<
-    C: 'static + NtpClock + Send,
-    Controller: SourceController<MeasurementDelay = NtpDuration>,
-    T: Wait,
-> {
+pub(crate) struct SourceTask<C: 'static + NtpClock + Send, Controller: SourceController, T: Wait> {
     _wait: PhantomData<T>,
-    index: SourceId,
+    index: ClockId,
     clock: C,
     interface: Option<InterfaceName>,
     timestamp_mode: TimestampMode,
     name: String,
     source_addr: SocketAddr,
     socket: Option<Socket<SocketAddr, Connected>>,
-    channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
+    channels: SourceChannels,
 
     source: NtpSource<Controller>,
 
@@ -84,8 +77,7 @@ enum SocketResult {
     Abort,
 }
 
-impl<C, Controller: SourceController<MeasurementDelay = NtpDuration>, T>
-    SourceTask<C, Controller, T>
+impl<C, Controller: SourceController, T> SourceTask<C, Controller, T>
 where
     C: 'static + NtpClock + Send + Sync,
     T: Wait,
@@ -122,23 +114,14 @@ where
         loop {
             let mut buf = [0_u8; 1024];
 
-            enum SelectResult<Controller: SourceController> {
+            enum SelectResult {
                 Timer,
                 Recv(Result<RecvResult<SocketAddr>, std::io::Error>),
-                SystemUpdate(
-                    Result<
-                        SystemSourceUpdate<Controller::ControllerMessage>,
-                        tokio::sync::broadcast::error::RecvError,
-                    >,
-                ),
             }
 
-            let selected: SelectResult<Controller> = tokio::select! {
+            let selected: SelectResult = tokio::select! {
                 () = &mut poll_wait => {
                     SelectResult::Timer
-                },
-                result = self.channels.system_update_receiver.recv() => {
-                    SelectResult::SystemUpdate(result)
                 },
                 result = async { if let Some(ref mut socket) = self.socket { socket.recv(&mut buf).await } else { std::future::pending().await }} => {
                     SelectResult::Recv(result)
@@ -159,12 +142,9 @@ where
                                     continue;
                                 }
                             };
-                            let actions = self.source.handle_incoming(
-                                packet,
-                                NtpInstant::now(),
-                                send_timestamp,
-                                recv_timestamp,
-                            );
+                            let actions =
+                                self.source
+                                    .handle_incoming(packet, send_timestamp, recv_timestamp);
                             self.channels
                                 .source_snapshots
                                 .write()
@@ -204,21 +184,6 @@ where
                         );
                     actions
                 }
-                SelectResult::SystemUpdate(result) => match result {
-                    Ok(update) => {
-                        let actions = self.source.handle_system_update(update);
-                        self.channels
-                            .source_snapshots
-                            .write()
-                            .expect("Unexpected poisoned mutex")
-                            .insert(
-                                self.index,
-                                self.source.observe(self.name.clone(), self.index),
-                            );
-                        actions
-                    }
-                    Err(_) => NtpSourceActionIterator::default(),
-                },
             };
 
             for action in actions {
@@ -328,23 +293,22 @@ where
     }
 }
 
-impl<C, Controller: SourceController<MeasurementDelay = NtpDuration>>
-    SourceTask<C, Controller, Sleep>
+impl<C, Controller: SourceController> SourceTask<C, Controller, Sleep>
 where
     C: 'static + NtpClock + Send + Sync,
 {
     #[expect(clippy::too_many_arguments)]
     #[instrument(level = tracing::Level::ERROR, name = "Ntp Source", skip(timestamp_mode, clock, channels, source, initial_actions))]
     pub fn spawn(
-        index: SourceId,
+        index: ClockId,
         name: String,
         source_addr: SocketAddr,
         interface: Option<InterfaceName>,
         clock: C,
         timestamp_mode: TimestampMode,
-        channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
+        channels: SourceChannels,
         source: NtpSource<Controller>,
-        initial_actions: NtpSourceActionIterator<Controller::SourceMessage>,
+        initial_actions: NtpSourceActionIterator,
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(
             (async move {
@@ -459,12 +423,12 @@ mod tests {
     };
 
     use ntp_proto::{
-        AlgorithmConfig, KalmanClockController, KalmanControllerMessage, KalmanSourceMessage,
-        NoCipher, NtpDuration, NtpLeapIndicator, NtpPacket, ProtocolVersion, SourceConfig,
-        SynchronizationConfig, SystemSnapshot, TimeSnapshot, TwoWayKalmanSourceController,
+        AlgorithmConfig, KalmanClockController, NoCipher, NtpDuration, NtpLeapIndicator, NtpPacket,
+        ProtocolVersion, SourceConfig, SynchronizationConfig, SystemSnapshot, TimeSnapshot,
+        TimeSyncControllerWrapper, TwoWayKalmanSourceController, TwoWaySourceControllerWrapper,
     };
     use timestamped_socket::socket::{GeneralTimestampMode, Open, open_ip};
-    use tokio::sync::{broadcast, mpsc};
+    use tokio::sync::mpsc;
 
     use crate::{daemon::util::EPOCH_OFFSET, test::alloc_port};
 
@@ -588,10 +552,9 @@ mod tests {
     }
 
     async fn test_startup<T: Wait>() -> (
-        SourceTask<TestClock, TwoWayKalmanSourceController<SourceId>, T>,
+        SourceTask<TestClock, TwoWaySourceControllerWrapper<TwoWayKalmanSourceController>, T>,
         Socket<SocketAddr, Open>,
-        mpsc::Receiver<MsgForSystem<KalmanSourceMessage<SourceId>>>,
-        broadcast::Sender<SystemSourceUpdate<KalmanControllerMessage>>,
+        mpsc::Receiver<MsgForSystem>,
     ) {
         let port_base = alloc_port();
         let test_socket = open_ip(
@@ -600,17 +563,17 @@ mod tests {
         )
         .unwrap();
 
-        let (system_update_sender, system_update_receiver) = tokio::sync::broadcast::channel(1);
         let (msg_for_system_sender, msg_for_system_receiver) = mpsc::channel(1);
 
-        let index = SourceId::new();
-        let mut system: ntp_proto::System<_, KalmanClockController<_, _>> = ntp_proto::System::new(
-            TestClock {},
-            SynchronizationConfig::default(),
-            AlgorithmConfig::default(),
-            Arc::new([]),
-        )
-        .unwrap();
+        let index = ClockId::new();
+        let system: ntp_proto::System<TimeSyncControllerWrapper<KalmanClockController<_>>> =
+            ntp_proto::System::new(
+                TestClock {},
+                SynchronizationConfig::default(),
+                AlgorithmConfig::default(),
+                Arc::new([]),
+            )
+            .unwrap();
 
         let Ok((source, _)) = system.create_ntp_source(
             index,
@@ -629,7 +592,6 @@ mod tests {
             clock: TestClock {},
             channels: SourceChannels {
                 msg_for_system_sender,
-                system_update_receiver,
                 source_snapshots: Arc::new(RwLock::new(HashMap::new())),
             },
             source_addr: SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
@@ -640,18 +602,13 @@ mod tests {
             last_send_timestamp: None,
         };
 
-        (
-            process,
-            test_socket,
-            msg_for_system_receiver,
-            system_update_sender,
-        )
+        (process, test_socket, msg_for_system_receiver)
     }
 
     #[tokio::test]
     async fn test_poll_sends_state_update_and_packet() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, socket, _, _system_update_sender) = test_startup().await;
+        let (mut process, socket, _) = test_startup().await;
 
         let (poll_wait, poll_send) = TestWait::new();
 
@@ -682,7 +639,7 @@ mod tests {
     #[tokio::test]
     async fn test_timeroundtrip() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, mut socket, mut msg_recv, _system_update_sender) = test_startup().await;
+        let (mut process, mut socket, mut msg_recv) = test_startup().await;
 
         let system = SystemSnapshot {
             time_snapshot: TimeSnapshot {
@@ -731,7 +688,7 @@ mod tests {
     #[tokio::test]
     async fn test_deny_stops_poll() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, mut socket, mut msg_recv, _system_update_sender) = test_startup().await;
+        let (mut process, mut socket, mut msg_recv) = test_startup().await;
 
         let (poll_wait, poll_send) = TestWait::new();
 

@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 use crate::daemon::config::PpsSourceConfig;
 
 use super::{
-    PpsSourceCreateParameters, SourceCreateParameters, SourceId, SourceRemovalReason,
+    ClockId, PpsSourceCreateParameters, SourceCreateParameters, SourceRemovalReason,
     SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId, standard::StandardSpawnError,
 };
 
@@ -37,7 +37,7 @@ impl Spawner for PpsSpawner {
             .send(SpawnEvent::new(
                 self.id,
                 SpawnAction::Create(SourceCreateParameters::Pps(PpsSourceCreateParameters {
-                    id: SourceId::new(),
+                    id: ClockId::new(),
                     path: self.config.path.clone(),
                     config: self.source_config,
                     noise_estimate: self.config.precision.powi(2),

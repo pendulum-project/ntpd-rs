@@ -8,7 +8,7 @@ use tracing::warn;
 use super::super::config::StandardSource;
 
 use super::{
-    SourceId, SourceRemovalReason, SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId,
+    ClockId, SourceRemovalReason, SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId,
 };
 
 pub struct StandardSpawner {
@@ -89,7 +89,7 @@ impl Spawner for StandardSpawner {
             .send(SpawnEvent::new(
                 self.id,
                 SpawnAction::create_ntp(
-                    SourceId::new(),
+                    ClockId::new(),
                     addr,
                     self.config.address.deref().clone(),
                     self.config.ntp_version,

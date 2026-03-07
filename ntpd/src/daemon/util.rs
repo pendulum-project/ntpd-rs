@@ -16,3 +16,7 @@ pub(crate) fn convert_clock_timestamp(ts: clock_steering::Timestamp) -> NtpTimes
         ts.nanos,
     )
 }
+
+pub(crate) fn convert_unix_timestamp(seconds: u64, nanos: u32) -> NtpTimestamp {
+    NtpTimestamp::from_seconds_nanos_since_ntp_era(EPOCH_OFFSET.wrapping_add(seconds as _), nanos)
+}

@@ -17,11 +17,11 @@ enum BoundType {
 // is also statistically more sound. Any difference (larger set of accepted sources)
 // can be compensated for if desired by setting tighter bounds on the weights
 // determining the confidence interval.
-pub(super) fn select<Index: Copy>(
+pub(super) fn select(
     synchronization_config: &SynchronizationConfig,
     algo_config: &AlgorithmConfig,
-    candidates: Vec<SourceSnapshot<Index>>,
-) -> Vec<SourceSnapshot<Index>> {
+    candidates: Vec<SourceSnapshot>,
+) -> Vec<SourceSnapshot> {
     let mut bounds: Vec<(f64, BoundType)> = Vec::with_capacity(2 * candidates.len());
 
     for snapshot in candidates.iter() {
@@ -99,6 +99,7 @@ pub(super) fn select<Index: Copy>(
 #[cfg(test)]
 mod tests {
     use crate::{
+        ClockId,
         algorithm::kalman::source::KalmanState,
         packet::NtpLeapIndicator,
         time_types::{NtpDuration, NtpTimestamp},
@@ -116,9 +117,9 @@ mod tests {
         uncertainty: f64,
         delay: f64,
         period: Option<f64>,
-    ) -> SourceSnapshot<usize> {
+    ) -> SourceSnapshot {
         SourceSnapshot {
-            index: 0,
+            index: ClockId(0),
             state: KalmanState {
                 state: Vector::new_vector([center, 0.0]),
                 uncertainty: Matrix::new([[sqr(uncertainty), 0.0], [0.0, 10e-12]]),
