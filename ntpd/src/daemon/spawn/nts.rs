@@ -7,6 +7,8 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tracing::warn;
 
+use crate::daemon::config::NormalizedAddress;
+
 use super::super::config::NtsSourceConfig;
 
 use super::{SourceId, SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId};
@@ -40,8 +42,8 @@ impl From<mpsc::error::SendError<SpawnEvent>> for NtsSpawnError {
     }
 }
 
-pub(super) async fn resolve_addr(address: (&str, u16)) -> Option<SocketAddr> {
-    match tokio::net::lookup_host(address).await {
+pub(super) async fn resolve_addr(address: NormalizedAddress) -> Option<SocketAddr> {
+    match address.lookup_host().await {
         Ok(mut addresses) => match addresses.next() {
             Some(address) => Some(address),
             None => {
@@ -104,7 +106,12 @@ impl Spawner for NtsSpawner {
         .await
         {
             Ok(Ok(ke)) => {
-                if let Some(address) = resolve_addr((ke.remote.as_str(), ke.port)).await {
+                if let Some(address) = resolve_addr(NormalizedAddress::new_from_parts(
+                    ke.remote.as_str(),
+                    ke.port,
+                ))
+                .await
+                {
                     action_tx
                         .send(SpawnEvent::new(
                             self.id,

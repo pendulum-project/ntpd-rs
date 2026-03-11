@@ -589,8 +589,7 @@ impl NormalizedAddress {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn new_unchecked(server_name: &str, port: u16) -> Self {
+    pub(crate) fn new_from_parts(server_name: &str, port: u16) -> Self {
         Self {
             server_name: server_name.to_string(),
             port,
