@@ -427,7 +427,8 @@ pub struct NormalizedAddress {
 
     /// Used to inject socket address into the DNS lookup result
     #[cfg(test)]
-    hardcoded_dns_resolve: HardcodedDnsResolve,
+    #[serde(skip)]
+    hardcoded_dns_resolve: Option<HardcodedDnsResolve>,
 }
 
 impl Eq for NormalizedAddress {}
@@ -439,10 +440,8 @@ impl PartialEq for NormalizedAddress {
 }
 
 #[cfg(test)]
-#[derive(Deserialize, Debug, Clone, Default)]
+#[derive(Debug, Clone, Default)]
 struct HardcodedDnsResolve {
-    #[cfg_attr(not(test), allow(unused))]
-    #[serde(skip)]
     addresses: Arc<Mutex<Vec<SocketAddr>>>,
 }
 
@@ -452,6 +451,23 @@ impl From<Vec<SocketAddr>> for HardcodedDnsResolve {
         Self {
             addresses: Arc::new(Mutex::new(value)),
         }
+    }
+}
+
+#[cfg(test)]
+impl HardcodedDnsResolve {
+    fn lookup_host(&self) -> std::vec::IntoIter<SocketAddr> {
+        // We don't want to spam a real DNS server during testing. This is an attempt to randomize
+        // the returned addresses somewhat.
+        let mut addresses = self.addresses.lock().unwrap();
+
+        if let Some(last) = addresses.pop() {
+            addresses.insert(0, last);
+        }
+
+        let addresses = addresses.to_vec();
+
+        addresses.into_iter()
     }
 }
 
@@ -526,7 +542,7 @@ impl NormalizedAddress {
             port,
 
             #[cfg(test)]
-            hardcoded_dns_resolve: HardcodedDnsResolve::default(),
+            hardcoded_dns_resolve: None,
         })
     }
 
@@ -539,7 +555,7 @@ impl NormalizedAddress {
             port,
 
             #[cfg(test)]
-            hardcoded_dns_resolve: HardcodedDnsResolve::default(),
+            hardcoded_dns_resolve: None,
         })
     }
 
@@ -573,14 +589,13 @@ impl NormalizedAddress {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn new_unchecked(server_name: &str, port: u16) -> Self {
+    pub(crate) fn new_from_parts(server_name: &str, port: u16) -> Self {
         Self {
             server_name: server_name.to_string(),
             port,
 
             #[cfg(test)]
-            hardcoded_dns_resolve: HardcodedDnsResolve::default(),
+            hardcoded_dns_resolve: None,
         }
     }
 
@@ -593,28 +608,37 @@ impl NormalizedAddress {
         Self {
             server_name: server_name.to_string(),
             port,
-            hardcoded_dns_resolve: HardcodedDnsResolve::from(hardcoded_dns_resolve),
+            hardcoded_dns_resolve: Some(HardcodedDnsResolve::from(hardcoded_dns_resolve)),
         }
     }
 
-    #[cfg(not(test))]
     pub async fn lookup_host(&self) -> std::io::Result<impl Iterator<Item = SocketAddr> + '_> {
-        tokio::net::lookup_host((self.server_name.as_str(), self.port)).await
-    }
-
-    #[cfg(test)]
-    pub async fn lookup_host(&self) -> std::io::Result<impl Iterator<Item = SocketAddr> + '_> {
-        // We don't want to spam a real DNS server during testing. This is an attempt to randomize
-        // the returned addresses somewhat.
-        let mut addresses = self.hardcoded_dns_resolve.addresses.lock().unwrap();
-
-        if let Some(last) = addresses.pop() {
-            addresses.insert(0, last);
+        enum Either<T> {
+            Lookup(T),
+            #[cfg(test)]
+            Hardcoded(std::vec::IntoIter<SocketAddr>),
         }
 
-        let addresses = addresses.to_vec();
+        impl<T: Iterator<Item = SocketAddr>> Iterator for Either<T> {
+            type Item = SocketAddr;
 
-        Ok(addresses.into_iter())
+            fn next(&mut self) -> Option<Self::Item> {
+                match self {
+                    Either::Lookup(lookup) => lookup.next(),
+                    #[cfg(test)]
+                    Either::Hardcoded(hardcoded) => hardcoded.next(),
+                }
+            }
+        }
+
+        #[cfg(test)]
+        if let Some(hardcoded_dns_resolve) = &self.hardcoded_dns_resolve {
+            return Ok(Either::Hardcoded(hardcoded_dns_resolve.lookup_host()));
+        }
+
+        tokio::net::lookup_host((self.server_name.as_str(), self.port))
+            .await
+            .map(Either::Lookup)
     }
 }
 

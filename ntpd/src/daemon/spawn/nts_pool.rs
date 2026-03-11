@@ -8,11 +8,12 @@ use tracing::warn;
 
 use ntp_proto::{KeyExchangeClient, NtsClientConfig, NtsError, SourceConfig};
 
+use crate::daemon::config::{NormalizedAddress, NtpAddress};
+use crate::daemon::spawn::resolve_single_ntp_server;
+
 use super::super::config::NtsPoolSourceConfig;
 
 use super::{SourceId, SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId};
-
-use super::nts::resolve_addr;
 
 struct PoolSource {
     id: SourceId,
@@ -108,7 +109,11 @@ impl Spawner for NtsPoolSpawner {
             .await
             {
                 Ok(Ok(ke)) if !self.contains_source(&ke.remote) => {
-                    if let Some(address) = resolve_addr((ke.remote.as_str(), ke.port)).await {
+                    if let Some(address) = resolve_single_ntp_server(NtpAddress(
+                        NormalizedAddress::new_from_parts(ke.remote.as_str(), ke.port),
+                    ))
+                    .await
+                    {
                         let id = SourceId::new();
                         self.current_sources.push(PoolSource {
                             id,
