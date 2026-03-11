@@ -3,7 +3,8 @@ use std::{net::SocketAddr, ops::Deref};
 
 use ntp_proto::SourceConfig;
 use tokio::sync::mpsc;
-use tracing::warn;
+
+use crate::daemon::spawn::resolve_single_ntp_server;
 
 use super::super::config::StandardSource;
 
@@ -55,22 +56,9 @@ impl StandardSpawner {
         if let (false, Some(addr)) = (force_resolve, self.resolved) {
             Some(addr)
         } else {
-            match self.config.address.lookup_host().await {
-                Ok(mut addresses) => match addresses.next() {
-                    None => {
-                        warn!("Could not resolve source address, retrying");
-                        None
-                    }
-                    Some(first) => {
-                        self.resolved = Some(first);
-                        self.resolved
-                    }
-                },
-                Err(e) => {
-                    warn!(error = ?e, "error while resolving source address, retrying");
-                    None
-                }
-            }
+            let address = resolve_single_ntp_server(self.config.address.clone()).await?;
+            self.resolved = Some(address);
+            self.resolved
         }
     }
 }

@@ -6,6 +6,9 @@ use tokio::{
     sync::mpsc,
     time::{Instant, timeout},
 };
+use tracing::warn;
+
+use crate::daemon::config::NtpAddress;
 
 use super::{config::NormalizedAddress, system::NETWORK_WAIT_PERIOD};
 
@@ -294,6 +297,22 @@ pub async fn spawner_task<S: Spawner + Send + 'static>(
     }
 
     Ok(())
+}
+
+pub(super) async fn resolve_single_ntp_server(address: NtpAddress) -> Option<SocketAddr> {
+    match address.lookup_host().await {
+        Ok(mut addresses) => match addresses.next() {
+            Some(address) => Some(address),
+            None => {
+                warn!("Unknown domain name: {}", address.server_name);
+                None
+            }
+        },
+        Err(e) => {
+            warn!(error = ?e, "error while resolving {}, retrying", address.server_name);
+            None
+        }
+    }
 }
 
 #[cfg(test)]
