@@ -474,6 +474,7 @@ pub struct NormalizedAddress {
 
     /// Used to inject socket address into the DNS lookup result
     #[cfg(test)]
+    #[serde(skip)]
     hardcoded_dns_resolve: HardcodedDnsResolve,
 }
 
@@ -486,10 +487,8 @@ impl PartialEq for NormalizedAddress {
 }
 
 #[cfg(test)]
-#[derive(Deserialize, Debug, Clone, Default)]
+#[derive(Debug, Clone, Default)]
 struct HardcodedDnsResolve {
-    #[cfg_attr(not(test), allow(unused))]
-    #[serde(skip)]
     addresses: Arc<Mutex<Vec<SocketAddr>>>,
 }
 
@@ -499,6 +498,23 @@ impl From<Vec<SocketAddr>> for HardcodedDnsResolve {
         Self {
             addresses: Arc::new(Mutex::new(value)),
         }
+    }
+}
+
+#[cfg(test)]
+impl HardcodedDnsResolve {
+    fn lookup_host(&self) -> impl Iterator<Item = SocketAddr> {
+        // We don't want to spam a real DNS server during testing. This is an attempt to randomize
+        // the returned addresses somewhat.
+        let mut addresses = self.addresses.lock().unwrap();
+
+        if let Some(last) = addresses.pop() {
+            addresses.insert(0, last);
+        }
+
+        let addresses = addresses.to_vec();
+
+        addresses.into_iter()
     }
 }
 
@@ -651,17 +667,7 @@ impl NormalizedAddress {
 
     #[cfg(test)]
     pub async fn lookup_host(&self) -> std::io::Result<impl Iterator<Item = SocketAddr> + '_> {
-        // We don't want to spam a real DNS server during testing. This is an attempt to randomize
-        // the returned addresses somewhat.
-        let mut addresses = self.hardcoded_dns_resolve.addresses.lock().unwrap();
-
-        if let Some(last) = addresses.pop() {
-            addresses.insert(0, last);
-        }
-
-        let addresses = addresses.to_vec();
-
-        Ok(addresses.into_iter())
+        Ok(self.hardcoded_dns_resolve.lookup_host())
     }
 }
 
