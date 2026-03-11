@@ -299,13 +299,30 @@ pub async fn spawner_task<S: Spawner + Send + 'static>(
 
 pub(super) async fn resolve_single_ntp_server(address: NtpAddress) -> Option<SocketAddr> {
     match address.lookup_host().await {
-        Ok(mut addresses) => match addresses.next() {
-            Some(address) => Some(address),
-            None => {
-                warn!("Unknown domain name: {}", address.server_name);
-                None
+        Ok(addresses) => {
+            let mut last_error = None;
+            for addr in addresses {
+                // Setting up a connection is actually a local only operation for udp sockets.
+                // However, it gives the operating system a chance to let us know whether there
+                // is a route to the given address.
+                if let Err(e) = timestamped_socket::socket::connect_address(
+                    addr,
+                    timestamped_socket::socket::GeneralTimestampMode::None,
+                ) {
+                    last_error = Some(e);
+                    continue;
+                }
+
+                return Some(addr);
             }
-        },
+
+            if let Some(e) = last_error {
+                warn!("No connection possible to {}: {e}", address.0.server_name);
+            } else {
+                warn!("Unknown domain name: {}", address.server_name);
+            }
+            None
+        }
         Err(e) => {
             warn!(error = ?e, "error while resolving {}, retrying", address.server_name);
             None
