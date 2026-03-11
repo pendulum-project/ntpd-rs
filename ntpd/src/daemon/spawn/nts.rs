@@ -1,5 +1,4 @@
 use std::fmt::Display;
-use std::net::SocketAddr;
 use std::ops::Deref;
 
 use ntp_proto::{KeyExchangeClient, NtsClientConfig, NtsError, SourceConfig};
@@ -7,7 +6,8 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tracing::warn;
 
-use crate::daemon::config::NormalizedAddress;
+use crate::daemon::config::{NormalizedAddress, NtpAddress};
+use crate::daemon::spawn::resolve_single_ntp_server;
 
 use super::super::config::NtsSourceConfig;
 
@@ -39,22 +39,6 @@ impl Display for NtsSpawnError {
 impl From<mpsc::error::SendError<SpawnEvent>> for NtsSpawnError {
     fn from(value: mpsc::error::SendError<SpawnEvent>) -> Self {
         Self::SendError(value)
-    }
-}
-
-pub(super) async fn resolve_addr(address: NormalizedAddress) -> Option<SocketAddr> {
-    match address.lookup_host().await {
-        Ok(mut addresses) => match addresses.next() {
-            Some(address) => Some(address),
-            None => {
-                warn!("received unknown domain name from NTS-ke");
-                None
-            }
-        },
-        Err(e) => {
-            warn!(error = ?e, "error while resolving source address, retrying");
-            None
-        }
     }
 }
 
@@ -106,9 +90,8 @@ impl Spawner for NtsSpawner {
         .await
         {
             Ok(Ok(ke)) => {
-                if let Some(address) = resolve_addr(NormalizedAddress::new_from_parts(
-                    ke.remote.as_str(),
-                    ke.port,
+                if let Some(address) = resolve_single_ntp_server(NtpAddress(
+                    NormalizedAddress::new_from_parts(ke.remote.as_str(), ke.port),
                 ))
                 .await
                 {
