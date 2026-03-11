@@ -585,7 +585,7 @@ mod tests {
             config.sources,
             vec![NtpSourceConfig::Standard(FlattenedPair {
                 first: StandardSource {
-                    address: NormalizedAddress::new_unchecked("example.com", 123).into(),
+                    address: NormalizedAddress::new_from_parts("example.com", 123).into(),
                     ntp_version: ProtocolVersion::V4,
                 },
                 second: PartialSourceConfig::default()
@@ -602,7 +602,7 @@ mod tests {
             config.sources,
             vec![NtpSourceConfig::Standard(FlattenedPair {
                 first: StandardSource {
-                    address: NormalizedAddress::new_unchecked("example.com", 123).into(),
+                    address: NormalizedAddress::new_from_parts("example.com", 123).into(),
                     ntp_version: ProtocolVersion::V4,
                 },
                 second: PartialSourceConfig::default()
@@ -617,7 +617,7 @@ mod tests {
             config.sources,
             vec![NtpSourceConfig::Standard(FlattenedPair {
                 first: StandardSource {
-                    address: NormalizedAddress::new_unchecked("example.com", 123).into(),
+                    address: NormalizedAddress::new_from_parts("example.com", 123).into(),
                     ntp_version: ProtocolVersion::V4,
                 },
                 second: PartialSourceConfig::default()
@@ -648,7 +648,7 @@ mod tests {
             config.sources,
             vec![NtpSourceConfig::Standard(FlattenedPair {
                 first: StandardSource {
-                    address: NormalizedAddress::new_unchecked("example.com", 123).into(),
+                    address: NormalizedAddress::new_from_parts("example.com", 123).into(),
                     ntp_version: ProtocolVersion::V4,
                 },
                 second: PartialSourceConfig::default()
@@ -698,7 +698,7 @@ mod tests {
             config.sources,
             vec![NtpSourceConfig::Standard(FlattenedPair {
                 first: StandardSource {
-                    address: NormalizedAddress::new_unchecked("example.com", 123).into(),
+                    address: NormalizedAddress::new_from_parts("example.com", 123).into(),
                     ntp_version: ProtocolVersion::V4,
                 },
                 second: PartialSourceConfig::default()
@@ -719,7 +719,7 @@ mod tests {
             config.sources,
             vec![NtpSourceConfig::Standard(FlattenedPair {
                 first: StandardSource {
-                    address: NormalizedAddress::new_unchecked("example.com", 123).into(),
+                    address: NormalizedAddress::new_from_parts("example.com", 123).into(),
                     ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
                 },
                 second: PartialSourceConfig::default()
