@@ -1,6 +1,8 @@
 name: Add issues to nts-pool project
 
-on:
+permissions: {}
+
+on: # zizmor: ignore[dangerous-triggers] can't do anything other than write to projects
   pull_request_target:
     types:
       - opened
@@ -15,4 +17,4 @@ jobs:
           # You can target a project in a different organization
           # to the issue
           project-url: https://github.com/orgs/pendulum-project/projects/6
-          github-token: ${{ secrets.PROJECT_WRITE_PAT }}
+          github-token: ${{ secrets.PROJECT_WRITE_PAT }} # only has write access to projects

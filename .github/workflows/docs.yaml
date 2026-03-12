@@ -1,10 +1,6 @@
 name: docs
 
-permissions:
-  actions: read
-  contents: read
-  pages: write
-  id-token: write
+permissions: {}
 
 on:
   push:
@@ -21,6 +17,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
 
       - name: Build site
         run: utils/mkdocs.sh --no-bind-port build
@@ -31,6 +29,9 @@ jobs:
           path: target/docs/site
 
   deploy:
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

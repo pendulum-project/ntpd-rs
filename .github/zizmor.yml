@@ -1,0 +1,5 @@
+rules:
+  cache-poisoning:
+    ignore:
+      - checks.yaml # this workflow doesn't produce any release artifacts
+      - docker.yaml # only executed by a maintainer and built images not used in production
