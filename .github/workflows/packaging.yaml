@@ -127,7 +127,7 @@ jobs:
           test "$release_notes_version" == "${release_version}"
           echo "$release_notes_body" > release_notes.md
 
-      - name: Create release
+      - name: Create a draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
