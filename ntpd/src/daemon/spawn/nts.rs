@@ -246,7 +246,7 @@ mod tests {
 
         let mut spawner = NtsSpawner::new(
             NtsSourceConfig {
-                address: NtsKeAddress(NormalizedAddress::new_from_parts("localhost", addr.port())),
+                address: NtsKeAddress(NormalizedAddress::new_from_parts("localhost.", addr.port())),
                 enable_srv_resolution: true,
                 certificate_authorities: Arc::default(),
                 ntp_version: ntp_proto::ProtocolVersion::V4,
