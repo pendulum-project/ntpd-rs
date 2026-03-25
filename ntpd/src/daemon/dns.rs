@@ -86,10 +86,10 @@ async fn resolve_srv<N: IntoName>(name: N) -> Result<Vec<Name>, ResolveError> {
     // For this, we generate a list of all valid results, augmented by a value equal to
     // T^(1/w) where w is the weight of the entry, and T a uniform random variable
     // between 0 and 1. Sorting by these values in increasing order gives a random order
-    // respecting the weighting, since indepdent uniform random X and Y both between 0
+    // respecting the weighting, since independent uniform random X and Y both between 0
     // and 1, the probability X^(1/n) > Y^(1/m) is m/(n+m), which is exactly the chance
     // that the item with weight m should appear before the item with weight n. (Note,
-    // this can quickly be checked by calculating the area under the implicit curve
+    // this can be checked by calculating the area under the implicit curve
     // x=t^(1/n), y=t^(1/m) in the unit square)
     let mut items: Vec<_> = lookup_result
         .as_lookup()
