@@ -35,8 +35,11 @@ pub(crate) async fn resolve_ke(
         }
     }
 
+    println!("Looking up SRV");
+
     // First try looking up SRV records
     if let Ok(srv_names) = resolve_srv(format!("_ntske._tcp.{}", addr.server_name)).await {
+        println!("SRV Lookup succesfull");
         let mut result = vec![];
         for name in srv_names.into_iter().map(|v| v.to_ascii()) {
             if let Ok(lookup) = lookup_host((name.as_str(), 4460)).await {
@@ -51,6 +54,8 @@ pub(crate) async fn resolve_ke(
         }
     }
 
+    println!("Falling back to direct");
+
     // Otherwise do a direct name lookup
     Ok(Either::B(
         lookup_host((addr.server_name.as_str(), addr.port))
@@ -63,6 +68,8 @@ pub(crate) async fn resolve_ke(
 }
 
 async fn resolve_srv<N: IntoName>(name: N) -> Result<Vec<Name>, ResolveError> {
+    println!("Building resolver");
+
     let resolver = RESOLVER.get_or_init(|| {
         let mut builder = match TokioResolver::builder_tokio() {
             Ok(builder) => builder,
@@ -78,7 +85,11 @@ async fn resolve_srv<N: IntoName>(name: N) -> Result<Vec<Name>, ResolveError> {
         builder.build()
     });
 
+    println!("Looking up name");
+
     let lookup_result = resolver.srv_lookup(name).await?;
+
+    println!("Collecting results");
 
     // Unfortunately, hickory doesn't order the results for us apropriately, so we need
     // to do this ourselves. See also https://github.com/hickory-dns/hickory-dns/issues/3440
@@ -110,6 +121,8 @@ async fn resolve_srv<N: IntoName>(name: N) -> Result<Vec<Name>, ResolveError> {
         })
         .collect();
 
+    println!("Sort results");
+
     // Now all that remains to be done is sorting the items by first priority and then
     // the generated random value, and we get an ordering respecting RFC2782.
     items.sort_by(|a, b| {
@@ -117,6 +130,8 @@ async fn resolve_srv<N: IntoName>(name: N) -> Result<Vec<Name>, ResolveError> {
             .cmp(&b.1.priority())
             .then(f64::total_cmp(&a.0, &b.0))
     });
+
+    println!("Done");
 
     Ok(items.into_iter().map(|v| v.1.target()).cloned().collect())
 }

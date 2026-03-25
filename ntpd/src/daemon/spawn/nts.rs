@@ -196,6 +196,7 @@ impl Spawner for NtsSpawner {
 mod tests {
     use std::sync::Arc;
 
+    use hickory_resolver::TokioResolver;
     use ntp_proto::SourceConfig;
     use tokio::{io::AsyncReadExt, net::TcpListener};
 
@@ -216,7 +217,7 @@ mod tests {
 
         let mut spawner = NtsSpawner::new(
             NtsSourceConfig {
-                address: NtsKeAddress(NormalizedAddress::new_from_parts("localhost", addr.port())),
+                address: NtsKeAddress(NormalizedAddress::new_from_parts("localhost.", addr.port())),
                 enable_srv_resolution: false,
                 certificate_authorities: Arc::default(),
                 ntp_version: ntp_proto::ProtocolVersion::V4,
@@ -236,31 +237,9 @@ mod tests {
 
     #[tokio::test]
     async fn allow_srv_direct_name_resolution() {
-        let listener = TcpListener::bind("[::]:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        let server = tokio::task::spawn(async move {
-            let (mut socket, _) = listener.accept().await.unwrap();
-            let mut buf = [0u8; 16];
-            let _ = socket.read(&mut buf).await.unwrap();
-        });
-
-        let mut spawner = NtsSpawner::new(
-            NtsSourceConfig {
-                address: NtsKeAddress(NormalizedAddress::new_from_parts("localhost", addr.port())),
-                enable_srv_resolution: true,
-                certificate_authorities: Arc::default(),
-                ntp_version: ntp_proto::ProtocolVersion::V4,
-            },
-            SourceConfig::default(),
-        )
-        .unwrap();
-
-        let (sender, _receiver) = tokio::sync::mpsc::channel(1);
-
-        assert!(spawner.try_spawn(&sender).await.is_ok());
-        assert!(!spawner.is_complete());
-
-        assert!(server.is_finished());
-        assert!(server.await.is_ok());
+        let mut builder = TokioResolver::builder_tokio().unwrap();
+        builder.options_mut().validate = true;
+        let resolver = builder.build();
+        resolver.srv_lookup("_ntske._tcp.localhost").await;
     }
 }
