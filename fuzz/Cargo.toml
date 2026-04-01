@@ -20,6 +20,9 @@ features = ["arbitrary-derive"]
 path = "../ntp-proto"
 features = ["__internal-fuzz"]
 
+[dependencies.ptp-wire]
+path = "../ptp-wire"
+
 # Prevent this from interfering with workspaces
 [workspace]
 members = ["."]
@@ -63,6 +66,12 @@ doc = false
 [[bin]]
 name = "ipfilter"
 path = "fuzz_targets/ipfilter.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "ptp_message_parsing"
+path = "fuzz_targets/ptp_message_parsing.rs"
 test = false
 doc = false
 
