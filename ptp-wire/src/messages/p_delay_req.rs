@@ -1,8 +1,8 @@
-use crate::{Error, common::WireTimestamp};
+use crate::{Error, common::Timestamp};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PDelayReqMessage {
-    pub origin_timestamp: WireTimestamp,
+    pub origin_timestamp: Timestamp,
 }
 
 impl PDelayReqMessage {
@@ -25,7 +25,7 @@ impl PDelayReqMessage {
         let slice = buffer.get(0..20).ok_or(Error::BufferTooShort)?;
 
         Ok(Self {
-            origin_timestamp: WireTimestamp::deserialize(slice)?,
+            origin_timestamp: Timestamp::deserialize(slice)?,
         })
     }
 }
@@ -42,7 +42,7 @@ mod tests {
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             ],
             PDelayReqMessage {
-                origin_timestamp: WireTimestamp::new(1_169_232_218, 174_389_936).unwrap(),
+                origin_timestamp: Timestamp::new(1_169_232_218, 174_389_936).unwrap(),
             },
         )];
 

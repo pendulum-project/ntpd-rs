@@ -1,9 +1,12 @@
 use crate::Error;
 
-/// Represents time intervals in 2^16ths of a nanoseconds
+/// An interval of passed time as represented in PTP messages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct TimeInterval(pub i64);
+pub struct TimeInterval(
+    /// The length of the time intervals in 2^16ths of a nanoseconds.
+    pub i64,
+);
 
 impl TimeInterval {
     pub(crate) fn serialize(self, buffer: &mut [u8]) -> Result<(), Error> {
@@ -24,6 +27,7 @@ impl TimeInterval {
         )))
     }
 
+    /// Length of this interval in nano seconds
     #[must_use]
     #[expect(
         clippy::cast_precision_loss,
@@ -33,6 +37,13 @@ impl TimeInterval {
         (self.0 as f64) / f64::from(1 << 16)
     }
 
+    /// Create a new interval with the given length.
+    ///
+    /// This will round to the closest possible value.
+    ///
+    /// # Errors
+    /// This will error if the input is NaN or of magnitude larger than
+    /// about 2^47 nanoseconds
     pub fn from_nanos(nanos: f64) -> Result<Self, Error> {
         // We need to do the checks for the conversion manually unfortunately,
         // as rust doesn't have usable builtin conversions for floats.

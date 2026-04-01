@@ -1,8 +1,8 @@
-use crate::{Error, common::WireTimestamp};
+use crate::{Error, common::Timestamp};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DelayReqMessage {
-    pub origin_timestamp: WireTimestamp,
+    pub origin_timestamp: Timestamp,
 }
 
 impl DelayReqMessage {
@@ -19,7 +19,7 @@ impl DelayReqMessage {
 
     pub(crate) fn deserialize_content(buffer: &[u8]) -> Result<Self, Error> {
         let slice = buffer.get(0..10).ok_or(Error::BufferTooShort)?;
-        let origin_timestamp = WireTimestamp::deserialize(slice)?;
+        let origin_timestamp = Timestamp::deserialize(slice)?;
 
         Ok(Self { origin_timestamp })
     }
@@ -34,7 +34,7 @@ mod tests {
         let representations = [(
             [0x00, 0x00, 0x45, 0xb1, 0x11, 0x5a, 0x0a, 0x64, 0xfa, 0xb0],
             DelayReqMessage {
-                origin_timestamp: WireTimestamp::new(1_169_232_218, 174_389_936).unwrap(),
+                origin_timestamp: Timestamp::new(1_169_232_218, 174_389_936).unwrap(),
             },
         )];
 

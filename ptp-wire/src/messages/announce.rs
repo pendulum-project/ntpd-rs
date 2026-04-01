@@ -1,13 +1,13 @@
 use super::Header;
 use crate::{
     Error,
-    common::{ClockIdentity, ClockQuality, TimeSource, WireTimestamp},
+    common::{ClockIdentity, ClockQuality, TimeSource, Timestamp},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AnnounceMessage {
     pub header: Header,
-    pub origin_timestamp: WireTimestamp,
+    pub origin_timestamp: Timestamp,
     pub current_utc_offset: i16,
     pub grandmaster_priority_1: u8,
     pub grandmaster_clock_quality: ClockQuality,
@@ -47,7 +47,7 @@ impl AnnounceMessage {
 
         Ok(Self {
             header,
-            origin_timestamp: WireTimestamp::deserialize(&buffer[0..10])?,
+            origin_timestamp: Timestamp::deserialize(&buffer[0..10])?,
             current_utc_offset: i16::from_be_bytes(buffer[10..12].try_into().unwrap()),
             grandmaster_priority_1: buffer[13],
             grandmaster_clock_quality: ClockQuality::deserialize(&buffer[14..18])?,
@@ -74,7 +74,7 @@ mod tests {
             ],
             AnnounceMessage {
                 header: Header::new(1),
-                origin_timestamp: WireTimestamp::new(1_169_232_218, 175_326_816).unwrap(),
+                origin_timestamp: Timestamp::new(1_169_232_218, 175_326_816).unwrap(),
                 current_utc_offset: 0,
                 grandmaster_priority_1: 96,
                 grandmaster_clock_quality: ClockQuality {

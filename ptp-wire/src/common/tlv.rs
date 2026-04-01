@@ -2,6 +2,7 @@ use core::iter::FusedIterator;
 
 use crate::Error;
 
+/// A builder that can be used to create [`TlvSet`]
 #[derive(PartialEq, Eq)]
 pub struct TlvSetBuilder<'a> {
     buffer: &'a mut [u8],
@@ -9,16 +10,23 @@ pub struct TlvSetBuilder<'a> {
 }
 
 impl<'a> TlvSetBuilder<'a> {
+    /// Create a new builder with the given buffer as backing storage
     pub fn new(buffer: &'a mut [u8]) -> Self {
         Self { buffer, used: 0 }
     }
 
+    /// Add a TLV to the builder.
+    ///
+    /// # Errors
+    /// Fails when the remaining buffer is too small for the TLV, or
+    /// when the TLV itself is larger than 2^16 bytes.
     pub fn add(&mut self, tlv: &Tlv<'_>) -> Result<(), Error> {
         tlv.serialize(&mut self.buffer[self.used..])?;
         self.used += tlv.wire_size();
         Ok(())
     }
 
+    /// Create the actual [`TlvSet`]
     #[must_use]
     pub fn build(self) -> TlvSet<'a> {
         TlvSet {
@@ -27,6 +35,7 @@ impl<'a> TlvSetBuilder<'a> {
     }
 }
 
+/// A set of TLVs that can be iterated over.
 #[derive(Clone, PartialEq, Eq, Default)]
 pub struct TlvSet<'a> {
     bytes: &'a [u8],
@@ -84,10 +93,13 @@ impl<'a> TlvSet<'a> {
         })
     }
 
+    /// Iterator over all TLVs in the set which need to be propagated when
+    /// attached to announce messages.
     pub fn announce_propagate_tlvs(&self) -> impl Iterator<Item = Tlv<'a>> + 'a {
         self.tlvs().filter(|tlv| tlv.tlv_type.announce_propagate())
     }
 
+    /// Iterator over all TLVs in the set.
     pub fn tlvs(&self) -> impl Iterator<Item = Tlv<'a>> + 'a {
         TlvSetIterator { buffer: self.bytes }
     }
@@ -118,11 +130,21 @@ impl<'a> Iterator for TlvSetIterator<'a> {
 
 impl FusedIterator for TlvSetIterator<'_> {}
 
+/// A single TLV that can be afixed to a PTP message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tlv<'a> {
+    /// The type of this TLV.
     pub tlv_type: TlvType,
+    /// The actual contents of the TLV.
+    ///
+    /// Note that this is of type [`Cow<'a, [u8]>`](std::borrow::Cow) instead
+    /// when the standard library feature is enabled.
     #[cfg(not(feature = "std"))]
     pub value: &'a [u8],
+    /// The actual contents of the TLV.
+    ///
+    /// Note that this is of type `&'a [u8]` instead when the standard library
+    /// feature is disabled.
     #[cfg(feature = "std")]
     pub value: std::borrow::Cow<'a, [u8]>,
 }
@@ -172,6 +194,7 @@ impl<'a> Tlv<'a> {
         })
     }
 
+    /// Ensure this TLV owns its storage.
     #[cfg(feature = "std")]
     #[must_use]
     pub fn into_owned(self) -> Tlv<'static> {
@@ -182,39 +205,75 @@ impl<'a> Tlv<'a> {
     }
 }
 
-/// See 14.1.1 / Table 52
+/// The type of a given TLV.
+///
+/// For more detials, see *IEEE1588-2019 section 14.1.1 / Table 52*.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum TlvType {
+    /// Reserved for future use
     Reserved(u16),
+    /// The management TLV.
     Management,
+    #[expect(clippy::doc_markdown)]
+    /// The ManagementErrorStatus TLV
     ManagementErrorStatus,
+    /// An organization extension TLV.
+    ///
+    /// These have an additional set of identifiers identifying the actual type
+    /// in the TLV data itself.
     OrganizationExtension,
+    /// A TLV containing a request for unicast transmission.
     RequestUnicastTransmission,
+    /// A grant for unicast transmission.
     GrantUnicastTransmission,
+    /// A request to cancel unicast transmission.
     CancelUnicastTransmission,
+    /// Acknowledgement of unicast transmission cancelation.
     AcknowledgeCancelUnicastTransmission,
+    /// Path tracing data.
     PathTrace,
+    /// Information for computing a different timescale.
     AlternateTimeOffsetIndicator,
+    /// TLV types used in previous versions of the standard.
     Legacy(u16),
+    /// TLV identifiers inteded for experimentation.
     Experimental(u16),
+    /// An organization extension TLV that needs to be propagated on announce messages.
+    ///
+    /// These have an additional set of identifiers identifying the actual type
+    /// in the TLV data itself.
     OrganizationExtensionPropagate,
+    /// Enhanced accury metrics.
     EnhancedAccuracyMetrics,
+    /// An organization extension TLV that must not be propagated on announce messages.
+    ///
+    /// These have an additional set of identifiers identifying the actual type
+    /// in the TLV data itself.
     OrganizationExtensionDoNotPropagate,
+    /// Data for Layer 1 synchronization.
     L1Sync,
+    /// Information about port communication capabilities.
     PortCommunicationAvailability,
+    /// Protocol address of the sending PTP port
     ProtocolAddress,
+    /// Timing data on received messages from time receiver monitoring.
     SlaveRxSyncTimingData,
+    /// Computed data from time receiver monitoring.
     SlaveRxSyncComputedData,
+    /// Timing data on sent message from time receiver monitoring.
     SlaveTxEventTimestamps,
+    /// Cumulative frequency transfer data.
     CumulativeRateRatio,
+    /// Padding.
     Pad,
+    /// Message authentication.
     Authentication,
 }
 
 impl TlvType {
     #[must_use]
-    pub fn to_primitive(self) -> u16 {
+    pub(crate) fn to_primitive(self) -> u16 {
         match self {
             Self::Management => 0x0001,
             Self::ManagementErrorStatus => 0x0002,
@@ -242,7 +301,7 @@ impl TlvType {
     }
 
     #[must_use]
-    pub fn from_primitive(value: u16) -> Self {
+    pub(crate) fn from_primitive(value: u16) -> Self {
         match value {
             0x0000
             | 0x000a..=0x1fff
@@ -276,8 +335,8 @@ impl TlvType {
         }
     }
 
-    // True if this message should be propagated by a boundary clock if it is
-    // attached to an announce message
+    /// True if this message should be propagated by a boundary clock if it is
+    /// attached to an announce message
     #[must_use]
     pub fn announce_propagate(self) -> bool {
         matches!(self.to_primitive(), 0x0008 | 0x0009 | 0x4000..=0x7fff)
