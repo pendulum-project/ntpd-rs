@@ -13,15 +13,30 @@ pub struct PortIdentity {
 
 impl WireFormat for PortIdentity {
     fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
-        self.clock_identity.serialize(&mut buffer[0..8])?;
-        buffer[8..10].copy_from_slice(&self.port_number.to_be_bytes());
+        self.clock_identity.serialize(
+            buffer
+                .get_mut(0..8)
+                .ok_or(WireFormatError::BufferTooShort)?,
+        )?;
+        buffer
+            .get_mut(8..10)
+            .ok_or(WireFormatError::BufferTooShort)?
+            .copy_from_slice(&self.port_number.to_be_bytes());
         Ok(())
     }
 
     fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
         Ok(Self {
-            clock_identity: ClockIdentity::deserialize(&buffer[0..8])?,
-            port_number: u16::from_be_bytes(buffer[8..10].try_into().unwrap()),
+            clock_identity: ClockIdentity::deserialize(
+                buffer.get(0..8).ok_or(WireFormatError::BufferTooShort)?,
+            )?,
+            port_number: u16::from_be_bytes(
+                buffer
+                    .get(8..10)
+                    .ok_or(WireFormatError::BufferTooShort)?
+                    .try_into()
+                    .unwrap(),
+            ),
         })
     }
 }

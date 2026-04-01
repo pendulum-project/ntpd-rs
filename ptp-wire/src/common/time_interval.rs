@@ -46,13 +46,20 @@ impl DerefMut for TimeInterval {
 
 impl WireFormat for TimeInterval {
     fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
-        buffer[0..8].copy_from_slice(&self.0.to_bits().to_be_bytes());
+        buffer
+            .get_mut(0..8)
+            .ok_or(WireFormatError::BufferTooShort)?
+            .copy_from_slice(&self.0.to_bits().to_be_bytes());
         Ok(())
     }
 
     fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
         Ok(Self(I48F16::from_bits(i64::from_be_bytes(
-            buffer[0..8].try_into().unwrap(),
+            buffer
+                .get(0..8)
+                .ok_or(WireFormatError::BufferTooShort)?
+                .try_into()
+                .unwrap(),
         ))))
     }
 }

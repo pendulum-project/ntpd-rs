@@ -11,7 +11,11 @@ impl DelayReqMessage {
     }
 
     pub(crate) fn serialize_content(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
-        self.origin_timestamp.serialize(&mut buffer[0..10])?;
+        self.origin_timestamp.serialize(
+            buffer
+                .get_mut(0..10)
+                .ok_or(WireFormatError::BufferTooShort)?,
+        )?;
 
         Ok(())
     }

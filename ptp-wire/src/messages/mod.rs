@@ -240,8 +240,12 @@ impl<'a> Message<'a> {
     ///
     /// Returns the used buffer size that contains the message or an error.
     pub(crate) fn serialize(&self, buffer: &mut [u8]) -> Result<usize, super::WireFormatError> {
-        let (header, rest) = buffer.split_at_mut(34);
-        let (body, tlv) = rest.split_at_mut(self.body.wire_size());
+        let (header, rest) = buffer
+            .split_at_mut_checked(34)
+            .ok_or(WireFormatError::BufferTooShort)?;
+        let (body, tlv) = rest
+            .split_at_mut_checked(self.body.wire_size())
+            .ok_or(WireFormatError::BufferTooShort)?;
 
         self.header.serialize_header(
             self.body.content_type(),

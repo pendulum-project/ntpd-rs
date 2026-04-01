@@ -15,9 +15,16 @@ impl DelayRespMessage {
     }
 
     pub(crate) fn serialize_content(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
-        self.receive_timestamp.serialize(&mut buffer[0..10])?;
-        self.requesting_port_identity
-            .serialize(&mut buffer[10..20])?;
+        self.receive_timestamp.serialize(
+            buffer
+                .get_mut(0..10)
+                .ok_or(WireFormatError::BufferTooShort)?,
+        )?;
+        self.requesting_port_identity.serialize(
+            buffer
+                .get_mut(10..20)
+                .ok_or(WireFormatError::BufferTooShort)?,
+        )?;
 
         Ok(())
     }

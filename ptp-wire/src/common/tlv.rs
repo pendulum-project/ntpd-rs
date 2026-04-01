@@ -142,9 +142,20 @@ impl<'a> Tlv<'a> {
 
     pub(crate) fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
         let len = u16::try_from(self.value.len()).map_err(|_| WireFormatError::Invalid)?;
-        buffer[0..][..2].copy_from_slice(&self.tlv_type.to_primitive().to_be_bytes());
-        buffer[2..][..2].copy_from_slice(&len.to_be_bytes());
-        buffer[4..][..self.value.len()].copy_from_slice(self.value.as_ref());
+        buffer
+            .get_mut(0..2)
+            .ok_or(WireFormatError::BufferTooShort)?
+            .copy_from_slice(&self.tlv_type.to_primitive().to_be_bytes());
+        buffer
+            .get_mut(2..4)
+            .ok_or(WireFormatError::BufferTooShort)?
+            .copy_from_slice(&len.to_be_bytes());
+        buffer
+            .get_mut(4..)
+            .ok_or(WireFormatError::BufferTooShort)?
+            .get_mut(..self.value.len())
+            .ok_or(WireFormatError::BufferTooShort)?
+            .copy_from_slice(self.value.as_ref());
 
         Ok(())
     }

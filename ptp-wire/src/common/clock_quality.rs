@@ -39,17 +39,33 @@ impl Default for ClockQuality {
 
 impl WireFormat for ClockQuality {
     fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
-        buffer[0] = self.clock_class;
-        buffer[1] = self.clock_accuracy.to_primitive();
-        buffer[2..4].copy_from_slice(&self.offset_scaled_log_variance.to_be_bytes());
+        *buffer.get_mut(0).ok_or(WireFormatError::BufferTooShort)? = self.clock_class;
+        *buffer.get_mut(1).ok_or(WireFormatError::BufferTooShort)? =
+            self.clock_accuracy.to_primitive();
+        buffer
+            .get_mut(2..4)
+            .ok_or(WireFormatError::BufferTooShort)?
+            .copy_from_slice(&self.offset_scaled_log_variance.to_be_bytes());
         Ok(())
     }
 
+    #[expect(
+        clippy::get_first,
+        reason = "Prefer uniform way of accessing the elements of the buffer in this deserializer"
+    )]
     fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
         Ok(Self {
-            clock_class: buffer[0],
-            clock_accuracy: ClockAccuracy::from_primitive(buffer[1]),
-            offset_scaled_log_variance: u16::from_be_bytes(buffer[2..4].try_into().unwrap()),
+            clock_class: *buffer.get(0).ok_or(WireFormatError::BufferTooShort)?,
+            clock_accuracy: ClockAccuracy::from_primitive(
+                *buffer.get(1).ok_or(WireFormatError::BufferTooShort)?,
+            ),
+            offset_scaled_log_variance: u16::from_be_bytes(
+                buffer
+                    .get(2..4)
+                    .ok_or(WireFormatError::BufferTooShort)?
+                    .try_into()
+                    .unwrap(),
+            ),
         })
     }
 }
