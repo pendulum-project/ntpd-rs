@@ -87,7 +87,7 @@ mod tests {
                     0xff, 0xff, 0x00, 0x09, 0xba, 0xf8, 0x21, 0x00,
                 ]),
                 steps_removed: 128,
-                time_source: TimeSource::Unknown(0x80),
+                time_source: TimeSource::Reserved(0x80),
             },
         )];
 
