@@ -280,6 +280,9 @@ jobs:
           - fuzz_target: record_encode_decode
             corpus: ""
             features: ''
+          - fuzz_target: ptp_message_parsing
+            corpus: ""
+            features: ''
     steps:
       - name: Checkout sources
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
