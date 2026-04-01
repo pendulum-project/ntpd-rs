@@ -14,7 +14,6 @@ use self::{management::ManagementMessage, signalling::SignalingMessage};
 use super::{WireFormatError, common::TlvSet};
 
 mod announce;
-mod control_field;
 mod delay_req;
 mod delay_resp;
 mod follow_up;
