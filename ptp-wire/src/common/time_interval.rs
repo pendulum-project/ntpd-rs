@@ -1,66 +1,27 @@
-use core::ops::{Deref, DerefMut};
-
-use fixed::types::I48F16;
-
 use crate::Error;
 
-/// Represents time intervals in nanoseconds
+/// Represents time intervals in 2^16ths of a nanoseconds
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct TimeInterval(pub I48F16);
-
-#[cfg(feature = "serde")]
-impl<'de> serde::Deserialize<'de> for TimeInterval {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Ok(TimeInterval(I48F16::from_bits(i64::deserialize(
-            deserializer,
-        )?)))
-    }
-}
-
-#[cfg(feature = "serde")]
-impl serde::Serialize for TimeInterval {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_i64(self.0.to_bits())
-    }
-}
-
-impl Deref for TimeInterval {
-    type Target = I48F16;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for TimeInterval {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct TimeInterval(pub i64);
 
 impl TimeInterval {
     pub(crate) fn serialize(self, buffer: &mut [u8]) -> Result<(), Error> {
         buffer
             .get_mut(0..8)
             .ok_or(Error::BufferTooShort)?
-            .copy_from_slice(&self.0.to_bits().to_be_bytes());
+            .copy_from_slice(&self.0.to_be_bytes());
         Ok(())
     }
 
     pub(crate) fn deserialize(buffer: &[u8]) -> Result<Self, Error> {
-        Ok(Self(I48F16::from_bits(i64::from_be_bytes(
+        Ok(Self(i64::from_be_bytes(
             buffer
                 .get(0..8)
                 .ok_or(Error::BufferTooShort)?
                 .try_into()
                 .unwrap(),
-        ))))
+        )))
     }
 
     #[must_use]
@@ -69,7 +30,24 @@ impl TimeInterval {
         reason = "Precision loss here is acceptable as it only happens when the interval is relatively large"
     )]
     pub fn to_nanos(self) -> f64 {
-        (self.0.to_bits() as f64) / f64::from(1 << 16)
+        (self.0 as f64) / f64::from(1 << 16)
+    }
+
+    pub fn from_nanos(nanos: f64) -> Result<Self, Error> {
+        // We need to do the checks for the conversion manually unfortunately,
+        // as rust doesn't have usable builtin conversions for floats.
+        let ticks = (nanos * f64::from(1 << 16)).round();
+        // The as casts in the check are not exact, but that is acceptable as
+        // the MAX value rounds up by 1, which can be solved with checking for
+        // equality as well, and the MIN value is exactly representable. After
+        // the check, the as cast back to integer from the float will be exact.
+        #[expect(clippy::cast_precision_loss)]
+        #[expect(clippy::cast_possible_truncation)]
+        if ticks.is_nan() || ticks >= (i64::MAX as f64) || ticks < (i64::MIN as f64) {
+            Err(Error::Invalid)
+        } else {
+            Ok(Self((nanos * f64::from(1 << 16)) as i64))
+        }
     }
 }
 
@@ -82,15 +60,15 @@ mod tests {
         let representations = [
             (
                 [0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x80, 0x00u8],
-                TimeInterval(I48F16::from_num(2.5f64)),
+                TimeInterval::from_nanos(2.5f64).unwrap(),
             ),
             (
                 [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01u8],
-                TimeInterval(I48F16::from_num(1.0f64 / f64::from(u16::MAX))),
+                TimeInterval::from_nanos(1.0f64 / f64::from(u16::MAX)).unwrap(),
             ),
             (
                 [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00u8],
-                TimeInterval(I48F16::from_num(-1.0f64)),
+                TimeInterval::from_nanos(-1.0f64).unwrap(),
             ),
         ];
 

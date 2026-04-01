@@ -33,7 +33,6 @@ debug = 2
 [workspace.dependencies]
 arbitrary = { version = "1.0" }
 clock-steering = "0.2.1"
-fixed = "1.24"
 hickory-resolver = { version = "0.25.0", features = ["dnssec-aws-lc-rs"] }
 libc = "0.2.154"
 pps-time = "0.2.3"
