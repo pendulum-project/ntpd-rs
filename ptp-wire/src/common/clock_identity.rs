@@ -22,6 +22,7 @@ impl ClockIdentity {
     /// let id = ClockIdentity::from_mac_address([0xA, 0xB, 0xC, 0xD, 0xE, 0xF]);
     /// assert_eq!(id.0, [0xA, 0xB, 0xC, 0xD, 0xE, 0xF, 0x0, 0x0]);
     /// ```
+    #[must_use]
     pub fn from_mac_address(addr: [u8; 6]) -> Self {
         let mut this = Self([0; 8]);
 

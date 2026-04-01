@@ -46,8 +46,8 @@ mod tests {
             ],
             PDelayReqMessage {
                 origin_timestamp: WireTimestamp {
-                    seconds: 1169232218,
-                    nanos: 174389936,
+                    seconds: 1_169_232_218,
+                    nanos: 174_389_936,
                 },
             },
         )];
