@@ -1,0 +1,25 @@
+[package]
+name = "ptp-wire"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[features]
+default = ["std", "serde", "fuzz"]
+std = []
+serde = ["dep:serde"]
+fuzz = []
+
+[dependencies]
+arrayvec.workspace = true
+fixed.workspace = true
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_test.workspace = true
