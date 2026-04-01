@@ -129,7 +129,6 @@
 #![warn(clippy::unreadable_literal)]
 #![warn(clippy::unsafe_derive_deserialize)]
 #![warn(clippy::unused_async)]
-#![warn(clippy::unused_self)]
 #![warn(clippy::used_underscore_binding)]
 #![warn(clippy::used_underscore_items)]
 #![warn(clippy::verbose_bit_mask)]
