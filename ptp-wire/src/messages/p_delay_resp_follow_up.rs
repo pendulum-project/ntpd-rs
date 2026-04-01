@@ -1,5 +1,5 @@
 use crate::{
-    WireFormat, WireFormatError,
+    WireFormatError,
     common::{PortIdentity, WireTimestamp},
 };
 

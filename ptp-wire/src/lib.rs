@@ -178,16 +178,3 @@ impl From<EnumConversionError> for WireFormatError {
         Self::EnumConversionError
     }
 }
-
-trait WireFormat: Debug + Clone + Eq {
-    /// Serializes the object into the PTP wire format.
-    ///
-    /// Returns the used buffer size that contains the message or an error.
-    fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError>;
-
-    /// Deserializes the object from the PTP wire format.
-    ///
-    /// Returns the object and the size in the buffer that it takes up or an
-    /// error.
-    fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError>;
-}

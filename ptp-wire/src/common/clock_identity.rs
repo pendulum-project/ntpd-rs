@@ -1,4 +1,4 @@
-use crate::{WireFormat, WireFormatError};
+use crate::WireFormatError;
 
 /// The identity of a PTP node.
 ///
@@ -30,10 +30,8 @@ impl ClockIdentity {
 
         this
     }
-}
 
-impl WireFormat for ClockIdentity {
-    fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
+    pub fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
         buffer
             .get_mut(0..self.0.len())
             .ok_or(WireFormatError::BufferTooShort)?
@@ -41,7 +39,7 @@ impl WireFormat for ClockIdentity {
         Ok(())
     }
 
-    fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
+    pub fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
         Ok(Self(
             buffer
                 .get(0..8)

@@ -1,5 +1,5 @@
 use super::clock_accuracy::ClockAccuracy;
-use crate::{WireFormat, WireFormatError};
+use crate::WireFormatError;
 
 /// A description of the accuracy and type of a clock.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -37,8 +37,8 @@ impl Default for ClockQuality {
     }
 }
 
-impl WireFormat for ClockQuality {
-    fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
+impl ClockQuality {
+    pub fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
         *buffer.get_mut(0).ok_or(WireFormatError::BufferTooShort)? = self.clock_class;
         *buffer.get_mut(1).ok_or(WireFormatError::BufferTooShort)? =
             self.clock_accuracy.to_primitive();
@@ -53,7 +53,7 @@ impl WireFormat for ClockQuality {
         clippy::get_first,
         reason = "Prefer uniform way of accessing the elements of the buffer in this deserializer"
     )]
-    fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
+    pub fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
         Ok(Self {
             clock_class: *buffer.get(0).ok_or(WireFormatError::BufferTooShort)?,
             clock_accuracy: ClockAccuracy::from_primitive(

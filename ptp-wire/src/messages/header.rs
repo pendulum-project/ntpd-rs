@@ -1,6 +1,6 @@
 use super::MessageType;
 use crate::{
-    WireFormat, WireFormatError,
+    WireFormatError,
     common::{PortIdentity, TimeInterval},
 };
 

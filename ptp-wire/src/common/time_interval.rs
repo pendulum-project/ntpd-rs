@@ -2,7 +2,7 @@ use core::ops::{Deref, DerefMut};
 
 use fixed::types::I48F16;
 
-use crate::{WireFormat, WireFormatError};
+use crate::WireFormatError;
 
 /// Represents time intervals in nanoseconds
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -44,8 +44,8 @@ impl DerefMut for TimeInterval {
     }
 }
 
-impl WireFormat for TimeInterval {
-    fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
+impl TimeInterval {
+    pub fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
         buffer
             .get_mut(0..8)
             .ok_or(WireFormatError::BufferTooShort)?
@@ -53,7 +53,7 @@ impl WireFormat for TimeInterval {
         Ok(())
     }
 
-    fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
+    pub fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
         Ok(Self(I48F16::from_bits(i64::from_be_bytes(
             buffer
                 .get(0..8)
@@ -62,9 +62,7 @@ impl WireFormat for TimeInterval {
                 .unwrap(),
         ))))
     }
-}
 
-impl TimeInterval {
     #[must_use]
     #[expect(
         clippy::cast_precision_loss,
