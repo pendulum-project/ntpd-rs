@@ -1,11 +1,11 @@
 use crate::{
     Error,
-    common::{PortIdentity, WireTimestamp},
+    common::{PortIdentity, Timestamp},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DelayRespMessage {
-    pub receive_timestamp: WireTimestamp,
+    pub receive_timestamp: Timestamp,
     pub requesting_port_identity: PortIdentity,
 }
 
@@ -25,7 +25,7 @@ impl DelayRespMessage {
 
     pub(crate) fn deserialize_content(buffer: &[u8]) -> Result<Self, Error> {
         let slice = buffer.get(0..20).ok_or(Error::BufferTooShort)?;
-        let receive_timestamp = WireTimestamp::deserialize(&slice[0..10])?;
+        let receive_timestamp = Timestamp::deserialize(&slice[0..10])?;
         let requesting_port_identity = PortIdentity::deserialize(&slice[10..20])?;
 
         Ok(Self {
@@ -48,7 +48,7 @@ mod tests {
                 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a,
             ],
             DelayRespMessage {
-                receive_timestamp: WireTimestamp::new(1_169_232_218, 174_389_936).unwrap(),
+                receive_timestamp: Timestamp::new(1_169_232_218, 174_389_936).unwrap(),
                 requesting_port_identity: PortIdentity {
                     clock_identity: ClockIdentity([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]),
                     port_number: 0x090a,

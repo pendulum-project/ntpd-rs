@@ -65,28 +65,51 @@ impl TryFrom<u8> for MessageType {
     }
 }
 
+/// A PTP version 2 Message.
+///
+/// For more details, see the individual parts, as well as *IEEE1588-2019 clause 13*
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message<'a> {
+    /// The header of the message.
     pub header: Header,
+    /// The main data in the message body.
     pub body: MessageBody,
+    /// Any extensions sent along with the message.
     pub suffix: TlvSet<'a>,
 }
 
+/// The main body of a message.
+///
+/// For more details, see *IEEE1588-2019 section 13.3*
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MessageBody {
+    /// A synchronization message.
     Sync(SyncMessage),
+    /// A delay request message.
     DelayReq(DelayReqMessage),
+    /// A peer delay request message.
     PDelayReq(PDelayReqMessage),
+    /// A peer delay response message.
     PDelayResp(PDelayRespMessage),
+    /// A followup for a two-step timing message.
     FollowUp(FollowUpMessage),
+    /// A delay response message.
     DelayResp(DelayRespMessage),
+    /// A peer delay response follow up message used for
+    /// two step timing of peer delay response messages.
     PDelayRespFollowUp(PDelayRespFollowUpMessage),
+    /// An announce message
     Announce(AnnounceMessage),
+    /// A signalling message.
+    ///
+    /// These messages are used purely as a vehicle for TLVs.
     Signaling(SignalingMessage),
+    /// A management message.
     Management(ManagementMessage),
 }
 
 impl MessageBody {
+    /// The size this message will have once encoded for transmission.
     fn wire_size(&self) -> usize {
         match &self {
             MessageBody::Sync(m) => m.content_size(),
@@ -117,6 +140,7 @@ impl MessageBody {
         }
     }
 
+    /// Serialize this message into a buffer of bytes.
     pub(crate) fn serialize(&self, buffer: &mut [u8]) -> Result<usize, super::Error> {
         match &self {
             MessageBody::Sync(m) => m.serialize_content(buffer)?,
@@ -134,6 +158,7 @@ impl MessageBody {
         Ok(self.wire_size())
     }
 
+    /// Deserialize a message from a received buffer of bytes.
     pub(crate) fn deserialize(
         message_type: MessageType,
         header: &Header,
@@ -174,7 +199,7 @@ impl MessageBody {
     }
 }
 
-/// Checks whether message is of PTP revision compatible with Statime
+/// Checks whether message is of a PTP revision compatible with this crate.
 #[must_use]
 pub fn is_compatible(buffer: &[u8]) -> bool {
     // this ensures that versionPTP in the header is 2
@@ -192,7 +217,12 @@ impl<'a> Message<'a> {
 
     /// Serializes the object into the PTP wire format.
     ///
-    /// Returns the used buffer size that contains the message or an error.
+    /// Returns the ammount of buffer used to serialize the message.
+    ///
+    /// # Errors
+    /// The function fails when:
+    ///  - The message total size or any of its dynamically sized parts exceed 2^16 bytes
+    ///  - The message does not fit into the provided buffer.
     pub fn serialize(&self, buffer: &mut [u8]) -> Result<usize, super::Error> {
         let (header, rest) = buffer
             .split_at_mut_checked(34)
@@ -216,7 +246,9 @@ impl<'a> Message<'a> {
 
     /// Deserializes a message from the PTP wire format.
     ///
-    /// Returns the message or an error.
+    /// # Errors
+    /// This returns an error when the provided buffer does not contain a valid
+    /// PTP message, or when the provided message is incomplete.
     pub fn deserialize(buffer: &'a [u8]) -> Result<Self, super::Error> {
         let header_data = Header::deserialize_header(buffer)?;
 

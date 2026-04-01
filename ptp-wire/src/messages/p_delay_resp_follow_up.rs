@@ -1,11 +1,11 @@
 use crate::{
     Error,
-    common::{PortIdentity, WireTimestamp},
+    common::{PortIdentity, Timestamp},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PDelayRespFollowUpMessage {
-    pub response_origin_timestamp: WireTimestamp,
+    pub response_origin_timestamp: Timestamp,
     pub requesting_port_identity: PortIdentity,
 }
 
@@ -32,7 +32,7 @@ impl PDelayRespFollowUpMessage {
             return Err(Error::BufferTooShort);
         }
         Ok(Self {
-            response_origin_timestamp: WireTimestamp::deserialize(&buffer[0..10])?,
+            response_origin_timestamp: Timestamp::deserialize(&buffer[0..10])?,
             requesting_port_identity: PortIdentity::deserialize(&buffer[10..20])?,
         })
     }
@@ -51,7 +51,7 @@ mod tests {
                 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a,
             ],
             PDelayRespFollowUpMessage {
-                response_origin_timestamp: WireTimestamp::new(1_169_232_218, 174_389_936).unwrap(),
+                response_origin_timestamp: Timestamp::new(1_169_232_218, 174_389_936).unwrap(),
                 requesting_port_identity: PortIdentity {
                     clock_identity: ClockIdentity([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]),
                     port_number: 0x090a,

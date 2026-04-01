@@ -4,30 +4,70 @@ use crate::{
     common::{PortIdentity, TimeInterval},
 };
 
+/// The header of a PTP version 2 message.
+///
+/// For more details, see *IEEE1588-2019 section 13.3*.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[expect(
     clippy::struct_excessive_bools,
     reason = "Struct is a direct representation of the PTP header, which has a lot of boolean elements which don't all map well to enums."
 )]
 pub struct Header {
+    /// Sdo ID of the profile in use for the message.
     pub sdo_id: SdoId,
+    /// Specific version of PTP for this message.
     pub version: PtpVersion,
+    /// The domain number of the message.
+    ///
+    /// This is used to allow multiple PTP setups to run within the same network
+    /// without interfering with each other.
     pub domain_number: u8,
+    /// Indicates whether the sender is an alternate master.
+    ///
+    /// This is used with the Grandmaster Cluster and Alternate Master optional
+    /// PTP features. For more details, see *IEEE1588-2019 sections 17.2 and17.3*
     pub alternate_master_flag: bool,
+    /// Indicates whether the message is part of a two-step time transmission.
     pub two_step_flag: bool,
+    /// Indicates whether the message is sent via a unicast connection.
     pub unicast_flag: bool,
+    /// Used for PTP profile-specific information.
     pub ptp_profile_specific_1: bool,
+    /// Used for PTP profile-specific information.
     pub ptp_profile_specific_2: bool,
+    /// In announce messages, indicates whether the last minute of the current
+    /// UTC day shall have 61 seconds.
     pub leap61: bool,
+    /// In announce messages, indicates whether the last minute of the current
+    /// UTC day shall have 59 seconds.
     pub leap59: bool,
+    /// In announce messages, indicates whether the offset between UTC and TAI
+    /// is valid.
     pub current_utc_offset_valid: bool,
+    /// In announce messages, indicates whether the timescale is TAI (when
+    /// true), or something else.
     pub ptp_timescale: bool,
+    /// In announce messages, indicates whether the time provided is traceable
+    /// in the metrology sense.
     pub time_tracable: bool,
+    /// In announce messages, indicates whether the frequency provided is
+    /// traceable in the metrology sense.
     pub frequency_tracable: bool,
+    /// In announce messages, a true value indicates that the time provider may
+    /// not itself be properly synchronized.
     pub synchronization_uncertain: bool,
+    /// Correction field to the timestamps in event messages.
+    ///
+    /// This is used to improve the precision of those timestamps, as well as
+    /// to allow for compensating for the dwell time of messages in switches.
     pub correction_field: TimeInterval,
+    /// Identity of the PTP port that sent this message.
     pub source_port_identity: PortIdentity,
+    /// Rolling sequence id for the message.
     pub sequence_id: u16,
+    /// Used for communication of message sending intervals for some messages
+    ///
+    /// See *IEEE1588 Table 42 in section 13.3.2.14* for more details.
     pub log_message_interval: i8,
 }
 
@@ -39,6 +79,7 @@ pub(crate) struct DeserializedHeader {
 }
 
 impl Header {
+    /// Get a new header initialized with default values for all of the fields.
     #[must_use]
     pub fn new(minor_ptp_version: u8) -> Self {
         Self {
@@ -152,7 +193,7 @@ impl Header {
 ///
 /// # Example
 /// ```
-/// # use statime::config::SdoId;
+/// # use ptp_wire::SdoId;
 /// assert_eq!(SdoId::default(), SdoId::try_from(0x000).unwrap());
 ///
 /// let sdo_id = SdoId::try_from(0x100).unwrap();
@@ -242,6 +283,10 @@ impl From<SdoId> for u16 {
     }
 }
 
+/// The PTP version of a message.
+///
+/// For most uses of this library, the major version of this version number
+/// will be 2.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PtpVersion {
     major: u8,
@@ -249,13 +294,28 @@ pub struct PtpVersion {
 }
 
 impl PtpVersion {
-    #[allow(unused)]
+    /// Get a new [`PtpVersion`] instance with the given major and minor version.
+    ///
+    /// # Errors
+    /// This fails when either the major or minor version is larger than 15.
     pub fn new(major: u8, minor: u8) -> Result<Self, Error> {
         if major >= 0x10 || minor >= 0x10 {
             Err(Error::Invalid)
         } else {
             Ok(Self { major, minor })
         }
+    }
+
+    /// The major part of the PTP version number.
+    #[must_use]
+    pub fn major(self) -> u8 {
+        self.major
+    }
+
+    /// The minor part of the PTP version number.
+    #[must_use]
+    pub fn minor(self) -> u8 {
+        self.minor
     }
 
     fn as_byte(self) -> u8 {

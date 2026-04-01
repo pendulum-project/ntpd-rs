@@ -1,9 +1,7 @@
 //! General datastructures as defined by the ptp spec
 #![no_std]
-// TODO: Make this deny
-#![allow(missing_docs)]
-// TODO: Make this deny
-#![allow(rustdoc::broken_intra_doc_links)]
+#![deny(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
 #![warn(rustdoc::unescaped_backticks)]
 #![warn(clippy::assigning_clones)]
 #![warn(clippy::bool_to_int_with_if)]
@@ -75,8 +73,7 @@
 #![warn(clippy::match_wildcard_for_single_variants)]
 #![warn(clippy::maybe_infinite_iter)]
 #![warn(clippy::mismatching_type_param_order)]
-// TODO: Change back to warn
-#![allow(clippy::missing_errors_doc)]
+#![warn(clippy::missing_errors_doc)]
 #![warn(clippy::missing_fields_in_debug)]
 #![warn(clippy::missing_panics_doc)]
 #![warn(clippy::must_use_candidate)]
@@ -147,9 +144,12 @@ mod messages;
 pub use common::*;
 pub use messages::*;
 
+/// An error that occured during processing in this crate.
 #[derive(Clone, Debug)]
 pub enum Error {
+    /// The provided buffer was too short for the requested operation.
     BufferTooShort,
+    /// The data provided is invalid for the requested operation.
     Invalid,
 }
 

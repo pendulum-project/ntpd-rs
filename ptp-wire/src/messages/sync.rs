@@ -1,8 +1,8 @@
-use crate::{Error, common::WireTimestamp};
+use crate::{Error, common::Timestamp};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SyncMessage {
-    pub origin_timestamp: WireTimestamp,
+    pub origin_timestamp: Timestamp,
 }
 
 impl SyncMessage {
@@ -20,7 +20,7 @@ impl SyncMessage {
         match buffer.get(0..10) {
             None => Err(Error::BufferTooShort),
             Some(slice) => Ok(Self {
-                origin_timestamp: WireTimestamp::deserialize(slice)?,
+                origin_timestamp: Timestamp::deserialize(slice)?,
             }),
         }
     }
@@ -35,7 +35,7 @@ mod tests {
         let representations = [(
             [0x00, 0x00, 0x45, 0xb1, 0x11, 0x5a, 0x0a, 0x64, 0xfa, 0xb0],
             SyncMessage {
-                origin_timestamp: WireTimestamp::new(1_169_232_218, 174_389_936).unwrap(),
+                origin_timestamp: Timestamp::new(1_169_232_218, 174_389_936).unwrap(),
             },
         )];
 

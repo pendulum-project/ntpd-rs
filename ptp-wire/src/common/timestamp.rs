@@ -1,7 +1,11 @@
 use crate::Error;
 
+/// A timestamp as they occur in PTP messages.
+///
+/// This is a number of seconds and nanoseconds since the epoch of the timescale
+/// in use. For the PTP timescale the epoch is 00:00:00TAI on January 1, 1970.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord)]
-pub struct WireTimestamp {
+pub struct Timestamp {
     /// The seconds field of the timestamp.
     /// 48-bit, must be less than 281474976710656
     seconds: u64,
@@ -10,7 +14,14 @@ pub struct WireTimestamp {
     nanos: u32,
 }
 
-impl WireTimestamp {
+impl Timestamp {
+    /// Try to create a new timestamp with the given number of seconds and
+    /// nanoseconds since the epoch.
+    ///
+    /// # Errors
+    /// This function fails if the number of seconds is larger than or equal to
+    /// 2^48, or when the number of nanoseconds represents more than a whole
+    /// second.
     pub fn new(seconds: u64, nanos: u32) -> Result<Self, Error> {
         if seconds >= (1 << 48) || nanos >= 1_000_000_000 {
             Err(Error::Invalid)
@@ -19,16 +30,22 @@ impl WireTimestamp {
         }
     }
 
+    /// The number of whole seconds passed since the epoch.
     #[must_use]
     pub fn seconds(self) -> u64 {
         self.seconds
     }
 
+    /// The number of nanoseconds passed in addition to the whole seconds.
     #[must_use]
     pub fn nanos(self) -> u32 {
         self.nanos
     }
 
+    /// Update the whole number of seconds since the epoch.
+    ///
+    /// # Errors
+    /// This fails when the number of seconds is larger than or eque
     pub fn try_set_seconds(&mut self, seconds: u64) -> Result<(), Error> {
         if seconds >= (1 << 48) {
             Err(Error::Invalid)
@@ -38,6 +55,10 @@ impl WireTimestamp {
         }
     }
 
+    /// Update the number of nanoseconds passed.
+    ///
+    /// # Errors
+    /// This fails when the number of nanoseconds is larger than a whole second.
     pub fn try_set_nanos(&mut self, nanos: u32) -> Result<(), Error> {
         if nanos >= 1_000_000_000 {
             Err(Error::Invalid)
@@ -91,14 +112,14 @@ mod tests {
         let representations = [
             (
                 [0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01u8],
-                WireTimestamp {
+                Timestamp {
                     seconds: 0x0000_0000_0002,
                     nanos: 0x0000_0001,
                 },
             ),
             (
                 [0x10, 0x00, 0x00, 0x00, 0x00, 0x02, 0x10, 0x00, 0x00, 0x01u8],
-                WireTimestamp {
+                Timestamp {
                     seconds: 0x1000_0000_0002,
                     nanos: 0x1000_0001,
                 },
@@ -114,7 +135,7 @@ mod tests {
             assert_eq!(serialization_buffer, byte_representation);
 
             // Test the deserialization output
-            let deserialized_data = WireTimestamp::deserialize(&byte_representation).unwrap();
+            let deserialized_data = Timestamp::deserialize(&byte_representation).unwrap();
             assert_eq!(deserialized_data, object_representation);
         }
     }
