@@ -178,7 +178,8 @@ pub struct SockSourceCreateParameters {
     pub id: SourceId,
     pub path: PathBuf,
     pub config: SourceConfig,
-    pub noise_estimate: f64,
+    pub precision: f64,
+    pub accuracy: f64,
 }
 
 #[cfg(feature = "pps")]
@@ -187,7 +188,8 @@ pub struct PpsSourceCreateParameters {
     pub id: SourceId,
     pub path: PathBuf,
     pub config: SourceConfig,
-    pub noise_estimate: f64,
+    pub precision: f64,
+    pub accuracy: f64,
     pub period: f64,
 }
 

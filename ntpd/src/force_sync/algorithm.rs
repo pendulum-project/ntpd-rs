@@ -167,6 +167,7 @@ impl<C: NtpClock> TimeSyncController for SingleShotController<C> {
         _id: Self::SourceId,
         config: SourceConfig,
         _measurement_noise_estimate: f64,
+        _measurement_accuracy_estimate: f64,
         period: Option<f64>,
     ) -> Self::OneWaySourceController {
         SingleShotSourceController::<()> {

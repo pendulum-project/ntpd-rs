@@ -5,6 +5,7 @@ use source::OneWayKalmanSourceController;
 use tracing::{debug, error, info, warn};
 
 use crate::{
+    algorithm::kalman::source::FixedMeasurementNoise,
     clock::NtpClock,
     config::{SourceConfig, SynchronizationConfig},
     packet::NtpLeapIndicator,
@@ -424,6 +425,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug + Send + 'static> TimeSyncC
         id: SourceId,
         source_config: SourceConfig,
         measurement_noise_estimate: f64,
+        measurement_accuracy_estimate: f64,
         period: Option<f64>,
     ) -> Self::OneWaySourceController {
         self.sources.insert(id, (None, false));
@@ -432,7 +434,10 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug + Send + 'static> TimeSyncC
             self.algo_config,
             period,
             source_config,
-            measurement_noise_estimate,
+            FixedMeasurementNoise {
+                precision: measurement_noise_estimate,
+                accuracy: measurement_accuracy_estimate,
+            },
         )
     }
 

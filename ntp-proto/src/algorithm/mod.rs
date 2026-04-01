@@ -88,6 +88,7 @@ pub trait TimeSyncController: Sized + Send + 'static {
         id: Self::SourceId,
         source_config: SourceConfig,
         measurement_noise_estimate: f64,
+        measurement_accuracy_estimate: f64,
         period: Option<f64>,
     ) -> Self::OneWaySourceController;
     /// Notify the controller that a previous source has gone

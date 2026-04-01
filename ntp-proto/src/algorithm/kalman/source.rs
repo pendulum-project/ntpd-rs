@@ -358,13 +358,19 @@ impl MeasurementNoiseEstimator for AveragingBuffer {
     }
 }
 
-impl MeasurementNoiseEstimator for f64 {
+#[derive(Debug, Clone, Copy)]
+pub struct FixedMeasurementNoise {
+    pub(super) precision: f64,
+    pub(super) accuracy: f64,
+}
+
+impl MeasurementNoiseEstimator for FixedMeasurementNoise {
     type MeasurementDelay = ();
 
     fn update(&mut self, _delay: Self::MeasurementDelay) {}
 
     fn get_noise_estimate(&self) -> f64 {
-        *self
+        self.precision
     }
 
     fn is_outlier(&self, _delay: Self::MeasurementDelay, _threshold: f64) -> bool {
@@ -378,11 +384,12 @@ impl MeasurementNoiseEstimator for f64 {
     }
 
     fn get_max_roundtrip(&self, _samples: &i32) -> Option<f64> {
-        Some(1.)
+        Some(1.0f64.max(self.accuracy))
     }
 
     fn get_delay_mean(&self) -> f64 {
-        0.
+        // Bit of a hack: multiply by 4 to compensate for the low delay weight. This is because accuracy doesn't quite map to delay.
+        4.0 * self.accuracy
     }
 }
 
@@ -896,7 +903,8 @@ pub struct KalmanSourceController<
 pub type TwoWayKalmanSourceController<SourceId> =
     KalmanSourceController<SourceId, NtpDuration, AveragingBuffer>;
 
-pub type OneWayKalmanSourceController<SourceId> = KalmanSourceController<SourceId, (), f64>;
+pub type OneWayKalmanSourceController<SourceId> =
+    KalmanSourceController<SourceId, (), FixedMeasurementNoise>;
 
 impl<
     SourceId: Copy,
@@ -1361,7 +1369,13 @@ mod tests {
 
     #[test]
     fn test_offset_steering_and_measurements_constant_noise_estimate() {
-        test_offset_steering_and_measurements(1e-9, ());
+        test_offset_steering_and_measurements(
+            FixedMeasurementNoise {
+                precision: 1e-9,
+                accuracy: 0.0,
+            },
+            (),
+        );
     }
 
     #[test]
@@ -2068,7 +2082,13 @@ mod tests {
 
     #[test]
     fn test_init_constant_noise_estimate() {
-        test_init(1e-3, ());
+        test_init(
+            FixedMeasurementNoise {
+                precision: 1e-3,
+                accuracy: 0.0,
+            },
+            (),
+        );
     }
 
     #[test]

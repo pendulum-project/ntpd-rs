@@ -159,6 +159,7 @@ pub struct NtsPoolSourceConfig {
 pub struct SockSourceConfig {
     pub path: PathBuf,
     pub precision: f64,
+    pub accuracy: f64,
 }
 
 impl<'de> Deserialize<'de> for SockSourceConfig {
@@ -171,6 +172,7 @@ impl<'de> Deserialize<'de> for SockSourceConfig {
         enum Field {
             Path,
             Precision,
+            Accuracy,
             MeasurementNoiseEstimate,
         }
 
@@ -189,6 +191,7 @@ impl<'de> Deserialize<'de> for SockSourceConfig {
             {
                 let mut path = None;
                 let mut precision = None;
+                let mut accuracy = None;
                 while let Some(key) = map.next_key()? {
                     match key {
                         Field::Path => {
@@ -224,21 +227,45 @@ impl<'de> Deserialize<'de> for SockSourceConfig {
                             {
                                 return Err(de::Error::invalid_value(
                                     serde::de::Unexpected::Float(precision_raw),
-                                    &"measurement_noise_estimate should be positive",
+                                    &"precision should be positive",
                                 ));
                             }
                             precision = Some(precision_raw);
+                        }
+                        Field::Accuracy => {
+                            if accuracy.is_some() {
+                                return Err(de::Error::duplicate_field("accuracy"));
+                            }
+                            let accuracy_raw: f64 = map.next_value()?;
+                            if accuracy_raw.partial_cmp(&0.0) != Some(core::cmp::Ordering::Greater)
+                            {
+                                return Err(de::Error::invalid_value(
+                                    serde::de::Unexpected::Float(accuracy_raw),
+                                    &"precision should be positive",
+                                ));
+                            }
+                            accuracy = Some(accuracy_raw);
                         }
                     }
                 }
                 let path = path.ok_or_else(|| serde::de::Error::missing_field("path"))?;
                 let precision =
                     precision.ok_or_else(|| serde::de::Error::missing_field("precision"))?;
-                Ok(SockSourceConfig { path, precision })
+                let accuracy = accuracy.unwrap_or(0.0);
+                Ok(SockSourceConfig {
+                    path,
+                    precision,
+                    accuracy,
+                })
             }
         }
 
-        const FIELDS: &[&str] = &["path", "precision", "measurement_noise_estimate"];
+        const FIELDS: &[&str] = &[
+            "path",
+            "precision",
+            "accuracy",
+            "measurement_noise_estimate",
+        ];
         deserializer.deserialize_struct("SockSourceConfig", FIELDS, SockSourceConfigVisitor)
     }
 }
@@ -294,10 +321,12 @@ pub struct FlattenedPair<T, U> {
 pub struct PpsSourceConfig {
     pub path: PathBuf,
     pub precision: f64,
+    pub accuracy: f64,
     pub period: f64,
 }
 
 impl<'de> Deserialize<'de> for PpsSourceConfig {
+    #[expect(clippy::too_many_lines, reason = "Deserializers can be a bit wordy")]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -307,6 +336,7 @@ impl<'de> Deserialize<'de> for PpsSourceConfig {
         enum Field {
             Path,
             Precision,
+            Accuracy,
             MeasurementNoiseEstimate,
             Period,
         }
@@ -326,6 +356,7 @@ impl<'de> Deserialize<'de> for PpsSourceConfig {
             {
                 let mut path = None;
                 let mut precision = None;
+                let mut accuracy = None;
                 let mut period = None;
                 while let Some(key) = map.next_key()? {
                     match key {
@@ -367,6 +398,20 @@ impl<'de> Deserialize<'de> for PpsSourceConfig {
                             }
                             precision = Some(precision_raw);
                         }
+                        Field::Accuracy => {
+                            if accuracy.is_some() {
+                                return Err(de::Error::duplicate_field("accuracy"));
+                            }
+                            let accuracy_raw: f64 = map.next_value()?;
+                            if accuracy_raw.partial_cmp(&0.0) != Some(core::cmp::Ordering::Greater)
+                            {
+                                return Err(de::Error::invalid_value(
+                                    serde::de::Unexpected::Float(accuracy_raw),
+                                    &"precision should be positive",
+                                ));
+                            }
+                            accuracy = Some(accuracy_raw);
+                        }
                         Field::Period => {
                             if period.is_some() {
                                 return Err(de::Error::duplicate_field("period"));
@@ -385,10 +430,12 @@ impl<'de> Deserialize<'de> for PpsSourceConfig {
                 let path = path.ok_or_else(|| serde::de::Error::missing_field("path"))?;
                 let precision =
                     precision.ok_or_else(|| serde::de::Error::missing_field("precision"))?;
+                let accuracy = accuracy.unwrap_or(0.0);
                 let period = period.unwrap_or(1.0);
                 Ok(PpsSourceConfig {
                     path,
                     precision,
+                    accuracy,
                     period,
                 })
             }

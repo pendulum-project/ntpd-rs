@@ -515,7 +515,8 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C, SourceId = So
                 let source = self.system.create_sock_source(
                     source_id,
                     params.config,
-                    params.noise_estimate,
+                    params.precision,
+                    params.accuracy,
                 )?;
                 SockSourceTask::spawn(
                     source_id,
@@ -534,7 +535,8 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C, SourceId = So
                 let source = self.system.create_pps_source(
                     source_id,
                     params.config,
-                    params.noise_estimate,
+                    params.precision,
+                    params.accuracy,
                     params.period,
                 )?;
                 PpsSourceTask::spawn(

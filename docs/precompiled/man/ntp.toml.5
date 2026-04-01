@@ -160,6 +160,15 @@ error.
 This is needed as \f[V]sock\f[R] and \f[V]pps\f[R] sources don\[cq]t
 have a good way to estimate their own error.
 .TP
+\f[V]accuracy\f[R] = \f[I]Uncertainty standard deviation (seconds)\f[R]
+\f[V]pps\f[R] and \f[V]sock\f[R] mode only.
+Accuracy of the underlying time source.
+This should be an estimate of the size of the error in the clock you are
+synchronizing with, as well as any mostly-unchanging offset in the
+measurement process.
+This can be used to deprioritize sources which have large offsets in the
+measurement process or which are of poorer quality than others.
+.TP
 \f[V]poll-interval-limits\f[R] = { \f[V]min\f[R] = \f[I]min\f[R], \f[V]max\f[R] = \f[I]max\f[R] } (defaults from \f[V][source-defaults]\f[R])
 Specifies the limit on how often a source is queried for a new time.
 For most instances the defaults will be adequate.
