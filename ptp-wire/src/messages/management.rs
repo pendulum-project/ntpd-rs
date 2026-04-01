@@ -17,10 +17,14 @@ impl ManagementMessage {
         &self,
         buffer: &mut [u8],
     ) -> Result<(), crate::WireFormatError> {
-        self.target_port_identity.serialize(&mut buffer[0..10])?;
-        buffer[11] = self.starting_boundary_hops;
-        buffer[12] = self.boundary_hops;
-        buffer[13] = self.action.to_primitive();
+        self.target_port_identity.serialize(
+            buffer
+                .get_mut(0..10)
+                .ok_or(WireFormatError::BufferTooShort)?,
+        )?;
+        *buffer.get_mut(11).ok_or(WireFormatError::BufferTooShort)? = self.starting_boundary_hops;
+        *buffer.get_mut(12).ok_or(WireFormatError::BufferTooShort)? = self.boundary_hops;
+        *buffer.get_mut(13).ok_or(WireFormatError::BufferTooShort)? = self.action.to_primitive();
 
         Ok(())
     }

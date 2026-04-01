@@ -12,18 +12,31 @@ pub struct WireTimestamp {
 
 impl WireFormat for WireTimestamp {
     fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
-        buffer[0..6].copy_from_slice(&self.seconds.to_be_bytes()[2..8]);
-        buffer[6..10].copy_from_slice(&self.nanos.to_be_bytes());
+        buffer
+            .get_mut(0..6)
+            .ok_or(WireFormatError::BufferTooShort)?
+            .copy_from_slice(&self.seconds.to_be_bytes()[2..8]);
+        buffer
+            .get_mut(6..10)
+            .ok_or(WireFormatError::BufferTooShort)?
+            .copy_from_slice(&self.nanos.to_be_bytes());
         Ok(())
     }
 
     fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
         let mut seconds_buffer = [0; 8];
-        seconds_buffer[2..8].copy_from_slice(&buffer[0..6]);
+        seconds_buffer[2..8]
+            .copy_from_slice(buffer.get(0..6).ok_or(WireFormatError::BufferTooShort)?);
 
         Ok(Self {
             seconds: u64::from_be_bytes(seconds_buffer),
-            nanos: u32::from_be_bytes(buffer[6..10].try_into().unwrap()),
+            nanos: u32::from_be_bytes(
+                buffer
+                    .get(6..10)
+                    .ok_or(WireFormatError::BufferTooShort)?
+                    .try_into()
+                    .unwrap(),
+            ),
         })
     }
 }

@@ -34,12 +34,21 @@ impl ClockIdentity {
 
 impl WireFormat for ClockIdentity {
     fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
-        buffer[0..8].copy_from_slice(&self.0);
+        buffer
+            .get_mut(0..self.0.len())
+            .ok_or(WireFormatError::BufferTooShort)?
+            .copy_from_slice(&self.0);
         Ok(())
     }
 
     fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
-        Ok(Self(buffer[0..8].try_into().unwrap()))
+        Ok(Self(
+            buffer
+                .get(0..8)
+                .ok_or(WireFormatError::BufferTooShort)?
+                .try_into()
+                .unwrap(),
+        ))
     }
 }
 

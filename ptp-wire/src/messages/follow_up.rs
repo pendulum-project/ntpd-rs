@@ -11,8 +11,11 @@ impl FollowUpMessage {
     }
 
     pub(crate) fn serialize_content(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
-        self.precise_origin_timestamp
-            .serialize(&mut buffer[0..10])?;
+        self.precise_origin_timestamp.serialize(
+            buffer
+                .get_mut(0..10)
+                .ok_or(WireFormatError::BufferTooShort)?,
+        )?;
 
         Ok(())
     }
