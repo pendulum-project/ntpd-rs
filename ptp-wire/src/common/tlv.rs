@@ -1,25 +1,26 @@
 use core::iter::FusedIterator;
 
-use crate::WireFormatError;
+use crate::Error;
 
 #[derive(PartialEq, Eq)]
-pub(crate) struct TlvSetBuilder<'a> {
+pub struct TlvSetBuilder<'a> {
     buffer: &'a mut [u8],
     used: usize,
 }
 
 impl<'a> TlvSetBuilder<'a> {
-    pub(crate) fn new(buffer: &'a mut [u8]) -> Self {
+    pub fn new(buffer: &'a mut [u8]) -> Self {
         Self { buffer, used: 0 }
     }
 
-    pub(crate) fn add(&mut self, tlv: &Tlv<'_>) -> Result<(), WireFormatError> {
+    pub fn add(&mut self, tlv: &Tlv<'_>) -> Result<(), Error> {
         tlv.serialize(&mut self.buffer[self.used..])?;
         self.used += tlv.wire_size();
         Ok(())
     }
 
-    pub(crate) fn build(self) -> TlvSet<'a> {
+    #[must_use]
+    pub fn build(self) -> TlvSet<'a> {
         TlvSet {
             bytes: &self.buffer[..self.used],
         }
@@ -27,7 +28,7 @@ impl<'a> TlvSetBuilder<'a> {
 }
 
 #[derive(Clone, PartialEq, Eq, Default)]
-pub(crate) struct TlvSet<'a> {
+pub struct TlvSet<'a> {
     bytes: &'a [u8],
 }
 
@@ -48,16 +49,16 @@ impl<'a> TlvSet<'a> {
         self.bytes.len()
     }
 
-    pub(crate) fn serialize(&self, buffer: &mut [u8]) -> Result<usize, WireFormatError> {
+    pub(crate) fn serialize(&self, buffer: &mut [u8]) -> Result<usize, Error> {
         buffer
             .get_mut(..self.bytes.len())
-            .ok_or(WireFormatError::BufferTooShort)?
+            .ok_or(Error::BufferTooShort)?
             .copy_from_slice(self.bytes);
 
         Ok(self.bytes.len())
     }
 
-    pub(crate) fn deserialize(mut buffer: &'a [u8]) -> Result<Self, WireFormatError> {
+    pub(crate) fn deserialize(mut buffer: &'a [u8]) -> Result<Self, Error> {
         let original = buffer;
         let mut total_length = 0;
 
@@ -66,18 +67,16 @@ impl<'a> TlvSet<'a> {
             let length = u16::from_be_bytes([buffer[2], buffer[3]]) as usize;
 
             if !length.is_multiple_of(2) {
-                return Err(WireFormatError::Invalid);
+                return Err(Error::Invalid);
             }
 
-            buffer = buffer
-                .get(4 + length..)
-                .ok_or(WireFormatError::BufferTooShort)?;
+            buffer = buffer.get(4 + length..).ok_or(Error::BufferTooShort)?;
 
             total_length += 4 + length;
         }
 
         if !buffer.is_empty() {
-            return Err(WireFormatError::BufferTooShort);
+            return Err(Error::BufferTooShort);
         }
 
         Ok(Self {
@@ -85,25 +84,18 @@ impl<'a> TlvSet<'a> {
         })
     }
 
-    #[allow(unused)]
-    pub fn announce_propagate_tlv(&self) -> impl Iterator<Item = Tlv<'a>> + 'a {
-        self.tlv().filter(|tlv| tlv.tlv_type.announce_propagate())
+    pub fn announce_propagate_tlvs(&self) -> impl Iterator<Item = Tlv<'a>> + 'a {
+        self.tlvs().filter(|tlv| tlv.tlv_type.announce_propagate())
     }
 
-    pub(crate) fn tlv(&self) -> TlvSetIterator<'a> {
+    pub fn tlvs(&self) -> impl Iterator<Item = Tlv<'a>> + 'a {
         TlvSetIterator { buffer: self.bytes }
     }
 }
 
 #[derive(Debug)]
-pub(crate) struct TlvSetIterator<'a> {
+struct TlvSetIterator<'a> {
     buffer: &'a [u8],
-}
-
-impl TlvSetIterator<'_> {
-    pub(crate) fn empty() -> Self {
-        Self { buffer: &[] }
-    }
 }
 
 impl<'a> Iterator for TlvSetIterator<'a> {
@@ -127,7 +119,7 @@ impl<'a> Iterator for TlvSetIterator<'a> {
 impl FusedIterator for TlvSetIterator<'_> {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Tlv<'a> {
+pub struct Tlv<'a> {
     pub tlv_type: TlvType,
     #[cfg(not(feature = "std"))]
     pub value: &'a [u8],
@@ -140,29 +132,29 @@ impl<'a> Tlv<'a> {
         4 + self.value.len()
     }
 
-    pub(crate) fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
-        let len = u16::try_from(self.value.len()).map_err(|_| WireFormatError::Invalid)?;
+    pub(crate) fn serialize(&self, buffer: &mut [u8]) -> Result<(), Error> {
+        let len = u16::try_from(self.value.len()).map_err(|_| Error::Invalid)?;
         buffer
             .get_mut(0..2)
-            .ok_or(WireFormatError::BufferTooShort)?
+            .ok_or(Error::BufferTooShort)?
             .copy_from_slice(&self.tlv_type.to_primitive().to_be_bytes());
         buffer
             .get_mut(2..4)
-            .ok_or(WireFormatError::BufferTooShort)?
+            .ok_or(Error::BufferTooShort)?
             .copy_from_slice(&len.to_be_bytes());
         buffer
             .get_mut(4..)
-            .ok_or(WireFormatError::BufferTooShort)?
+            .ok_or(Error::BufferTooShort)?
             .get_mut(..self.value.len())
-            .ok_or(WireFormatError::BufferTooShort)?
+            .ok_or(Error::BufferTooShort)?
             .copy_from_slice(self.value.as_ref());
 
         Ok(())
     }
 
-    fn deserialize(buffer: &'a [u8]) -> Result<Self, WireFormatError> {
+    fn deserialize(buffer: &'a [u8]) -> Result<Self, Error> {
         if buffer.len() < 4 {
-            return Err(WireFormatError::BufferTooShort);
+            return Err(Error::BufferTooShort);
         }
 
         let tlv_type = TlvType::from_primitive(u16::from_be_bytes([buffer[0], buffer[1]]));
@@ -170,7 +162,7 @@ impl<'a> Tlv<'a> {
 
         // Parse TLV content / value
         if buffer.len() < 4 + length as usize {
-            return Err(WireFormatError::BufferTooShort);
+            return Err(Error::BufferTooShort);
         }
 
         let value = &buffer[4..][..length as usize];
@@ -181,6 +173,7 @@ impl<'a> Tlv<'a> {
     }
 
     #[cfg(feature = "std")]
+    #[must_use]
     pub fn into_owned(self) -> Tlv<'static> {
         Tlv {
             tlv_type: self.tlv_type,
@@ -346,7 +339,7 @@ mod tests {
 
         let buffer = &mut alloc[..tlv1.wire_size() + tlv2.wire_size() + tlv3.wire_size()];
         let tlv_set = TlvSet::deserialize(buffer).unwrap();
-        let mut it = tlv_set.announce_propagate_tlv();
+        let mut it = tlv_set.announce_propagate_tlvs();
 
         assert_eq!(it.next(), Some(tlv2));
         assert_eq!(it.next(), Some(tlv3));

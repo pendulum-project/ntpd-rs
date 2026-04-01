@@ -1,8 +1,8 @@
-use crate::{WireFormatError, common::PortIdentity};
+use crate::{Error, common::PortIdentity};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct SignalingMessage {
-    pub(super) target_port_identity: PortIdentity,
+pub struct SignalingMessage {
+    pub target_port_identity: PortIdentity,
 }
 
 impl SignalingMessage {
@@ -10,9 +10,9 @@ impl SignalingMessage {
         10
     }
 
-    pub(crate) fn serialize_content(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
+    pub(crate) fn serialize_content(&self, buffer: &mut [u8]) -> Result<(), Error> {
         if buffer.len() < 10 {
-            return Err(WireFormatError::BufferTooShort);
+            return Err(Error::BufferTooShort);
         }
 
         let (left, _) = buffer.split_at_mut(10);
@@ -22,8 +22,8 @@ impl SignalingMessage {
         Ok(())
     }
 
-    pub(crate) fn deserialize_content(buffer: &[u8]) -> Result<Self, WireFormatError> {
-        let identity_bytes = buffer.get(0..10).ok_or(WireFormatError::BufferTooShort)?;
+    pub(crate) fn deserialize_content(buffer: &[u8]) -> Result<Self, Error> {
+        let identity_bytes = buffer.get(0..10).ok_or(Error::BufferTooShort)?;
         let target_port_identity = PortIdentity::deserialize(identity_bytes)?;
 
         Ok(Self {

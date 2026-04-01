@@ -1,12 +1,12 @@
 use crate::{
-    WireFormatError,
+    Error,
     common::{PortIdentity, WireTimestamp},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct DelayRespMessage {
-    pub(crate) receive_timestamp: WireTimestamp,
-    pub(crate) requesting_port_identity: PortIdentity,
+pub struct DelayRespMessage {
+    pub receive_timestamp: WireTimestamp,
+    pub requesting_port_identity: PortIdentity,
 }
 
 impl DelayRespMessage {
@@ -14,23 +14,17 @@ impl DelayRespMessage {
         20
     }
 
-    pub(crate) fn serialize_content(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
-        self.receive_timestamp.serialize(
-            buffer
-                .get_mut(0..10)
-                .ok_or(WireFormatError::BufferTooShort)?,
-        )?;
-        self.requesting_port_identity.serialize(
-            buffer
-                .get_mut(10..20)
-                .ok_or(WireFormatError::BufferTooShort)?,
-        )?;
+    pub(crate) fn serialize_content(&self, buffer: &mut [u8]) -> Result<(), Error> {
+        self.receive_timestamp
+            .serialize(buffer.get_mut(0..10).ok_or(Error::BufferTooShort)?)?;
+        self.requesting_port_identity
+            .serialize(buffer.get_mut(10..20).ok_or(Error::BufferTooShort)?)?;
 
         Ok(())
     }
 
-    pub(crate) fn deserialize_content(buffer: &[u8]) -> Result<Self, WireFormatError> {
-        let slice = buffer.get(0..20).ok_or(WireFormatError::BufferTooShort)?;
+    pub(crate) fn deserialize_content(buffer: &[u8]) -> Result<Self, Error> {
+        let slice = buffer.get(0..20).ok_or(Error::BufferTooShort)?;
         let receive_timestamp = WireTimestamp::deserialize(&slice[0..10])?;
         let requesting_port_identity = PortIdentity::deserialize(&slice[10..20])?;
 
@@ -54,10 +48,7 @@ mod tests {
                 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a,
             ],
             DelayRespMessage {
-                receive_timestamp: WireTimestamp {
-                    seconds: 1_169_232_218,
-                    nanos: 174_389_936,
-                },
+                receive_timestamp: WireTimestamp::new(1_169_232_218, 174_389_936).unwrap(),
                 requesting_port_identity: PortIdentity {
                     clock_identity: ClockIdentity([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]),
                     port_number: 0x090a,

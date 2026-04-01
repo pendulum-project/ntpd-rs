@@ -1,5 +1,5 @@
 use super::clock_identity::ClockIdentity;
-use crate::WireFormatError;
+use crate::Error;
 
 /// Identity of a single port of a PTP instance
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord)]
@@ -12,28 +12,25 @@ pub struct PortIdentity {
 }
 
 impl PortIdentity {
-    pub fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
-        self.clock_identity.serialize(
-            buffer
-                .get_mut(0..8)
-                .ok_or(WireFormatError::BufferTooShort)?,
-        )?;
+    pub(crate) fn serialize(&self, buffer: &mut [u8]) -> Result<(), Error> {
+        self.clock_identity
+            .serialize(buffer.get_mut(0..8).ok_or(Error::BufferTooShort)?)?;
         buffer
             .get_mut(8..10)
-            .ok_or(WireFormatError::BufferTooShort)?
+            .ok_or(Error::BufferTooShort)?
             .copy_from_slice(&self.port_number.to_be_bytes());
         Ok(())
     }
 
-    pub fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
+    pub(crate) fn deserialize(buffer: &[u8]) -> Result<Self, Error> {
         Ok(Self {
             clock_identity: ClockIdentity::deserialize(
-                buffer.get(0..8).ok_or(WireFormatError::BufferTooShort)?,
+                buffer.get(0..8).ok_or(Error::BufferTooShort)?,
             )?,
             port_number: u16::from_be_bytes(
                 buffer
                     .get(8..10)
-                    .ok_or(WireFormatError::BufferTooShort)?
+                    .ok_or(Error::BufferTooShort)?
                     .try_into()
                     .unwrap(),
             ),

@@ -1,9 +1,9 @@
 //! General datastructures as defined by the ptp spec
 #![no_std]
 // TODO: Make this deny
-#![warn(missing_docs)]
+#![allow(missing_docs)]
 // TODO: Make this deny
-#![warn(rustdoc::broken_intra_doc_links)]
+#![allow(rustdoc::broken_intra_doc_links)]
 #![warn(rustdoc::unescaped_backticks)]
 #![warn(clippy::assigning_clones)]
 #![warn(clippy::bool_to_int_with_if)]
@@ -75,7 +75,8 @@
 #![warn(clippy::match_wildcard_for_single_variants)]
 #![warn(clippy::maybe_infinite_iter)]
 #![warn(clippy::mismatching_type_param_order)]
-#![warn(clippy::missing_errors_doc)]
+// TODO: Change back to warn
+#![allow(clippy::missing_errors_doc)]
 #![warn(clippy::missing_fields_in_debug)]
 #![warn(clippy::missing_panics_doc)]
 #![warn(clippy::must_use_candidate)]
@@ -140,41 +141,26 @@ extern crate std;
 
 use core::fmt::Debug;
 
-use self::messages::EnumConversionError;
+mod common;
+mod messages;
 
-pub mod common;
-pub mod messages;
+pub use common::*;
+pub use messages::*;
 
 #[derive(Clone, Debug)]
-pub(crate) enum WireFormatError {
-    EnumConversionError,
+pub enum Error {
     BufferTooShort,
-    CapacityError,
     Invalid,
 }
 
-impl core::fmt::Display for WireFormatError {
+impl core::fmt::Display for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            WireFormatError::EnumConversionError => f.write_str("enum conversion failed"),
-            WireFormatError::BufferTooShort => f.write_str("a buffer is too short"),
-            WireFormatError::CapacityError => f.write_str("a container has insufficient capacity"),
-            WireFormatError::Invalid => f.write_str("an invariant was violated"),
+            Error::BufferTooShort => f.write_str("a buffer is too short"),
+            Error::Invalid => f.write_str("an invariant was violated"),
         }
     }
 }
 
 #[cfg(feature = "std")]
-impl std::error::Error for WireFormatError {}
-
-impl From<arrayvec::CapacityError> for WireFormatError {
-    fn from(_: arrayvec::CapacityError) -> Self {
-        WireFormatError::CapacityError
-    }
-}
-
-impl From<EnumConversionError> for WireFormatError {
-    fn from(_: EnumConversionError) -> Self {
-        Self::EnumConversionError
-    }
-}
+impl std::error::Error for Error {}

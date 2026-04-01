@@ -2,7 +2,7 @@ use core::ops::{Deref, DerefMut};
 
 use fixed::types::I48F16;
 
-use crate::WireFormatError;
+use crate::Error;
 
 /// Represents time intervals in nanoseconds
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -45,19 +45,19 @@ impl DerefMut for TimeInterval {
 }
 
 impl TimeInterval {
-    pub fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
+    pub(crate) fn serialize(self, buffer: &mut [u8]) -> Result<(), Error> {
         buffer
             .get_mut(0..8)
-            .ok_or(WireFormatError::BufferTooShort)?
+            .ok_or(Error::BufferTooShort)?
             .copy_from_slice(&self.0.to_bits().to_be_bytes());
         Ok(())
     }
 
-    pub fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
+    pub(crate) fn deserialize(buffer: &[u8]) -> Result<Self, Error> {
         Ok(Self(I48F16::from_bits(i64::from_be_bytes(
             buffer
                 .get(0..8)
-                .ok_or(WireFormatError::BufferTooShort)?
+                .ok_or(Error::BufferTooShort)?
                 .try_into()
                 .unwrap(),
         ))))

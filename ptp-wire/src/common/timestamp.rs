@@ -1,42 +1,83 @@
-use crate::WireFormatError;
+use crate::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord)]
 pub struct WireTimestamp {
     /// The seconds field of the timestamp.
     /// 48-bit, must be less than 281474976710656
-    pub seconds: u64,
+    seconds: u64,
     /// The nanoseconds field of the timestamp.
     /// Must be less than 10^9
-    pub nanos: u32,
+    nanos: u32,
 }
 
 impl WireTimestamp {
-    pub fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
+    pub fn new(seconds: u64, nanos: u32) -> Result<Self, Error> {
+        if seconds >= (1 << 48) || nanos >= 1_000_000_000 {
+            Err(Error::Invalid)
+        } else {
+            Ok(Self { seconds, nanos })
+        }
+    }
+
+    #[must_use]
+    pub fn seconds(self) -> u64 {
+        self.seconds
+    }
+
+    #[must_use]
+    pub fn nanos(self) -> u32 {
+        self.nanos
+    }
+
+    pub fn try_set_seconds(&mut self, seconds: u64) -> Result<(), Error> {
+        if seconds >= (1 << 48) {
+            Err(Error::Invalid)
+        } else {
+            self.seconds = seconds;
+            Ok(())
+        }
+    }
+
+    pub fn try_set_nanos(&mut self, nanos: u32) -> Result<(), Error> {
+        if nanos >= 1_000_000_000 {
+            Err(Error::Invalid)
+        } else {
+            self.nanos = nanos;
+            Ok(())
+        }
+    }
+
+    pub(crate) fn serialize(self, buffer: &mut [u8]) -> Result<(), Error> {
         buffer
             .get_mut(0..6)
-            .ok_or(WireFormatError::BufferTooShort)?
+            .ok_or(Error::BufferTooShort)?
             .copy_from_slice(&self.seconds.to_be_bytes()[2..8]);
         buffer
             .get_mut(6..10)
-            .ok_or(WireFormatError::BufferTooShort)?
+            .ok_or(Error::BufferTooShort)?
             .copy_from_slice(&self.nanos.to_be_bytes());
         Ok(())
     }
 
-    pub fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
+    pub(crate) fn deserialize(buffer: &[u8]) -> Result<Self, Error> {
         let mut seconds_buffer = [0; 8];
-        seconds_buffer[2..8]
-            .copy_from_slice(buffer.get(0..6).ok_or(WireFormatError::BufferTooShort)?);
+        seconds_buffer[2..8].copy_from_slice(buffer.get(0..6).ok_or(Error::BufferTooShort)?);
+
+        let nanos = u32::from_be_bytes(
+            buffer
+                .get(6..10)
+                .ok_or(Error::BufferTooShort)?
+                .try_into()
+                .unwrap(),
+        );
+
+        if nanos > 1_000_000_000 {
+            return Err(Error::Invalid);
+        }
 
         Ok(Self {
             seconds: u64::from_be_bytes(seconds_buffer),
-            nanos: u32::from_be_bytes(
-                buffer
-                    .get(6..10)
-                    .ok_or(WireFormatError::BufferTooShort)?
-                    .try_into()
-                    .unwrap(),
-            ),
+            nanos,
         })
     }
 }

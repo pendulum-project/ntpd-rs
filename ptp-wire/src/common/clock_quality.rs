@@ -1,5 +1,5 @@
 use super::clock_accuracy::ClockAccuracy;
-use crate::WireFormatError;
+use crate::Error;
 
 /// A description of the accuracy and type of a clock.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -38,13 +38,12 @@ impl Default for ClockQuality {
 }
 
 impl ClockQuality {
-    pub fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
-        *buffer.get_mut(0).ok_or(WireFormatError::BufferTooShort)? = self.clock_class;
-        *buffer.get_mut(1).ok_or(WireFormatError::BufferTooShort)? =
-            self.clock_accuracy.to_primitive();
+    pub(crate) fn serialize(self, buffer: &mut [u8]) -> Result<(), Error> {
+        *buffer.get_mut(0).ok_or(Error::BufferTooShort)? = self.clock_class;
+        *buffer.get_mut(1).ok_or(Error::BufferTooShort)? = self.clock_accuracy.to_primitive();
         buffer
             .get_mut(2..4)
-            .ok_or(WireFormatError::BufferTooShort)?
+            .ok_or(Error::BufferTooShort)?
             .copy_from_slice(&self.offset_scaled_log_variance.to_be_bytes());
         Ok(())
     }
@@ -53,16 +52,16 @@ impl ClockQuality {
         clippy::get_first,
         reason = "Prefer uniform way of accessing the elements of the buffer in this deserializer"
     )]
-    pub fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
+    pub(crate) fn deserialize(buffer: &[u8]) -> Result<Self, Error> {
         Ok(Self {
-            clock_class: *buffer.get(0).ok_or(WireFormatError::BufferTooShort)?,
+            clock_class: *buffer.get(0).ok_or(Error::BufferTooShort)?,
             clock_accuracy: ClockAccuracy::from_primitive(
-                *buffer.get(1).ok_or(WireFormatError::BufferTooShort)?,
+                *buffer.get(1).ok_or(Error::BufferTooShort)?,
             ),
             offset_scaled_log_variance: u16::from_be_bytes(
                 buffer
                     .get(2..4)
-                    .ok_or(WireFormatError::BufferTooShort)?
+                    .ok_or(Error::BufferTooShort)?
                     .try_into()
                     .unwrap(),
             ),
