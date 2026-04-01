@@ -20,10 +20,7 @@ pub enum TimeSource {
     #[default]
     InternalOscillator,
     ProfileSpecific(u8),
-    Reserved,
-    /// Time source is unknown. This is not an official variant from the spec,
-    /// but we just need it in practise
-    Unknown(u8),
+    Reserved(u8),
 }
 
 impl TimeSource {
@@ -41,9 +38,7 @@ impl TimeSource {
             Self::HandSet => 0x60,
             Self::Other => 0x90,
             Self::InternalOscillator => 0xa0,
-            Self::ProfileSpecific(p) => 0xf0 + p,
-            Self::Reserved => 0xff,
-            Self::Unknown(v) => v,
+            Self::ProfileSpecific(v) | Self::Reserved(v) => v,
         }
     }
 
@@ -58,9 +53,8 @@ impl TimeSource {
             0x60 => Self::HandSet,
             0x90 => Self::Other,
             0xa0 => Self::InternalOscillator,
-            0xf0..=0xfe => Self::ProfileSpecific(value - 0xf0),
-            0xff => TimeSource::Reserved,
-            v => TimeSource::Unknown(v),
+            0xf0..=0xfe => Self::ProfileSpecific(value),
+            v => TimeSource::Reserved(v),
         }
     }
 }
@@ -76,6 +70,6 @@ mod tests {
             assert_eq!(protocol.to_primitive(), i);
         }
 
-        assert_eq!(TimeSource::ProfileSpecific(5).to_primitive(), 0xf5);
+        assert_eq!(TimeSource::ProfileSpecific(0xf5).to_primitive(), 0xf5);
     }
 }
