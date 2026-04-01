@@ -1,4 +1,4 @@
-use crate::{WireFormat, WireFormatError};
+use crate::WireFormatError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord)]
 pub struct WireTimestamp {
@@ -10,8 +10,8 @@ pub struct WireTimestamp {
     pub nanos: u32,
 }
 
-impl WireFormat for WireTimestamp {
-    fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
+impl WireTimestamp {
+    pub fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
         buffer
             .get_mut(0..6)
             .ok_or(WireFormatError::BufferTooShort)?
@@ -23,7 +23,7 @@ impl WireFormat for WireTimestamp {
         Ok(())
     }
 
-    fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
+    pub fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
         let mut seconds_buffer = [0; 8];
         seconds_buffer[2..8]
             .copy_from_slice(buffer.get(0..6).ok_or(WireFormatError::BufferTooShort)?);

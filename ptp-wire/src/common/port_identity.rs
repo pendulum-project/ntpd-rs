@@ -1,5 +1,5 @@
 use super::clock_identity::ClockIdentity;
-use crate::{WireFormat, WireFormatError};
+use crate::WireFormatError;
 
 /// Identity of a single port of a PTP instance
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord)]
@@ -11,8 +11,8 @@ pub struct PortIdentity {
     pub port_number: u16,
 }
 
-impl WireFormat for PortIdentity {
-    fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
+impl PortIdentity {
+    pub fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
         self.clock_identity.serialize(
             buffer
                 .get_mut(0..8)
@@ -25,7 +25,7 @@ impl WireFormat for PortIdentity {
         Ok(())
     }
 
-    fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
+    pub fn deserialize(buffer: &[u8]) -> Result<Self, WireFormatError> {
         Ok(Self {
             clock_identity: ClockIdentity::deserialize(
                 buffer.get(0..8).ok_or(WireFormatError::BufferTooShort)?,

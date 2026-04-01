@@ -1,4 +1,4 @@
-use crate::{WireFormat, WireFormatError, common::PortIdentity};
+use crate::{WireFormatError, common::PortIdentity};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ManagementMessage {

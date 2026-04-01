@@ -1,6 +1,6 @@
 use super::Header;
 use crate::{
-    WireFormat, WireFormatError,
+    WireFormatError,
     common::{ClockIdentity, ClockQuality, TimeSource, WireTimestamp},
 };
 

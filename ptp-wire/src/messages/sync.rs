@@ -1,4 +1,4 @@
-use crate::{WireFormat, WireFormatError, common::WireTimestamp};
+use crate::{WireFormatError, common::WireTimestamp};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SyncMessage {
