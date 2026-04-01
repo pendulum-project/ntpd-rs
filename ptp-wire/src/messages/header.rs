@@ -1,4 +1,4 @@
-use super::{MessageType, control_field::ControlField};
+use super::MessageType;
 use crate::{
     WireFormat, WireFormatError,
     common::{PortIdentity, TimeInterval},
@@ -101,7 +101,7 @@ impl Header {
         buffer[16..20].copy_from_slice(&[0, 0, 0, 0]);
         self.source_port_identity.serialize(&mut buffer[20..30])?;
         buffer[30..32].copy_from_slice(&self.sequence_id.to_be_bytes());
-        buffer[32] = ControlField::from(content_type).to_primitive();
+        buffer[32] = 0;
         buffer[33] = self.log_message_interval.cast_unsigned();
 
         Ok(())
@@ -360,7 +360,7 @@ mod tests {
                 0x55,
                 0xde,
                 0xad,
-                0x03,
+                0x00,
                 0x16,
             ],
             DeserializedHeader {
