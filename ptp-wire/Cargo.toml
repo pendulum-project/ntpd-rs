@@ -11,10 +11,9 @@ publish.workspace = true
 rust-version.workspace = true
 
 [features]
-default = ["std", "serde", "fuzz"]
+default = ["std", "serde"]
 std = []
 serde = ["dep:serde"]
-fuzz = []
 
 [dependencies]
 fixed.workspace = true

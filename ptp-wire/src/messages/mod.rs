@@ -65,40 +65,6 @@ impl TryFrom<u8> for MessageType {
     }
 }
 
-#[cfg(feature = "fuzz")]
-pub use fuzz::FuzzMessage;
-
-#[cfg(feature = "fuzz")]
-#[allow(missing_docs)] // These are only used for internal fuzzing
-mod fuzz {
-    use super::Message;
-    use crate::{Error, common::Tlv};
-
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct FuzzMessage<'a> {
-        inner: Message<'a>,
-    }
-
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct FuzzTlv<'a>(Tlv<'a>);
-
-    impl<'a> FuzzMessage<'a> {
-        pub fn deserialize(buffer: &'a [u8]) -> Result<Self, impl std::error::Error> {
-            Ok::<FuzzMessage, Error>(FuzzMessage {
-                inner: Message::deserialize(buffer)?,
-            })
-        }
-
-        pub fn serialize(&self, buffer: &mut [u8]) -> Result<usize, impl std::error::Error> {
-            self.inner.serialize(buffer)
-        }
-
-        pub fn tlv(&self) -> impl Iterator<Item = FuzzTlv<'_>> + '_ {
-            self.inner.suffix.tlvs().map(FuzzTlv)
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message<'a> {
     pub header: Header,
