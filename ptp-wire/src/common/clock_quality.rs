@@ -28,7 +28,7 @@ impl Default for ClockQuality {
     fn default() -> Self {
         Self {
             clock_class: 248,
-            clock_accuracy: Default::default(),
+            clock_accuracy: ClockAccuracy::default(),
             // See 7.6.3.3 for the description of the calculation procedure.
             // We estimate clock variance of desktop to be no worse than
             // 2^-23 seconds^2, based on experience from ntpd-rs

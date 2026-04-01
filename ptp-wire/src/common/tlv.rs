@@ -13,7 +13,7 @@ impl<'a> TlvSetBuilder<'a> {
         Self { buffer, used: 0 }
     }
 
-    pub(crate) fn add(&mut self, tlv: Tlv<'_>) -> Result<(), WireFormatError> {
+    pub(crate) fn add(&mut self, tlv: &Tlv<'_>) -> Result<(), WireFormatError> {
         tlv.serialize(&mut self.buffer[self.used..])?;
         self.used += tlv.wire_size();
         Ok(())
@@ -65,7 +65,7 @@ impl<'a> TlvSet<'a> {
             let _tlv_type = TlvType::from_primitive(u16::from_be_bytes([buffer[0], buffer[1]]));
             let length = u16::from_be_bytes([buffer[2], buffer[3]]) as usize;
 
-            if length % 2 != 0 {
+            if !length.is_multiple_of(2) {
                 return Err(WireFormatError::Invalid);
             }
 
@@ -141,8 +141,9 @@ impl<'a> Tlv<'a> {
     }
 
     pub(crate) fn serialize(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
+        let len = u16::try_from(self.value.len()).map_err(|_| WireFormatError::Invalid)?;
         buffer[0..][..2].copy_from_slice(&self.tlv_type.to_primitive().to_be_bytes());
-        buffer[2..][..2].copy_from_slice(&(self.value.len() as u16).to_be_bytes());
+        buffer[2..][..2].copy_from_slice(&len.to_be_bytes());
         buffer[4..][..self.value.len()].copy_from_slice(self.value.as_ref());
 
         Ok(())
@@ -208,9 +209,9 @@ pub enum TlvType {
 }
 
 impl TlvType {
+    #[must_use]
     pub fn to_primitive(self) -> u16 {
         match self {
-            Self::Reserved(value) => value,
             Self::Management => 0x0001,
             Self::ManagementErrorStatus => 0x0002,
             Self::OrganizationExtension => 0x0003,
@@ -220,8 +221,6 @@ impl TlvType {
             Self::AcknowledgeCancelUnicastTransmission => 0x0007,
             Self::PathTrace => 0x0008,
             Self::AlternateTimeOffsetIndicator => 0x0009,
-            Self::Legacy(value) => value,
-            Self::Experimental(value) => value,
             Self::OrganizationExtensionPropagate => 0x4000,
             Self::EnhancedAccuracyMetrics => 0x4001,
             Self::OrganizationExtensionDoNotPropagate => 0x8000,
@@ -234,9 +233,11 @@ impl TlvType {
             Self::CumulativeRateRatio => 0x8007,
             Self::Pad => 0x8008,
             Self::Authentication => 0x8009,
+            Self::Reserved(value) | Self::Legacy(value) | Self::Experimental(value) => value,
         }
     }
 
+    #[must_use]
     pub fn from_primitive(value: u16) -> Self {
         match value {
             0x0000
@@ -273,6 +274,7 @@ impl TlvType {
 
     // True if this message should be propagated by a boundary clock if it is
     // attached to an announce message
+    #[must_use]
     pub fn announce_propagate(self) -> bool {
         matches!(self.to_primitive(), 0x0008 | 0x0009 | 0x4000..=0x7fff)
     }

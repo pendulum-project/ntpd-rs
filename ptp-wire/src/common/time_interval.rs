@@ -58,8 +58,13 @@ impl WireFormat for TimeInterval {
 }
 
 impl TimeInterval {
+    #[must_use]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Precision loss here is acceptable as it only happens when the interval is relatively large"
+    )]
     pub fn to_nanos(self) -> f64 {
-        (self.0.to_bits() as f64) / ((1 << 16) as f64)
+        (self.0.to_bits() as f64) / f64::from(1 << 16)
     }
 }
 
@@ -76,7 +81,7 @@ mod tests {
             ),
             (
                 [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01u8],
-                TimeInterval(I48F16::from_num(1.0f64 / u16::MAX as f64)),
+                TimeInterval(I48F16::from_num(1.0f64 / f64::from(u16::MAX))),
             ),
             (
                 [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00u8],

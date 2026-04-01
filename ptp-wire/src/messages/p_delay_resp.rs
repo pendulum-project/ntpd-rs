@@ -54,8 +54,8 @@ mod tests {
             ],
             PDelayRespMessage {
                 request_receive_timestamp: WireTimestamp {
-                    seconds: 1169232218,
-                    nanos: 174389936,
+                    seconds: 1_169_232_218,
+                    nanos: 174_389_936,
                 },
                 requesting_port_identity: PortIdentity {
                     clock_identity: ClockIdentity([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]),

@@ -53,7 +53,10 @@ impl TryFrom<u8> for MessageType {
     type Error = EnumConversionError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        use MessageType::*;
+        use MessageType::{
+            Announce, DelayReq, DelayResp, FollowUp, Management, PDelayReq, PDelayResp,
+            PDelayRespFollowUp, Signaling, Sync,
+        };
 
         match value {
             0x0 => Ok(Sync),
@@ -77,7 +80,7 @@ pub use fuzz::FuzzMessage;
 #[cfg(feature = "fuzz")]
 #[allow(missing_docs)] // These are only used for internal fuzzing
 mod fuzz {
-    use super::*;
+    use super::Message;
     use crate::{WireFormatError, common::Tlv};
 
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -215,6 +218,7 @@ impl MessageBody {
 }
 
 /// Checks whether message is of PTP revision compatible with Statime
+#[must_use]
 pub fn is_compatible(buffer: &[u8]) -> bool {
     // this ensures that versionPTP in the header is 2
     // it will never happen in PTPv1 packets because this octet is the LSB of
@@ -239,17 +243,15 @@ impl<'a> Message<'a> {
         let (header, rest) = buffer.split_at_mut(34);
         let (body, tlv) = rest.split_at_mut(self.body.wire_size());
 
-        self.header
-            .serialize_header(
-                self.body.content_type(),
-                self.body.wire_size() + self.suffix.wire_size(),
-                header,
-            )
-            .unwrap();
+        self.header.serialize_header(
+            self.body.content_type(),
+            self.body.wire_size() + self.suffix.wire_size(),
+            header,
+        )?;
 
-        self.body.serialize(body).unwrap();
+        self.body.serialize(body)?;
 
-        self.suffix.serialize(tlv).unwrap();
+        self.suffix.serialize(tlv)?;
 
         Ok(self.wire_size())
     }

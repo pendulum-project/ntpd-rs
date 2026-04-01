@@ -70,6 +70,7 @@ pub enum ClockAccuracy {
 
 impl ClockAccuracy {
     /// Converts enum to u8 literals
+    #[must_use]
     pub fn to_primitive(self) -> u8 {
         match self {
             Self::Reserved => 0x00,
@@ -141,7 +142,7 @@ impl ClockAccuracy {
     }
 
     /// high accuracy to low accuracy
-    pub(crate) fn cmp_numeric(&self, other: &Self) -> Ordering {
+    pub(crate) fn cmp_numeric(self, other: Self) -> Ordering {
         self.to_primitive().cmp(&other.to_primitive())
     }
 }
@@ -168,6 +169,6 @@ mod tests {
         let a = ClockAccuracy::PS1;
         let b = ClockAccuracy::PS10;
 
-        assert_eq!(a.cmp_numeric(&b), Ordering::Less);
+        assert_eq!(a.cmp_numeric(b), Ordering::Less);
     }
 }

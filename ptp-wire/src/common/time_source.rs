@@ -29,6 +29,7 @@ pub enum TimeSource {
 impl TimeSource {
     /// Converts enum variants back to their primitive values
     /// as specified in *IEEE1588-2019 section 7.6.2.8*
+    #[must_use]
     pub fn to_primitive(self) -> u8 {
         match self {
             Self::AtomicClock => 0x10,

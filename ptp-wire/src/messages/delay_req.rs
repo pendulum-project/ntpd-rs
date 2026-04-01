@@ -34,8 +34,8 @@ mod tests {
             [0x00, 0x00, 0x45, 0xb1, 0x11, 0x5a, 0x0a, 0x64, 0xfa, 0xb0],
             DelayReqMessage {
                 origin_timestamp: WireTimestamp {
-                    seconds: 1169232218,
-                    nanos: 174389936,
+                    seconds: 1_169_232_218,
+                    nanos: 174_389_936,
                 },
             },
         )];

@@ -78,8 +78,8 @@ mod tests {
             AnnounceMessage {
                 header: Header::new(1),
                 origin_timestamp: WireTimestamp {
-                    seconds: 1169232218,
-                    nanos: 175326816,
+                    seconds: 1_169_232_218,
+                    nanos: 175_326_816,
                 },
                 current_utc_offset: 0,
                 grandmaster_priority_1: 96,

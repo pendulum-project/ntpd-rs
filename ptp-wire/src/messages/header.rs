@@ -5,6 +5,10 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Struct is a direct representation of the PTP header, which has a lot of boolean elements which don't all map well to enums."
+)]
 pub struct Header {
     pub(crate) sdo_id: SdoId,
     pub(crate) version: PtpVersion,
@@ -72,31 +76,33 @@ impl Header {
         content_length: usize,
         buffer: &mut [u8],
     ) -> Result<(), WireFormatError> {
+        let message_length = u16::try_from(content_length + self.wire_size())
+            .map_err(|_| WireFormatError::Invalid)?;
         buffer[0] = ((self.sdo_id.high_byte()) << 4) | ((content_type as u8) & 0x0f);
         buffer[1] = self.version.as_byte();
-        buffer[2..4].copy_from_slice(&((content_length + self.wire_size()) as u16).to_be_bytes());
+        buffer[2..4].copy_from_slice(&message_length.to_be_bytes());
         buffer[4] = self.domain_number;
         buffer[5] = self.sdo_id.low_byte();
         buffer[6] = 0;
         buffer[7] = 0;
-        buffer[6] |= self.alternate_master_flag as u8;
-        buffer[6] |= (self.two_step_flag as u8) << 1;
-        buffer[6] |= (self.unicast_flag as u8) << 2;
-        buffer[6] |= (self.ptp_profile_specific_1 as u8) << 5;
-        buffer[6] |= (self.ptp_profile_specific_2 as u8) << 6;
-        buffer[7] |= self.leap61 as u8;
-        buffer[7] |= (self.leap59 as u8) << 1;
-        buffer[7] |= (self.current_utc_offset_valid as u8) << 2;
-        buffer[7] |= (self.ptp_timescale as u8) << 3;
-        buffer[7] |= (self.time_tracable as u8) << 4;
-        buffer[7] |= (self.frequency_tracable as u8) << 5;
-        buffer[7] |= (self.synchronization_uncertain as u8) << 6;
+        buffer[6] |= u8::from(self.alternate_master_flag);
+        buffer[6] |= u8::from(self.two_step_flag) << 1;
+        buffer[6] |= u8::from(self.unicast_flag) << 2;
+        buffer[6] |= u8::from(self.ptp_profile_specific_1) << 5;
+        buffer[6] |= u8::from(self.ptp_profile_specific_2) << 6;
+        buffer[7] |= u8::from(self.leap61);
+        buffer[7] |= u8::from(self.leap59) << 1;
+        buffer[7] |= u8::from(self.current_utc_offset_valid) << 2;
+        buffer[7] |= u8::from(self.ptp_timescale) << 3;
+        buffer[7] |= u8::from(self.time_tracable) << 4;
+        buffer[7] |= u8::from(self.frequency_tracable) << 5;
+        buffer[7] |= u8::from(self.synchronization_uncertain) << 6;
         self.correction_field.serialize(&mut buffer[8..16])?;
         buffer[16..20].copy_from_slice(&[0, 0, 0, 0]);
         self.source_port_identity.serialize(&mut buffer[20..30])?;
         buffer[30..32].copy_from_slice(&self.sequence_id.to_be_bytes());
         buffer[32] = ControlField::from(content_type).to_primitive();
-        buffer[33] = self.log_message_interval as u8;
+        buffer[33] = self.log_message_interval.cast_unsigned();
 
         Ok(())
     }
@@ -107,7 +113,7 @@ impl Header {
         }
 
         let version = PtpVersion::from_byte(buffer[1]);
-        let sdo_id = SdoId((((buffer[0] & 0xf0) as u16) << 4) | (buffer[5] as u16));
+        let sdo_id = SdoId((u16::from(buffer[0] & 0xf0) << 4) | u16::from(buffer[5]));
 
         Ok(DeserializedHeader {
             header: Self {
@@ -129,7 +135,7 @@ impl Header {
                 correction_field: TimeInterval::deserialize(&buffer[8..16])?,
                 source_port_identity: PortIdentity::deserialize(&buffer[20..30])?,
                 sequence_id: u16::from_be_bytes(buffer[30..32].try_into().unwrap()),
-                log_message_interval: buffer[33] as i8,
+                log_message_interval: buffer[33].cast_signed(),
             },
             message_type: (buffer[0] & 0x0f).try_into()?,
             message_length: u16::from_be_bytes(buffer[2..4].try_into().unwrap()),
@@ -169,7 +175,7 @@ impl SdoId {
     }
 
     const fn low_byte(self) -> u8 {
-        self.0 as u8
+        (self.0 & 0xFF) as u8
     }
 }
 
@@ -243,6 +249,7 @@ pub struct PtpVersion {
 
 impl PtpVersion {
     #[allow(unused)]
+    #[must_use]
     pub fn new(major: u8, minor: u8) -> Option<Self> {
         if major >= 0x10 || minor >= 0x10 {
             None
@@ -251,7 +258,7 @@ impl PtpVersion {
         }
     }
 
-    fn as_byte(&self) -> u8 {
+    fn as_byte(self) -> u8 {
         (self.minor << 4) | self.major
     }
 
