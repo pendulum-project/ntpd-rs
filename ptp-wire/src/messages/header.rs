@@ -272,8 +272,6 @@ impl PtpVersion {
 
 #[cfg(test)]
 mod tests {
-    use fixed::types::I48F16;
-
     use super::*;
     use crate::common::ClockIdentity;
 
@@ -383,7 +381,7 @@ mod tests {
                     time_tracable: false,
                     frequency_tracable: true,
                     synchronization_uncertain: false,
-                    correction_field: TimeInterval(I48F16::from_num(1.5f64)),
+                    correction_field: TimeInterval::from_nanos(1.5f64).unwrap(),
                     source_port_identity: PortIdentity {
                         clock_identity: ClockIdentity([0, 1, 2, 3, 4, 5, 6, 7]),
                         port_number: 0x5555,
