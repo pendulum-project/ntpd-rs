@@ -1,6 +1,6 @@
 use super::MessageType;
 use crate::{
-    WireFormatError,
+    Error,
     common::{PortIdentity, TimeInterval},
 };
 
@@ -10,25 +10,25 @@ use crate::{
     reason = "Struct is a direct representation of the PTP header, which has a lot of boolean elements which don't all map well to enums."
 )]
 pub struct Header {
-    pub(crate) sdo_id: SdoId,
-    pub(crate) version: PtpVersion,
-    pub(crate) domain_number: u8,
-    pub(crate) alternate_master_flag: bool,
-    pub(crate) two_step_flag: bool,
-    pub(crate) unicast_flag: bool,
-    pub(crate) ptp_profile_specific_1: bool,
-    pub(crate) ptp_profile_specific_2: bool,
-    pub(crate) leap61: bool,
-    pub(crate) leap59: bool,
-    pub(crate) current_utc_offset_valid: bool,
-    pub(crate) ptp_timescale: bool,
-    pub(crate) time_tracable: bool,
-    pub(crate) frequency_tracable: bool,
-    pub(crate) synchronization_uncertain: bool,
-    pub(crate) correction_field: TimeInterval,
-    pub(crate) source_port_identity: PortIdentity,
-    pub(crate) sequence_id: u16,
-    pub(crate) log_message_interval: i8,
+    pub sdo_id: SdoId,
+    pub version: PtpVersion,
+    pub domain_number: u8,
+    pub alternate_master_flag: bool,
+    pub two_step_flag: bool,
+    pub unicast_flag: bool,
+    pub ptp_profile_specific_1: bool,
+    pub ptp_profile_specific_2: bool,
+    pub leap61: bool,
+    pub leap59: bool,
+    pub current_utc_offset_valid: bool,
+    pub ptp_timescale: bool,
+    pub time_tracable: bool,
+    pub frequency_tracable: bool,
+    pub synchronization_uncertain: bool,
+    pub correction_field: TimeInterval,
+    pub source_port_identity: PortIdentity,
+    pub sequence_id: u16,
+    pub log_message_interval: i8,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,7 +39,8 @@ pub(crate) struct DeserializedHeader {
 }
 
 impl Header {
-    pub(crate) fn new(minor_ptp_version: u8) -> Self {
+    #[must_use]
+    pub fn new(minor_ptp_version: u8) -> Self {
         Self {
             sdo_id: SdoId(0),
             version: PtpVersion {
@@ -75,9 +76,9 @@ impl Header {
         content_type: MessageType,
         content_length: usize,
         buffer: &mut [u8],
-    ) -> Result<(), WireFormatError> {
-        let message_length = u16::try_from(content_length + self.wire_size())
-            .map_err(|_| WireFormatError::Invalid)?;
+    ) -> Result<(), Error> {
+        let message_length =
+            u16::try_from(content_length + self.wire_size()).map_err(|_| Error::Invalid)?;
         buffer[0] = ((self.sdo_id.high_byte()) << 4) | ((content_type as u8) & 0x0f);
         buffer[1] = self.version.as_byte();
         buffer[2..4].copy_from_slice(&message_length.to_be_bytes());
@@ -107,9 +108,9 @@ impl Header {
         Ok(())
     }
 
-    pub(crate) fn deserialize_header(buffer: &[u8]) -> Result<DeserializedHeader, WireFormatError> {
+    pub(crate) fn deserialize_header(buffer: &[u8]) -> Result<DeserializedHeader, Error> {
         if buffer.len() < 34 {
-            return Err(WireFormatError::BufferTooShort);
+            return Err(Error::BufferTooShort);
         }
 
         let version = PtpVersion::from_byte(buffer[1]);
@@ -224,14 +225,14 @@ impl<'de> serde::de::Visitor<'de> for SdoIdVisitor {
 }
 
 impl TryFrom<u16> for SdoId {
-    type Error = ();
+    type Error = Error;
 
     /// Turn a `u16` into a `SdoId` ensuring it is in the range `0..=0xFFF`.
     fn try_from(sdo_id: u16) -> Result<Self, Self::Error> {
         (0..=0xfff)
             .contains(&sdo_id)
             .then_some(Self(sdo_id))
-            .ok_or(())
+            .ok_or(Error::Invalid)
     }
 }
 
@@ -249,12 +250,11 @@ pub struct PtpVersion {
 
 impl PtpVersion {
     #[allow(unused)]
-    #[must_use]
-    pub fn new(major: u8, minor: u8) -> Option<Self> {
+    pub fn new(major: u8, minor: u8) -> Result<Self, Error> {
         if major >= 0x10 || minor >= 0x10 {
-            None
+            Err(Error::Invalid)
         } else {
-            Some(Self { major, minor })
+            Ok(Self { major, minor })
         }
     }
 

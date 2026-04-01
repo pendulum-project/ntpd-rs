@@ -17,7 +17,6 @@ serde = ["dep:serde"]
 fuzz = []
 
 [dependencies]
-arrayvec.workspace = true
 fixed.workspace = true
 serde = { workspace = true, optional = true }
 

@@ -11,7 +11,7 @@ pub(crate) use p_delay_resp_follow_up::*;
 pub(crate) use sync::*;
 
 use self::{management::ManagementMessage, signalling::SignalingMessage};
-use super::{WireFormatError, common::TlvSet};
+use super::{Error, common::TlvSet};
 
 mod announce;
 mod delay_req;
@@ -25,15 +25,9 @@ mod p_delay_resp_follow_up;
 mod signalling;
 mod sync;
 
-/// Maximum length of a packet
-///
-/// This can be used to preallocate buffers that can always fit packets send by
-/// `statime`.
-pub const MAX_DATA_LEN: usize = 1024;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum MessageType {
+pub(crate) enum MessageType {
     Sync = 0x0,
     DelayReq = 0x1,
     PDelayReq = 0x2,
@@ -46,10 +40,8 @@ pub enum MessageType {
     Management = 0xd,
 }
 
-pub struct EnumConversionError;
-
 impl TryFrom<u8> for MessageType {
-    type Error = EnumConversionError;
+    type Error = Error;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         use MessageType::{
@@ -68,7 +60,7 @@ impl TryFrom<u8> for MessageType {
             0xb => Ok(Announce),
             0xc => Ok(Signaling),
             0xd => Ok(Management),
-            _ => Err(EnumConversionError),
+            _ => Err(Error::Invalid),
         }
     }
 }
@@ -80,7 +72,7 @@ pub use fuzz::FuzzMessage;
 #[allow(missing_docs)] // These are only used for internal fuzzing
 mod fuzz {
     use super::Message;
-    use crate::{WireFormatError, common::Tlv};
+    use crate::{Error, common::Tlv};
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct FuzzMessage<'a> {
@@ -92,7 +84,7 @@ mod fuzz {
 
     impl<'a> FuzzMessage<'a> {
         pub fn deserialize(buffer: &'a [u8]) -> Result<Self, impl std::error::Error> {
-            Ok::<FuzzMessage, WireFormatError>(FuzzMessage {
+            Ok::<FuzzMessage, Error>(FuzzMessage {
                 inner: Message::deserialize(buffer)?,
             })
         }
@@ -102,20 +94,20 @@ mod fuzz {
         }
 
         pub fn tlv(&self) -> impl Iterator<Item = FuzzTlv<'_>> + '_ {
-            self.inner.suffix.tlv().map(FuzzTlv)
+            self.inner.suffix.tlvs().map(FuzzTlv)
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Message<'a> {
-    pub(crate) header: Header,
-    pub(crate) body: MessageBody,
-    pub(crate) suffix: TlvSet<'a>,
+pub struct Message<'a> {
+    pub header: Header,
+    pub body: MessageBody,
+    pub suffix: TlvSet<'a>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum MessageBody {
+pub enum MessageBody {
     Sync(SyncMessage),
     DelayReq(DelayReqMessage),
     PDelayReq(PDelayReqMessage),
@@ -159,7 +151,7 @@ impl MessageBody {
         }
     }
 
-    pub(crate) fn serialize(&self, buffer: &mut [u8]) -> Result<usize, super::WireFormatError> {
+    pub(crate) fn serialize(&self, buffer: &mut [u8]) -> Result<usize, super::Error> {
         match &self {
             MessageBody::Sync(m) => m.serialize_content(buffer)?,
             MessageBody::DelayReq(m) => m.serialize_content(buffer)?,
@@ -180,7 +172,7 @@ impl MessageBody {
         message_type: MessageType,
         header: &Header,
         buffer: &[u8],
-    ) -> Result<Self, super::WireFormatError> {
+    ) -> Result<Self, super::Error> {
         let body = match message_type {
             MessageType::Sync => MessageBody::Sync(SyncMessage::deserialize_content(buffer)?),
             MessageType::DelayReq => {
@@ -226,25 +218,22 @@ pub fn is_compatible(buffer: &[u8]) -> bool {
 }
 
 impl<'a> Message<'a> {
-    pub(crate) fn header(&self) -> &Header {
-        &self.header
-    }
-
     /// The byte size on the wire of this message
-    pub(crate) fn wire_size(&self) -> usize {
+    #[must_use]
+    pub fn wire_size(&self) -> usize {
         self.header.wire_size() + self.body.wire_size() + self.suffix.wire_size()
     }
 
     /// Serializes the object into the PTP wire format.
     ///
     /// Returns the used buffer size that contains the message or an error.
-    pub(crate) fn serialize(&self, buffer: &mut [u8]) -> Result<usize, super::WireFormatError> {
+    pub fn serialize(&self, buffer: &mut [u8]) -> Result<usize, super::Error> {
         let (header, rest) = buffer
             .split_at_mut_checked(34)
-            .ok_or(WireFormatError::BufferTooShort)?;
+            .ok_or(Error::BufferTooShort)?;
         let (body, tlv) = rest
             .split_at_mut_checked(self.body.wire_size())
-            .ok_or(WireFormatError::BufferTooShort)?;
+            .ok_or(Error::BufferTooShort)?;
 
         self.header.serialize_header(
             self.body.content_type(),
@@ -262,18 +251,18 @@ impl<'a> Message<'a> {
     /// Deserializes a message from the PTP wire format.
     ///
     /// Returns the message or an error.
-    pub(crate) fn deserialize(buffer: &'a [u8]) -> Result<Self, super::WireFormatError> {
+    pub fn deserialize(buffer: &'a [u8]) -> Result<Self, super::Error> {
         let header_data = Header::deserialize_header(buffer)?;
 
         if header_data.message_length < 34 {
-            return Err(WireFormatError::Invalid);
+            return Err(Error::Invalid);
         }
 
         // Ensure we have the entire message and ignore potential padding
         // Skip the header bytes and only keep the content
         let content_buffer = buffer
             .get(34..(header_data.message_length as usize))
-            .ok_or(WireFormatError::BufferTooShort)?;
+            .ok_or(Error::BufferTooShort)?;
 
         let body = MessageBody::deserialize(
             header_data.message_type,
@@ -283,7 +272,7 @@ impl<'a> Message<'a> {
 
         let tlv_buffer = &content_buffer
             .get(body.wire_size()..)
-            .ok_or(super::WireFormatError::BufferTooShort)?;
+            .ok_or(super::Error::BufferTooShort)?;
         let suffix = TlvSet::deserialize(tlv_buffer)?;
 
         Ok(Message {

@@ -1,8 +1,8 @@
-use crate::{WireFormatError, common::WireTimestamp};
+use crate::{Error, common::WireTimestamp};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct PDelayReqMessage {
-    pub(super) origin_timestamp: WireTimestamp,
+pub struct PDelayReqMessage {
+    pub origin_timestamp: WireTimestamp,
 }
 
 impl PDelayReqMessage {
@@ -10,12 +10,9 @@ impl PDelayReqMessage {
         20
     }
 
-    pub(crate) fn serialize_content(
-        &self,
-        buffer: &mut [u8],
-    ) -> Result<(), crate::WireFormatError> {
+    pub(crate) fn serialize_content(&self, buffer: &mut [u8]) -> Result<(), crate::Error> {
         if buffer.len() < 20 {
-            return Err(WireFormatError::BufferTooShort);
+            return Err(Error::BufferTooShort);
         }
 
         self.origin_timestamp.serialize(&mut buffer[0..10])?;
@@ -24,8 +21,8 @@ impl PDelayReqMessage {
         Ok(())
     }
 
-    pub(crate) fn deserialize_content(buffer: &[u8]) -> Result<Self, crate::WireFormatError> {
-        let slice = buffer.get(0..20).ok_or(WireFormatError::BufferTooShort)?;
+    pub(crate) fn deserialize_content(buffer: &[u8]) -> Result<Self, crate::Error> {
+        let slice = buffer.get(0..20).ok_or(Error::BufferTooShort)?;
 
         Ok(Self {
             origin_timestamp: WireTimestamp::deserialize(slice)?,
@@ -45,10 +42,7 @@ mod tests {
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             ],
             PDelayReqMessage {
-                origin_timestamp: WireTimestamp {
-                    seconds: 1_169_232_218,
-                    nanos: 174_389_936,
-                },
+                origin_timestamp: WireTimestamp::new(1_169_232_218, 174_389_936).unwrap(),
             },
         )];
 

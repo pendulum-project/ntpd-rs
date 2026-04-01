@@ -1,12 +1,12 @@
 use crate::{
-    WireFormatError,
+    Error,
     common::{PortIdentity, WireTimestamp},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct PDelayRespMessage {
-    pub(crate) request_receive_timestamp: WireTimestamp,
-    pub(crate) requesting_port_identity: PortIdentity,
+pub struct PDelayRespMessage {
+    pub request_receive_timestamp: WireTimestamp,
+    pub requesting_port_identity: PortIdentity,
 }
 
 impl PDelayRespMessage {
@@ -14,12 +14,9 @@ impl PDelayRespMessage {
         20
     }
 
-    pub(crate) fn serialize_content(
-        &self,
-        buffer: &mut [u8],
-    ) -> Result<(), crate::WireFormatError> {
+    pub(crate) fn serialize_content(&self, buffer: &mut [u8]) -> Result<(), crate::Error> {
         if buffer.len() < 20 {
-            return Err(WireFormatError::BufferTooShort);
+            return Err(Error::BufferTooShort);
         }
         self.request_receive_timestamp
             .serialize(&mut buffer[0..10])?;
@@ -29,9 +26,9 @@ impl PDelayRespMessage {
         Ok(())
     }
 
-    pub(crate) fn deserialize_content(buffer: &[u8]) -> Result<Self, crate::WireFormatError> {
+    pub(crate) fn deserialize_content(buffer: &[u8]) -> Result<Self, crate::Error> {
         if buffer.len() < 20 {
-            return Err(WireFormatError::BufferTooShort);
+            return Err(Error::BufferTooShort);
         }
         Ok(Self {
             request_receive_timestamp: WireTimestamp::deserialize(&buffer[0..10])?,
@@ -53,10 +50,7 @@ mod tests {
                 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a,
             ],
             PDelayRespMessage {
-                request_receive_timestamp: WireTimestamp {
-                    seconds: 1_169_232_218,
-                    nanos: 174_389_936,
-                },
+                request_receive_timestamp: WireTimestamp::new(1_169_232_218, 174_389_936).unwrap(),
                 requesting_port_identity: PortIdentity {
                     clock_identity: ClockIdentity([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]),
                     port_number: 0x090a,

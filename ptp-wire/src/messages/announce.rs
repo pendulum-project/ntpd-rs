@@ -1,20 +1,20 @@
 use super::Header;
 use crate::{
-    WireFormatError,
+    Error,
     common::{ClockIdentity, ClockQuality, TimeSource, WireTimestamp},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct AnnounceMessage {
-    pub(crate) header: Header,
-    pub(crate) origin_timestamp: WireTimestamp,
-    pub(crate) current_utc_offset: i16,
-    pub(crate) grandmaster_priority_1: u8,
-    pub(crate) grandmaster_clock_quality: ClockQuality,
-    pub(crate) grandmaster_priority_2: u8,
-    pub(crate) grandmaster_identity: ClockIdentity,
-    pub(crate) steps_removed: u16,
-    pub(crate) time_source: TimeSource,
+pub struct AnnounceMessage {
+    pub header: Header,
+    pub origin_timestamp: WireTimestamp,
+    pub current_utc_offset: i16,
+    pub grandmaster_priority_1: u8,
+    pub grandmaster_clock_quality: ClockQuality,
+    pub grandmaster_priority_2: u8,
+    pub grandmaster_identity: ClockIdentity,
+    pub steps_removed: u16,
+    pub time_source: TimeSource,
 }
 
 impl AnnounceMessage {
@@ -22,9 +22,9 @@ impl AnnounceMessage {
         30
     }
 
-    pub(crate) fn serialize_content(&self, buffer: &mut [u8]) -> Result<(), WireFormatError> {
+    pub(crate) fn serialize_content(&self, buffer: &mut [u8]) -> Result<(), Error> {
         if buffer.len() < 30 {
-            return Err(WireFormatError::BufferTooShort);
+            return Err(Error::BufferTooShort);
         }
 
         self.origin_timestamp.serialize(&mut buffer[0..10])?;
@@ -40,12 +40,9 @@ impl AnnounceMessage {
         Ok(())
     }
 
-    pub(crate) fn deserialize_content(
-        header: Header,
-        buffer: &[u8],
-    ) -> Result<Self, WireFormatError> {
+    pub(crate) fn deserialize_content(header: Header, buffer: &[u8]) -> Result<Self, Error> {
         if buffer.len() < 30 {
-            return Err(WireFormatError::BufferTooShort);
+            return Err(Error::BufferTooShort);
         }
 
         Ok(Self {
@@ -77,10 +74,7 @@ mod tests {
             ],
             AnnounceMessage {
                 header: Header::new(1),
-                origin_timestamp: WireTimestamp {
-                    seconds: 1_169_232_218,
-                    nanos: 175_326_816,
-                },
+                origin_timestamp: WireTimestamp::new(1_169_232_218, 175_326_816).unwrap(),
                 current_utc_offset: 0,
                 grandmaster_priority_1: 96,
                 grandmaster_clock_quality: ClockQuality {
