@@ -263,14 +263,19 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         id: SourceId,
         source_config: SourceConfig,
         measurement_noise_estimate: f64,
+        measurement_accuracy_estimate: f64,
     ) -> Result<
         OneWaySource<Controller::OneWaySourceController>,
         <Controller::Clock as NtpClock>::Error,
     > {
         self.ensure_controller_control()?;
-        let controller =
-            self.controller
-                .add_one_way_source(id, source_config, measurement_noise_estimate, None);
+        let controller = self.controller.add_one_way_source(
+            id,
+            source_config,
+            measurement_noise_estimate,
+            measurement_accuracy_estimate,
+            None,
+        );
         self.sources.insert(id, None);
         Ok(OneWaySource::new(controller))
     }
@@ -280,6 +285,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
         id: SourceId,
         source_config: SourceConfig,
         measurement_noise_estimate: f64,
+        measurement_accuracy_estimate: f64,
         period: f64,
     ) -> Result<
         OneWaySource<Controller::OneWaySourceController>,
@@ -290,6 +296,7 @@ impl<SourceId: Hash + Eq + Copy + Debug, Controller: TimeSyncController<SourceId
             id,
             source_config,
             measurement_noise_estimate,
+            measurement_accuracy_estimate,
             Some(period),
         );
         self.sources.insert(id, None);

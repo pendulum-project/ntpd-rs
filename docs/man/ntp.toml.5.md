@@ -120,6 +120,13 @@ sources.
     1-standard deviation bound on the measurement error. This is needed as
     `sock` and `pps` sources don't have a good way to estimate their own error.
 
+`accuracy` = *Uncertainty standard deviation (seconds)*
+:   `pps` and `sock` mode only. Accuracy of the underlying time source. This should
+    be an estimate of the size of the error in the clock you are synchronizing with,
+    as well as any mostly-unchanging offset in the measurement process. This can be
+    used to deprioritize sources which have large offsets in the measurement process
+    or which are of poorer quality than others.
+
 `poll-interval-limits` = { `min` = *min*, `max` = *max* } (defaults from `[source-defaults]`)
 :   Specifies the limit on how often a source is queried for a new time. For
     most instances the defaults will be adequate. The min and max are given as

@@ -40,7 +40,8 @@ impl Spawner for PpsSpawner {
                     id: SourceId::new(),
                     path: self.config.path.clone(),
                     config: self.source_config,
-                    noise_estimate: self.config.precision.powi(2),
+                    precision: self.config.precision.powi(2),
+                    accuracy: self.config.accuracy,
                     period: self.config.period,
                 })),
             ))
@@ -94,10 +95,12 @@ mod tests {
     async fn creates_a_source() {
         let socket_path = std::env::temp_dir().join(format!("ntp-test-stream-{}", alloc_port()));
         let precision = 1e-3;
+        let accuracy = 1e-3;
         let mut spawner = PpsSpawner::new(
             PpsSourceConfig {
                 path: socket_path.clone(),
                 precision,
+                accuracy,
                 period: 1.,
             },
             SourceConfig::default(),
@@ -117,7 +120,7 @@ mod tests {
             panic!("did not receive PPS source create parameters!");
         };
         assert_eq!(params.path, socket_path);
-        assert!((params.noise_estimate - precision.powi(2)).abs() < 1e-9);
+        assert!((params.precision - precision.powi(2)).abs() < 1e-9);
 
         // Should be complete after spawning
         assert!(spawner.is_complete());

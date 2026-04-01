@@ -23,7 +23,9 @@ path = "/run/ntpd-rs/chrony.XXXX.sock"
 precision = 1e-3
 ```
 
-For socket sources such as a GPS device from gpsd, ntpd-rs is unable to estimate the uncertainty of the timing data. Therefore, you should provide an estimate (corresponding to 1 standard deviation) of this noise yourself through the `precision` field. For typical GPS receivers, an uncertainty somewhere in the range of 1 to 100 ms is reasonable.
+For socket sources such as a GPS device from gpsd, ntpd-rs is unable to estimate the uncertainty of the timing data. Therefore, you must provide an estimate (corresponding to 1 standard deviation) of this noise yourself through the `precision` field. For typical GPS receivers, an uncertainty somewhere in the range of 1 to 100 ms is reasonable.
+
+In addition, an accuracy can also be configured for sock sources. This allows you to deprioritize sock sources which have larger offset, or for whom the quality of the GPS signal is not particularly good. These are then still used for consensus of what time it should be, but have far less impact on the actual synchronization.
 
 ### Setting up GPSd
 In order for GPSd to connect to ntpd-rs, GPSd must start after ntpd-rs and after the socket shim has been created. This is because ntpd-rs needs to create the socket for GPSd, which can only find the socket if it exists at the moment GPSd starts.

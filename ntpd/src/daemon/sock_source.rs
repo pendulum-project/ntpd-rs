@@ -335,7 +335,7 @@ mod tests {
                 source_snapshots: Arc::new(RwLock::new(HashMap::new())),
             },
             system
-                .create_sock_source(index, SourceConfig::default(), 0.001)
+                .create_sock_source(index, SourceConfig::default(), 0.001, 1e-3)
                 .unwrap(),
         );
 
