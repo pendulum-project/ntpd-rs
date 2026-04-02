@@ -233,7 +233,11 @@ async fn handle_connection(
         let mut buf = [0u8; 2048];
         let mut bytes_read = 0;
         loop {
-            bytes_read += stream.read(&mut buf[bytes_read..]).await?;
+            let current_read = stream.read(&mut buf[bytes_read..]).await?;
+            if current_read == 0 {
+                return Err(std::io::ErrorKind::UnexpectedEof.into());
+            }
+            bytes_read += current_read;
 
             // The headers end with two CRLFs in a row
             if buf[0..bytes_read].windows(4).any(|w| w == b"\r\n\r\n") {
