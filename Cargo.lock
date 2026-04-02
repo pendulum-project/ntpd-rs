@@ -245,7 +245,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.1",
 ]
 
 [[package]]
@@ -826,9 +826,9 @@ dependencies = [
 
 [[package]]
 name = "timestamped-socket"
-version = "0.2.7"
+version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33d281d46f6b275c61bbe9ca3b55613c39018586dccbc537456ecaac7bb5377a"
+checksum = "4f968af71a51b915706b71490d332a64de3981c3487be10c7531c1ac3d493316"
 dependencies = [
  "libc",
  "serde",
@@ -1024,7 +1024,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.1",
 ]
 
 [[package]]
