@@ -418,7 +418,7 @@ impl<'a> NtpPacket<'a> {
                 match packet.draft_id() {
                     Some(id) if id == v5::DRAFT_VERSION => Ok((packet, cookie)),
                     received @ (Some(_) | None) => {
-                        tracing::error!(
+                        tracing::debug!(
                             expected = v5::DRAFT_VERSION,
                             received,
                             "Mismatched draft ID ignoring packet!"
