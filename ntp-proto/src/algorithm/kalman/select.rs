@@ -24,7 +24,7 @@ pub(super) fn select<Index: Copy>(
 ) -> Vec<SourceSnapshot<Index>> {
     let mut bounds: Vec<(f64, BoundType)> = Vec::with_capacity(2 * candidates.len());
 
-    for snapshot in candidates.iter() {
+    for snapshot in &candidates {
         if snapshot.period.is_some() {
             // Do not let periodic sources be part of the vote for correct time
             continue;
@@ -53,7 +53,7 @@ pub(super) fn select<Index: Copy>(
     let mut maxthigh: f64 = 0.0;
     let mut cur: usize = 0;
 
-    for (time, boundtype) in bounds.iter() {
+    for (time, boundtype) in &bounds {
         match boundtype {
             BoundType::Start => {
                 cur += 1;

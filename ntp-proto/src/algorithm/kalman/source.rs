@@ -414,13 +414,13 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
         }
         if let Some(period) = period {
             while self.cur_avg() > period / 2.0 {
-                for sample in self.init_offset.data.iter_mut() {
+                for sample in &mut self.init_offset.data {
                     *sample -= period;
                 }
             }
 
             while self.cur_avg() < -period / 2.0 {
-                for sample in self.init_offset.data.iter_mut() {
+                for sample in &mut self.init_offset.data {
                     *sample += period;
                 }
             }
@@ -458,7 +458,7 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
     }
 
     fn process_offset_steering(&mut self, steer: f64, period: Option<f64>) {
-        for sample in self.init_offset.data.iter_mut() {
+        for sample in &mut self.init_offset.data {
             *sample -= steer;
         }
         self.correct_period(period);

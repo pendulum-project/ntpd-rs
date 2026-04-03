@@ -314,7 +314,7 @@ mod tests {
         }
         let seen_addresses = seen_addresses;
 
-        for addr in seen_addresses.iter() {
+        for addr in &seen_addresses {
             assert!(
                 addresses.contains(addr),
                 "{addr:?} should have been drawn from {addresses:?}"
