@@ -118,7 +118,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 next_update: None,
             };
         }
-        for (_, (state, _)) in self.sources.iter_mut() {
+        for (state, _) in self.sources.values_mut() {
             if let Some(snapshot) = state {
                 snapshot.state =
                     snapshot

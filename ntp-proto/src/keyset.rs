@@ -79,9 +79,8 @@ impl KeySetProvider {
     pub fn rotate(&mut self) {
         let next_key = AesSivCmac512::new(aes_siv::Aes256SivAead::generate_key(rand::thread_rng()));
         let mut keys = Vec::with_capacity((self.history + 1).min(self.current.keys.len() + 1));
-        for key in self.current.keys
+        for key in &self.current.keys
             [self.current.keys.len().saturating_sub(self.history)..self.current.keys.len()]
-            .iter()
         {
             // This is the rare case where we do really want to make a copy.
             keys.push(AesSivCmac512::new(GenericArray::clone_from_slice(
@@ -139,7 +138,7 @@ impl KeySetProvider {
         writer.write_all(&self.current.id_offset.to_be_bytes())?;
         writer.write_all(&self.current.primary.to_be_bytes())?;
         writer.write_all(&(self.current.keys.len() as u32).to_be_bytes())?;
-        for key in self.current.keys.iter() {
+        for key in &self.current.keys {
             writer.write_all(key.key_bytes())?;
         }
         Ok(())

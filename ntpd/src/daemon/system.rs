@@ -160,7 +160,7 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper, Sourc
         }
     }
 
-    for server_config in server_configs.iter() {
+    for server_config in server_configs {
         system.add_server(server_config.to_owned()).await;
     }
 
