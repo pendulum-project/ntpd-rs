@@ -59,6 +59,16 @@ precision = 1e-7
 period = 0.1
 ```
 
+You may need to provide the user you are using to run ntpd-rs with the permissions to read from this device. Assuming you installed from our packages, you can do this by adding the following udev rule (typically put in a place like `/etc/udev/rules.d/99-ntpd-rs-pps.rules`):
+```
+KERNEL=="pps0", GROUP="ntpd-rs", MODE="0640"
+```
+This rule ensures that the pps0 device allows read access from the `ntpd-rs` group once it is created by udev at boot. To apply it without having to reboot run
+```sh
+sudo udevadm control --reload
+sudo udevadm trigger /dev/pps0
+```
+
 ## Running with GPS/PPS sources only
 
 When running without any other sources but a GPS and/or PPS device, your setup likely has less than 3 sources. This means you will also need to update the minimum number of sources that need to agree on the time before it is accepted. With only GPS/PPS as a source, the defense in depth of more than one agreeing source is less necessary as those are harder to attack, and this can be disabled by adding the following snippet to your `ntp.toml`
