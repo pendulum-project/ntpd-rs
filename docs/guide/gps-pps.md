@@ -59,7 +59,7 @@ precision = 1e-7
 period = 0.1
 ```
 
-You may need to provide the user you are using to run ntpd-rs with the permissions to read from this device. Assuming you installed from our packages, you can do this by adding the following udev rule (typically put in a place like `/etc/udev/rules.d/99-ntpd-rs-pps.rules`):
+You may need to provide the user that ntpd-rs will run as the permissions to read from this device. Assuming you installed from our packages, you can do this by adding the following udev rule (typically put in a place like `/etc/udev/rules.d/99-ntpd-rs-pps.rules`):
 ```
 KERNEL=="pps0", GROUP="ntpd-rs", MODE="0640"
 ```
