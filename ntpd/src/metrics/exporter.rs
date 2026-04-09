@@ -152,6 +152,13 @@ fn run(options: &NtpMetricsExporterOptions) -> Result<(), Box<dyn std::error::Er
             &config.observability.metrics_exporter_listen
         );
 
+        #[cfg(target_os = "linux")]
+        {
+            use sd_notify::NotifyState;
+
+            let _ = sd_notify::notify(&[NotifyState::Ready]);
+        }
+
         let listener = loop {
             match TcpListener::bind(&config.observability.metrics_exporter_listen).await {
                 Err(e) if e.kind() == std::io::ErrorKind::AddrNotAvailable => {

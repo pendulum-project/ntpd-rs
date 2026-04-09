@@ -108,6 +108,7 @@ impl LogReloadTaskStarter {
 
             loop {
                 stream.recv().await;
+
                 let new_file = match std::fs::File::create(&self.path) {
                     Ok(new_file) => new_file,
                     Err(e) => {
