@@ -39,22 +39,6 @@ default = [ "pps" ]
 hardware-timestamping = []
 pps = [ "dep:pps-time" ]
 
-[lib]
-name = "ntpd"
-path = "src/lib.rs"
-
-[[bin]]
-name = "ntp-daemon"
-path = "bin/ntp-daemon.rs"
-
-[[bin]]
-name = "ntp-ctl"
-path = "bin/ntp-ctl.rs"
-
-[[bin]]
-name = "ntp-metrics-exporter"
-path = "bin/ntp-metrics-exporter.rs"
-
 [package.metadata.deb]
 name = "ntpd-rs"
 priority = "optional"
