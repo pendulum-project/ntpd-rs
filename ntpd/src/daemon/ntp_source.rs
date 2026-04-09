@@ -150,14 +150,9 @@ where
                     tracing::debug!("accept packet");
                     match accept_packet(result, &buf, &self.clock) {
                         AcceptResult::Accept(packet, recv_timestamp) => {
-                            let send_timestamp = match self.last_send_timestamp {
-                                Some(ts) => ts,
-                                None => {
-                                    debug!(
-                                        "we received a message without having sent one; discarding"
-                                    );
-                                    continue;
-                                }
+                            let Some(send_timestamp) = self.last_send_timestamp else {
+                                debug!("we received a message without having sent one; discarding");
+                                continue;
                             };
                             let actions = self.source.handle_incoming(
                                 packet,
