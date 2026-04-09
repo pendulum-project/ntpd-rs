@@ -135,7 +135,7 @@ Description=Network Time Service (ntpd-rs) metrics exporter
 Documentation=https://github.com/pendulum-project/ntpd-rs
 
 [Service]
-Type=simple
+Type=notify
 Restart=yes
 ExecStart=/usr/bin/ntp-metrics-exporter
 Environment="RUST_LOG=info"

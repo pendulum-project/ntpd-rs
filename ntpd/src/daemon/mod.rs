@@ -168,6 +168,13 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
             clock,
         );
 
+        #[cfg(target_os = "linux")]
+        {
+            use sd_notify::NotifyState;
+
+            let _ = sd_notify::notify(&[NotifyState::Ready]);
+        }
+
         Ok(main_loop_handle.await??)
     })
 }

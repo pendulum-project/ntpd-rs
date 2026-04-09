@@ -30,6 +30,9 @@ serde_json.workspace = true
 
 rustls23.workspace = true
 
+[target.'cfg(target_os = "linux")'.dependencies]
+sd-notify.workspace = true
+
 [dev-dependencies]
 ntp-proto = { workspace = true, features = ["__internal-test",] }
 tokio-rustls.workspace = true

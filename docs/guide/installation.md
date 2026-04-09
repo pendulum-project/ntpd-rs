@@ -86,7 +86,7 @@ Wants=network-online.target
 Conflicts=systemd-timesyncd.service ntp.service chrony.service
 
 [Service]
-Type=simple
+Type=notify
 Restart=no
 ExecStart=/usr/local/bin/ntp-daemon
 Environment="RUST_LOG=info"
