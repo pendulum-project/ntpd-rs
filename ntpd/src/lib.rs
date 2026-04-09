@@ -60,7 +60,7 @@
 #![warn(clippy::manual_instant_elapsed)]
 #![warn(clippy::manual_is_power_of_two)]
 #![warn(clippy::manual_is_variant_and)]
-//FIXME: Enable #![warn(clippy::manual_let_else)]
+#![warn(clippy::manual_let_else)]
 #![warn(clippy::manual_midpoint)]
 //FIXME: Enable #![warn(clippy::manual_string_new)]
 #![warn(clippy::many_single_char_names)]

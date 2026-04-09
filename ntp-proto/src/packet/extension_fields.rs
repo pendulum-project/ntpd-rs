@@ -558,9 +558,8 @@ impl<'a> ExtensionFieldData<'a> {
         version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
         if !self.authenticated.is_empty() || !self.encrypted.is_empty() {
-            let cipher = match cipher.get(&self.authenticated) {
-                Some(cipher) => cipher,
-                None => return Err(std::io::Error::other("no cipher")),
+            let Some(cipher) = cipher.get(&self.authenticated) else {
+                return Err(std::io::Error::other("no cipher"));
             };
 
             // the authenticated extension fields are always followed by the encrypted extension
@@ -622,13 +621,10 @@ impl<'a> ExtensionFieldData<'a> {
                     let encrypted = RawEncryptedField::from_message_bytes(field.message_bytes)
                         .map_err(ParsingError::generalize)?;
 
-                    let cipher = match cipher.get(&efdata.untrusted) {
-                        Some(cipher) => cipher,
-                        None => {
-                            efdata.untrusted.push(InvalidNtsEncryptedField);
-                            is_valid_nts = false;
-                            continue;
-                        }
+                    let Some(cipher) = cipher.get(&efdata.untrusted) else {
+                        efdata.untrusted.push(InvalidNtsEncryptedField);
+                        is_valid_nts = false;
+                        continue;
                     };
 
                     let encrypted_fields = match encrypted.decrypt(
@@ -725,13 +721,10 @@ impl<'a> RawEncryptedField<'a> {
         aad: &[u8],
         version: ExtensionHeaderVersion,
     ) -> Result<Vec<ExtensionField<'a>>, ParsingError<ExtensionField<'a>>> {
-        let plaintext = match cipher.decrypt(self.nonce, self.ciphertext, aad) {
-            Ok(plain) => plain,
-            Err(_) => {
-                return Err(ParsingError::DecryptError(
-                    ExtensionField::InvalidNtsEncryptedField,
-                ));
-            }
+        let Ok(plaintext) = cipher.decrypt(self.nonce, self.ciphertext, aad) else {
+            return Err(ParsingError::DecryptError(
+                ExtensionField::InvalidNtsEncryptedField,
+            ));
         };
 
         RawExtensionField::deserialize_sequence(
