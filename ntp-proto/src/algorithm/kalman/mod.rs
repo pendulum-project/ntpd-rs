@@ -388,7 +388,11 @@ impl<C: NtpClock> InternalTimeSyncController for KalmanClockController<C> {
             algo_config,
             freq_offset,
             desired_freq: 0.0,
-            timedata: TimeSnapshot::default(),
+            timedata: TimeSnapshot {
+                accumulated_steps_threshold: synchronization_config
+                    .accumulated_step_panic_threshold,
+                ..TimeSnapshot::default()
+            },
             in_startup: true,
         })
     }

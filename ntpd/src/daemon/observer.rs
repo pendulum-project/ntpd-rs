@@ -285,7 +285,6 @@ mod tests {
                 reference_id: ReferenceId::NONE,
                 bloom_filter: BloomFilter::new(),
             },
-            accumulated_steps_threshold: None,
             time_snapshot: TimeSnapshot {
                 precision: NtpDuration::from_seconds(1e-3),
                 root_delay: NtpDuration::ZERO,
@@ -296,6 +295,7 @@ mod tests {
                 root_variance_cubic: 0.0,
                 leap_indicator: NtpLeapIndicator::Leap59,
                 accumulated_steps: NtpDuration::ZERO,
+                accumulated_steps_threshold: None,
             },
         });
 
@@ -362,7 +362,6 @@ mod tests {
                 reference_id: ReferenceId::NONE,
                 bloom_filter: BloomFilter::new(),
             },
-            accumulated_steps_threshold: None,
             time_snapshot: TimeSnapshot {
                 precision: NtpDuration::from_seconds(1e-3),
                 root_delay: NtpDuration::ZERO,
@@ -373,6 +372,7 @@ mod tests {
                 root_variance_cubic: 0.0,
                 leap_indicator: NtpLeapIndicator::Leap59,
                 accumulated_steps: NtpDuration::ZERO,
+                accumulated_steps_threshold: None,
             },
         });
 

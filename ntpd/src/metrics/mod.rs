@@ -195,6 +195,7 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
         Measurement::simple(
             state
                 .system
+                .time_snapshot
                 .accumulated_steps_threshold
                 .map_or(-1.0, NtpDuration::to_seconds),
         ),
