@@ -171,6 +171,9 @@ pub trait TimeSyncController: Sized + Send + Sync + 'static {
     ) -> Result<Self, <Self::Clock as NtpClock>::Error>;
 
     /// Take control of the clock (should not be done in new!)
+    ///
+    /// Should be callable multiple times, with subsequent calls not
+    /// doing anything.
     fn take_control(&self) -> Result<(), <Self::Clock as NtpClock>::Error>;
 
     /// Create a new source with given identity
@@ -204,6 +207,7 @@ pub struct TimeSyncControllerWrapper<T: InternalTimeSyncController> {
     twoway_sources: Mutex<Vec<Weak<Mutex<T::NtpSourceController>>>>,
     snapshot: Mutex<TimeSnapshot>,
     used_sources: Mutex<Vec<ClockId>>,
+    has_taken_control: Mutex<bool>,
 }
 
 impl<T: InternalTimeSyncController> TimeSyncController for TimeSyncControllerWrapper<T> {
@@ -228,11 +232,17 @@ impl<T: InternalTimeSyncController> TimeSyncController for TimeSyncControllerWra
             twoway_sources: Mutex::new(Vec::new()),
             snapshot: Mutex::new(TimeSnapshot::default()),
             used_sources: Mutex::new(Vec::new()),
+            has_taken_control: Mutex::new(false),
         })
     }
 
     fn take_control(&self) -> Result<(), <Self::Clock as NtpClock>::Error> {
-        self.inner.lock().unwrap().take_control()
+        let mut has_taken_control = self.has_taken_control.lock().unwrap();
+        if !*has_taken_control {
+            self.inner.lock().unwrap().take_control()?;
+            *has_taken_control = true;
+        }
+        Ok(())
     }
 
     fn add_source(&self, id: ClockId, source_config: SourceConfig) -> Self::NtpSourceController {
