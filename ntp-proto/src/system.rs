@@ -160,7 +160,6 @@ pub struct System<Controller> {
     sources: Mutex<HashMap<ClockId, SourceType>>,
 
     controller: Controller,
-    controller_took_control: Mutex<bool>,
 }
 
 impl<Controller: TimeSyncController> System<Controller> {
@@ -193,7 +192,6 @@ impl<Controller: TimeSyncController> System<Controller> {
             system: Mutex::new(system),
             sources: Mutex::new(HashMap::new()),
             controller: Controller::new(clock, synchronization_config, algorithm_config)?,
-            controller_took_control: Mutex::new(false),
         })
     }
 
@@ -211,17 +209,7 @@ impl<Controller: TimeSyncController> System<Controller> {
     }
 
     pub fn check_clock_access(&self) -> Result<(), <Controller::Clock as NtpClock>::Error> {
-        self.ensure_controller_control()
-    }
-
-    fn ensure_controller_control(&self) -> Result<(), <Controller::Clock as NtpClock>::Error> {
-        // FIXME: the take control pattern needs to go. Until that time this is not ideal but will do.
-        let mut controller_took_control = self.controller_took_control.lock().unwrap();
-        if !*controller_took_control {
-            self.controller.take_control()?;
-            *controller_took_control = true;
-        }
-        Ok(())
+        self.controller.take_control()
     }
 
     pub fn create_sock_source(
@@ -234,7 +222,7 @@ impl<Controller: TimeSyncController> System<Controller> {
         OneWaySource<Controller::OneWaySourceController>,
         <Controller::Clock as NtpClock>::Error,
     > {
-        self.ensure_controller_control()?;
+        self.controller.take_control()?;
         let controller = self.controller.add_one_way_source(
             id,
             source_config,
@@ -257,7 +245,7 @@ impl<Controller: TimeSyncController> System<Controller> {
         OneWaySource<Controller::OneWaySourceController>,
         <Controller::Clock as NtpClock>::Error,
     > {
-        self.ensure_controller_control()?;
+        self.controller.take_control()?;
         let controller = self.controller.add_one_way_source(
             id,
             source_config,
@@ -284,7 +272,7 @@ impl<Controller: TimeSyncController> System<Controller> {
         ),
         <Controller::Clock as NtpClock>::Error,
     > {
-        self.ensure_controller_control()?;
+        self.controller.take_control()?;
         let controller = self.controller.add_source(id, source_config);
         self.sources.lock().unwrap().insert(id, SourceType::Ntp);
         Ok(self.ntp_manager.new_source(
