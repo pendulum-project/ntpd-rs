@@ -5,6 +5,7 @@ use crate::{
         ExtensionField, NtpHeader,
         v5::server_reference_id::{BloomFilter, RemoteBloomFilter},
     },
+    system::NtpSourceInfo,
     v5::ServerId,
 };
 use crate::{
@@ -21,6 +22,7 @@ use std::{
     fmt::Debug,
     io::Cursor,
     net::{IpAddr, SocketAddr},
+    sync::{Arc, RwLock},
     time::Duration,
 };
 use tracing::{debug, trace, warn};
@@ -97,6 +99,8 @@ pub struct NtpSource<Controller: SourceController> {
     bloom_filter: RemoteBloomFilter,
 
     id: ClockId,
+
+    source_info: Arc<RwLock<NtpSourceInfo>>,
 }
 
 pub struct OneWaySource<Controller: SourceController> {
@@ -399,6 +403,7 @@ impl<Controller: SourceController> NtpSource<Controller> {
         controller: Controller,
         nts: Option<Box<SourceNtsData>>,
         id: ClockId,
+        source_info: Arc<RwLock<NtpSourceInfo>>,
     ) -> (Self, NtpSourceActionIterator) {
         (
             Self {
@@ -428,6 +433,8 @@ impl<Controller: SourceController> NtpSource<Controller> {
                 bloom_filter: RemoteBloomFilter::new(16).expect("16 is a valid chunk size"),
 
                 id,
+
+                source_info,
             },
             actions!(NtpSourceAction::SetTimer(Duration::from_secs(0))),
         )
@@ -537,6 +544,18 @@ impl<Controller: SourceController> NtpSource<Controller> {
             .expect("Internal error: could not serialize packet");
         let used = cursor.position();
         let result = &cursor.into_inner()[..used as usize];
+
+        let usable = {
+            let source_info = self.source_info.read().unwrap();
+            snapshot
+                .accept_synchronization(
+                    source_info.local_stratum,
+                    &source_info.ip_list,
+                    source_info.server_id,
+                )
+                .is_ok()
+        };
+        self.controller.set_usable(usable);
 
         actions!(
             NtpSourceAction::Send(result.into()),
@@ -731,9 +750,20 @@ impl<Controller: SourceController> NtpSource<Controller> {
             }
         }
 
-        actions!(NtpSourceAction::UpdateSystem(NtpSourceUpdate {
-            snapshot: NtpSourceSnapshot::from_source(self),
-        }))
+        let snapshot = NtpSourceSnapshot::from_source(self);
+        let usable = {
+            let source_info = self.source_info.read().unwrap();
+            snapshot
+                .accept_synchronization(
+                    source_info.local_stratum,
+                    &source_info.ip_list,
+                    source_info.server_id,
+                )
+                .is_ok()
+        };
+        self.controller.set_usable(usable);
+
+        actions!(NtpSourceAction::UpdateSystem(NtpSourceUpdate { snapshot }))
     }
 
     #[cfg(test)]
@@ -768,6 +798,8 @@ impl<Controller: SourceController> NtpSource<Controller> {
             bloom_filter: RemoteBloomFilter::new(16).unwrap(),
 
             id: ClockId(1),
+
+            source_info: Arc::default(),
         }
     }
 }
