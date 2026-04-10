@@ -243,7 +243,6 @@ impl<Controller: TimeSyncController> System<Controller> {
             None,
         );
         self.sources.lock().unwrap().insert(id, SourceType::Sock);
-        self.controller.source_update(id, true);
         Ok(OneWaySource::new(controller))
     }
 
@@ -267,7 +266,6 @@ impl<Controller: TimeSyncController> System<Controller> {
             Some(period),
         );
         self.sources.lock().unwrap().insert(id, SourceType::Pps);
-        self.controller.source_update(id, true);
         Ok(OneWaySource::new(controller))
     }
 

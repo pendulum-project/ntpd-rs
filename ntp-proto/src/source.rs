@@ -104,7 +104,8 @@ pub struct OneWaySource<Controller: SourceController> {
 }
 
 impl<Controller: SourceController> OneWaySource<Controller> {
-    pub(crate) fn new(controller: Controller) -> OneWaySource<Controller> {
+    pub(crate) fn new(mut controller: Controller) -> OneWaySource<Controller> {
+        controller.set_usable(true);
         OneWaySource { controller }
     }
 
