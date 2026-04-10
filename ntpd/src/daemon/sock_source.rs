@@ -108,8 +108,6 @@ where
 {
     async fn run(&mut self) {
         loop {
-            let mut buf = [0; SOCK_SAMPLE_SIZE];
-
             enum SelectResult<Controller: SourceController> {
                 SockRecv(Result<usize, std::io::Error>),
                 SystemUpdate(
@@ -119,6 +117,8 @@ where
                     >,
                 ),
             }
+
+            let mut buf = [0; SOCK_SAMPLE_SIZE];
 
             let selected: SelectResult<Controller> = tokio::select! {
                 result = self.socket.recv(&mut buf) => {

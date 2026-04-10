@@ -120,8 +120,6 @@ where
     #[expect(clippy::too_many_lines)]
     async fn run(&mut self, mut poll_wait: Pin<&mut T>) {
         loop {
-            let mut buf = [0_u8; 1024];
-
             enum SelectResult<Controller: SourceController> {
                 Timer,
                 Recv(Result<RecvResult<SocketAddr>, std::io::Error>),
@@ -132,6 +130,8 @@ where
                     >,
                 ),
             }
+
+            let mut buf = [0_u8; 1024];
 
             let selected: SelectResult<Controller> = tokio::select! {
                 () = &mut poll_wait => {
