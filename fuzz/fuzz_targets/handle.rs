@@ -120,6 +120,7 @@ fuzz_target!(|parts: (
                 root_variance_cubic: 0.0,
                 leap_indicator: NtpLeapIndicator::NoWarning,
                 accumulated_steps: NtpDuration::from_seconds(0.0),
+                accumulated_steps_threshold: None,
             },
         })),
         keyset,
