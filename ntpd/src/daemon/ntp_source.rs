@@ -403,9 +403,10 @@ mod tests {
     };
 
     use ntp_proto::{
-        AlgorithmConfig, KalmanClockController, NoCipher, NtpDuration, NtpLeapIndicator, NtpPacket,
-        NtpServerInfo, ProtocolVersion, SourceConfig, SynchronizationConfig, TimeSnapshot,
-        TimeSyncControllerWrapper, TwoWayKalmanSourceController, TwoWaySourceControllerWrapper,
+        AlgorithmConfig, KalmanClockController, NoCipher, NtpDuration, NtpLeapIndicator,
+        NtpManager, NtpPacket, NtpServerInfo, ProtocolVersion, SourceConfig, SynchronizationConfig,
+        TimeSnapshot, TimeSyncController, TimeSyncControllerWrapper, TwoWayKalmanSourceController,
+        TwoWaySourceControllerWrapper,
     };
     use timestamped_socket::socket::{GeneralTimestampMode, Open, open_ip};
     use tokio::sync::mpsc;
@@ -546,24 +547,22 @@ mod tests {
         let (msg_for_system_sender, msg_for_system_receiver) = mpsc::channel(1);
 
         let index = ClockId::new();
-        let system: ntp_proto::System<TimeSyncControllerWrapper<KalmanClockController<_>>> =
-            ntp_proto::System::new(
-                TestClock {},
-                SynchronizationConfig::default(),
-                AlgorithmConfig::default(),
-                Arc::new([]),
-            )
-            .unwrap();
+        let controller = TimeSyncControllerWrapper::<KalmanClockController<_>>::new(
+            TestClock {},
+            SynchronizationConfig::default(),
+            AlgorithmConfig::default(),
+        )
+        .unwrap();
+        let ntp_manager = NtpManager::new(SynchronizationConfig::default(), Arc::new([]));
 
-        let Ok((source, _)) = system.create_ntp_source(
-            index,
-            SourceConfig::default(),
+        let (source, _) = ntp_manager.new_source(
             SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
+            SourceConfig::default(),
             ProtocolVersion::V4,
+            controller.add_source(index, SourceConfig::default()),
             None,
-        ) else {
-            panic!("Could not create test source");
-        };
+            index,
+        );
 
         let process = SourceTask {
             _wait: PhantomData,
