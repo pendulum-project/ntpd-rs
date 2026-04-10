@@ -281,7 +281,6 @@ impl<Controller: TimeSyncController> System<Controller> {
         &self,
         id: ClockId,
     ) -> Result<(), <Controller::Clock as NtpClock>::Error> {
-        self.controller.remove_source(id);
         self.sources.lock().unwrap().remove(&id);
         Ok(())
     }
