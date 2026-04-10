@@ -187,8 +187,6 @@ pub trait TimeSyncController: Sized + Send + Sync + 'static {
         measurement_accuracy_estimate: f64,
         period: Option<f64>,
     ) -> Self::OneWaySourceController;
-    /// Notify the controller that a previous source has gone
-    fn remove_source(&self, id: ClockId);
     /// Current synchronization state
     fn synchronization_state(&self) -> (TimeSnapshot, Vec<ClockId>);
     /// Run the internal watchdog and messaging.
@@ -287,10 +285,6 @@ impl<T: InternalTimeSyncController> TimeSyncController for TimeSyncControllerWra
         wrapper
     }
 
-    fn remove_source(&self, id: ClockId) {
-        self.inner.lock().unwrap().remove_source(id);
-    }
-
     fn synchronization_state(&self) -> (TimeSnapshot, Vec<ClockId>) {
         (
             *self.snapshot.lock().unwrap(),
@@ -327,6 +321,9 @@ impl<T: InternalTimeSyncController> TimeSyncController for TimeSyncControllerWra
                         },
                         WrapperMessage::UsabilityChange(usable) => {
                             self.inner.lock().unwrap().source_update(clock_id, usable);
+                        },
+                        WrapperMessage::Dropped => {
+                            self.inner.lock().unwrap().remove_source(clock_id);
                         },
                     }
                 },
@@ -368,6 +365,7 @@ pub trait SourceController: Sized + Send + 'static {
 enum WrapperMessage<SourceMessage> {
     SourceMessage(SourceMessage),
     UsabilityChange(bool),
+    Dropped,
 }
 
 pub struct OneWaySourceControllerWrapper<T: InternalSourceController<MeasurementDelay = ()>> {
@@ -375,6 +373,14 @@ pub struct OneWaySourceControllerWrapper<T: InternalSourceController<Measurement
     inner: Arc<Mutex<T>>,
     messages_for_system:
         tokio::sync::mpsc::UnboundedSender<(ClockId, WrapperMessage<T::SourceMessage>)>,
+}
+
+impl<T: InternalSourceController<MeasurementDelay = ()>> Drop for OneWaySourceControllerWrapper<T> {
+    fn drop(&mut self) {
+        self.messages_for_system
+            .send((self.id, WrapperMessage::Dropped))
+            .ok();
+    }
 }
 
 impl<T: InternalSourceController<MeasurementDelay = ()>> SourceController
@@ -425,6 +431,16 @@ pub struct TwoWaySourceControllerWrapper<
     last_outgoing_measurement: Option<Measurement>,
     messages_for_system:
         tokio::sync::mpsc::UnboundedSender<(ClockId, WrapperMessage<T::SourceMessage>)>,
+}
+
+impl<T: InternalSourceController<MeasurementDelay = NtpDuration>> Drop
+    for TwoWaySourceControllerWrapper<T>
+{
+    fn drop(&mut self) {
+        self.messages_for_system
+            .send((self.id, WrapperMessage::Dropped))
+            .ok();
+    }
 }
 
 impl<T: InternalSourceController<MeasurementDelay = NtpDuration>> SourceController
