@@ -150,9 +150,10 @@ where
     ) -> tokio::task::JoinHandle<()> {
         let pps = PpsDevice::new(device_path.clone()).expect("Could not open PPS device");
         let cap = pps.get_cap().expect("Could not get PPS capabilities");
-        if cap & pps_time::pps::PPS_CANWAIT == 0 {
-            panic!("PPS device does not support blocking calls")
-        }
+        assert!(
+            cap & pps_time::pps::PPS_CANWAIT != 0,
+            "PPS device does not support blocking calls"
+        );
 
         let (fetch_sender, fetch_receiver) = mpsc::channel(1);
 
