@@ -3,8 +3,8 @@ use std::{
 };
 
 use ntp_proto::{
-    ClockId, NtpClock, NtpSource, NtpSourceActionIterator, NtpSourceUpdate, NtpTimestamp,
-    ObservableSourceState, SourceController,
+    ClockId, NtpClock, NtpSource, NtpSourceActionIterator, NtpTimestamp, ObservableSourceState,
+    SourceController,
 };
 #[cfg(target_os = "linux")]
 use timestamped_socket::socket::open_interface_udp;
@@ -30,7 +30,6 @@ impl Wait for Sleep {
 }
 
 #[derive(Debug, Clone)]
-#[expect(clippy::large_enum_variant)]
 pub enum MsgForSystem {
     /// Received a Kiss-o'-Death and must demobilize
     MustDemobilize(ClockId),
@@ -38,8 +37,6 @@ pub enum MsgForSystem {
     NetworkIssue(ClockId),
     /// Source is unreachable, and should be restarted with new resolved addr.
     Unreachable(ClockId),
-    /// Update from source
-    SourceUpdate(ClockId, NtpSourceUpdate),
 }
 
 #[derive(Debug)]
@@ -241,13 +238,6 @@ where
                             }
                         }
                     }
-                    ntp_proto::NtpSourceAction::UpdateSystem(update) => {
-                        self.channels
-                            .msg_for_system_sender
-                            .send(MsgForSystem::SourceUpdate(self.index, update))
-                            .await
-                            .ok();
-                    }
                     ntp_proto::NtpSourceAction::SetTimer(timeout) => {
                         if let Some(deadline) = Instant::now().checked_add(timeout) {
                             // If it overflows, it is so far in the future we may as well not set the timer.
@@ -312,9 +302,6 @@ where
                     match action {
                         ntp_proto::NtpSourceAction::Send(_) => {
                             unreachable!("Should not be sending messages from startup")
-                        }
-                        ntp_proto::NtpSourceAction::UpdateSystem(_) => {
-                            unreachable!("Should not be updating system from startup")
                         }
                         ntp_proto::NtpSourceAction::SetTimer(timeout) => {
                             poll_wait.as_mut().reset(Instant::now() + timeout);
@@ -672,8 +659,7 @@ mod tests {
         let serialized = serialize_packet_unencrypted(&send_packet);
         socket.send_to(&serialized, remote_addr).await.unwrap();
 
-        let msg = msg_recv.recv().await.unwrap();
-        assert!(matches!(msg, MsgForSystem::SourceUpdate(_, _)));
+        assert!(msg_recv.try_recv().is_err());
 
         handle.abort();
     }
