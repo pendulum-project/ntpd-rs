@@ -1,7 +1,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use ptp_wire::Message;
+use statime_wire::Message;
 
 fuzz_target!(|data: Vec<u8>| {
     // the default maximum size a fuzzed Vec<_> will be, as per
