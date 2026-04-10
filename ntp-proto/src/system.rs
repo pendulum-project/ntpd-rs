@@ -300,24 +300,25 @@ impl<Controller: TimeSyncController> System<Controller> {
                     let (time_snapshot, used_sources) = this.controller.synchronization_state();
                     let sources = this.sources.lock().unwrap();
                     this.ntp_manager.update_time_snapshot(time_snapshot);
-                    let ntp_snapshot =
-                        this.ntp_manager
-                            .update_used_sources(used_sources.iter().map(|id| {
-                                (
-                                    *id,
-                                    *sources.get(id).expect(
-                                        "Critical error: Unknown source used for synchronization",
-                                    ),
-                                )
-                            }));
 
-                    *this.system.lock().unwrap() = SystemSnapshot {
-                        ntp_snapshot,
-                        time_snapshot,
-                        accumulated_steps_threshold: this
-                            .synchronization_config
-                            .accumulated_step_panic_threshold,
-                    };
+                    if let Some(used_sources) = used_sources
+                        .into_iter()
+                        .map(|id| sources.get(&id).map(|&sourcetype| (id, sourcetype)))
+                        .collect::<Option<Vec<_>>>()
+                    {
+                        let ntp_snapshot = this
+                            .ntp_manager
+                            .update_used_sources(used_sources.into_iter());
+                        *this.system.lock().unwrap() = SystemSnapshot {
+                            ntp_snapshot,
+                            time_snapshot,
+                            accumulated_steps_threshold: this
+                                .synchronization_config
+                                .accumulated_step_panic_threshold,
+                        }
+                    } else {
+                        this.system.lock().unwrap().time_snapshot = time_snapshot;
+                    }
                 }
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
@@ -405,22 +406,34 @@ impl NtpManager {
         sources: impl Iterator<Item = (ClockId, SourceType)>,
     ) -> NtpSnapshot {
         let source_snapshots = self.source_snapshots.lock().unwrap();
-        let snapshot = NtpSnapshot::from_used_sources(
-            self.synchronization_config.local_stratum,
-            self.server_id,
-            sources.map(|(id, sourcetype)| match sourcetype {
-                SourceType::Pps => SourceSnapshot::External { stratum: 0, source_id: ReferenceId::PPS },
-                SourceType::Sock => SourceSnapshot::External { stratum: 0, source_id: ReferenceId::SOCK },
-                SourceType::Ntp => SourceSnapshot::Ntp(*source_snapshots.get(&id).expect(
-                    "Critical error: NTP source used for synchronization never produced source updates",
-                )),
-            }),
-        );
+        let sources: Option<Vec<_>> = sources
+            .map(|(id, sourcetype)| match sourcetype {
+                SourceType::Pps => Some(SourceSnapshot::External {
+                    stratum: 0,
+                    source_id: ReferenceId::PPS,
+                }),
+                SourceType::Sock => Some(SourceSnapshot::External {
+                    stratum: 0,
+                    source_id: ReferenceId::SOCK,
+                }),
+                SourceType::Ntp => source_snapshots.get(&id).copied().map(SourceSnapshot::Ntp),
+            })
+            .collect();
         drop(source_snapshots);
 
-        self.server_info.write().unwrap().ntp_snapshot = snapshot;
+        if let Some(sources) = sources {
+            let snapshot = NtpSnapshot::from_used_sources(
+                self.synchronization_config.local_stratum,
+                self.server_id,
+                sources.into_iter(),
+            );
 
-        snapshot
+            self.server_info.write().unwrap().ntp_snapshot = snapshot;
+
+            snapshot
+        } else {
+            self.server_info.read().unwrap().ntp_snapshot
+        }
     }
 
     pub fn update_time_snapshot(&self, time_snapshot: TimeSnapshot) {
