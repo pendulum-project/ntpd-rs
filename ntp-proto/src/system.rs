@@ -40,6 +40,8 @@ pub struct TimeSnapshot {
     pub leap_indicator: NtpLeapIndicator,
     /// Total amount that the clock has stepped
     pub accumulated_steps: NtpDuration,
+    /// Crossing this amount of stepping will cause a Panic
+    pub accumulated_steps_threshold: Option<NtpDuration>,
 }
 
 impl TimeSnapshot {
@@ -68,14 +70,13 @@ impl Default for TimeSnapshot {
             root_variance_cubic: 0.0,
             leap_indicator: NtpLeapIndicator::Unknown,
             accumulated_steps: NtpDuration::ZERO,
+            accumulated_steps_threshold: None,
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
 pub struct SystemSnapshot {
-    /// Crossing this amount of stepping will cause a Panic
-    pub accumulated_steps_threshold: Option<NtpDuration>,
     /// Timekeeping data
     #[serde(flatten)]
     pub time_snapshot: TimeSnapshot,
@@ -153,7 +154,6 @@ pub enum SourceType {
 }
 
 pub struct System<Controller> {
-    synchronization_config: SynchronizationConfig,
     system: Mutex<SystemSnapshot>,
     ntp_manager: NtpManager,
 
@@ -187,7 +187,6 @@ impl<Controller: TimeSyncController> System<Controller> {
         }
 
         Ok(System {
-            synchronization_config,
             ntp_manager: NtpManager::new(synchronization_config, ip_list),
             system: Mutex::new(system),
             sources: Mutex::new(HashMap::new()),
@@ -310,11 +309,8 @@ impl<Controller: TimeSyncController> System<Controller> {
                             .ntp_manager
                             .update_used_sources(used_sources.into_iter());
                         *this.system.lock().unwrap() = SystemSnapshot {
-                            ntp_snapshot,
                             time_snapshot,
-                            accumulated_steps_threshold: this
-                                .synchronization_config
-                                .accumulated_step_panic_threshold,
+                            ntp_snapshot,
                         }
                     } else {
                         this.system.lock().unwrap().time_snapshot = time_snapshot;
