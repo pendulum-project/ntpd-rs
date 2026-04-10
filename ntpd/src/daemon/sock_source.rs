@@ -208,7 +208,8 @@ mod tests {
 
     use ntp_proto::{
         AlgorithmConfig, ClockId, KalmanClockController, NtpClock, NtpDuration, NtpLeapIndicator,
-        NtpTimestamp, SourceConfig, SynchronizationConfig, TimeSyncControllerWrapper,
+        NtpTimestamp, OneWaySource, SourceConfig, SynchronizationConfig, TimeSyncController,
+        TimeSyncControllerWrapper,
     };
     use tokio::sync::mpsc;
 
@@ -277,14 +278,12 @@ mod tests {
 
         let index = ClockId::new();
         let clock = TestClock {};
-        let system: ntp_proto::System<TimeSyncControllerWrapper<KalmanClockController<_>>> =
-            ntp_proto::System::new(
-                clock.clone(),
-                SynchronizationConfig::default(),
-                AlgorithmConfig::default(),
-                Arc::new([]),
-            )
-            .unwrap();
+        let controller = TimeSyncControllerWrapper::<KalmanClockController<_>>::new(
+            clock.clone(),
+            SynchronizationConfig::default(),
+            AlgorithmConfig::default(),
+        )
+        .unwrap();
 
         let socket_path = std::env::temp_dir().join(format!("ntp-test-stream-{}", alloc_port()));
         let _socket = create_socket(&socket_path).unwrap(); // should be overwritten by SockSource's own socket
@@ -297,9 +296,12 @@ mod tests {
                 msg_for_system_sender,
                 source_snapshots: Arc::new(RwLock::new(HashMap::new())),
             },
-            system
-                .create_sock_source(index, SourceConfig::default(), 0.001)
-                .unwrap(),
+            OneWaySource::new(controller.add_one_way_source(
+                index,
+                SourceConfig::default(),
+                0.001,
+                None,
+            )),
         );
 
         // Send example data to socket

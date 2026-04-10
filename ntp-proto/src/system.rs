@@ -7,12 +7,9 @@ use std::sync::{Arc, Mutex, RwLock};
 use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
 use crate::source::SourceSnapshot;
 use crate::{
-    ClockId, KeySet, NtpSourceSnapshot, NtpTimestamp, OneWaySource, Server, ServerConfig,
-    SourceController,
+    ClockId, KeySet, NtpSourceSnapshot, NtpTimestamp, Server, ServerConfig, SourceController,
 };
 use crate::{
-    algorithm::TimeSyncController,
-    clock::NtpClock,
     config::{SourceConfig, SynchronizationConfig},
     identifiers::ReferenceId,
     packet::NtpLeapIndicator,
@@ -153,180 +150,6 @@ pub enum SourceType {
     Ntp,
 }
 
-pub struct System<Controller> {
-    system: Mutex<SystemSnapshot>,
-    ntp_manager: NtpManager,
-
-    sources: Mutex<HashMap<ClockId, SourceType>>,
-
-    controller: Controller,
-}
-
-impl<Controller: TimeSyncController> System<Controller> {
-    pub fn new(
-        clock: Controller::Clock,
-        synchronization_config: SynchronizationConfig,
-        algorithm_config: Controller::AlgorithmConfig,
-        ip_list: Arc<[IpAddr]>,
-    ) -> Result<Self, <Controller::Clock as NtpClock>::Error> {
-        // Setup system snapshot
-        let mut system = SystemSnapshot {
-            ntp_snapshot: NtpSnapshot {
-                stratum: synchronization_config.local_stratum,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        if synchronization_config.local_stratum == 1 {
-            // We are a stratum 1 server so mark our selves synchronized.
-            system.time_snapshot.leap_indicator = NtpLeapIndicator::NoWarning;
-            // Set the reference id for the system
-            system.ntp_snapshot.reference_id =
-                synchronization_config.reference_id.to_reference_id();
-        }
-
-        Ok(System {
-            ntp_manager: NtpManager::new(synchronization_config, ip_list),
-            system: Mutex::new(system),
-            sources: Mutex::new(HashMap::new()),
-            controller: Controller::new(clock, synchronization_config, algorithm_config)?,
-        })
-    }
-
-    pub fn new_ntp_server<C>(
-        &self,
-        config: ServerConfig,
-        clock: C,
-        keyset: Arc<KeySet>,
-    ) -> Server<C> {
-        self.ntp_manager.new_server(config, clock, keyset)
-    }
-
-    pub fn system_snapshot(&self) -> SystemSnapshot {
-        *self.system.lock().unwrap()
-    }
-
-    pub fn check_clock_access(&self) -> Result<(), <Controller::Clock as NtpClock>::Error> {
-        self.controller.take_control()
-    }
-
-    pub fn create_sock_source(
-        &self,
-        id: ClockId,
-        source_config: SourceConfig,
-        measurement_noise_estimate: f64,
-    ) -> Result<
-        OneWaySource<Controller::OneWaySourceController>,
-        <Controller::Clock as NtpClock>::Error,
-    > {
-        self.controller.take_control()?;
-        let controller =
-            self.controller
-                .add_one_way_source(id, source_config, measurement_noise_estimate, None);
-        self.sources.lock().unwrap().insert(id, SourceType::Sock);
-        Ok(OneWaySource::new(controller))
-    }
-
-    pub fn create_pps_source(
-        &self,
-        id: ClockId,
-        source_config: SourceConfig,
-        measurement_noise_estimate: f64,
-        period: f64,
-    ) -> Result<
-        OneWaySource<Controller::OneWaySourceController>,
-        <Controller::Clock as NtpClock>::Error,
-    > {
-        self.controller.take_control()?;
-        let controller = self.controller.add_one_way_source(
-            id,
-            source_config,
-            measurement_noise_estimate,
-            Some(period),
-        );
-        self.sources.lock().unwrap().insert(id, SourceType::Pps);
-        Ok(OneWaySource::new(controller))
-    }
-
-    #[expect(clippy::type_complexity)]
-    pub fn create_ntp_source(
-        &self,
-        id: ClockId,
-        source_config: SourceConfig,
-        source_addr: SocketAddr,
-        protocol_version: ProtocolVersion,
-        nts: Option<Box<SourceNtsData>>,
-    ) -> Result<
-        (
-            NtpSource<Controller::NtpSourceController>,
-            NtpSourceActionIterator,
-        ),
-        <Controller::Clock as NtpClock>::Error,
-    > {
-        self.controller.take_control()?;
-        let controller = self.controller.add_source(id, source_config);
-        self.sources.lock().unwrap().insert(id, SourceType::Ntp);
-        Ok(self.ntp_manager.new_source(
-            source_addr,
-            source_config,
-            protocol_version,
-            controller,
-            nts,
-            id,
-        ))
-    }
-
-    pub fn handle_source_remove(
-        &self,
-        id: ClockId,
-    ) -> Result<(), <Controller::Clock as NtpClock>::Error> {
-        self.sources.lock().unwrap().remove(&id);
-        Ok(())
-    }
-
-    pub fn update_ip_list(&self, ip_list: Arc<[IpAddr]>) {
-        self.ntp_manager.update_ip_list(ip_list);
-    }
-
-    pub fn run(self: Arc<Self>) -> impl Future<Output = ()> + 'static {
-        let this = self.clone();
-        let update_pusher = async move {
-            loop {
-                // Scope here is needed to keep this future sync and send.
-                {
-                    let (time_snapshot, used_sources) = this.controller.synchronization_state();
-                    let sources = this.sources.lock().unwrap();
-                    this.ntp_manager.update_time_snapshot(time_snapshot);
-
-                    if let Some(used_sources) = used_sources
-                        .into_iter()
-                        .map(|id| sources.get(&id).map(|&sourcetype| (id, sourcetype)))
-                        .collect::<Option<Vec<_>>>()
-                    {
-                        let ntp_snapshot = this
-                            .ntp_manager
-                            .update_used_sources(used_sources.into_iter());
-                        *this.system.lock().unwrap() = SystemSnapshot {
-                            time_snapshot,
-                            ntp_snapshot,
-                        }
-                    } else {
-                        this.system.lock().unwrap().time_snapshot = time_snapshot;
-                    }
-                }
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            }
-        };
-
-        let controller_run = async move { self.controller.run().await };
-
-        async move {
-            tokio::join!(update_pusher, controller_run);
-        }
-    }
-}
-
 #[derive(Default, Copy, Clone)]
 pub struct NtpServerInfo {
     pub time_snapshot: TimeSnapshot,
@@ -440,6 +263,10 @@ impl NtpManager {
         } else {
             self.server_info.read().unwrap().ntp_snapshot
         }
+    }
+
+    pub fn observe(&self) -> NtpSnapshot {
+        self.server_info.read().unwrap().ntp_snapshot
     }
 
     pub fn update_time_snapshot(&self, time_snapshot: TimeSnapshot) {
