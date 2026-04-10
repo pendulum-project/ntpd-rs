@@ -357,12 +357,23 @@ impl NtpManager {
             server_id,
             local_stratum: synchronization_config.local_stratum,
         };
+        let mut server_info = NtpServerInfo {
+            time_snapshot: TimeSnapshot::default(),
+            ntp_snapshot: NtpSnapshot::default(),
+        };
+        if synchronization_config.local_stratum == 1 {
+            // We are a stratum 1 server so mark our selves synchronized.
+            server_info.time_snapshot.leap_indicator = NtpLeapIndicator::NoWarning;
+            // Set the reference id for the system
+            server_info.ntp_snapshot.reference_id =
+                synchronization_config.reference_id.to_reference_id();
+        }
         Self {
             synchronization_config,
             server_id,
             source_snapshots: Arc::new(Mutex::new(HashMap::new())),
 
-            server_info: Arc::default(),
+            server_info: Arc::new(RwLock::new(server_info)),
             source_info: Arc::new(RwLock::new(source_info)),
         }
     }
