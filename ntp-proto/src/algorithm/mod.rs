@@ -198,9 +198,11 @@ pub trait TimeSyncController: Sized + Send + Sync + 'static {
 pub struct TimeSyncControllerWrapper<T: InternalTimeSyncController> {
     inner: Mutex<T>,
     #[expect(clippy::type_complexity)]
-    messages_for_system:
-        Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<(ClockId, T::SourceMessage)>>>,
-    messages_for_system_sender: tokio::sync::mpsc::UnboundedSender<(ClockId, T::SourceMessage)>,
+    messages_for_system: Mutex<
+        Option<tokio::sync::mpsc::UnboundedReceiver<(ClockId, WrapperMessage<T::SourceMessage>)>>,
+    >,
+    messages_for_system_sender:
+        tokio::sync::mpsc::UnboundedSender<(ClockId, WrapperMessage<T::SourceMessage>)>,
     oneway_sources: Mutex<Vec<Weak<Mutex<T::OneWaySourceController>>>>,
     twoway_sources: Mutex<Vec<Weak<Mutex<T::NtpSourceController>>>>,
     snapshot: Mutex<TimeSnapshot>,
@@ -299,23 +301,30 @@ impl<T: InternalTimeSyncController> TimeSyncController for TimeSyncControllerWra
         loop {
             tokio::select! {
                 Some((clock_id, message)) = messages_for_system.recv() => {
-                    let update = self.inner.lock().unwrap().source_message(clock_id, message);
-                    if let Some(source_message) = update.source_message {
-                        for source in self.oneway_sources.lock().unwrap().iter().filter_map(Weak::upgrade) {
-                            source.lock().unwrap().handle_message(source_message.clone());
-                        }
-                        for source in self.twoway_sources.lock().unwrap().iter().filter_map(Weak::upgrade) {
-                            source.lock().unwrap().handle_message(source_message.clone());
-                        }
-                    }
-                    if let Some(time_snapshot) = update.time_snapshot {
-                        *self.snapshot.lock().unwrap() = time_snapshot;
-                    }
-                    if let Some(used_sources) = update.used_sources {
-                        *self.used_sources.lock().unwrap() = used_sources;
-                    }
-                    if let Some(next_update) = update.next_update {
-                        sleeper.as_mut().reset(tokio::time::Instant::now() + next_update);
+                    match message {
+                        WrapperMessage::SourceMessage(message) => {
+                            let update = self.inner.lock().unwrap().source_message(clock_id, message);
+                            if let Some(source_message) = update.source_message {
+                                for source in self.oneway_sources.lock().unwrap().iter().filter_map(Weak::upgrade) {
+                                    source.lock().unwrap().handle_message(source_message.clone());
+                                }
+                                for source in self.twoway_sources.lock().unwrap().iter().filter_map(Weak::upgrade) {
+                                    source.lock().unwrap().handle_message(source_message.clone());
+                                }
+                            }
+                            if let Some(time_snapshot) = update.time_snapshot {
+                                *self.snapshot.lock().unwrap() = time_snapshot;
+                            }
+                            if let Some(used_sources) = update.used_sources {
+                                *self.used_sources.lock().unwrap() = used_sources;
+                            }
+                            if let Some(next_update) = update.next_update {
+                                sleeper.as_mut().reset(tokio::time::Instant::now() + next_update);
+                            }
+                        },
+                        WrapperMessage::UsabilityChange(usable) => {
+                            self.inner.lock().unwrap().source_update(clock_id, usable);
+                        },
                     }
                 },
                 _ = sleeper.as_mut() => {
@@ -346,15 +355,23 @@ impl<T: InternalTimeSyncController> TimeSyncController for TimeSyncControllerWra
 pub trait SourceController: Sized + Send + 'static {
     fn handle_measurement(&mut self, measurement: Measurement);
 
+    fn set_usable(&mut self, usable: bool);
+
     fn desired_poll_interval(&self) -> PollInterval;
 
     fn observe(&self) -> ObservableSourceTimedata;
 }
 
+enum WrapperMessage<SourceMessage> {
+    SourceMessage(SourceMessage),
+    UsabilityChange(bool),
+}
+
 pub struct OneWaySourceControllerWrapper<T: InternalSourceController<MeasurementDelay = ()>> {
     id: ClockId,
     inner: Arc<Mutex<T>>,
-    messages_for_system: tokio::sync::mpsc::UnboundedSender<(ClockId, T::SourceMessage)>,
+    messages_for_system:
+        tokio::sync::mpsc::UnboundedSender<(ClockId, WrapperMessage<T::SourceMessage>)>,
 }
 
 impl<T: InternalSourceController<MeasurementDelay = ()>> SourceController
@@ -376,8 +393,16 @@ impl<T: InternalSourceController<MeasurementDelay = ()>> SourceController
                 precision: measurement.precision,
             })
         {
-            self.messages_for_system.send((self.id, message)).ok();
+            self.messages_for_system
+                .send((self.id, WrapperMessage::SourceMessage(message)))
+                .ok();
         }
+    }
+
+    fn set_usable(&mut self, usable: bool) {
+        self.messages_for_system
+            .send((self.id, WrapperMessage::UsabilityChange(usable)))
+            .ok();
     }
 
     fn desired_poll_interval(&self) -> PollInterval {
@@ -395,7 +420,8 @@ pub struct TwoWaySourceControllerWrapper<
     id: ClockId,
     inner: Arc<Mutex<T>>,
     last_outgoing_measurement: Option<Measurement>,
-    messages_for_system: tokio::sync::mpsc::UnboundedSender<(ClockId, T::SourceMessage)>,
+    messages_for_system:
+        tokio::sync::mpsc::UnboundedSender<(ClockId, WrapperMessage<T::SourceMessage>)>,
 }
 
 impl<T: InternalSourceController<MeasurementDelay = NtpDuration>> SourceController
@@ -427,9 +453,17 @@ impl<T: InternalSourceController<MeasurementDelay = NtpDuration>> SourceControll
                         precision: measurement.precision,
                     })
             {
-                self.messages_for_system.send((self.id, message)).ok();
+                self.messages_for_system
+                    .send((self.id, WrapperMessage::SourceMessage(message)))
+                    .ok();
             }
         }
+    }
+
+    fn set_usable(&mut self, usable: bool) {
+        self.messages_for_system
+            .send((self.id, WrapperMessage::UsabilityChange(usable)))
+            .ok();
     }
 
     fn desired_poll_interval(&self) -> PollInterval {
