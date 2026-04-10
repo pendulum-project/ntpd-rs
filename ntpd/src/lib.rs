@@ -45,7 +45,7 @@
 #![warn(clippy::into_iter_without_iter)]
 #![warn(clippy::invalid_upcast_comparisons)]
 #![warn(clippy::ip_constant)]
-//FIXME: Enable #![warn(clippy::items_after_statements)]
+#![warn(clippy::items_after_statements)]
 #![warn(clippy::iter_filter_is_ok)]
 #![warn(clippy::iter_filter_is_some)]
 #![warn(clippy::iter_not_returning_iterator)]

@@ -571,10 +571,10 @@ impl KeyExchangeServer {
                     wants_algorithms,
                     keep_alive,
                 } => {
-                    tracing::debug!("Received support request on longterm connection");
-
                     use crate::nts::messages::SupportsResponse;
                     use std::ops::Deref;
+
+                    tracing::debug!("Received support request on longterm connection");
 
                     SupportsResponse {
                         algorithms: if wants_algorithms {
