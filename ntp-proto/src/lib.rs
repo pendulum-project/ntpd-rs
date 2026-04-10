@@ -278,8 +278,8 @@ mod exports {
     pub use super::source::source_snapshot;
     pub use super::source::{
         AcceptSynchronizationError, NtpSource, NtpSourceAction, NtpSourceActionIterator,
-        NtpSourceSnapshot, NtpSourceUpdate, ObservableSourceState, OneWaySource, ProtocolVersion,
-        Reach, SourceNtsData,
+        NtpSourceSnapshot, ObservableSourceState, OneWaySource, ProtocolVersion, Reach,
+        SourceNtsData,
     };
     pub use super::system::{NtpServerInfo, NtpSnapshot, System, SystemSnapshot, TimeSnapshot};
 

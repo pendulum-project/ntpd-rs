@@ -5,7 +5,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex, RwLock};
 
 use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
-use crate::source::{NtpSourceUpdate, SourceSnapshot};
+use crate::source::SourceSnapshot;
 use crate::{
     ClockId, KeySet, NtpSourceSnapshot, NtpTimestamp, OneWaySource, Server, ServerConfig,
     SourceController,
@@ -306,10 +306,6 @@ impl<Controller: TimeSyncController> System<Controller> {
         Ok(())
     }
 
-    pub fn handle_source_update(&self, id: ClockId, update: &NtpSourceUpdate) {
-        self.ntp_manager.handle_source_update(id, update);
-    }
-
     pub fn update_ip_list(&self, ip_list: Arc<[IpAddr]>) {
         self.ntp_manager.update_ip_list(ip_list);
     }
@@ -370,7 +366,7 @@ pub(crate) struct NtpSourceInfo {
 pub struct NtpManager {
     synchronization_config: SynchronizationConfig,
     server_id: ServerId,
-    source_snapshots: Mutex<HashMap<ClockId, NtpSourceSnapshot>>,
+    source_snapshots: Arc<Mutex<HashMap<ClockId, NtpSourceSnapshot>>>,
 
     server_info: Arc<RwLock<NtpServerInfo>>,
     source_info: Arc<RwLock<NtpSourceInfo>>,
@@ -387,7 +383,7 @@ impl NtpManager {
         Self {
             synchronization_config,
             server_id,
-            source_snapshots: Mutex::new(HashMap::new()),
+            source_snapshots: Arc::new(Mutex::new(HashMap::new())),
 
             server_info: Arc::default(),
             source_info: Arc::new(RwLock::new(source_info)),
@@ -415,18 +411,12 @@ impl NtpManager {
             nts,
             id,
             self.source_info.clone(),
+            self.source_snapshots.clone(),
         )
     }
 
     pub fn update_ip_list(&self, ip_list: Arc<[IpAddr]>) {
         self.source_info.write().unwrap().ip_list = ip_list;
-    }
-
-    pub fn handle_source_update(&self, id: ClockId, update: &NtpSourceUpdate) {
-        self.source_snapshots
-            .lock()
-            .unwrap()
-            .insert(id, update.snapshot);
     }
 
     pub fn update_used_sources(
