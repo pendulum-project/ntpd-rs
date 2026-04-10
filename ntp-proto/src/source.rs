@@ -736,18 +736,6 @@ impl<Controller: SourceController> NtpSource<Controller> {
             }
         }
 
-        let (measurement_outgoing, measurement_incoming) =
-            measurements_from_packet(message, self.id, send_time, recv_time);
-        self.controller.handle_measurement(measurement_outgoing);
-        self.controller.handle_measurement(measurement_incoming);
-
-        // Process new cookies
-        if let Some(nts) = self.nts.as_mut() {
-            for cookie in message.new_cookies() {
-                nts.cookies.store(cookie);
-            }
-        }
-
         let snapshot = NtpSourceSnapshot::from_source(self);
         let usable = {
             let source_info = self.source_info.read().unwrap();
@@ -764,6 +752,18 @@ impl<Controller: SourceController> NtpSource<Controller> {
             .unwrap()
             .insert(self.id, snapshot);
         self.controller.set_usable(usable);
+
+        let (measurement_outgoing, measurement_incoming) =
+            measurements_from_packet(message, self.id, send_time, recv_time);
+        self.controller.handle_measurement(measurement_outgoing);
+        self.controller.handle_measurement(measurement_incoming);
+
+        // Process new cookies
+        if let Some(nts) = self.nts.as_mut() {
+            for cookie in message.new_cookies() {
+                nts.cookies.store(cookie);
+            }
+        }
 
         actions!()
     }
