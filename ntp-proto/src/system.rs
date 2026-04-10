@@ -300,10 +300,7 @@ impl<Controller: TimeSyncController> System<Controller> {
     }
 
     pub fn handle_source_update(&self, id: ClockId, update: NtpSourceUpdate) {
-        let (usability_change_id, usability_change_usable) =
-            self.ntp_manager.handle_source_update(id, update);
-        self.controller
-            .source_update(usability_change_id, usability_change_usable);
+        self.ntp_manager.handle_source_update(id, update);
     }
 
     pub fn update_ip_list(&self, ip_list: Arc<[IpAddr]>) {
@@ -356,24 +353,37 @@ pub struct NtpServerInfo {
     pub ntp_snapshot: NtpSnapshot,
 }
 
+#[derive(Debug, Default, Clone)]
+pub(crate) struct NtpSourceInfo {
+    pub(crate) ip_list: Arc<[IpAddr]>,
+    pub(crate) server_id: ServerId,
+    pub(crate) local_stratum: u8,
+}
+
 pub struct NtpManager {
     synchronization_config: SynchronizationConfig,
     server_id: ServerId,
     source_snapshots: Mutex<HashMap<ClockId, NtpSourceSnapshot>>,
-    ip_list: Mutex<Arc<[IpAddr]>>,
 
     server_info: Arc<RwLock<NtpServerInfo>>,
+    source_info: Arc<RwLock<NtpSourceInfo>>,
 }
 
 impl NtpManager {
     pub fn new(synchronization_config: SynchronizationConfig, ip_list: Arc<[IpAddr]>) -> Self {
+        let server_id = ServerId::default();
+        let source_info = NtpSourceInfo {
+            ip_list,
+            server_id,
+            local_stratum: synchronization_config.local_stratum,
+        };
         Self {
             synchronization_config,
-            server_id: ServerId::default(),
+            server_id,
             source_snapshots: Mutex::new(HashMap::new()),
-            ip_list: Mutex::new(ip_list),
 
             server_info: Arc::default(),
+            source_info: Arc::new(RwLock::new(source_info)),
         }
     }
 
@@ -397,28 +407,19 @@ impl NtpManager {
             controller,
             nts,
             id,
+            self.source_info.clone(),
         )
     }
 
     pub fn update_ip_list(&self, ip_list: Arc<[IpAddr]>) {
-        *self.ip_list.lock().unwrap() = ip_list;
+        self.source_info.write().unwrap().ip_list = ip_list;
     }
 
-    pub fn handle_source_update(&self, id: ClockId, update: NtpSourceUpdate) -> (ClockId, bool) {
-        let ip_list = self.ip_list.lock().unwrap().clone();
-        let usable = update
-            .snapshot
-            .accept_synchronization(
-                self.synchronization_config.local_stratum,
-                ip_list.as_ref(),
-                self.server_id,
-            )
-            .is_ok();
+    pub fn handle_source_update(&self, id: ClockId, update: NtpSourceUpdate) {
         self.source_snapshots
             .lock()
             .unwrap()
             .insert(id, update.snapshot);
-        (id, usable)
     }
 
     pub fn update_used_sources(
