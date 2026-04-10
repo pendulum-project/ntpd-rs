@@ -297,9 +297,6 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C>> SystemTask<C
                     unreachable!("Could not demobilize source: {}", e);
                 }
             }
-            MsgForSystem::SourceUpdate(index, update) => {
-                self.system.handle_source_update(index, update);
-            }
             MsgForSystem::NetworkIssue(index) => {
                 self.handle_source_network_issue(index).await?;
             }
