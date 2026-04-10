@@ -18,7 +18,7 @@ impl ClockIdentity {
     ///
     /// # Example
     /// ```
-    /// # use ptp_wire::ClockIdentity;
+    /// # use statime_wire::ClockIdentity;
     /// let id = ClockIdentity::from_mac_address([0xA, 0xB, 0xC, 0xD, 0xE, 0xF]);
     /// assert_eq!(id.0, [0xA, 0xB, 0xC, 0xD, 0xE, 0xF, 0x0, 0x0]);
     /// ```

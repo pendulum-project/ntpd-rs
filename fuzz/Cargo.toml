@@ -20,8 +20,8 @@ features = ["arbitrary-derive"]
 path = "../ntp-proto"
 features = ["__internal-fuzz"]
 
-[dependencies.ptp-wire]
-path = "../ptp-wire"
+[dependencies.statime-wire]
+path = "../statime-wire"
 
 # Prevent this from interfering with workspaces
 [workspace]

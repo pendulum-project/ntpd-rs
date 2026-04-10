@@ -193,7 +193,7 @@ impl Header {
 ///
 /// # Example
 /// ```
-/// # use ptp_wire::SdoId;
+/// # use statime_wire::SdoId;
 /// assert_eq!(SdoId::default(), SdoId::try_from(0x000).unwrap());
 ///
 /// let sdo_id = SdoId::try_from(0x100).unwrap();
