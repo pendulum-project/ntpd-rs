@@ -184,9 +184,6 @@ pub trait TimeSyncController: Sized + Send + Sync + 'static {
     ) -> Self::OneWaySourceController;
     /// Notify the controller that a previous source has gone
     fn remove_source(&self, id: ClockId);
-    /// Notify the controller that the status of a source (whether
-    /// or not it is usable for synchronization) has changed.
-    fn source_update(&self, id: ClockId, usable: bool);
     /// Current synchronization state
     fn synchronization_state(&self) -> (TimeSnapshot, Vec<ClockId>);
     /// Run the internal watchdog and messaging.
@@ -278,10 +275,6 @@ impl<T: InternalTimeSyncController> TimeSyncController for TimeSyncControllerWra
 
     fn remove_source(&self, id: ClockId) {
         self.inner.lock().unwrap().remove_source(id);
-    }
-
-    fn source_update(&self, id: ClockId, usable: bool) {
-        self.inner.lock().unwrap().source_update(id, usable);
     }
 
     fn synchronization_state(&self) -> (TimeSnapshot, Vec<ClockId>) {
