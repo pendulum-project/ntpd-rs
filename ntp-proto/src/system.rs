@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
 use crate::source::{NtpSourceUpdate, SourceSnapshot};
-use crate::{ClockId, KeySet, NtpSourceSnapshot, NtpTimestamp, OneWaySource, Server, ServerConfig};
+use crate::{ClockId, KeySet, NtpSourceSnapshot, NtpTimestamp, OneWaySource, Server, ServerConfig, SourceController};
 use crate::{
     algorithm::TimeSyncController,
     clock::NtpClock,
@@ -279,7 +279,7 @@ impl<Controller: TimeSyncController> System<Controller> {
         self.ensure_controller_control()?;
         let controller = self.controller.add_source(id, source_config);
         self.sources.lock().unwrap().insert(id, SourceType::Ntp);
-        Ok(NtpSource::new(
+        Ok(self.ntp_manager.new_source(
             source_addr,
             source_config,
             protocol_version,
@@ -378,6 +378,25 @@ impl NtpManager {
 
     pub fn new_server<C>(&self, config: ServerConfig, clock: C, keyset: Arc<KeySet>) -> Server<C> {
         Server::new_internal(config, clock, self.server_info.clone(), keyset)
+    }
+
+    pub fn new_source<Controller: SourceController>(
+        &self,
+        source_addr: SocketAddr,
+        source_config: SourceConfig,
+        protocol_version: ProtocolVersion,
+        controller: Controller,
+        nts: Option<Box<SourceNtsData>>,
+        id: ClockId,
+    ) -> (NtpSource<Controller>, NtpSourceActionIterator) {
+        NtpSource::new(
+            source_addr,
+            source_config,
+            protocol_version,
+            controller,
+            nts,
+            id,
+        )
     }
 
     pub fn update_ip_list(&self, ip_list: Arc<[IpAddr]>) {
