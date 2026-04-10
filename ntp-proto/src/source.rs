@@ -868,6 +868,10 @@ mod test {
             // do nothing
         }
 
+        fn set_usable(&mut self, _: bool) {
+            // do nothing
+        }
+
         fn desired_poll_interval(&self) -> PollInterval {
             PollInterval::default()
         }
@@ -944,6 +948,10 @@ mod test {
         impl SourceController for PollIntervalController {
             fn handle_measurement(&mut self, _: Measurement) {
                 // no action
+            }
+
+            fn set_usable(&mut self, _: bool) {
+                // do nothing
             }
 
             fn desired_poll_interval(&self) -> PollInterval {
