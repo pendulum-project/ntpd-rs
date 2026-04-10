@@ -56,7 +56,7 @@
 #![warn(clippy::large_types_passed_by_value)]
 #![warn(clippy::linkedlist)]
 #![warn(clippy::macro_use_imports)]
-//FIXME: Enable #![warn(clippy::manual_assert)]
+#![warn(clippy::manual_assert)]
 #![warn(clippy::manual_instant_elapsed)]
 #![warn(clippy::manual_is_power_of_two)]
 #![warn(clippy::manual_is_variant_and)]
