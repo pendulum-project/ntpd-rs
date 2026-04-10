@@ -19,10 +19,11 @@ use crate::{
 use rand::{Rng, thread_rng};
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashMap,
     fmt::Debug,
     io::Cursor,
     net::{IpAddr, SocketAddr},
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex, RwLock},
     time::Duration,
 };
 use tracing::{debug, trace, warn};
@@ -101,6 +102,8 @@ pub struct NtpSource<Controller: SourceController> {
     id: ClockId,
 
     source_info: Arc<RwLock<NtpSourceInfo>>,
+
+    source_snapshots: Arc<Mutex<HashMap<ClockId, NtpSourceSnapshot>>>,
 }
 
 pub struct OneWaySource<Controller: SourceController> {
@@ -327,25 +330,10 @@ impl ProtocolVersion {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct NtpSourceUpdate {
-    pub(crate) snapshot: NtpSourceSnapshot,
-}
-
-#[cfg(feature = "__internal-test")]
-impl NtpSourceUpdate {
-    pub fn snapshot(snapshot: NtpSourceSnapshot) -> Self {
-        NtpSourceUpdate { snapshot }
-    }
-}
-
 #[derive(Debug, Clone)]
-#[expect(clippy::large_enum_variant)]
 pub enum NtpSourceAction {
     /// Send a message over the network. When this is issued, the network port maybe changed.
     Send(Vec<u8>),
-    /// Send an update to [`System`](crate::system::System)
-    UpdateSystem(NtpSourceUpdate),
     /// Call [`NtpSource::handle_timer`] after given duration
     SetTimer(Duration),
     /// A complete reset of the connection is necessary, including a potential new NTSKE client session and/or DNS lookup.
@@ -396,6 +384,10 @@ pub struct ObservableSourceState {
 }
 
 impl<Controller: SourceController> NtpSource<Controller> {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "FIXME: See if we can combine some of these once the design is a bit more final"
+    )]
     pub(crate) fn new(
         source_addr: SocketAddr,
         source_config: SourceConfig,
@@ -404,6 +396,7 @@ impl<Controller: SourceController> NtpSource<Controller> {
         nts: Option<Box<SourceNtsData>>,
         id: ClockId,
         source_info: Arc<RwLock<NtpSourceInfo>>,
+        source_snapshots: Arc<Mutex<HashMap<ClockId, NtpSourceSnapshot>>>,
     ) -> (Self, NtpSourceActionIterator) {
         (
             Self {
@@ -435,6 +428,8 @@ impl<Controller: SourceController> NtpSource<Controller> {
                 id,
 
                 source_info,
+
+                source_snapshots,
             },
             actions!(NtpSourceAction::SetTimer(Duration::from_secs(0))),
         )
@@ -555,11 +550,14 @@ impl<Controller: SourceController> NtpSource<Controller> {
                 )
                 .is_ok()
         };
+        self.source_snapshots
+            .lock()
+            .unwrap()
+            .insert(self.id, snapshot);
         self.controller.set_usable(usable);
 
         actions!(
             NtpSourceAction::Send(result.into()),
-            NtpSourceAction::UpdateSystem(NtpSourceUpdate { snapshot }),
             // randomize the poll interval a little to make it harder to predict poll requests
             NtpSourceAction::SetTimer(
                 poll_interval
@@ -761,9 +759,13 @@ impl<Controller: SourceController> NtpSource<Controller> {
                 )
                 .is_ok()
         };
+        self.source_snapshots
+            .lock()
+            .unwrap()
+            .insert(self.id, snapshot);
         self.controller.set_usable(usable);
 
-        actions!(NtpSourceAction::UpdateSystem(NtpSourceUpdate { snapshot }))
+        actions!()
     }
 
     #[cfg(test)]
@@ -800,6 +802,8 @@ impl<Controller: SourceController> NtpSource<Controller> {
             id: ClockId(1),
 
             source_info: Arc::default(),
+
+            source_snapshots: Arc::default(),
         }
     }
 }
