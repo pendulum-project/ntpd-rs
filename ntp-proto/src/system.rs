@@ -6,7 +6,10 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
 use crate::source::{NtpSourceUpdate, SourceSnapshot};
-use crate::{ClockId, KeySet, NtpSourceSnapshot, NtpTimestamp, OneWaySource, Server, ServerConfig, SourceController};
+use crate::{
+    ClockId, KeySet, NtpSourceSnapshot, NtpTimestamp, OneWaySource, Server, ServerConfig,
+    SourceController,
+};
 use crate::{
     algorithm::TimeSyncController,
     clock::NtpClock,
