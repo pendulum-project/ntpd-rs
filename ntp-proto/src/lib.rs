@@ -43,7 +43,7 @@
 //FIXME: Enable #![warn(clippy::if_not_else)]
 #![warn(clippy::ignore_without_reason)]
 //FIXME: Enable #![warn(clippy::ignored_unit_patterns)]
-//FIXME: Enable #![warn(clippy::implicit_clone)]
+#![warn(clippy::implicit_clone)]
 #![warn(clippy::implicit_hasher)]
 #![warn(clippy::inconsistent_struct_constructor)]
 #![warn(clippy::index_refutable_slice)]
