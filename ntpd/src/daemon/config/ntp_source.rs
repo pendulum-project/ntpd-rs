@@ -746,9 +746,9 @@ mod tests {
             NtpSourceConfig::Nts(c) => c.first.address.to_string(),
             NtpSourceConfig::Pool(c) => c.first.addr.to_string(),
             NtpSourceConfig::NtsPool(c) => c.first.addr.to_string(),
-            NtpSourceConfig::Sock(_c) => "".to_string(),
+            NtpSourceConfig::Sock(_c) => String::new(),
             #[cfg(feature = "pps")]
-            NtpSourceConfig::Pps(_c) => "".to_string(),
+            NtpSourceConfig::Pps(_c) => String::new(),
         }
     }
 
