@@ -62,7 +62,7 @@
 #![warn(clippy::manual_is_variant_and)]
 #![warn(clippy::manual_let_else)]
 #![warn(clippy::manual_midpoint)]
-//FIXME: Enable #![warn(clippy::manual_string_new)]
+#![warn(clippy::manual_string_new)]
 #![warn(clippy::many_single_char_names)]
 #![warn(clippy::map_unwrap_or)]
 #![warn(clippy::match_bool)]
