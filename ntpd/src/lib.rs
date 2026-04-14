@@ -78,7 +78,7 @@
 #![warn(clippy::mut_mut)]
 #![warn(clippy::naive_bytecount)]
 #![warn(clippy::needless_bitwise_bool)]
-//FIXME: Enable #![warn(clippy::needless_continue)]
+#![warn(clippy::needless_continue)]
 #![warn(clippy::needless_for_each)]
 //FIXME: Enable #![warn(clippy::needless_pass_by_value)]
 //FIXME: Enable #![warn(clippy::needless_raw_string_hashes)]
