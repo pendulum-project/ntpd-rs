@@ -191,7 +191,6 @@ where
                     }
                     Err(e) => {
                         error!("Error deserializing sample: {}", e);
-                        continue;
                     }
                 },
                 SelectResult::SystemUpdate(result) => match result {

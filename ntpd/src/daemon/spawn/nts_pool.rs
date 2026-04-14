@@ -205,7 +205,6 @@ impl Spawner for NtsPoolSpawner {
                 }
                 Ok(Ok(_)) => {
                     warn!("received an address from pool-ke that we already had, ignoring");
-                    continue;
                 }
                 Ok(Err(e)) => {
                     warn!(error = ?e, "error while attempting key exchange");

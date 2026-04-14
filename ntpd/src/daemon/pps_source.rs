@@ -125,7 +125,6 @@ where
                     }
                     None => {
                         warn!("Did not receive any new PPS data");
-                        continue;
                     }
                 },
                 SelectResult::SystemUpdate(result) => match result {
