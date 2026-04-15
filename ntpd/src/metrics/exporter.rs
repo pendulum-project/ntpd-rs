@@ -121,14 +121,14 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("ntp-metrics-exporter {VERSION}");
             Ok(())
         }
-        MetricsAction::Run => run(options),
+        MetricsAction::Run => run(&options),
     }
 }
 
-fn run(options: NtpMetricsExporterOptions) -> Result<(), Box<dyn std::error::Error>> {
+fn run(options: &NtpMetricsExporterOptions) -> Result<(), Box<dyn std::error::Error>> {
     let (config, task_starter) = initialize_logging_parse_config(
         None,
-        options.config,
+        options.config.as_deref(),
         crate::daemon::Application::MetricsExporter,
     );
 

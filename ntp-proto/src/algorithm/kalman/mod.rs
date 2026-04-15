@@ -127,19 +127,18 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
             }
         }
 
-        let selection = select::select(
-            &self.synchronization_config,
-            &self.algo_config,
-            self.sources
-                .iter()
-                .filter_map(
-                    |(_, (state, usable))| {
-                        if *usable { state.as_ref() } else { None }
-                    },
-                )
-                .cloned()
-                .collect(),
-        );
+        let candidates: Vec<_> = self
+            .sources
+            .iter()
+            .filter_map(
+                |(_, (state, usable))| {
+                    if *usable { state.as_ref() } else { None }
+                },
+            )
+            .cloned()
+            .collect();
+        let selection =
+            select::select(&self.synchronization_config, &self.algo_config, &candidates);
 
         if let Some(combined) = combine(&selection, &self.algo_config) {
             info!(

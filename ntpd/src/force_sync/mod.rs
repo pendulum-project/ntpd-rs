@@ -1,6 +1,6 @@
 use std::{
     io::{IsTerminal, Write},
-    path::PathBuf,
+    path::Path,
     process::ExitCode,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -106,7 +106,7 @@ impl<C: NtpClock> SingleShotController<C> {
     }
 }
 
-pub(crate) fn force_sync(config: Option<PathBuf>) -> std::io::Result<ExitCode> {
+pub(crate) fn force_sync(config: Option<&Path>) -> std::io::Result<ExitCode> {
     let (config, _) = initialize_logging_parse_config(
         Some(LogLevel::Warn),
         config,

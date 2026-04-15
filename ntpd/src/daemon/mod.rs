@@ -16,7 +16,7 @@ mod system;
 pub mod tracing;
 mod util;
 
-use std::{error::Error, io::IsTerminal, path::PathBuf};
+use std::{error::Error, io::IsTerminal, path::Path};
 
 use ::tracing::info;
 pub use config::Config;
@@ -44,7 +44,7 @@ pub fn main() -> Result<(), Box<dyn Error>> {
         config::NtpDaemonAction::Version => {
             eprintln!("ntp-daemon {VERSION}");
         }
-        config::NtpDaemonAction::Run => run(options)?,
+        config::NtpDaemonAction::Run => run(&options)?,
     }
 
     Ok(())
@@ -61,7 +61,7 @@ pub(crate) enum Application {
 // log level based on the config if required.
 pub(crate) fn initialize_logging_parse_config(
     initial_log_level: Option<LogLevel>,
-    config_path: Option<PathBuf>,
+    config_path: Option<&Path>,
     app: Application,
 ) -> (Config, Option<LogReloadTaskStarter>) {
     let mut log_level = initial_log_level.unwrap_or_default();
@@ -69,7 +69,7 @@ pub(crate) fn initialize_logging_parse_config(
     let (config_tracing, _) = crate::daemon::tracing::tracing_init(log_level, None, true);
     let (config, tracing_inst, task_starter) =
         ::tracing::subscriber::with_default(config_tracing, || {
-            let config = match Config::from_args(config_path, vec![], vec![]) {
+            let config = match Config::from_args(config_path.as_ref(), vec![], vec![]) {
                 Ok(c) => c,
                 Err(e) => {
                     // print to stderr because tracing is not yet setup
@@ -107,9 +107,12 @@ pub(crate) fn initialize_logging_parse_config(
     (config, task_starter)
 }
 
-fn run(options: NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
-    let (config, task_starter) =
-        initialize_logging_parse_config(options.log_level, options.config, Application::Deamon);
+fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
+    let (config, task_starter) = initialize_logging_parse_config(
+        options.log_level,
+        options.config.as_deref(),
+        Application::Deamon,
+    );
 
     let runtime = if config.servers.is_empty() && config.nts_ke.is_empty() {
         Builder::new_current_thread().enable_all().build()?

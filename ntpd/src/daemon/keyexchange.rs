@@ -282,7 +282,7 @@ mod tests {
 
         assert!(
             tokio::time::timeout(std::time::Duration::from_millis(750), async move {
-                let kex = KeyExchangeClient::new(NtsClientConfig {
+                let kex = KeyExchangeClient::new(&NtsClientConfig {
                     certificates: certificates_from_bufread(BufReader::new(Cursor::new(ca)))
                         .unwrap()
                         .into(),
@@ -304,7 +304,7 @@ mod tests {
         let result = tokio::time::timeout(
             std::time::Duration::from_millis(750), // large timeout is needed to ensure test succeeds consistently on MacOS M2 E-cores
             async move {
-                let kex = KeyExchangeClient::new(NtsClientConfig {
+                let kex = KeyExchangeClient::new(&NtsClientConfig {
                     certificates: certificates_from_bufread(BufReader::new(Cursor::new(ca)))
                         .unwrap()
                         .into(),
@@ -351,7 +351,7 @@ mod tests {
 
         let ca = include_bytes!("../../test-keys/testca.pem");
         let result = async move {
-            let kex = KeyExchangeClient::new(NtsClientConfig {
+            let kex = KeyExchangeClient::new(&NtsClientConfig {
                 certificates: certificates_from_bufread(BufReader::new(Cursor::new(ca)))
                     .unwrap()
                     .into(),
