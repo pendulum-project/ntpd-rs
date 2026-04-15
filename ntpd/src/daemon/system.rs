@@ -109,7 +109,7 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper, Sourc
         clock_config.timestamp_mode,
         synchronization_config,
         algorithm_config,
-        keyset,
+        &keyset,
         ip_list,
         !source_configs.is_empty(),
     );
@@ -224,7 +224,7 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C, SourceId = So
         timestamp_mode: TimestampMode,
         synchronization_config: SynchronizationConfig,
         algorithm_config: Controller::AlgorithmConfig,
-        keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
+        keyset: &tokio::sync::watch::Receiver<Arc<KeySet>>,
         ip_list: tokio::sync::watch::Receiver<Arc<[IpAddr]>>,
         have_sources: bool,
     ) -> (Self, DaemonChannels) {

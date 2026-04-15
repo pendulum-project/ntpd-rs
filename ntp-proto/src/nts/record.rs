@@ -376,7 +376,7 @@ mod tests {
         result
     }
 
-    fn serialize(record: NtsRecord, buf: &mut Vec<u8>) {
+    fn serialize(record: &NtsRecord, buf: &mut Vec<u8>) {
         assert!(matches!(
             pin!(record.serialize(buf)).poll(&mut Context::from_waker(Waker::noop())),
             Poll::Ready(Ok(()))
@@ -405,7 +405,7 @@ mod tests {
         assert!(parse([0x80, 0, 0, 3].as_ref()).is_err());
 
         let mut buf = vec![];
-        serialize(NtsRecord::EndOfMessage, &mut buf);
+        serialize(&NtsRecord::EndOfMessage, &mut buf);
         assert_eq!(buf, [0x80, 0, 0, 0]);
     }
 
@@ -445,7 +445,7 @@ mod tests {
 
         let mut buf = vec![];
         serialize(
-            NtsRecord::NextProtocol {
+            &NtsRecord::NextProtocol {
                 protocol_ids: vec![NextProtocol::NTPv4, NextProtocol::Unknown(1)].into(),
             },
             &mut buf,
@@ -491,7 +491,7 @@ mod tests {
 
         let mut buf = vec![];
         serialize(
-            NtsRecord::Error {
+            &NtsRecord::Error {
                 errorcode: ErrorCode::UnrecognizedCriticalRecord,
             },
             &mut buf,
@@ -500,7 +500,7 @@ mod tests {
 
         let mut buf = vec![];
         serialize(
-            NtsRecord::Error {
+            &NtsRecord::Error {
                 errorcode: ErrorCode::BadRequest,
             },
             &mut buf,
@@ -509,7 +509,7 @@ mod tests {
 
         let mut buf = vec![];
         serialize(
-            NtsRecord::Error {
+            &NtsRecord::Error {
                 errorcode: ErrorCode::InternalServerError,
             },
             &mut buf,
@@ -518,7 +518,7 @@ mod tests {
 
         let mut buf = vec![];
         serialize(
-            NtsRecord::Error {
+            &NtsRecord::Error {
                 errorcode: ErrorCode::Unknown(3),
             },
             &mut buf,
@@ -552,7 +552,7 @@ mod tests {
 
         let mut buf = vec![];
         serialize(
-            NtsRecord::Warning {
+            &NtsRecord::Warning {
                 warningcode: WarningCode::Unknown(3),
             },
             &mut buf,
@@ -591,7 +591,7 @@ mod tests {
 
         let mut buf = vec![];
         serialize(
-            NtsRecord::AeadAlgorithm {
+            &NtsRecord::AeadAlgorithm {
                 algorithm_ids: vec![
                     AeadAlgorithm::AeadAesSivCmac256,
                     AeadAlgorithm::AeadAesSivCmac512,
@@ -624,7 +624,7 @@ mod tests {
 
         let mut buf = vec![];
         serialize(
-            NtsRecord::NewCookie {
+            &NtsRecord::NewCookie {
                 cookie_data: [1, 2, 3].as_slice().into(),
             },
             &mut buf,
@@ -649,7 +649,7 @@ mod tests {
         assert!(parse(&[0x80, 6, 0, 5, b'h', b'e', b'l']).is_err());
 
         let mut buf = vec![];
-        serialize(NtsRecord::Server { name: "hi".into() }, &mut buf);
+        serialize(&NtsRecord::Server { name: "hi".into() }, &mut buf);
         assert_eq!(buf, &[0x80, 6, 0, 2, b'h', b'i']);
     }
 
@@ -668,7 +668,7 @@ mod tests {
         assert!(parse(&[0, 7, 0, 2, 0]).is_err());
 
         let mut buf = vec![];
-        serialize(NtsRecord::Port { port: 123 }, &mut buf);
+        serialize(&NtsRecord::Port { port: 123 }, &mut buf);
         assert_eq!(buf, [0x80, 7, 0, 2, 0, 123]);
     }
 
@@ -686,7 +686,7 @@ mod tests {
         assert!(parse(&[0x40, 0, 0, 2]).is_err());
 
         let mut buf = vec![];
-        serialize(NtsRecord::KeepAlive, &mut buf);
+        serialize(&NtsRecord::KeepAlive, &mut buf);
         assert_eq!(buf, [0x40, 0, 0, 0]);
     }
 
@@ -727,7 +727,7 @@ mod tests {
 
         let mut buf = vec![];
         serialize(
-            NtsRecord::SupportedNextProtocolList {
+            &NtsRecord::SupportedNextProtocolList {
                 supported_protocols: [NextProtocol::Unknown(1), NextProtocol::Unknown(2)]
                     .as_slice()
                     .into(),
@@ -738,7 +738,7 @@ mod tests {
 
         let mut buf = vec![];
         serialize(
-            NtsRecord::SupportedNextProtocolList {
+            &NtsRecord::SupportedNextProtocolList {
                 supported_protocols: [].as_slice().into(),
             },
             &mut buf,
@@ -800,7 +800,7 @@ mod tests {
 
         let mut buf = vec![];
         serialize(
-            NtsRecord::SupportedAlgorithmList {
+            &NtsRecord::SupportedAlgorithmList {
                 supported_algorithms: [].as_slice().into(),
             },
             &mut buf,
@@ -809,7 +809,7 @@ mod tests {
 
         let mut buf = vec![];
         serialize(
-            NtsRecord::SupportedAlgorithmList {
+            &NtsRecord::SupportedAlgorithmList {
                 supported_algorithms: [AlgorithmDescription {
                     id: AeadAlgorithm::AeadAesSivCmac512,
                     keysize: 64,
@@ -842,7 +842,7 @@ mod tests {
 
         let mut buf = vec![];
         serialize(
-            NtsRecord::FixedKeyRequest {
+            &NtsRecord::FixedKeyRequest {
                 c2s: [5, 6].as_slice().into(),
                 s2c: [7, 8].as_slice().into(),
             },
@@ -870,7 +870,7 @@ mod tests {
 
         let mut buf = vec![];
         serialize(
-            NtsRecord::NtpServerDeny {
+            &NtsRecord::NtpServerDeny {
                 denied: "hi".into(),
             },
             &mut buf,
@@ -908,7 +908,7 @@ mod tests {
 
         let mut buf = vec![];
         serialize(
-            NtsRecord::Unknown {
+            &NtsRecord::Unknown {
                 record_type: 50,
                 critical: false,
                 data: [9, 10].as_slice().into(),
@@ -919,7 +919,7 @@ mod tests {
 
         let mut buf = vec![];
         serialize(
-            NtsRecord::Unknown {
+            &NtsRecord::Unknown {
                 record_type: 51,
                 critical: true,
                 data: [].as_slice().into(),

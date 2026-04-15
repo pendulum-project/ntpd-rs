@@ -1156,7 +1156,7 @@ mod tests {
         D: Debug + Clone + Copy,
         N: MeasurementNoiseEstimator<MeasurementDelay = D> + Clone,
     >(
-        noise_estimator: N,
+        noise_estimator: &N,
         delay: D,
     ) {
         let base = NtpTimestamp::from_fixed_int(0);
@@ -1359,7 +1359,7 @@ mod tests {
     #[test]
     fn test_offset_steering_and_measurements_normal() {
         test_offset_steering_and_measurements(
-            AveragingBuffer {
+            &AveragingBuffer {
                 data: [0.0, 0.0, 0.0, 0.0, 0.875e-6, 0.875e-6, 0.875e-6, 0.875e-6],
                 next_idx: 0,
             },
@@ -1370,7 +1370,7 @@ mod tests {
     #[test]
     fn test_offset_steering_and_measurements_constant_noise_estimate() {
         test_offset_steering_and_measurements(
-            FixedMeasurementNoise {
+            &FixedMeasurementNoise {
                 precision: 1e-9,
                 accuracy: 0.0,
             },

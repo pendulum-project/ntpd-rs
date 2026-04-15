@@ -334,7 +334,7 @@ pub struct KeyExchangeClient {
 }
 
 impl KeyExchangeClient {
-    pub fn new(config: NtsClientConfig) -> Result<Self, NtsError> {
+    pub fn new(config: &NtsClientConfig) -> Result<Self, NtsError> {
         let builder = tls_utils::client_config_builder_with_protocol_versions(&[&TLS13]);
         let verifier =
             tls_utils::PlatformVerifier::new_with_extra_roots(config.certificates.iter().cloned())?
@@ -884,7 +884,7 @@ mod tests {
             )
             .collect::<Result<Arc<_>, _>>()
             .unwrap();
-            let kex = KeyExchangeClient::new(NtsClientConfig {
+            let kex = KeyExchangeClient::new(&NtsClientConfig {
                 certificates,
                 protocol_version: ProtocolVersion::V4,
             })
@@ -946,7 +946,7 @@ mod tests {
             )
             .collect::<Result<Arc<_>, _>>()
             .unwrap();
-            let kex = KeyExchangeClient::new(NtsClientConfig {
+            let kex = KeyExchangeClient::new(&NtsClientConfig {
                 certificates,
                 protocol_version: ProtocolVersion::V5,
             })
@@ -1008,7 +1008,7 @@ mod tests {
             )
             .collect::<Result<Arc<_>, _>>()
             .unwrap();
-            let kex = KeyExchangeClient::new(NtsClientConfig {
+            let kex = KeyExchangeClient::new(&NtsClientConfig {
                 certificates,
                 protocol_version: ProtocolVersion::V4UpgradingToV5 { tries_left: 8 },
             })
@@ -1070,7 +1070,7 @@ mod tests {
             )
             .collect::<Result<Arc<_>, _>>()
             .unwrap();
-            let kex = KeyExchangeClient::new(NtsClientConfig {
+            let kex = KeyExchangeClient::new(&NtsClientConfig {
                 certificates,
                 protocol_version: ProtocolVersion::V4UpgradingToV5 { tries_left: 8 },
             })
@@ -1132,7 +1132,7 @@ mod tests {
             )
             .collect::<Result<Arc<_>, _>>()
             .unwrap();
-            let kex = KeyExchangeClient::new(NtsClientConfig {
+            let kex = KeyExchangeClient::new(&NtsClientConfig {
                 certificates,
                 protocol_version: ProtocolVersion::V5,
             })
@@ -1178,7 +1178,7 @@ mod tests {
             )
             .collect::<Result<Arc<_>, _>>()
             .unwrap();
-            let kex = KeyExchangeClient::new(NtsClientConfig {
+            let kex = KeyExchangeClient::new(&NtsClientConfig {
                 certificates,
                 protocol_version: ProtocolVersion::V4,
             })

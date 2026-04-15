@@ -1,4 +1,7 @@
-use std::{path::PathBuf, process::ExitCode};
+use std::{
+    path::{Path, PathBuf},
+    process::ExitCode,
+};
 
 use crate::{
     daemon::{Config, ObservableState, config::CliArg, tracing::LogLevel},
@@ -147,12 +150,12 @@ impl NtpCtlOptions {
     }
 }
 
-fn validate(config: Option<PathBuf>) -> std::io::Result<ExitCode> {
+fn validate(config: Option<&Path>) -> std::io::Result<ExitCode> {
     // Late completion not needed, so ignore result.
     crate::daemon::tracing::tracing_init(LogLevel::Info, None, true)
         .0
         .init();
-    match Config::from_args(config, vec![], vec![]) {
+    match Config::from_args(config.as_ref(), vec![], vec![]) {
         Ok(config) => {
             if config.check() {
                 eprintln!("Config looks good");
@@ -185,10 +188,10 @@ pub fn main() -> std::io::Result<ExitCode> {
             eprintln!("ntp-ctl {VERSION}");
             Ok(ExitCode::SUCCESS)
         }
-        NtpCtlAction::Validate => validate(options.config),
-        NtpCtlAction::ForceSync => force_sync::force_sync(options.config),
+        NtpCtlAction::Validate => validate(options.config.as_deref()),
+        NtpCtlAction::ForceSync => force_sync::force_sync(options.config.as_deref()),
         NtpCtlAction::Status => {
-            let config = Config::from_args(options.config, vec![], vec![]);
+            let config = Config::from_args(options.config.as_ref(), vec![], vec![]);
 
             if let Err(ref e) = config {
                 println!("Warning: Unable to load configuration file: {e}");

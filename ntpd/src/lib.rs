@@ -80,7 +80,7 @@
 #![warn(clippy::needless_bitwise_bool)]
 #![warn(clippy::needless_continue)]
 #![warn(clippy::needless_for_each)]
-//FIXME: Enable #![warn(clippy::needless_pass_by_value)]
+#![warn(clippy::needless_pass_by_value)]
 //FIXME: Enable #![warn(clippy::needless_raw_string_hashes)]
 #![warn(clippy::no_effect_underscore_binding)]
 #![warn(clippy::no_mangle_with_rust_abi)]

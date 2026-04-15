@@ -412,7 +412,7 @@ impl Config {
     }
 
     pub fn from_args(
-        file: Option<impl AsRef<Path>>,
+        file: Option<&impl AsRef<Path>>,
         sources: Vec<NtpSourceConfig>,
         servers: Vec<ServerConfig>,
     ) -> Result<Config, ConfigError> {

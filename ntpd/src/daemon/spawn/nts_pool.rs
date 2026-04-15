@@ -57,7 +57,7 @@ impl NtsPoolSpawner {
         config: NtsPoolSourceConfig,
         source_config: SourceConfig,
     ) -> Result<NtsPoolSpawner, NtsError> {
-        let key_exchange_client = KeyExchangeClient::new(NtsClientConfig {
+        let key_exchange_client = KeyExchangeClient::new(&NtsClientConfig {
             certificates: config.certificate_authorities.clone(),
             protocol_version: config.ntp_version,
         })?;
