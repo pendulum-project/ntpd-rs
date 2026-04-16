@@ -41,10 +41,7 @@ fn human_readable_duration(abs_offset: f64) -> String {
 
 fn try_date_display(offset: NtpDuration) -> Option<String> {
     let time = SystemTime::now();
-    let since_epoch = time
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+    let since_epoch = time.duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
     let ts = if offset < NtpDuration::ZERO {
         since_epoch - ((-offset.to_seconds()) as u64)
     } else {
