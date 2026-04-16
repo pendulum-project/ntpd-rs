@@ -91,7 +91,7 @@ impl<C: NtpClock> SingleShotController<C> {
                 .into_iter()
             })
             .collect();
-        events.sort_by(|a, b| a.offset.cmp(&b.offset));
+        events.sort_by_key(|a| a.offset);
 
         let mut peak = 0;
         let mut peak_offset = events[0].offset;
