@@ -6,8 +6,8 @@ use tokio::sync::watch;
 pub fn spawn() -> std::io::Result<watch::Receiver<Arc<[IpAddr]>>> {
     let mut change_listener = ChangeDetector::new()?;
     let local_ips: Arc<[IpAddr]> = interfaces()?
-        .iter()
-        .flat_map(|(_, interface)| interface.ips())
+        .values()
+        .flat_map(timestamped_socket::interface::InterfaceData::ips)
         .collect();
 
     let (writer, reader) = watch::channel(local_ips);
@@ -19,8 +19,8 @@ pub fn spawn() -> std::io::Result<watch::Receiver<Arc<[IpAddr]>>> {
                 Ok(interfaces) => {
                     let _ = writer.send(
                         interfaces
-                            .iter()
-                            .flat_map(|(_, interface)| interface.ips())
+                            .values()
+                            .flat_map(timestamped_socket::interface::InterfaceData::ips)
                             .collect(),
                     );
                 }
