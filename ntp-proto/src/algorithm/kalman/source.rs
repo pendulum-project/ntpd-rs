@@ -839,6 +839,7 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
                     wander: config.initial_wander,
                 })
             }
+            SourceStateInner::Initial(_) => None,
             SourceStateInner::Stable(filter) => Some(SourceSnapshot {
                 index,
                 state: filter.state,
@@ -850,7 +851,6 @@ impl<D: Debug + Copy + Clone, N: MeasurementNoiseEstimator<MeasurementDelay = D>
                 leap_indicator: filter.last_measurement.leap,
                 last_update: filter.last_iter,
             }),
-            _ => None,
         }
     }
 
