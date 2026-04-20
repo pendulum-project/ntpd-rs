@@ -71,7 +71,7 @@ impl<T: Wait> Future for SingleshotSleep<T> {
                 this.enabled = false;
                 std::task::Poll::Ready(v)
             }
-            u => u,
+            v @ std::task::Poll::Pending => v,
         }
     }
 }

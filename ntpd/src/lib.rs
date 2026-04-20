@@ -68,7 +68,7 @@
 #![warn(clippy::match_bool)]
 #![warn(clippy::match_same_arms)]
 #![warn(clippy::match_wild_err_arm)]
-//FIXME: Enable #![warn(clippy::match_wildcard_for_single_variants)]
+#![warn(clippy::match_wildcard_for_single_variants)]
 #![warn(clippy::maybe_infinite_iter)]
 #![warn(clippy::mismatching_type_param_order)]
 //FIXME: Enable #![warn(clippy::missing_errors_doc)]
