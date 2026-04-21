@@ -616,51 +616,48 @@ impl<'a> ExtensionFieldData<'a> {
         ) {
             let (offset, field) = field.map_err(ParsingError::generalize)?;
             size = offset + field.wire_length(version);
-            match field.type_id {
-                ExtensionFieldTypeId::NtsEncryptedField => {
-                    let encrypted = RawEncryptedField::from_message_bytes(field.message_bytes)
-                        .map_err(ParsingError::generalize)?;
+            if field.type_id == ExtensionFieldTypeId::NtsEncryptedField {
+                let encrypted = RawEncryptedField::from_message_bytes(field.message_bytes)
+                    .map_err(ParsingError::generalize)?;
 
-                    let Some(cipher) = cipher.get(&efdata.untrusted) else {
+                let Some(cipher) = cipher.get(&efdata.untrusted) else {
+                    efdata.untrusted.push(InvalidNtsEncryptedField);
+                    is_valid_nts = false;
+                    continue;
+                };
+
+                let encrypted_fields = match encrypted.decrypt(
+                    cipher.as_ref(),
+                    &data[..header_size + offset],
+                    version,
+                ) {
+                    Ok(encrypted_fields) => encrypted_fields,
+                    Err(e) => {
+                        // early return if it's anything but a decrypt error
+                        e.get_decrypt_error()?;
+
                         efdata.untrusted.push(InvalidNtsEncryptedField);
                         is_valid_nts = false;
                         continue;
-                    };
+                    }
+                };
 
-                    let encrypted_fields = match encrypted.decrypt(
-                        cipher.as_ref(),
-                        &data[..header_size + offset],
-                        version,
-                    ) {
-                        Ok(encrypted_fields) => encrypted_fields,
-                        Err(e) => {
-                            // early return if it's anything but a decrypt error
-                            e.get_decrypt_error()?;
+                // for the current ciphers we allow in non-test code,
+                // the nonce should always be 16 bytes
+                debug_assert_eq!(encrypted.nonce.len(), 16);
 
-                            efdata.untrusted.push(InvalidNtsEncryptedField);
-                            is_valid_nts = false;
-                            continue;
-                        }
-                    };
+                efdata.encrypted.extend(encrypted_fields);
+                cookie = match cipher {
+                    super::crypto::CipherHolder::DecodedServerCookie(cookie) => Some(cookie),
+                    super::crypto::CipherHolder::Other(_) => None,
+                };
 
-                    // for the current ciphers we allow in non-test code,
-                    // the nonce should always be 16 bytes
-                    debug_assert_eq!(encrypted.nonce.len(), 16);
-
-                    efdata.encrypted.extend(encrypted_fields);
-                    cookie = match cipher {
-                        super::crypto::CipherHolder::DecodedServerCookie(cookie) => Some(cookie),
-                        super::crypto::CipherHolder::Other(_) => None,
-                    };
-
-                    // All previous untrusted fields are now validated
-                    efdata.authenticated.append(&mut efdata.untrusted);
-                }
-                _ => {
-                    let field = ExtensionField::decode(&field, version)
-                        .map_err(ParsingError::generalize)?;
-                    efdata.untrusted.push(field);
-                }
+                // All previous untrusted fields are now validated
+                efdata.authenticated.append(&mut efdata.untrusted);
+            } else {
+                let field =
+                    ExtensionField::decode(&field, version).map_err(ParsingError::generalize)?;
+                efdata.untrusted.push(field);
             }
         }
 
