@@ -241,9 +241,10 @@ impl<C: NtpClock> Server<C> {
 
         // Try and parse the message
         let (packet, cookie) = match NtpPacket::deserialize(message, self.keyset.as_ref()) {
-            Ok((packet, cookie)) => match packet.mode() {
-                crate::NtpAssociationMode::Client => (packet, cookie),
-                _ => {
+            Ok((packet, cookie)) => {
+                if packet.mode() == crate::NtpAssociationMode::Client {
+                    (packet, cookie)
+                } else {
                     stats_handler.register(
                         fallback_message_version(message),
                         false,
@@ -252,7 +253,7 @@ impl<C: NtpClock> Server<C> {
                     );
                     return Err(ServerAction::Ignore);
                 }
-            },
+            }
             Err(PacketParsingError::DecryptError(packet)) => {
                 // Don't care about decryption errors when denying anyway
                 if action != ServerResponse::Deny {

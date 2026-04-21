@@ -139,12 +139,9 @@ fn run(options: &NtpMetricsExporterOptions) -> Result<(), Box<dyn std::error::Er
 
         let timeout = std::time::Duration::from_millis(1000);
 
-        let observation_socket_path = match config.observability.observation_path {
-            Some(path) => Arc::new(path),
-            None => {
-                eprintln!("An observation socket path must be configured using the observation-path option in the [observability] section of the configuration");
-                std::process::exit(1);
-            }
+        let Some(observation_socket_path) = config.observability.observation_path.map(Arc::new) else {
+            eprintln!("An observation socket path must be configured using the observation-path option in the [observability] section of the configuration");
+            std::process::exit(1);
         };
 
         println!(

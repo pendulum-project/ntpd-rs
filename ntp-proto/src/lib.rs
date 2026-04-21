@@ -111,7 +111,7 @@
 //FIXME: Enable #![warn(clippy::should_panic_without_expect)]
 //FIXME: Enable #![warn(clippy::similar_names)]
 #![warn(clippy::single_char_pattern)]
-//FIXME: Enable #![warn(clippy::single_match_else)]
+#![warn(clippy::single_match_else)]
 //FIXME: Enable #![warn(clippy::stable_sort_primitive)]
 #![warn(clippy::str_split_at_newline)]
 #![warn(clippy::string_add_assign)]
