@@ -81,7 +81,7 @@
 #![warn(clippy::needless_continue)]
 #![warn(clippy::needless_for_each)]
 #![warn(clippy::needless_pass_by_value)]
-//FIXME: Enable #![warn(clippy::needless_raw_string_hashes)]
+#![warn(clippy::needless_raw_string_hashes)]
 #![warn(clippy::no_effect_underscore_binding)]
 #![warn(clippy::no_mangle_with_rust_abi)]
 #![warn(clippy::non_std_lazy_statics)]
