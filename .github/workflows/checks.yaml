@@ -84,7 +84,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@85b24a67ef0c632dfefad70b9d5ce8fddb040754
+        uses: taiki-e/install-action@6e4b50d359005dacdb018fa32c03bc35522c6616
         with:
           tool: cargo-llvm-cov
       - name: Rust cache
@@ -121,7 +121,7 @@ jobs:
         with:
           toolchain: nightly
       - name: Install udeps
-        uses: taiki-e/install-action@85b24a67ef0c632dfefad70b9d5ce8fddb040754
+        uses: taiki-e/install-action@6e4b50d359005dacdb018fa32c03bc35522c6616
         with:
           tool: cargo-udeps
       - name: cargo udeps
@@ -222,7 +222,7 @@ jobs:
         if: ${{matrix.runs_on == 'ubuntu-latest'}}
 
       - name: Install bindgen-cli
-        uses: taiki-e/install-action@85b24a67ef0c632dfefad70b9d5ce8fddb040754
+        uses: taiki-e/install-action@6e4b50d359005dacdb018fa32c03bc35522c6616
         with:
           tool: bindgen-cli
         if: ${{matrix.runs_on == 'ubuntu-latest'}}
@@ -294,7 +294,7 @@ jobs:
           toolchain: nightly
           components: llvm-tools-preview
       - name: Install cargo fuzz & rustfilt
-        uses: taiki-e/install-action@85b24a67ef0c632dfefad70b9d5ce8fddb040754
+        uses: taiki-e/install-action@6e4b50d359005dacdb018fa32c03bc35522c6616
         with:
           tool: cargo-fuzz,rustfilt
       - name: Run `cargo fuzz`
@@ -328,10 +328,10 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
-      - uses: EmbarkStudios/cargo-deny-action@3fd3802e88374d3fe9159b834c7714ec57d6c979
+      - uses: EmbarkStudios/cargo-deny-action@91bf2b620e09e18d6eb78b92e7861937469acedb
         with:
           arguments: --workspace --all-features
-      - uses: EmbarkStudios/cargo-deny-action@3fd3802e88374d3fe9159b834c7714ec57d6c979
+      - uses: EmbarkStudios/cargo-deny-action@91bf2b620e09e18d6eb78b92e7861937469acedb
         with:
           manifest-path: ./fuzz/Cargo.toml
           arguments: --all-features
