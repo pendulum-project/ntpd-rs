@@ -171,7 +171,7 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
         );
 
         #[cfg(target_os = "linux")]
-        let _ = notify_ready();
+        let _ = notify_ready().await;
 
         Ok(main_loop_handle.await??)
     })
