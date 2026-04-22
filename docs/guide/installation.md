@@ -10,12 +10,12 @@ We recommend the packages from our [release page](https://github.com/pendulum-pr
 
 On a debian based linux, the `.deb` package can be installed with
 ```console
-$ sudo dpkg -i /path/to/deb/file.deb
+$ sudo apt install /path/to/deb/file.deb
 ```
 
 On a red hat based linux, the `.rpm` package can be installed with
 ```console
-$ sudo rpm -ivh /path/to/rpm/file.rpm
+$ sudo dnf install /path/to/rpm/file.rpm
 $ sudo systemctl start ntpd-rs
 ```
 
