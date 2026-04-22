@@ -1,15 +1,31 @@
-# Participating in the NTS pool
+# NTS pool experiments
 
 Network Time Security (NTS) is an extension to the NTP protocol aimed at
 securing the communication between NTP clients and servers. An experimental
 pool for servers supporting NTS has recently been set up at
 <https://experimental.ntspooltest.org/>
 
+## Using the SRV variant of the pool
+
+NTPD-rs versions 1.8.0 and later support using the SRV variant of the
+experimental pool. They can use the pool by adding the following source to
+their configuration:
+```toml
+[[source]]
+mode = "nts-pool"
+enable-srv-resolution = true
+address = "srv.experimental.ntspooltest.org"
+```
+
+Note that SRV pool support is still experimental and usage of it may trigger bugs.
+
+## Participating in the NTS pool
+
 NTPD-rs versions newer than 1.7.0-alpha.20251003 support being added to this
 pool. This guide will assume you are running a version more recent than this,
 and have already setup an NTS server using the instructions in [our NTS guide](./nts.md).
 
-## Adding your server
+### Adding your server
 
 To add an NTS server to the pool, on the pool website add the domain name of
 the server on the `Time sources` page after logging in. The pool will give you
