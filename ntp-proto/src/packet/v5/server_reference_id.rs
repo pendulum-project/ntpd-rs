@@ -47,6 +47,9 @@ pub struct ServerId([U12; 10]);
 impl ServerId {
     /// Generate a new random `ServerId`
     pub fn new(rng: &mut impl Rng) -> Self {
+        // To make optimal use of the Bloom filter used for loop detection, which we index with 10 12-bit strings derived from our identifier,
+        // we require that the server ID consist of 10 unique 12bit identifiers. For optimization of access patterns, it's also beneficial to
+        // have these sorted anyway, which makes this check cheap.
         loop {
             let mut inner: [U12; 10] = rng.r#gen();
             inner.sort_by_key(|v| v.0);
