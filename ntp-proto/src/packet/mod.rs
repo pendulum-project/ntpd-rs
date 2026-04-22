@@ -1117,7 +1117,7 @@ impl<'a> NtpPacket<'a> {
     pub fn reference_id(&self) -> ReferenceId {
         match self.header {
             NtpHeader::V3(header) | NtpHeader::V4(header) => header.reference_id,
-            // TODO NTPv5 does not have reference IDs so this should always be None for now
+            // NTPv5 does not have reference IDs so this is always None
             NtpHeader::V5(_header) => ReferenceId::NONE,
         }
     }
