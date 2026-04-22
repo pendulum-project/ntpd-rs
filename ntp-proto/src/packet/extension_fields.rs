@@ -432,12 +432,6 @@ impl<'a> ExtensionField<'a> {
     fn decode_unique_identifier(
         message: &'a [u8],
     ) -> Result<Self, ParsingError<std::convert::Infallible>> {
-        // The string MUST be at least 32 octets long
-        // TODO: Discuss if we really want this check here
-        if message.len() < 32 {
-            return Err(ParsingError::IncorrectLength);
-        }
-
         Ok(ExtensionField::UniqueIdentifier(message[..].into()))
     }
 
