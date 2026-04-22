@@ -2,7 +2,6 @@ use crate::packet::v5::NtpClientCookie;
 use crate::packet::v5::extension_fields::{ReferenceIdRequest, ReferenceIdResponse};
 use rand::distributions::{Distribution, Standard};
 use rand::{Rng, thread_rng};
-use std::array::from_fn;
 use std::fmt::{Debug, Formatter};
 
 #[derive(Copy, Clone, Debug)]
@@ -48,10 +47,18 @@ pub struct ServerId([U12; 10]);
 impl ServerId {
     /// Generate a new random `ServerId`
     pub fn new(rng: &mut impl Rng) -> Self {
-        // FIXME: sort IDs so we access the filters predictably
-        // FIXME: check for double rolls to reduce false positive rate
+        loop {
+            let mut inner: [U12; 10] = rng.r#gen();
+            inner.sort_by_key(|v| v.0);
 
-        Self(from_fn(|_| rng.r#gen()))
+            if inner
+                .iter()
+                .zip(inner.iter().skip(1))
+                .all(|(a, b)| a.0 != b.0)
+            {
+                return Self(inner);
+            }
+        }
     }
 }
 
