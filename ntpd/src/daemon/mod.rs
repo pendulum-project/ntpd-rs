@@ -29,7 +29,6 @@ use tracing_subscriber::util::SubscriberInitExt;
 use config::NtpDaemonOptions;
 
 use crate::daemon::tracing::LogReloadTaskStarter;
-#[cfg(target_os = "linux")]
 use crate::notify::notify_ready;
 
 use self::tracing::LogLevel;
@@ -170,7 +169,6 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
             clock,
         );
 
-        #[cfg(target_os = "linux")]
         let _ = notify_ready().await;
 
         Ok(main_loop_handle.await??)
