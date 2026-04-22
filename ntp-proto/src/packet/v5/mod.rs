@@ -120,7 +120,6 @@ pub struct NtpServerCookie(pub [u8; 8]);
 
 impl NtpServerCookie {
     fn new_random() -> Self {
-        // TODO does this match entropy handling of the rest of the system?
         Self(random())
     }
 }
@@ -130,7 +129,6 @@ pub struct NtpClientCookie(pub [u8; 8]);
 
 impl NtpClientCookie {
     fn new_random() -> Self {
-        // TODO does this match entropy handling of the rest of the system?
         Self(random())
     }
 
