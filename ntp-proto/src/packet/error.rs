@@ -15,32 +15,32 @@ pub enum ParsingError<T> {
 
 impl<T> ParsingError<T> {
     pub(super) fn get_decrypt_error<U>(self) -> Result<T, ParsingError<U>> {
-        use ParsingError::*;
-
         match self {
-            InvalidVersion(v) => Err(InvalidVersion(v)),
-            IncorrectLength => Err(IncorrectLength),
-            MalformedNtsExtensionFields => Err(MalformedNtsExtensionFields),
-            MalformedNonce => Err(MalformedNonce),
-            MalformedCookiePlaceholder => Err(MalformedCookiePlaceholder),
-            DecryptError(decrypt_error) => Ok(decrypt_error),
-            V5(e) => Err(V5(e)),
+            ParsingError::InvalidVersion(v) => Err(ParsingError::InvalidVersion(v)),
+            ParsingError::IncorrectLength => Err(ParsingError::IncorrectLength),
+            ParsingError::MalformedNtsExtensionFields => {
+                Err(ParsingError::MalformedNtsExtensionFields)
+            }
+            ParsingError::MalformedNonce => Err(ParsingError::MalformedNonce),
+            ParsingError::MalformedCookiePlaceholder => {
+                Err(ParsingError::MalformedCookiePlaceholder)
+            }
+            ParsingError::DecryptError(decrypt_error) => Ok(decrypt_error),
+            ParsingError::V5(e) => Err(ParsingError::V5(e)),
         }
     }
 }
 
 impl ParsingError<std::convert::Infallible> {
     pub(super) fn generalize<U>(self) -> ParsingError<U> {
-        use ParsingError::*;
-
         match self {
-            InvalidVersion(v) => InvalidVersion(v),
-            IncorrectLength => IncorrectLength,
-            MalformedNtsExtensionFields => MalformedNtsExtensionFields,
-            MalformedNonce => MalformedNonce,
-            MalformedCookiePlaceholder => MalformedCookiePlaceholder,
-            DecryptError(decrypt_error) => match decrypt_error {},
-            V5(e) => V5(e),
+            ParsingError::InvalidVersion(v) => ParsingError::InvalidVersion(v),
+            ParsingError::IncorrectLength => ParsingError::IncorrectLength,
+            ParsingError::MalformedNtsExtensionFields => ParsingError::MalformedNtsExtensionFields,
+            ParsingError::MalformedNonce => ParsingError::MalformedNonce,
+            ParsingError::MalformedCookiePlaceholder => ParsingError::MalformedCookiePlaceholder,
+            ParsingError::DecryptError(decrypt_error) => match decrypt_error {},
+            ParsingError::V5(e) => ParsingError::V5(e),
         }
     }
 }
