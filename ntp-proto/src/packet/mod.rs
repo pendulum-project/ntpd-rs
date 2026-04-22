@@ -665,7 +665,6 @@ impl<'a> NtpPacket<'a> {
                 }
             }
             NtpHeader::V5(header) => NtpPacket {
-                // TODO deduplicate extension handling with V4
                 header: NtpHeader::V5(v5::NtpHeaderV5::timestamp_response(
                     system,
                     *header,
