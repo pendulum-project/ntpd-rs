@@ -12,6 +12,8 @@ use std::{
 };
 
 use crate::daemon::{ObservableState, config::CliArg, initialize_logging_parse_config};
+#[cfg(target_os = "linux")]
+use crate::notify::notify_ready;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -150,11 +152,7 @@ fn run(options: &NtpMetricsExporterOptions) -> Result<(), Box<dyn std::error::Er
         );
 
         #[cfg(target_os = "linux")]
-        {
-            use sd_notify::NotifyState;
-
-            let _ = sd_notify::notify(&[NotifyState::Ready]);
-        }
+        let _ = notify_ready();
 
         let listener = loop {
             match TcpListener::bind(&config.observability.metrics_exporter_listen).await {
