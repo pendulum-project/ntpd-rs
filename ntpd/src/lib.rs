@@ -136,6 +136,7 @@ mod ctl;
 mod daemon;
 mod force_sync;
 mod metrics;
+mod notify;
 
 pub use ctl::main as ctl_main;
 pub use daemon::main as daemon_main;

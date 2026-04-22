@@ -29,6 +29,8 @@ use tracing_subscriber::util::SubscriberInitExt;
 use config::NtpDaemonOptions;
 
 use crate::daemon::tracing::LogReloadTaskStarter;
+#[cfg(target_os = "linux")]
+use crate::notify::notify_ready;
 
 use self::tracing::LogLevel;
 
@@ -169,11 +171,7 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
         );
 
         #[cfg(target_os = "linux")]
-        {
-            use sd_notify::NotifyState;
-
-            let _ = sd_notify::notify(&[NotifyState::Ready]);
-        }
+        let _ = notify_ready();
 
         Ok(main_loop_handle.await??)
     })
