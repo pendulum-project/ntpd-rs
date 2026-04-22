@@ -152,7 +152,7 @@ fn run(options: &NtpMetricsExporterOptions) -> Result<(), Box<dyn std::error::Er
         );
 
         #[cfg(target_os = "linux")]
-        let _ = notify_ready();
+        let _ = notify_ready().await;
 
         let listener = loop {
             match TcpListener::bind(&config.observability.metrics_exporter_listen).await {
