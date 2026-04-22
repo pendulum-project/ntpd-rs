@@ -191,11 +191,7 @@ impl RemoteBloomFilter {
 
     pub const fn next_request(&mut self, cookie: NtpClientCookie) -> ReferenceIdRequest {
         let offset = self.next_to_request;
-        let last_request = self.last_requested.replace((offset, cookie));
-
-        if let Some(_last_request) = last_request {
-            // TODO log something about never got a response
-        }
+        self.last_requested = Some((offset, cookie));
 
         ReferenceIdRequest::new(self.chunk_size, offset)
             .expect("We ensure that our request always falls within the BloomFilter")
