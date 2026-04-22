@@ -665,7 +665,6 @@ impl<'a> NtpPacket<'a> {
                 }
             }
             NtpHeader::V5(header) => NtpPacket {
-                // TODO deduplicate extension handling with V4
                 header: NtpHeader::V5(v5::NtpHeaderV5::timestamp_response(
                     system,
                     *header,
@@ -1118,7 +1117,7 @@ impl<'a> NtpPacket<'a> {
     pub fn reference_id(&self) -> ReferenceId {
         match self.header {
             NtpHeader::V3(header) | NtpHeader::V4(header) => header.reference_id,
-            // TODO NTPv5 does not have reference IDs so this should always be None for now
+            // NTPv5 does not have reference IDs so this is always None
             NtpHeader::V5(_header) => ReferenceId::NONE,
         }
     }
@@ -1262,7 +1261,7 @@ impl NtpPacket<'_> {
                 header.mode = match mode {
                     NtpAssociationMode::Client => v5::NtpMode::Request,
                     NtpAssociationMode::Server => v5::NtpMode::Response,
-                    _ => todo!("NTPv5 can only handle client-server"),
+                    _ => unimplemented!("NTPv5 can only handle client-server"),
                 }
             }
         }
@@ -1315,7 +1314,7 @@ impl NtpPacket<'_> {
     pub fn set_reference_id(&mut self, reference_id: ReferenceId) {
         match &mut self.header {
             NtpHeader::V3(header) | NtpHeader::V4(header) => header.reference_id = reference_id,
-            NtpHeader::V5(_header) => todo!("NTPv5 does not have reference IDs"),
+            NtpHeader::V5(_header) => unimplemented!("NTPv5 does not have reference IDs"),
         }
     }
 

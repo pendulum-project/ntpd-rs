@@ -14,7 +14,7 @@ pub use error::V5Error;
 
 use super::RequestIdentifier;
 
-pub(crate) const DRAFT_VERSION: &str = "draft-ietf-ntp-ntpv5-06";
+pub(crate) const DRAFT_VERSION: &str = "draft-ietf-ntp-ntpv5-08";
 pub(crate) const UPGRADE_TIMESTAMP: NtpTimestamp = NtpTimestamp::from_bits(*b"NTP5DRFT");
 
 #[repr(u8)]
@@ -120,7 +120,6 @@ pub struct NtpServerCookie(pub [u8; 8]);
 
 impl NtpServerCookie {
     fn new_random() -> Self {
-        // TODO does this match entropy handling of the rest of the system?
         Self(random())
     }
 }
@@ -130,7 +129,6 @@ pub struct NtpClientCookie(pub [u8; 8]);
 
 impl NtpClientCookie {
     fn new_random() -> Self {
-        // TODO does this match entropy handling of the rest of the system?
         Self(random())
     }
 
