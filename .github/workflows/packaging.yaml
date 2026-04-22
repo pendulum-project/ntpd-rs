@@ -30,7 +30,7 @@ jobs:
           components: "llvm-tools"
 
       - name: Install cross, cargo-deb and cargo-generate-rpm
-        uses: taiki-e/install-action@85b24a67ef0c632dfefad70b9d5ce8fddb040754
+        uses: taiki-e/install-action@0c7a94999971db56e9df89df226240aab222e776
         with:
           tool: cross, cargo-deb, cargo-generate-rpm
 
@@ -43,7 +43,7 @@ jobs:
         run: RELEASE_TARGETS="${{ matrix.target }}" utils/build-release.sh
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-binaries-${{ matrix.target }}
           path: target/pkg/
@@ -65,7 +65,7 @@ jobs:
           rm -rf SHA256SUMS
           sha256sum -b * > SHA256SUMS
       - name: Upload artifacts
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-binaries
           path: target/pkg/
