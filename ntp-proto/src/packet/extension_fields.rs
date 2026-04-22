@@ -100,28 +100,34 @@ impl<'a> ExtensionField<'a> {
     const HEADER_LENGTH: usize = 4;
 
     pub fn into_owned(self) -> ExtensionField<'static> {
-        use ExtensionField::*;
-
         match self {
-            Unknown {
+            ExtensionField::Unknown {
                 type_id: typeid,
                 data,
-            } => Unknown {
+            } => ExtensionField::Unknown {
                 type_id: typeid,
                 data: Cow::Owned(data.into_owned()),
             },
-            UniqueIdentifier(data) => UniqueIdentifier(Cow::Owned(data.into_owned())),
-            NtsCookie(data) => NtsCookie(Cow::Owned(data.into_owned())),
-            NtsCookiePlaceholder {
+            ExtensionField::UniqueIdentifier(data) => {
+                ExtensionField::UniqueIdentifier(Cow::Owned(data.into_owned()))
+            }
+            ExtensionField::NtsCookie(data) => {
+                ExtensionField::NtsCookie(Cow::Owned(data.into_owned()))
+            }
+            ExtensionField::NtsCookiePlaceholder {
                 cookie_length: body_length,
-            } => NtsCookiePlaceholder {
+            } => ExtensionField::NtsCookiePlaceholder {
                 cookie_length: body_length,
             },
-            InvalidNtsEncryptedField => InvalidNtsEncryptedField,
-            DraftIdentification(data) => DraftIdentification(Cow::Owned(data.into_owned())),
-            Padding(len) => Padding(len),
-            ReferenceIdRequest(req) => ReferenceIdRequest(req),
-            ReferenceIdResponse(res) => ReferenceIdResponse(res.into_owned()),
+            ExtensionField::InvalidNtsEncryptedField => ExtensionField::InvalidNtsEncryptedField,
+            ExtensionField::DraftIdentification(data) => {
+                ExtensionField::DraftIdentification(Cow::Owned(data.into_owned()))
+            }
+            ExtensionField::Padding(len) => ExtensionField::Padding(len),
+            ExtensionField::ReferenceIdRequest(req) => ExtensionField::ReferenceIdRequest(req),
+            ExtensionField::ReferenceIdResponse(res) => {
+                ExtensionField::ReferenceIdResponse(res.into_owned())
+            }
         }
     }
 
@@ -131,26 +137,28 @@ impl<'a> ExtensionField<'a> {
         minimum_size: u16,
         version: ExtensionHeaderVersion,
     ) -> std::io::Result<()> {
-        use ExtensionField::*;
-
         match self {
-            Unknown { type_id, data } => {
+            ExtensionField::Unknown { type_id, data } => {
                 Self::encode_unknown(w, *type_id, data, minimum_size, version)
             }
-            UniqueIdentifier(identifier) => {
+            ExtensionField::UniqueIdentifier(identifier) => {
                 Self::encode_unique_identifier(w, identifier, minimum_size, version)
             }
-            NtsCookie(cookie) => Self::encode_nts_cookie(w, cookie, minimum_size, version),
-            NtsCookiePlaceholder {
+            ExtensionField::NtsCookie(cookie) => {
+                Self::encode_nts_cookie(w, cookie, minimum_size, version)
+            }
+            ExtensionField::NtsCookiePlaceholder {
                 cookie_length: body_length,
             } => Self::encode_nts_cookie_placeholder(w, *body_length, minimum_size, version),
-            InvalidNtsEncryptedField => Err(std::io::ErrorKind::Other.into()),
-            DraftIdentification(data) => {
+            ExtensionField::InvalidNtsEncryptedField => Err(std::io::ErrorKind::Other.into()),
+            ExtensionField::DraftIdentification(data) => {
                 Self::encode_draft_identification(w, data, minimum_size, version)
             }
-            Padding(len) => Self::encode_padding_field(w, *len, minimum_size, version),
-            ReferenceIdRequest(req) => req.serialize(w),
-            ReferenceIdResponse(res) => res.serialize(w),
+            ExtensionField::Padding(len) => {
+                Self::encode_padding_field(w, *len, minimum_size, version)
+            }
+            ExtensionField::ReferenceIdRequest(req) => req.serialize(w),
+            ExtensionField::ReferenceIdResponse(res) => res.serialize(w),
         }
     }
 
@@ -597,8 +605,6 @@ impl<'a> ExtensionFieldData<'a> {
         cipher: &(impl CipherProvider + ?Sized),
         version: ExtensionHeaderVersion,
     ) -> Result<DeserializedExtensionField<'a>, ParsingError<InvalidNtsExtensionField<'a>>> {
-        use ExtensionField::InvalidNtsEncryptedField;
-
         let mut efdata = Self::default();
         let mut size = 0;
         let mut is_valid_nts = true;
@@ -621,7 +627,9 @@ impl<'a> ExtensionFieldData<'a> {
                     .map_err(ParsingError::generalize)?;
 
                 let Some(cipher) = cipher.get(&efdata.untrusted) else {
-                    efdata.untrusted.push(InvalidNtsEncryptedField);
+                    efdata
+                        .untrusted
+                        .push(ExtensionField::InvalidNtsEncryptedField);
                     is_valid_nts = false;
                     continue;
                 };
@@ -636,7 +644,9 @@ impl<'a> ExtensionFieldData<'a> {
                         // early return if it's anything but a decrypt error
                         e.get_decrypt_error()?;
 
-                        efdata.untrusted.push(InvalidNtsEncryptedField);
+                        efdata
+                            .untrusted
+                            .push(ExtensionField::InvalidNtsEncryptedField);
                         is_valid_nts = false;
                         continue;
                     }
@@ -691,7 +701,7 @@ impl<'a> RawEncryptedField<'a> {
     fn from_message_bytes(
         message_bytes: &'a [u8],
     ) -> Result<Self, ParsingError<std::convert::Infallible>> {
-        use ParsingError::*;
+        use ParsingError::IncorrectLength;
 
         let [b0, b1, b2, b3, ref rest @ ..] = message_bytes[..] else {
             return Err(IncorrectLength);
