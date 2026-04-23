@@ -245,63 +245,81 @@ async fn print_state(print: Format, observe_socket: PathBuf) -> Result<ExitCode,
 
             println!("Synchronization status:");
             println!(
-                "Dispersion: {:.6}s, Delay: {:.6}s",
+                "\tDispersion:\t{:.6}s",
                 output
                     .system
                     .time_snapshot
                     .root_dispersion(output.program.now)
                     .to_seconds(),
+            );
+            println!(
+                "\tDelay:\t\t{:.6}s",
                 output.system.time_snapshot.root_delay.to_seconds()
             );
-            println!("Stratum: {}", output.system.stratum);
+            println!("\tStratum:\t{}", output.system.stratum);
+            println!();
             println!();
             println!("Sources:");
             for source in &output.sources {
+		println!();
                 println!(
-                    "{}/{}{} ({}): {:+.6}±{:.6}(±{:.6})s",
+                    "{} {}{} ({})",
+                    //source.id,
                     source.name,
                     source.address,
                     source.nts_cookies.map_or("", |_| " [NTS]"),
-                    source.id,
-                    source.timedata.offset.to_seconds(),
-                    source.timedata.uncertainty.to_seconds(),
-                    source.timedata.delay.to_seconds(),
+		    source.id,
                 );
+		println!("\tOffset:\t\t\t{:+.6}", source.timedata.offset.to_seconds());
+		println!("\tUncertainty:\t\t±{:.6}", source.timedata.uncertainty.to_seconds());
+		println!("\tDelay:\t\t\t±{:.6}", source.timedata.delay.to_seconds());
+		
                 println!(
-                    "    poll interval: {:.0}s, missing polls: {}",
+                    "\tPoll interval:\t\t{:.0}s",
                     source.poll_interval.as_duration().to_seconds(),
-                    source.unanswered_polls,
+                    );
+		println!("\tMissing polls:\t\t{}", source.unanswered_polls,);
+                println!(
+                    "\tRoot dispersion:\t{:.6}s",
+                    source.timedata.remote_uncertainty.to_seconds(),
                 );
                 println!(
-                    "    root dispersion: {:.6}s, root delay:{:.6}s",
-                    source.timedata.remote_uncertainty.to_seconds(),
+                    "\tRoot delay:\t\t{:.6}s",
                     source.timedata.remote_delay.to_seconds()
                 );
                 if let Some(nts_cookies) = source.nts_cookies {
                     println!(
-                        "    NTS cookies: {}/{} available",
+                        "\tNTS cookies:\t\t{}/{} available",
                         nts_cookies,
                         ntp_proto::MAX_COOKIES
                     );
                 }
             }
-            println!();
-            println!("Servers:");
+	    if output.servers.len() > 0 {
+		println!();
+		println!();
+		println!("Servers:");
+	    }
             for server in &output.servers {
-                println!(
-                    "{}: received {}, accepted {}, errors {}",
+                println!();
+		println!(
+                    "{}",
                     server.address,
-                    server.stats.received_packets.get(),
-                    server.stats.accepted_packets.get(),
-                    server.stats.response_send_errors.get()
                 );
-                println!(
-                    "    denied {}, nts nak {}, rate limited {}, ignored {}",
-                    server.stats.denied_packets.get(),
-                    server.stats.nts_nak_packets.get(),
-                    server.stats.rate_limited_packets.get(),
-                    server.stats.ignored_packets.get()
-                );
+		
+		println!("\tResponse send errors\t{}", server.stats.response_send_errors.get());
+		println!("\tReceived\t\t{}", server.stats.received_packets.get());
+		println!("\tAccepted\t\t{}", server.stats.accepted_packets.get());
+		println!("\tDenied\t\t\t{}", server.stats.denied_packets.get());
+		println!("\tIgnored\t\t\t{}", server.stats.ignored_packets.get());
+		println!("\tRate limited\t\t{}", server.stats.rate_limited_packets.get());
+		
+		println!("\tNTS NAK\t\t\t{}", server.stats.nts_nak_packets.get());
+		println!("\tNTS Received\t\t{}", server.stats.nts_received_packets.get());
+		println!("\tNTS Accepted\t\t{}", server.stats.nts_accepted_packets.get());
+		println!("\tNTS Denied\t\t{}", server.stats.nts_denied_packets.get());
+		println!("\tNTS Rate limited\t{}", server.stats.nts_rate_limited_packets.get());
+		println!();
             }
         }
         Format::Prometheus => {
