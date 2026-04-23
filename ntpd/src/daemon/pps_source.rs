@@ -1,16 +1,15 @@
 use std::path::PathBuf;
 
 use ntp_proto::{
-    Measurement, NtpClock, NtpDuration, NtpInstant, NtpLeapIndicator, OneWaySource,
-    OneWaySourceSnapshot, OneWaySourceUpdate, ReferenceId, SourceController, SystemSourceUpdate,
+    ClockId, Measurement, NtpDuration, NtpLeapIndicator, OneWaySource, SourceController,
 };
 use pps_time::PpsDevice;
 use tokio::sync::mpsc;
 use tracing::{Instrument, Span, debug, error, instrument, warn};
 
-use crate::daemon::{exitcode, ntp_source::MsgForSystem};
+use crate::daemon::util::convert_unix_timestamp;
 
-use super::{ntp_source::SourceChannels, spawn::SourceId};
+use super::ntp_source::SourceChannels;
 
 struct PpsDeviceFetchTask {
     pps: PpsDevice,
@@ -28,41 +27,25 @@ impl PpsDeviceFetchTask {
     }
 }
 
-pub(crate) struct PpsSourceTask<
-    C: 'static + NtpClock + Send,
-    Controller: SourceController<MeasurementDelay = ()>,
-> {
-    index: SourceId,
-    clock: C,
-    channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
+pub(crate) struct PpsSourceTask<Controller: SourceController> {
+    index: ClockId,
+    channels: SourceChannels,
     path: PathBuf,
     source: OneWaySource<Controller>,
     fetch_receiver: mpsc::Receiver<pps_time::pps::pps_fdata>,
 }
 
-impl<C, Controller: SourceController<MeasurementDelay = ()>> PpsSourceTask<C, Controller>
-where
-    C: 'static + NtpClock + Send + Sync,
-{
+impl<Controller: SourceController> PpsSourceTask<Controller> {
     async fn run(&mut self) {
         loop {
-            enum SelectResult<Controller: SourceController> {
+            enum SelectResult {
                 PpsRecv(Option<pps_time::pps::pps_fdata>),
-                SystemUpdate(
-                    Result<
-                        SystemSourceUpdate<Controller::ControllerMessage>,
-                        tokio::sync::broadcast::error::RecvError,
-                    >,
-                ),
             }
 
-            let selected: SelectResult<Controller> = tokio::select! {
+            let selected: SelectResult = tokio::select! {
                 result = self.fetch_receiver.recv() => {
                     SelectResult::PpsRecv(result)
                 },
-                result = self.channels.system_update_receiver.recv() => {
-                    SelectResult::SystemUpdate(result)
-                }
             };
 
             match selected {
@@ -70,45 +53,22 @@ where
                     Some(data) => {
                         debug!("received {:?}", data);
 
-                        let time = match self.clock.now() {
-                            Ok(time) => time,
-                            Err(e) => {
-                                error!(error = ?e, "There was an error retrieving the current time");
-                                std::process::exit(exitcode::NOPERM);
-                            }
-                        };
-
-                        let offset = f64::from(-data.info.assert_tu.nsec) / 1_000_000_000.;
-                        debug!("offset: {}", offset);
-
                         let measurement = Measurement {
-                            delay: (),
-                            offset: NtpDuration::from_seconds(offset),
-                            localtime: time,
-                            monotime: NtpInstant::now(),
+                            sender_id: self.index,
+                            receiver_id: ClockId::SYSTEM,
+                            sender_ts: convert_unix_timestamp(data.info.assert_tu.sec as _, 0),
+                            receiver_ts: convert_unix_timestamp(
+                                data.info.assert_tu.sec as _,
+                                data.info.assert_tu.nsec as _,
+                            ),
 
-                            stratum: 0,
                             root_delay: NtpDuration::ZERO,
                             root_dispersion: NtpDuration::ZERO,
                             leap: NtpLeapIndicator::NoWarning,
                             precision: 0,
                         };
 
-                        let controller_message = self.source.handle_measurement(measurement);
-
-                        let update = OneWaySourceUpdate {
-                            snapshot: OneWaySourceSnapshot {
-                                source_id: ReferenceId::PPS,
-                                stratum: 0,
-                            },
-                            message: controller_message,
-                        };
-
-                        self.channels
-                            .msg_for_system_sender
-                            .send(MsgForSystem::OneWaySourceUpdate(self.index, update))
-                            .await
-                            .ok();
+                        self.source.handle_measurement(measurement);
 
                         self.channels
                             .source_snapshots
@@ -127,24 +87,15 @@ where
                         warn!("Did not receive any new PPS data");
                     }
                 },
-                SelectResult::SystemUpdate(result) => match result {
-                    Ok(update) => {
-                        self.source.handle_message(update.message);
-                    }
-                    Err(e) => {
-                        error!("Error receiving system update: {:?}", e);
-                    }
-                },
             }
         }
     }
 
-    #[instrument(level = tracing::Level::ERROR, name = "Pps Source", skip(clock, channels, source))]
+    #[instrument(level = tracing::Level::ERROR, name = "Pps Source", skip(channels, source))]
     pub fn spawn(
-        index: SourceId,
+        index: ClockId,
         device_path: PathBuf,
-        clock: C,
-        channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
+        channels: SourceChannels,
         source: OneWaySource<Controller>,
     ) -> tokio::task::JoinHandle<()> {
         let pps = PpsDevice::new(device_path.clone()).expect("Could not open PPS device");
@@ -166,7 +117,6 @@ where
             (async move {
                 let mut process = PpsSourceTask {
                     index,
-                    clock,
                     channels,
                     path: device_path,
                     source,

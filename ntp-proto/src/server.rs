@@ -3,7 +3,7 @@ use std::{
     fmt::Display,
     io::Cursor,
     net::{AddrParseError, IpAddr},
-    sync::Arc,
+    sync::{Arc, RwLock},
     time::{Duration, Instant},
 };
 
@@ -11,7 +11,7 @@ use serde::{Deserialize, Deserializer, de};
 
 use crate::{
     Cipher, KeySet, NtpClock, NtpPacket, NtpTimestamp, NtpVersion, PacketParsingError,
-    SystemSnapshot, ipfilter::IpFilter,
+    ipfilter::IpFilter, system::NtpServerInfo,
 };
 
 pub enum ServerAction<'a> {
@@ -88,7 +88,7 @@ pub struct Server<C> {
     denyfilter: IpFilter,
     allowfilter: IpFilter,
     client_cache: TimestampedCache<IpAddr>,
-    system: SystemSnapshot,
+    server_info: Arc<RwLock<NtpServerInfo>>,
     keyset: Arc<KeySet>,
 }
 
@@ -99,10 +99,10 @@ fn fallback_message_version(message: &[u8]) -> u8 {
 
 impl<C> Server<C> {
     /// Create a new server
-    pub fn new(
+    pub fn new_internal(
         config: ServerConfig,
         clock: C,
-        system: SystemSnapshot,
+        server_info: Arc<RwLock<NtpServerInfo>>,
         keyset: Arc<KeySet>,
     ) -> Self {
         let denyfilter = IpFilter::new(&config.denylist.filter);
@@ -114,28 +114,9 @@ impl<C> Server<C> {
             denyfilter,
             allowfilter,
             client_cache,
-            system,
+            server_info,
             keyset,
         }
-    }
-
-    /// Update the [`ServerConfig`] of the server
-    pub fn update_config(&mut self, config: ServerConfig) {
-        if self.config.denylist.filter != config.denylist.filter {
-            self.denyfilter = IpFilter::new(&config.denylist.filter);
-        }
-        if self.config.allowlist.filter != config.allowlist.filter {
-            self.allowfilter = IpFilter::new(&config.allowlist.filter);
-        }
-        if self.config.rate_limiting_cache_size != config.rate_limiting_cache_size {
-            self.client_cache = TimestampedCache::new(config.rate_limiting_cache_size);
-        }
-        self.config = config;
-    }
-
-    /// Provide the server with the latest [`SystemSnapshot`]
-    pub fn update_system(&mut self, system: SystemSnapshot) {
-        self.system = system;
     }
 
     /// Provide the server with a new [`KeySet`]
@@ -304,6 +285,8 @@ impl<C: NtpClock> Server<C> {
             reason = ServerReason::Policy;
         }
 
+        let server_info = *self.server_info.read().unwrap();
+
         let (packet, cipher, desired_size) = match action {
             ServerResponse::NTSNak => (NtpPacket::nts_nak_response(packet), None, None),
             ServerResponse::Deny => {
@@ -317,7 +300,7 @@ impl<C: NtpClock> Server<C> {
                 if let Some(cookie) = cookie {
                     (
                         NtpPacket::nts_timestamp_response(
-                            &self.system,
+                            server_info,
                             packet,
                             recv_timestamp,
                             &self.clock,
@@ -330,7 +313,7 @@ impl<C: NtpClock> Server<C> {
                 } else {
                     (
                         NtpPacket::timestamp_response(
-                            &self.system,
+                            server_info,
                             packet,
                             recv_timestamp,
                             &self.clock,
@@ -602,12 +585,8 @@ mod tests {
         };
         let mut stats = TestStatHandler::default();
 
-        let mut server = Server::new(
-            config,
-            clock,
-            SystemSnapshot::default(),
-            KeySetProvider::new(1).get(),
-        );
+        let mut server =
+            Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());
 
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
         let serialized = serialize_packet_unencrypted(&packet);
@@ -668,7 +647,11 @@ mod tests {
             require_nts: None,
             accepted_versions: vec![NtpVersion::V4],
         };
-        server.update_config(config);
+        let clock = TestClock {
+            cur: NtpTimestamp::from_fixed_int(200),
+        };
+        let mut server =
+            Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());
 
         let mut buf = [0; 48];
         let response = server.handle(
@@ -712,12 +695,8 @@ mod tests {
         };
         let mut stats = TestStatHandler::default();
 
-        let mut server = Server::new(
-            config,
-            clock,
-            SystemSnapshot::default(),
-            KeySetProvider::new(1).get(),
-        );
+        let mut server =
+            Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());
 
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
         let serialized = serialize_packet_unencrypted(&packet);
@@ -784,7 +763,11 @@ mod tests {
             require_nts: None,
             accepted_versions: vec![NtpVersion::V4],
         };
-        server.update_config(config);
+        let clock = TestClock {
+            cur: NtpTimestamp::from_fixed_int(200),
+        };
+        let mut server =
+            Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());
 
         let mut buf = [0; 48];
         let response = server.handle(
@@ -822,12 +805,8 @@ mod tests {
         };
         let mut stats = TestStatHandler::default();
 
-        let mut server = Server::new(
-            config,
-            clock,
-            SystemSnapshot::default(),
-            KeySetProvider::new(1).get(),
-        );
+        let mut server =
+            Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());
 
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
         let serialized = serialize_packet_unencrypted(&packet);
@@ -919,7 +898,11 @@ mod tests {
             accepted_versions: vec![NtpVersion::V4],
         };
 
-        server.update_config(config);
+        let clock = TestClock {
+            cur: NtpTimestamp::from_fixed_int(200),
+        };
+        let mut server =
+            Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());
 
         let mut buf = [0; 48];
         let response = server.handle(
@@ -999,12 +982,8 @@ mod tests {
         };
         let mut stats = TestStatHandler::default();
 
-        let mut server = Server::new(
-            config,
-            clock,
-            SystemSnapshot::default(),
-            KeySetProvider::new(1).get(),
-        );
+        let mut server =
+            Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());
 
         let (packet, _) = NtpPacket::poll_message(PollIntervalLimits::default().min);
         let mut serialized = serialize_packet_unencrypted(&packet);
@@ -1054,12 +1033,8 @@ mod tests {
         };
         let mut stats = TestStatHandler::default();
 
-        let mut server = Server::new(
-            config,
-            clock,
-            SystemSnapshot::default(),
-            KeySetProvider::new(1).get(),
-        );
+        let mut server =
+            Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());
 
         let (packet, _) = NtpPacket::poll_message(PollIntervalLimits::default().min);
         let mut serialized = serialize_packet_unencrypted(&packet);
@@ -1113,7 +1088,11 @@ mod tests {
             require_nts: None,
             accepted_versions: vec![NtpVersion::V4],
         };
-        server.update_config(config);
+        let clock = TestClock {
+            cur: NtpTimestamp::from_fixed_int(200),
+        };
+        let mut server =
+            Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());
 
         let mut buf = [0; 48];
         let response = server.handle(
@@ -1143,7 +1122,11 @@ mod tests {
             require_nts: None,
             accepted_versions: vec![NtpVersion::V4],
         };
-        server.update_config(config);
+        let clock = TestClock {
+            cur: NtpTimestamp::from_fixed_int(200),
+        };
+        let mut server =
+            Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());
 
         let mut buf = [0; 48];
         let response = server.handle(
@@ -1173,7 +1156,11 @@ mod tests {
             require_nts: None,
             accepted_versions: vec![NtpVersion::V4],
         };
-        server.update_config(config);
+        let clock = TestClock {
+            cur: NtpTimestamp::from_fixed_int(200),
+        };
+        let mut server =
+            Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());
 
         let mut buf = [0; 48];
         let response = server.handle(
@@ -1203,7 +1190,11 @@ mod tests {
             require_nts: None,
             accepted_versions: vec![NtpVersion::V4],
         };
-        server.update_config(config);
+        let clock = TestClock {
+            cur: NtpTimestamp::from_fixed_int(200),
+        };
+        let mut server =
+            Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());
 
         let mut buf = [0; 48];
         let response = server.handle(
@@ -1242,7 +1233,7 @@ mod tests {
         let mut stats = TestStatHandler::default();
         let keyset = KeySetProvider::new(1).get();
 
-        let mut server = Server::new(config, clock, SystemSnapshot::default(), keyset.clone());
+        let mut server = Server::new_internal(config, clock, Arc::default(), keyset.clone());
 
         let decodedcookie = DecodedServerCookie {
             algorithm: AeadAlgorithm::AeadAesSivCmac256,
@@ -1332,10 +1323,10 @@ mod tests {
         };
         let mut stats = TestStatHandler::default();
 
-        let mut server = Server::new(
+        let mut server = Server::new_internal(
             config.clone(),
             clock,
-            SystemSnapshot::default(),
+            Arc::default(),
             KeySetProvider::new(1).get(),
         );
 
@@ -1386,7 +1377,11 @@ mod tests {
         assert!(packet.is_kiss_ntsn());
 
         config.require_nts = Some(FilterAction::Deny);
-        server.update_config(config.clone());
+        let clock = TestClock {
+            cur: NtpTimestamp::from_fixed_int(200),
+        };
+        let mut server =
+            Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());
 
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
         let serialized = serialize_packet_unencrypted(&packet);
@@ -1431,12 +1426,8 @@ mod tests {
         };
         let mut stats = TestStatHandler::default();
 
-        let mut server = Server::new(
-            config,
-            clock,
-            SystemSnapshot::default(),
-            KeySetProvider::new(1).get(),
-        );
+        let mut server =
+            Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());
 
         let (packet, id) = NtpPacket::poll_message_v5(PollIntervalLimits::default().min);
         let serialized = serialize_packet_unencrypted(&packet);
@@ -1511,12 +1502,8 @@ mod tests {
         };
         let mut stats = TestStatHandler::default();
 
-        let mut server = Server::new(
-            config,
-            clock,
-            SystemSnapshot::default(),
-            KeySetProvider::new(1).get(),
-        );
+        let mut server =
+            Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());
 
         let (packet, _) = NtpPacket::poll_message_v5(PollIntervalLimits::default().min);
         let serialized = serialize_packet_unencrypted(&packet);
@@ -1536,7 +1523,7 @@ mod tests {
         );
         assert!(matches!(response, ServerAction::Ignore));
 
-        server.update_config(ServerConfig {
+        let config = ServerConfig {
             denylist: FilterList {
                 filter: vec![],
                 action: FilterAction::Deny,
@@ -1549,7 +1536,13 @@ mod tests {
             rate_limiting_cache_size: 0,
             require_nts: None,
             accepted_versions: vec![NtpVersion::V5],
-        });
+        };
+
+        let clock = TestClock {
+            cur: NtpTimestamp::from_fixed_int(200),
+        };
+        let mut server =
+            Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());
 
         let (packet, _) = NtpPacket::poll_message(PollIntervalLimits::default().min);
         let serialized = serialize_packet_unencrypted(&packet);

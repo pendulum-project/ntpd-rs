@@ -23,7 +23,7 @@ __internal-api = []
 md-5.workspace = true
 rand.workspace = true
 tracing.workspace = true
-tokio = { workspace = true, features = ["io-util"] }
+tokio = { workspace = true, features = ["io-util", "time"] }
 tokio-rustls.workspace = true
 serde.workspace = true
 rustls23.workspace = true
@@ -35,4 +35,4 @@ zeroize.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
-tokio = { workspace = true, features = ["rt", "macros"] }
+tokio = { workspace = true, features = ["rt", "macros", "test-util"] }

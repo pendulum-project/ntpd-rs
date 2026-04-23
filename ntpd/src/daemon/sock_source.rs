@@ -2,17 +2,16 @@ use std::path::PathBuf;
 use std::{fmt::Display, path::Path};
 
 use ntp_proto::{
-    Measurement, NtpClock, NtpDuration, NtpInstant, NtpLeapIndicator, OneWaySource,
-    OneWaySourceSnapshot, OneWaySourceUpdate, ReferenceId, SourceController, SystemSourceUpdate,
+    ClockId, Measurement, NtpClock, NtpDuration, NtpLeapIndicator, OneWaySource, SourceController,
 };
 use tracing::debug;
 use tracing::{Instrument, Span, error, instrument};
 
 use tokio::net::UnixDatagram;
 
-use crate::daemon::{exitcode, ntp_source::MsgForSystem};
+use crate::daemon::exitcode;
 
-use super::{ntp_source::SourceChannels, spawn::SourceId};
+use super::ntp_source::SourceChannels;
 
 // Based on https://gitlab.com/gpsd/gpsd/-/blob/master/gpsd/timehint.c#L268
 #[derive(Debug)]
@@ -79,15 +78,12 @@ fn deserialize_sample(
     Ok(sample)
 }
 
-pub(crate) struct SockSourceTask<
-    C: 'static + NtpClock + Send,
-    Controller: SourceController<MeasurementDelay = ()>,
-> {
-    index: SourceId,
+pub(crate) struct SockSourceTask<C: 'static + NtpClock + Send, Controller: SourceController> {
+    index: ClockId,
     socket: UnixDatagram,
     clock: C,
     path: PathBuf,
-    channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
+    channels: SourceChannels,
     source: OneWaySource<Controller>,
 }
 
@@ -102,31 +98,22 @@ fn create_socket<T: AsRef<Path>>(path: T) -> std::io::Result<UnixDatagram> {
     Ok(socket)
 }
 
-impl<C, Controller: SourceController<MeasurementDelay = ()>> SockSourceTask<C, Controller>
+impl<C, Controller: SourceController> SockSourceTask<C, Controller>
 where
     C: 'static + NtpClock + Send + Sync,
 {
     async fn run(&mut self) {
         loop {
-            enum SelectResult<Controller: SourceController> {
+            enum SelectResult {
                 SockRecv(Result<usize, std::io::Error>),
-                SystemUpdate(
-                    Result<
-                        SystemSourceUpdate<Controller::ControllerMessage>,
-                        tokio::sync::broadcast::error::RecvError,
-                    >,
-                ),
             }
 
             let mut buf = [0; SOCK_SAMPLE_SIZE];
 
-            let selected: SelectResult<Controller> = tokio::select! {
+            let selected: SelectResult = tokio::select! {
                 result = self.socket.recv(&mut buf) => {
                     SelectResult::SockRecv(result)
                 },
-                result = self.channels.system_update_receiver.recv() => {
-                    SelectResult::SystemUpdate(result)
-                }
             };
 
             match selected {
@@ -149,32 +136,18 @@ where
                         };
 
                         let measurement = Measurement {
-                            delay: (),
-                            offset: NtpDuration::from_seconds(sample.offset),
-                            localtime: time,
-                            monotime: NtpInstant::now(),
+                            sender_id: self.index,
+                            receiver_id: ClockId::SYSTEM,
+                            sender_ts: time - NtpDuration::from_seconds(sample.offset),
+                            receiver_ts: time,
 
-                            stratum: 0,
                             root_delay: NtpDuration::ZERO,
                             root_dispersion: NtpDuration::ZERO,
                             leap,
                             precision: 0, // TODO: compute on startup?
                         };
 
-                        let controller_message = self.source.handle_measurement(measurement);
-
-                        let update = OneWaySourceUpdate {
-                            snapshot: OneWaySourceSnapshot {
-                                source_id: ReferenceId::SOCK,
-                                stratum: 0,
-                            },
-                            message: controller_message,
-                        };
-                        self.channels
-                            .msg_for_system_sender
-                            .send(MsgForSystem::OneWaySourceUpdate(self.index, update))
-                            .await
-                            .ok();
+                        self.source.handle_measurement(measurement);
 
                         self.channels
                             .source_snapshots
@@ -193,24 +166,16 @@ where
                         error!("Error deserializing sample: {}", e);
                     }
                 },
-                SelectResult::SystemUpdate(result) => match result {
-                    Ok(update) => {
-                        self.source.handle_message(update.message);
-                    }
-                    Err(e) => {
-                        error!("Error receiving system update: {:?}", e);
-                    }
-                },
             }
         }
     }
 
     #[instrument(level = tracing::Level::ERROR, name = "Sock Source", skip(clock, channels, source))]
     pub fn spawn(
-        index: SourceId,
+        index: ClockId,
         socket_path: PathBuf,
         clock: C,
-        channels: SourceChannels<Controller::ControllerMessage, Controller::SourceMessage>,
+        channels: SourceChannels,
         source: OneWaySource<Controller>,
     ) -> tokio::task::JoinHandle<()> {
         let socket = create_socket(&socket_path).expect("Could not create socket");
@@ -241,16 +206,16 @@ mod tests {
     };
 
     use ntp_proto::{
-        AlgorithmConfig, KalmanClockController, NtpClock, NtpDuration, NtpLeapIndicator,
-        NtpTimestamp, ReferenceId, SourceConfig, SynchronizationConfig,
+        AlgorithmConfig, ClockId, KalmanClockController, NtpClock, NtpDuration, NtpLeapIndicator,
+        NtpTimestamp, OneWaySource, SourceConfig, SynchronizationConfig, TimeSyncController,
+        TimeSyncControllerWrapper,
     };
     use tokio::sync::mpsc;
 
     use crate::{
         daemon::{
-            ntp_source::{MsgForSystem, SourceChannels},
+            ntp_source::SourceChannels,
             sock_source::{SOCK_MAGIC, SampleError, SockSourceTask, create_socket},
-            spawn::SourceId,
             util::EPOCH_OFFSET,
         },
         test::alloc_port,
@@ -308,16 +273,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_sock() {
-        let (_system_update_sender, system_update_receiver) = tokio::sync::broadcast::channel(1);
-        let (msg_for_system_sender, mut msg_for_system_receiver) = mpsc::channel(1);
+        let (msg_for_system_sender, _) = mpsc::channel(1);
 
-        let index = SourceId::new();
+        let index = ClockId::new();
         let clock = TestClock {};
-        let mut system: ntp_proto::System<_, KalmanClockController<_, _>> = ntp_proto::System::new(
+        let controller = TimeSyncControllerWrapper::<KalmanClockController<_>>::new(
             clock.clone(),
             SynchronizationConfig::default(),
             AlgorithmConfig::default(),
-            Arc::new([]),
         )
         .unwrap();
 
@@ -330,12 +293,15 @@ mod tests {
             clock,
             SourceChannels {
                 msg_for_system_sender,
-                system_update_receiver,
                 source_snapshots: Arc::new(RwLock::new(HashMap::new())),
             },
-            system
-                .create_sock_source(index, SourceConfig::default(), 0.001, 1e-3)
-                .unwrap(),
+            OneWaySource::new(controller.add_one_way_source(
+                index,
+                SourceConfig::default(),
+                0.001,
+                1e-3,
+                None,
+            )),
         );
 
         // Send example data to socket
@@ -346,19 +312,6 @@ mod tests {
             119, 19, 65, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 75, 67, 79, 83,
         ];
         sock.send(&buf).unwrap();
-
-        // Receive system update
-        let msg = msg_for_system_receiver.recv().await.unwrap();
-        let update = match msg {
-            MsgForSystem::OneWaySourceUpdate(source_id, sock_source_update) => {
-                assert_eq!(source_id, index);
-                sock_source_update
-            }
-            _ => panic!("wrong message type"),
-        };
-
-        assert_eq!(update.snapshot.source_id, ReferenceId::SOCK);
-        assert_eq!(update.snapshot.stratum, 0);
 
         handle.abort();
     }

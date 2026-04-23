@@ -1,4 +1,4 @@
-use std::{
+/*use std::{
     io::{IsTerminal, Write},
     path::Path,
     process::ExitCode,
@@ -169,4 +169,11 @@ pub(crate) fn force_sync(config: Option<&Path>) -> std::io::Result<ExitCode> {
 
             Ok(ExitCode::SUCCESS)
         })
+}*/
+
+use std::{path::Path, process::ExitCode};
+
+pub(crate) fn force_sync(_config: Option<&Path>) -> std::io::Result<ExitCode> {
+    println!("Disabled for now");
+    Ok(ExitCode::FAILURE)
 }

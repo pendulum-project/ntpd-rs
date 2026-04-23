@@ -1,25 +1,29 @@
 use crate::{
-    NtpVersion,
+    ClockId, NtpVersion,
+    algorithm::Measurement,
     packet::{
         ExtensionField, NtpHeader,
         v5::server_reference_id::{BloomFilter, RemoteBloomFilter},
     },
+    system::NtpSourceInfo,
+    v5::ServerId,
 };
 use crate::{
     algorithm::{ObservableSourceTimedata, SourceController},
     config::SourceConfig,
     cookiestash::CookieStash,
     identifiers::ReferenceId,
-    packet::{Cipher, NtpAssociationMode, NtpLeapIndicator, NtpPacket, RequestIdentifier},
-    system::{SystemSnapshot, SystemSourceUpdate},
-    time_types::{NtpDuration, NtpInstant, NtpTimestamp, PollInterval},
+    packet::{Cipher, NtpAssociationMode, NtpPacket, RequestIdentifier},
+    time_types::{NtpTimestamp, PollInterval},
 };
 use rand::{Rng, thread_rng};
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashMap,
     fmt::Debug,
     io::Cursor,
     net::{IpAddr, SocketAddr},
+    sync::{Arc, Mutex, RwLock},
     time::Duration,
 };
 use tracing::{debug, trace, warn};
@@ -58,7 +62,7 @@ impl std::fmt::Debug for SourceNtsData {
 }
 
 #[derive(Debug)]
-pub struct NtpSource<Controller: SourceController<MeasurementDelay = NtpDuration>> {
+pub struct NtpSource<Controller: SourceController> {
     nts: Option<Box<SourceNtsData>>,
 
     // Poll interval used when sending last poll message.
@@ -70,7 +74,7 @@ pub struct NtpSource<Controller: SourceController<MeasurementDelay = NtpDuration
     // Identifier of the last request sent to the server. This is correlated
     // with any received response from the server to guard against replay
     // attacks and packet reordering.
-    current_request_identifier: Option<(RequestIdentifier, NtpInstant)>,
+    current_request_identifier: Option<(RequestIdentifier, tokio::time::Instant)>,
 
     // Whether we have seen a DENY/RSTR KISS response since the last succesfull
     // interaction
@@ -94,34 +98,29 @@ pub struct NtpSource<Controller: SourceController<MeasurementDelay = NtpDuration
 
     // TODO we only need this if we run as a server
     bloom_filter: RemoteBloomFilter,
+
+    id: ClockId,
+
+    source_info: Arc<RwLock<NtpSourceInfo>>,
+
+    source_snapshots: Arc<Mutex<HashMap<ClockId, NtpSourceSnapshot>>>,
 }
 
-pub struct OneWaySource<Controller: SourceController<MeasurementDelay = ()>> {
+pub struct OneWaySource<Controller: SourceController> {
     controller: Controller,
 }
 
-impl<Controller: SourceController<MeasurementDelay = ()>> OneWaySource<Controller> {
-    pub(crate) fn new(controller: Controller) -> OneWaySource<Controller> {
+impl<Controller: SourceController> OneWaySource<Controller> {
+    pub fn new(mut controller: Controller) -> OneWaySource<Controller> {
+        controller.set_usable(true);
         OneWaySource { controller }
     }
 
-    pub fn handle_measurement(
-        &mut self,
-        measurement: Measurement<()>,
-    ) -> Option<Controller::SourceMessage> {
-        self.controller.handle_measurement(measurement)
+    pub fn handle_measurement(&mut self, measurement: Measurement) {
+        self.controller.handle_measurement(measurement);
     }
 
-    pub fn handle_message(&mut self, message: Controller::ControllerMessage) {
-        self.controller.handle_message(message);
-    }
-
-    pub fn observe<SourceId>(
-        &self,
-        name: String,
-        address: String,
-        id: SourceId,
-    ) -> ObservableSourceState<SourceId> {
+    pub fn observe(&self, name: String, address: String, id: ClockId) -> ObservableSourceState {
         ObservableSourceState {
             timedata: self.controller.observe(),
             unanswered_polls: 0,
@@ -130,45 +129,6 @@ impl<Controller: SourceController<MeasurementDelay = ()>> OneWaySource<Controlle
             name,
             address,
             id,
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct Measurement<D: Debug + Copy + Clone> {
-    pub delay: D,
-    pub offset: NtpDuration,
-    pub localtime: NtpTimestamp,
-    pub monotime: NtpInstant,
-
-    pub stratum: u8,
-    pub root_delay: NtpDuration,
-    pub root_dispersion: NtpDuration,
-    pub leap: NtpLeapIndicator,
-    pub precision: i8,
-}
-
-impl Measurement<NtpDuration> {
-    fn from_packet(
-        packet: &NtpPacket,
-        send_timestamp: NtpTimestamp,
-        recv_timestamp: NtpTimestamp,
-        local_clock_time: NtpInstant,
-    ) -> Self {
-        Self {
-            delay: (recv_timestamp - send_timestamp)
-                - (packet.transmit_timestamp() - packet.receive_timestamp()),
-            offset: ((packet.receive_timestamp() - send_timestamp)
-                + (packet.transmit_timestamp() - recv_timestamp))
-                / 2,
-            localtime: send_timestamp + (recv_timestamp - send_timestamp) / 2,
-            monotime: local_clock_time,
-
-            stratum: packet.stratum(),
-            root_delay: packet.root_delay(),
-            root_dispersion: packet.root_dispersion(),
-            leap: packet.leap(),
-            precision: packet.precision(),
         }
     }
 }
@@ -224,23 +184,11 @@ impl Reach {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct OneWaySourceUpdate<SourceMessage> {
-    pub snapshot: OneWaySourceSnapshot,
-    pub message: Option<SourceMessage>,
-}
-
 #[derive(Debug, Clone, Copy)]
 #[expect(clippy::large_enum_variant)]
 pub enum SourceSnapshot {
     Ntp(NtpSourceSnapshot),
-    OneWay(OneWaySourceSnapshot),
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct OneWaySourceSnapshot {
-    pub source_id: ReferenceId,
-    pub stratum: u8,
+    External { stratum: u8, source_id: ReferenceId },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -265,7 +213,7 @@ impl NtpSourceSnapshot {
         &self,
         local_stratum: u8,
         local_ips: &[IpAddr],
-        system: &SystemSnapshot,
+        server_id: ServerId,
     ) -> Result<(), AcceptSynchronizationError> {
         use AcceptSynchronizationError::*;
 
@@ -293,7 +241,7 @@ impl NtpSourceSnapshot {
         }
 
         match self.bloom_filter {
-            Some(filter) if filter.contains_id(&system.server_id) => {
+            Some(filter) if filter.contains_id(&server_id) => {
                 debug!("Source rejected because of detected synchronization loop (bloom filter)");
                 return Err(Loop);
             }
@@ -309,9 +257,7 @@ impl NtpSourceSnapshot {
         Ok(())
     }
 
-    pub fn from_source<Controller: SourceController<MeasurementDelay = NtpDuration>>(
-        source: &NtpSource<Controller>,
-    ) -> Self {
+    pub fn from_source<Controller: SourceController>(source: &NtpSource<Controller>) -> Self {
         Self {
             source_addr: source.source_addr,
             source_id: source.source_id,
@@ -384,46 +330,10 @@ impl ProtocolVersion {
     }
 }
 
-pub struct NtpSourceUpdate<SourceMessage> {
-    pub(crate) snapshot: NtpSourceSnapshot,
-    pub(crate) message: Option<SourceMessage>,
-}
-
-impl<SourceMessage: Debug> std::fmt::Debug for NtpSourceUpdate<SourceMessage> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("NtpSourceUpdate")
-            .field("snapshot", &self.snapshot)
-            .field("message", &self.message)
-            .finish()
-    }
-}
-
-impl<SourceMessage: Clone> Clone for NtpSourceUpdate<SourceMessage> {
-    fn clone(&self) -> Self {
-        Self {
-            snapshot: self.snapshot,
-            message: self.message.clone(),
-        }
-    }
-}
-
-#[cfg(feature = "__internal-test")]
-impl<SourceMessage> NtpSourceUpdate<SourceMessage> {
-    pub fn snapshot(snapshot: NtpSourceSnapshot) -> Self {
-        NtpSourceUpdate {
-            snapshot,
-            message: None,
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
-#[expect(clippy::large_enum_variant)]
-pub enum NtpSourceAction<SourceMessage> {
+pub enum NtpSourceAction {
     /// Send a message over the network. When this is issued, the network port maybe changed.
     Send(Vec<u8>),
-    /// Send an update to [`System`](crate::system::System)
-    UpdateSystem(NtpSourceUpdate<SourceMessage>),
     /// Call [`NtpSource::handle_timer`] after given duration
     SetTimer(Duration),
     /// A complete reset of the connection is necessary, including a potential new NTSKE client session and/or DNS lookup.
@@ -432,29 +342,21 @@ pub enum NtpSourceAction<SourceMessage> {
     Demobilize,
 }
 
-#[derive(Debug)]
-pub struct NtpSourceActionIterator<SourceMessage> {
-    iter: <Vec<NtpSourceAction<SourceMessage>> as IntoIterator>::IntoIter,
+#[derive(Debug, Default)]
+pub struct NtpSourceActionIterator {
+    iter: <Vec<NtpSourceAction> as IntoIterator>::IntoIter,
 }
 
-impl<SourceMessage> Default for NtpSourceActionIterator<SourceMessage> {
-    fn default() -> Self {
-        Self {
-            iter: vec![].into_iter(),
-        }
-    }
-}
-
-impl<SourceMessage> Iterator for NtpSourceActionIterator<SourceMessage> {
-    type Item = NtpSourceAction<SourceMessage>;
+impl Iterator for NtpSourceActionIterator {
+    type Item = NtpSourceAction;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next()
     }
 }
 
-impl<SourceMessage> NtpSourceActionIterator<SourceMessage> {
-    fn from(data: Vec<NtpSourceAction<SourceMessage>>) -> Self {
+impl NtpSourceActionIterator {
+    fn from(data: Vec<NtpSourceAction>) -> Self {
         Self {
             iter: data.into_iter(),
         }
@@ -470,7 +372,7 @@ macro_rules! actions {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ObservableSourceState<SourceId> {
+pub struct ObservableSourceState {
     #[serde(flatten)]
     pub timedata: ObservableSourceTimedata,
     pub unanswered_polls: u32,
@@ -478,17 +380,24 @@ pub struct ObservableSourceState<SourceId> {
     pub nts_cookies: Option<usize>,
     pub name: String,
     pub address: String,
-    pub id: SourceId,
+    pub id: ClockId,
 }
 
-impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Controller> {
+impl<Controller: SourceController> NtpSource<Controller> {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "FIXME: See if we can combine some of these once the design is a bit more final"
+    )]
     pub(crate) fn new(
         source_addr: SocketAddr,
         source_config: SourceConfig,
         protocol_version: ProtocolVersion,
         controller: Controller,
         nts: Option<Box<SourceNtsData>>,
-    ) -> (Self, NtpSourceActionIterator<Controller::SourceMessage>) {
+        id: ClockId,
+        source_info: Arc<RwLock<NtpSourceInfo>>,
+        source_snapshots: Arc<Mutex<HashMap<ClockId, NtpSourceSnapshot>>>,
+    ) -> (Self, NtpSourceActionIterator) {
         (
             Self {
                 nts,
@@ -515,12 +424,18 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
                 protocol_version, // TODO make this configurable
 
                 bloom_filter: RemoteBloomFilter::new(16).expect("16 is a valid chunk size"),
+
+                id,
+
+                source_info,
+
+                source_snapshots,
             },
             actions!(NtpSourceAction::SetTimer(Duration::from_secs(0))),
         )
     }
 
-    pub fn observe<SourceId>(&self, name: String, id: SourceId) -> ObservableSourceState<SourceId> {
+    pub fn observe(&self, name: String, id: ClockId) -> ObservableSourceState {
         ObservableSourceState {
             timedata: self.controller.observe(),
             unanswered_polls: self.reach.unanswered_polls(),
@@ -538,7 +453,7 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
             .max(self.remote_min_poll_interval)
     }
 
-    pub fn handle_timer(&mut self) -> NtpSourceActionIterator<Controller::SourceMessage> {
+    pub fn handle_timer(&mut self) -> NtpSourceActionIterator {
         if !self.reach.is_reachable() && self.tries >= STARTUP_TRIES_THRESHOLD {
             return if self.have_deny_rstr_response {
                 // There were kiss of death responses, so we should probably demobilize instead
@@ -600,7 +515,8 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
                 }
             },
         };
-        self.current_request_identifier = Some((identifier, NtpInstant::now() + POLL_WINDOW));
+        self.current_request_identifier =
+            Some((identifier, tokio::time::Instant::now() + POLL_WINDOW));
 
         if let NtpHeader::V5(header) = packet.header() {
             let req_ef = self.bloom_filter.next_request(header.client_cookie);
@@ -624,12 +540,24 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
         let used = cursor.position();
         let result = &cursor.into_inner()[..used as usize];
 
+        let usable = {
+            let source_info = self.source_info.read().unwrap();
+            snapshot
+                .accept_synchronization(
+                    source_info.local_stratum,
+                    &source_info.ip_list,
+                    source_info.server_id,
+                )
+                .is_ok()
+        };
+        self.source_snapshots
+            .lock()
+            .unwrap()
+            .insert(self.id, snapshot);
+        self.controller.set_usable(usable);
+
         actions!(
             NtpSourceAction::Send(result.into()),
-            NtpSourceAction::UpdateSystem(NtpSourceUpdate {
-                snapshot,
-                message: None
-            }),
             // randomize the poll interval a little to make it harder to predict poll requests
             NtpSourceAction::SetTimer(
                 poll_interval
@@ -639,21 +567,12 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
         )
     }
 
-    pub fn handle_system_update(
-        &mut self,
-        update: SystemSourceUpdate<Controller::ControllerMessage>,
-    ) -> NtpSourceActionIterator<Controller::SourceMessage> {
-        self.controller.handle_message(update.message);
-        actions!()
-    }
-
     pub fn handle_incoming(
         &mut self,
         message: &[u8],
-        local_clock_time: NtpInstant,
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
-    ) -> NtpSourceActionIterator<Controller::SourceMessage> {
+    ) -> NtpSourceActionIterator {
         let message =
             match NtpPacket::deserialize(message, &self.nts.as_ref().map(|nts| nts.s2c.as_ref())) {
                 Ok((packet, _)) => packet,
@@ -676,7 +595,7 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
         }
 
         let request_identifier = match self.current_request_identifier {
-            Some((next_expected_origin, validity)) if validity >= NtpInstant::now() => {
+            Some((next_expected_origin, validity)) if validity >= tokio::time::Instant::now() => {
                 next_expected_origin
             }
             _ => {
@@ -752,17 +671,16 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
             warn!("Received packet with invalid mode");
             actions!()
         } else {
-            self.process_message(&message, local_clock_time, send_time, recv_time)
+            self.process_message(&message, send_time, recv_time)
         }
     }
 
     fn process_message(
         &mut self,
         message: &NtpPacket,
-        local_clock_time: NtpInstant,
         send_time: NtpTimestamp,
         recv_time: NtpTimestamp,
-    ) -> NtpSourceActionIterator<Controller::SourceMessage> {
+    ) -> NtpSourceActionIterator {
         trace!("Packet accepted for processing");
         // For reachability, mark that we have had a response
         self.reach.received_packet();
@@ -818,10 +736,27 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
             }
         }
 
-        // generate and handle measurement
-        let measurement = Measurement::from_packet(message, send_time, recv_time, local_clock_time);
+        let snapshot = NtpSourceSnapshot::from_source(self);
+        let usable = {
+            let source_info = self.source_info.read().unwrap();
+            snapshot
+                .accept_synchronization(
+                    source_info.local_stratum,
+                    &source_info.ip_list,
+                    source_info.server_id,
+                )
+                .is_ok()
+        };
+        self.source_snapshots
+            .lock()
+            .unwrap()
+            .insert(self.id, snapshot);
+        self.controller.set_usable(usable);
 
-        let controller_message = self.controller.handle_measurement(measurement);
+        let (measurement_outgoing, measurement_incoming) =
+            measurements_from_packet(message, self.id, send_time, recv_time);
+        self.controller.handle_measurement(measurement_outgoing);
+        self.controller.handle_measurement(measurement_incoming);
 
         // Process new cookies
         if let Some(nts) = self.nts.as_mut() {
@@ -830,10 +765,7 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
             }
         }
 
-        actions!(NtpSourceAction::UpdateSystem(NtpSourceUpdate {
-            snapshot: NtpSourceSnapshot::from_source(self),
-            message: controller_message,
-        }))
+        actions!()
     }
 
     #[cfg(test)]
@@ -866,8 +798,44 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
             protocol_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
 
             bloom_filter: RemoteBloomFilter::new(16).unwrap(),
+
+            id: ClockId(1),
+
+            source_info: Arc::default(),
+
+            source_snapshots: Arc::default(),
         }
     }
+}
+
+fn measurements_from_packet(
+    message: &NtpPacket,
+    id: ClockId,
+    send_time: NtpTimestamp,
+    recv_time: NtpTimestamp,
+) -> (Measurement, Measurement) {
+    (
+        Measurement {
+            sender_id: ClockId::SYSTEM,
+            receiver_id: id,
+            sender_ts: send_time,
+            receiver_ts: message.receive_timestamp(),
+            root_delay: message.root_delay(),
+            root_dispersion: message.root_dispersion(),
+            leap: message.leap(),
+            precision: message.precision(),
+        },
+        Measurement {
+            sender_id: id,
+            receiver_id: ClockId::SYSTEM,
+            sender_ts: message.transmit_timestamp(),
+            receiver_ts: recv_time,
+            root_delay: message.root_delay(),
+            root_dispersion: message.root_dispersion(),
+            leap: message.leap(),
+            precision: message.precision(),
+        },
+    )
 }
 
 #[cfg(test)]
@@ -877,8 +845,9 @@ impl<Controller: SourceController<MeasurementDelay = NtpDuration>> NtpSource<Con
 )]
 mod test {
     use crate::{
-        NtpClock,
+        NtpClock, NtpDuration, NtpLeapIndicator, NtpSnapshot,
         packet::{AesSivCmac256, NoCipher},
+        system::NtpServerInfo,
         time_types::PollIntervalLimits,
     };
 
@@ -932,20 +901,12 @@ mod test {
 
     struct NoopController;
     impl SourceController for NoopController {
-        type ControllerMessage = ();
-        type SourceMessage = ();
-        type MeasurementDelay = NtpDuration;
-
-        fn handle_message(&mut self, _: Self::ControllerMessage) {
+        fn handle_measurement(&mut self, _: Measurement) {
             // do nothing
         }
 
-        fn handle_measurement(
-            &mut self,
-            _: Measurement<NtpDuration>,
-        ) -> Option<Self::SourceMessage> {
+        fn set_usable(&mut self, _: bool) {
             // do nothing
-            Some(())
         }
 
         fn desired_poll_interval(&self) -> PollInterval {
@@ -955,45 +916,6 @@ mod test {
         fn observe(&self) -> crate::ObservableSourceTimedata {
             panic!("Not implemented on noop controller");
         }
-    }
-
-    #[test]
-    fn test_measurement_from_packet() {
-        let instant = NtpInstant::now();
-
-        let mut packet = NtpPacket::test();
-        packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(1));
-        packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(2));
-        let result = Measurement::from_packet(
-            &packet,
-            NtpTimestamp::from_fixed_int(0),
-            NtpTimestamp::from_fixed_int(3),
-            instant,
-        );
-        assert_eq!(result.offset, NtpDuration::from_fixed_int(0));
-        assert_eq!(result.delay, NtpDuration::from_fixed_int(2));
-
-        packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(2));
-        packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(3));
-        let result = Measurement::from_packet(
-            &packet,
-            NtpTimestamp::from_fixed_int(0),
-            NtpTimestamp::from_fixed_int(3),
-            instant,
-        );
-        assert_eq!(result.offset, NtpDuration::from_fixed_int(1));
-        assert_eq!(result.delay, NtpDuration::from_fixed_int(2));
-
-        packet.set_receive_timestamp(NtpTimestamp::from_fixed_int(0));
-        packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(5));
-        let result = Measurement::from_packet(
-            &packet,
-            NtpTimestamp::from_fixed_int(0),
-            NtpTimestamp::from_fixed_int(3),
-            instant,
-        );
-        assert_eq!(result.offset, NtpDuration::from_fixed_int(1));
-        assert_eq!(result.delay, NtpDuration::from_fixed_int(-2));
     }
 
     #[test]
@@ -1032,12 +954,14 @@ mod test {
 
         let mut source = NtpSource::test_ntp_source(NoopController);
 
-        let system = SystemSnapshot::default();
-
         macro_rules! accept {
             () => {{
                 let snapshot = NtpSourceSnapshot::from_source(&source);
-                snapshot.accept_synchronization(16, &["127.0.0.1".parse().unwrap()], &system)
+                snapshot.accept_synchronization(
+                    16,
+                    &["127.0.0.1".parse().unwrap()],
+                    ServerId::default(),
+                )
             }};
         }
 
@@ -1059,17 +983,12 @@ mod test {
     fn test_poll_interval() {
         struct PollIntervalController(PollInterval);
         impl SourceController for PollIntervalController {
-            type ControllerMessage = ();
-            type SourceMessage = ();
-            type MeasurementDelay = NtpDuration;
+            fn handle_measurement(&mut self, _: Measurement) {
+                // no action
+            }
 
-            fn handle_message(&mut self, _: Self::ControllerMessage) {}
-
-            fn handle_measurement(
-                &mut self,
-                _: Measurement<NtpDuration>,
-            ) -> Option<Self::SourceMessage> {
-                None
+            fn set_usable(&mut self, _: bool) {
+                // do nothing
             }
 
             fn desired_poll_interval(&self) -> PollInterval {
@@ -1118,7 +1037,6 @@ mod test {
 
     #[test]
     fn test_handle_incoming() {
-        let base = NtpInstant::now();
         let mut source = NtpSource::test_ntp_source(NoopController);
 
         let actions = source.handle_timer();
@@ -1143,7 +1061,6 @@ mod test {
 
         let actions = source.handle_incoming(
             &packet.serialize_without_encryption_vec(None).unwrap(),
-            base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(400),
         );
@@ -1158,7 +1075,6 @@ mod test {
         }
         let mut actions = source.handle_incoming(
             &packet.serialize_without_encryption_vec(None).unwrap(),
-            base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(500),
         );
@@ -1195,7 +1111,6 @@ mod test {
 
     #[test]
     fn test_running_unreachable() {
-        let base = NtpInstant::now();
         let mut source = NtpSource::test_ntp_source(NoopController);
 
         let actions = source.handle_timer();
@@ -1219,7 +1134,6 @@ mod test {
         packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(200));
         let actions = source.handle_incoming(
             &packet.serialize_without_encryption_vec(None).unwrap(),
-            base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(400),
         );
@@ -1295,7 +1209,6 @@ mod test {
 
     #[test]
     fn test_stratum_checks() {
-        let base = NtpInstant::now();
         let mut source = NtpSource::test_ntp_source(NoopController);
 
         let actions = source.handle_timer();
@@ -1319,7 +1232,6 @@ mod test {
         packet.set_transmit_timestamp(NtpTimestamp::from_fixed_int(200));
         let mut actions = source.handle_incoming(
             &packet.serialize_without_encryption_vec(None).unwrap(),
-            base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(500),
         );
@@ -1328,7 +1240,6 @@ mod test {
         packet.set_stratum(0);
         let mut actions = source.handle_incoming(
             &packet.serialize_without_encryption_vec(None).unwrap(),
-            base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(500),
         );
@@ -1337,7 +1248,6 @@ mod test {
 
     #[test]
     fn test_handle_kod() {
-        let base = NtpInstant::now();
         let mut source = NtpSource::test_ntp_source(NoopController);
 
         let mut packet = NtpPacket::test();
@@ -1345,7 +1255,6 @@ mod test {
         packet.set_mode(NtpAssociationMode::Server);
         let mut actions = source.handle_incoming(
             &packet.serialize_without_encryption_vec(None).unwrap(),
-            base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(100),
         );
@@ -1371,7 +1280,6 @@ mod test {
         packet.set_mode(NtpAssociationMode::Server);
         let mut actions = source.handle_incoming(
             &packet.serialize_without_encryption_vec(None).unwrap(),
-            base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(100),
         );
@@ -1384,7 +1292,6 @@ mod test {
         packet.set_mode(NtpAssociationMode::Server);
         let mut actions = source.handle_incoming(
             &packet.serialize_without_encryption_vec(None).unwrap(),
-            base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(100),
         );
@@ -1410,7 +1317,6 @@ mod test {
         packet.set_mode(NtpAssociationMode::Server);
         let mut actions = source.handle_incoming(
             &packet.serialize_without_encryption_vec(None).unwrap(),
-            base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(100),
         );
@@ -1424,7 +1330,6 @@ mod test {
         packet.set_mode(NtpAssociationMode::Server);
         let mut actions = source.handle_incoming(
             &packet.serialize_without_encryption_vec(None).unwrap(),
-            base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(100),
         );
@@ -1451,7 +1356,6 @@ mod test {
         packet.set_mode(NtpAssociationMode::Server);
         let mut actions = source.handle_incoming(
             &packet.serialize_without_encryption_vec(None).unwrap(),
-            base + Duration::from_secs(1),
             NtpTimestamp::from_fixed_int(0),
             NtpTimestamp::from_fixed_int(100),
         );
@@ -1489,7 +1393,7 @@ mod test {
             assert!(poll.is_upgrade());
 
             let response = NtpPacket::timestamp_response(
-                &SystemSnapshot::default(),
+                NtpServerInfo::default(),
                 poll,
                 NtpTimestamp::default(),
                 &clock,
@@ -1501,12 +1405,8 @@ mod test {
             // Kill the reference timestamp
             response[16] = 0;
 
-            let actions = source.handle_incoming(
-                &response,
-                NtpInstant::now(),
-                NtpTimestamp::default(),
-                NtpTimestamp::default(),
-            );
+            let actions =
+                source.handle_incoming(&response, NtpTimestamp::default(), NtpTimestamp::default());
             for action in actions {
                 assert!(!matches!(
                     action,
@@ -1561,7 +1461,7 @@ mod test {
         assert!(poll.is_upgrade());
 
         let response = NtpPacket::timestamp_response(
-            &SystemSnapshot::default(),
+            NtpServerInfo::default(),
             poll,
             NtpTimestamp::default(),
             &clock,
@@ -1570,12 +1470,8 @@ mod test {
             .serialize_without_encryption_vec(Some(poll_len))
             .unwrap();
 
-        let actions = source.handle_incoming(
-            &response,
-            NtpInstant::now(),
-            NtpTimestamp::default(),
-            NtpTimestamp::default(),
-        );
+        let actions =
+            source.handle_incoming(&response, NtpTimestamp::default(), NtpTimestamp::default());
         for action in actions {
             assert!(!matches!(
                 action,
@@ -1605,7 +1501,7 @@ mod test {
         assert_eq!(poll.version(), NtpVersion::V5);
 
         let response = NtpPacket::timestamp_response(
-            &SystemSnapshot::default(),
+            NtpServerInfo::default(),
             poll,
             NtpTimestamp::default(),
             &clock,
@@ -1614,12 +1510,8 @@ mod test {
             .serialize_without_encryption_vec(Some(poll_len))
             .unwrap();
 
-        let actions = source.handle_incoming(
-            &response,
-            NtpInstant::now(),
-            NtpTimestamp::default(),
-            NtpTimestamp::default(),
-        );
+        let actions =
+            source.handle_incoming(&response, NtpTimestamp::default(), NtpTimestamp::default());
         for action in actions {
             assert!(!matches!(
                 action,
@@ -1660,7 +1552,7 @@ mod test {
         assert!(poll.is_upgrade());
 
         let response = NtpPacket::timestamp_response(
-            &SystemSnapshot::default(),
+            NtpServerInfo::default(),
             poll,
             NtpTimestamp::default(),
             &clock,
@@ -1669,12 +1561,8 @@ mod test {
             .serialize_without_encryption_vec(Some(poll_len))
             .unwrap();
 
-        let actions = source.handle_incoming(
-            &response,
-            NtpInstant::now(),
-            NtpTimestamp::default(),
-            NtpTimestamp::default(),
-        );
+        let actions =
+            source.handle_incoming(&response, NtpTimestamp::default(), NtpTimestamp::default());
         for action in actions {
             assert!(!matches!(
                 action,
@@ -1732,8 +1620,11 @@ mod test {
 
         let clock = TestClock::default();
 
-        let server_system = SystemSnapshot {
-            bloom_filter: server_filter,
+        let server_info = NtpServerInfo {
+            ntp_snapshot: NtpSnapshot {
+                bloom_filter: server_filter,
+                ..Default::default()
+            },
             ..Default::default()
         };
 
@@ -1755,12 +1646,11 @@ mod test {
 
             let (req, _) = NtpPacket::deserialize(&req, &NoCipher).unwrap();
             let response =
-                NtpPacket::timestamp_response(&server_system, req, NtpTimestamp::default(), &clock);
+                NtpPacket::timestamp_response(server_info, req, NtpTimestamp::default(), &clock);
             let resp_bytes = response.serialize_without_encryption_vec(None).unwrap();
 
             let actions = client.handle_incoming(
                 &resp_bytes,
-                NtpInstant::now(),
                 NtpTimestamp::default(),
                 NtpTimestamp::default(),
             );
