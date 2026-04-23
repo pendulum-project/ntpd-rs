@@ -84,10 +84,9 @@ count = 4
     let result = test_ntp_ctl_output(&["status", "-c", &test_config_path]);
 
     assert!(contains_bytes(&result.stdout, b"ntpd-rs.pool.ntp.org"));
-    assert!(contains_bytes(
-        &result.stdout,
-        "+0.014375±0.005806(±0.034586)s".as_bytes()
-    ));
+    assert!(contains_bytes(&result.stdout, "+0.014375".as_bytes()));
+    assert!(contains_bytes(&result.stdout, "±0.005806".as_bytes()));
+    assert!(contains_bytes(&result.stdout, "±0.034586".as_bytes()));
     assert_eq!(result.status.code(), Some(0));
 }
 
