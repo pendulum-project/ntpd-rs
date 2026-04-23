@@ -45,8 +45,8 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Guide:
-    - guide/getting-started.md
     - guide/installation.md
+    - guide/getting-started.md
     - guide/server-setup.md
     - guide/gps-pps.md
     - guide/exporting-metrics.md
