@@ -13,8 +13,9 @@ This guide does not go into detail on all of chrony's configuration directives, 
 ### Server directives
 
 Client-server connections need to be migrated in one of two ways:
-- As a server source, if no authentication is used.
-- As an NTS source, if NTS is enabled (i.e. the NTS option is present in the server directive).
+
+1. As a server source, if no authentication is used.
+2. As an NTS source, if NTS is enabled (i.e. the NTS option is present in the server directive).
 
 For server directives with no authentication, these can be converted to
 ```toml
