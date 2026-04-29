@@ -28,7 +28,7 @@
 //FIXME: Enable #![warn(clippy::doc_markdown)]
 #![warn(clippy::elidable_lifetime_names)]
 #![warn(clippy::empty_enum)]
-//FIXME: Enable #![warn(clippy::enum_glob_use)]
+#![warn(clippy::enum_glob_use)]
 #![warn(clippy::expl_impl_clone_on_copy)]
 #![warn(clippy::explicit_deref_methods)]
 //FIXME: Enable #![warn(clippy::explicit_into_iter_loop)]

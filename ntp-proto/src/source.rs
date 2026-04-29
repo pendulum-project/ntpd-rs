@@ -267,15 +267,13 @@ impl NtpSourceSnapshot {
         local_ips: &[IpAddr],
         system: &SystemSnapshot,
     ) -> Result<(), AcceptSynchronizationError> {
-        use AcceptSynchronizationError::*;
-
         if self.stratum >= local_stratum {
             debug!(
                 source_stratum = self.stratum,
                 own_stratum = local_stratum,
                 "Source rejected due to invalid stratum. The stratum of a source must be lower than the own stratum",
             );
-            return Err(Stratum);
+            return Err(AcceptSynchronizationError::Stratum);
         }
 
         // Detect whether the remote uses us as their main time reference.
@@ -289,13 +287,13 @@ impl NtpSourceSnapshot {
                 .any(|ip| ReferenceId::from_ip(*ip) == self.source_id)
         {
             debug!("Source rejected because of detected synchronization loop (ref id)");
-            return Err(Loop);
+            return Err(AcceptSynchronizationError::Loop);
         }
 
         match self.bloom_filter {
             Some(filter) if filter.contains_id(&system.server_id) => {
                 debug!("Source rejected because of detected synchronization loop (bloom filter)");
-                return Err(Loop);
+                return Err(AcceptSynchronizationError::Loop);
             }
             _ => {}
         }
@@ -303,7 +301,7 @@ impl NtpSourceSnapshot {
         // An unreachable error occurs if the server is unreachable.
         if !self.reach.is_reachable() {
             debug!("Source is unreachable");
-            return Err(ServerUnreachable);
+            return Err(AcceptSynchronizationError::ServerUnreachable);
         }
 
         Ok(())
