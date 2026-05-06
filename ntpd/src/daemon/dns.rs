@@ -1,6 +1,10 @@
 use std::{net::SocketAddr, process::exit, sync::OnceLock};
 
-use hickory_resolver::{IntoName, Name, ResolveError, TokioResolver, proto::dnssec::Proof};
+use hickory_resolver::{
+    TokioResolver,
+    net::NetError,
+    proto::rr::{IntoName, Name},
+};
 use rand::Rng;
 use tokio::net::lookup_host;
 
@@ -62,7 +66,7 @@ pub(crate) async fn resolve_ke(
     ))
 }
 
-async fn resolve_srv<N: IntoName>(name: N) -> Result<Vec<Name>, ResolveError> {
+async fn resolve_srv<N: IntoName>(name: N) -> Result<Vec<Name>, NetError> {
     let resolver = RESOLVER.get_or_init(|| {
         let mut builder = match TokioResolver::builder_tokio() {
             Ok(builder) => builder,
@@ -75,7 +79,13 @@ async fn resolve_srv<N: IntoName>(name: N) -> Result<Vec<Name>, ResolveError> {
             }
         };
         builder.options_mut().validate = true;
-        builder.build()
+        match builder.build() {
+            Ok(resolver) => resolver,
+            Err(e) => {
+                tracing::error!("Could not build resolver, aborting: {e}.");
+                exit(exitcode::CONFIG);
+            }
+        }
     });
 
     let lookup_result = resolver.srv_lookup(name).await?;
@@ -92,15 +102,23 @@ async fn resolve_srv<N: IntoName>(name: N) -> Result<Vec<Name>, ResolveError> {
     // this can be checked by calculating the area under the implicit curve
     // x=t^(1/n), y=t^(1/m) in the unit square)
     let mut items: Vec<_> = lookup_result
-        .as_lookup()
-        .dnssec_iter()
-        .filter_map(|v| v.require(Proof::Secure).ok()?.as_srv())
+        .answers()
+        .iter()
+        .filter_map(|record| {
+            if !record.proof.is_secure() {
+                return None;
+            }
+            match &record.data {
+                hickory_resolver::proto::rr::RData::SRV(srv) => Some(srv),
+                _ => None,
+            }
+        })
         .map(|v| {
             (
-                if v.weight() != 0 {
+                if v.weight != 0 {
                     rand::thread_rng()
                         .r#gen::<f64>()
-                        .powf(1.0 / (f64::from(v.weight())))
+                        .powf(1.0 / (f64::from(v.weight)))
                 } else {
                     // Guarantee 0 weight items end up last within their priority group
                     2.0 + rand::thread_rng().r#gen::<f64>()
@@ -113,10 +131,10 @@ async fn resolve_srv<N: IntoName>(name: N) -> Result<Vec<Name>, ResolveError> {
     // Now all that remains to be done is sorting the items by first priority and then
     // the generated random value, and we get an ordering respecting RFC2782.
     items.sort_by(|a, b| {
-        a.1.priority()
-            .cmp(&b.1.priority())
+        a.1.priority
+            .cmp(&b.1.priority)
             .then(f64::total_cmp(&a.0, &b.0))
     });
 
-    Ok(items.into_iter().map(|v| v.1.target()).cloned().collect())
+    Ok(items.into_iter().map(|v| &v.1.target).cloned().collect())
 }
