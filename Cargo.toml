@@ -2,7 +2,7 @@
 members = [
     "ntp-proto",
     "ntpd"
-, "statime-wire"]
+, "statime-csptp", "statime-wire"]
 exclude = [ ]
 
 # Properly take compiler version into account when resolving crates.
@@ -63,3 +63,4 @@ serde_test = { version = "1.0.176" }
 # our own crates used as dependencies, same version as the workspace version
 # NOTE: keep this part at the bottom of the file, do not change this line
 ntp-proto = { version = "1.8.0", path = "./ntp-proto", default-features = false, features = ["__internal-api"] }
+statime-wire = { version = "1.8.0", path = "./statime-wire", default-features = false }
