@@ -38,7 +38,11 @@ impl Default for ClockQuality {
 }
 
 impl ClockQuality {
-    pub(crate) fn serialize(self, buffer: &mut [u8]) -> Result<(), Error> {
+    /// Serialize a clock quality to a buffer of 4 bytes.
+    ///
+    /// # Errors
+    /// Fails when the provided buffer is too short.
+    pub fn serialize(self, buffer: &mut [u8]) -> Result<(), Error> {
         *buffer.get_mut(0).ok_or(Error::BufferTooShort)? = self.clock_class;
         *buffer.get_mut(1).ok_or(Error::BufferTooShort)? = self.clock_accuracy.to_primitive();
         buffer
@@ -48,11 +52,19 @@ impl ClockQuality {
         Ok(())
     }
 
+    /// Deserialize a clock quality from a buffer of 4 bytes.
+    ///
+    /// # Errors
+    /// Fails when the provided buffer is too short.
     #[expect(
         clippy::get_first,
         reason = "Prefer uniform way of accessing the elements of the buffer in this deserializer"
     )]
-    pub(crate) fn deserialize(buffer: &[u8]) -> Result<Self, Error> {
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "Clippy can't tell the try_into will never fail"
+    )]
+    pub fn deserialize(buffer: &[u8]) -> Result<Self, Error> {
         Ok(Self {
             clock_class: *buffer.get(0).ok_or(Error::BufferTooShort)?,
             clock_accuracy: ClockAccuracy::from_primitive(
