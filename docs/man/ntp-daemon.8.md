@@ -1,5 +1,5 @@
 <!-- ---
-title: NTP-DAEMON(8) ntpd-rs 1.7.2 | ntpd-rs
+title: NTP-DAEMON(8) ntpd-rs 1.8.0 | ntpd-rs
 --- -->
 
 # NAME
