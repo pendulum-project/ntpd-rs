@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.8.0]
+
+### Added
+- Support SRV-style NTS pools (experimental).
+- Support systemd service startup notifications.
+
+### Changed
+- NTPv5 draft support now targets draft 8.
+- Updated dependencies.
+
 ## [1.7.2]
 
 ### Changed
