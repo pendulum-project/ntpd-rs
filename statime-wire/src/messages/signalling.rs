@@ -1,7 +1,9 @@
 use crate::{Error, common::PortIdentity};
 
+/// Signalling message body
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignalingMessage {
+    /// Port identity of the intended receiver of this signaling message.
     pub target_port_identity: PortIdentity,
 }
 
