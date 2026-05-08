@@ -9,7 +9,6 @@ pub(crate) struct CsptpRequestTlv {
 }
 
 impl CsptpRequestTlv {
-    #[expect(unused)]
     pub(crate) fn try_from(tlv: &Tlv<'_>) -> Option<Self> {
         (tlv.tlv_type == TlvType::CsptpRequest)
             .then(|| {
@@ -21,7 +20,6 @@ impl CsptpRequestTlv {
             .flatten()
     }
 
-    #[expect(unused)]
     pub(crate) fn add_to(self, builder: &mut TlvSetBuilder<'_>) -> Result<(), statime_wire::Error> {
         let mut content = [0u8; 4];
         if self.csptp_status {
@@ -44,7 +42,6 @@ pub(crate) struct CsptpResponseTlv {
 }
 
 impl CsptpResponseTlv {
-    #[expect(unused)]
     pub(crate) fn try_from(tlv: &Tlv<'_>) -> Option<Self> {
         (tlv.tlv_type == TlvType::CsptpResponse)
             .then(|| {
@@ -58,7 +55,6 @@ impl CsptpResponseTlv {
             .flatten()
     }
 
-    #[expect(unused)]
     pub(crate) fn add_to(self, builder: &mut TlvSetBuilder<'_>) -> Result<(), statime_wire::Error> {
         let mut content = [0u8; 18];
         self.req_ingress_timestamp.serialize(&mut content[0..10])?;
@@ -100,7 +96,6 @@ impl CsptpStatusTlv {
             .flatten()
     }
 
-    #[expect(unused)]
     pub(crate) fn add_to(self, builder: &mut TlvSetBuilder<'_>) -> Result<(), statime_wire::Error> {
         let mut content = [0u8; 18];
         content[0] = self.grandmaster_priority1;
