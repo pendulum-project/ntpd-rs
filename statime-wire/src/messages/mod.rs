@@ -1,16 +1,5 @@
 //! Ptp network messages
 
-pub(crate) use announce::*;
-pub(crate) use delay_req::*;
-pub(crate) use delay_resp::*;
-pub(crate) use follow_up::*;
-pub use header::*;
-pub(crate) use p_delay_req::*;
-pub(crate) use p_delay_resp::*;
-pub(crate) use p_delay_resp_follow_up::*;
-pub(crate) use sync::*;
-
-use self::{management::ManagementMessage, signalling::SignalingMessage};
 use super::{Error, common::TlvSet};
 
 mod announce;
@@ -24,6 +13,18 @@ mod p_delay_resp;
 mod p_delay_resp_follow_up;
 mod signalling;
 mod sync;
+
+pub use announce::*;
+pub use delay_req::*;
+pub use delay_resp::*;
+pub use follow_up::*;
+pub use header::*;
+pub use management::*;
+pub use p_delay_req::*;
+pub use p_delay_resp::*;
+pub use p_delay_resp_follow_up::*;
+pub use signalling::*;
+pub use sync::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -161,7 +162,6 @@ impl MessageBody {
     /// Deserialize a message from a received buffer of bytes.
     pub(crate) fn deserialize(
         message_type: MessageType,
-        header: &Header,
         buffer: &[u8],
     ) -> Result<Self, super::Error> {
         let body = match message_type {
@@ -185,7 +185,7 @@ impl MessageBody {
                 PDelayRespFollowUpMessage::deserialize_content(buffer)?,
             ),
             MessageType::Announce => {
-                MessageBody::Announce(AnnounceMessage::deserialize_content(*header, buffer)?)
+                MessageBody::Announce(AnnounceMessage::deserialize_content(buffer)?)
             }
             MessageType::Signaling => {
                 MessageBody::Signaling(SignalingMessage::deserialize_content(buffer)?)
@@ -262,11 +262,7 @@ impl<'a> Message<'a> {
             .get(34..(header_data.message_length as usize))
             .ok_or(Error::BufferTooShort)?;
 
-        let body = MessageBody::deserialize(
-            header_data.message_type,
-            &header_data.header,
-            content_buffer,
-        )?;
+        let body = MessageBody::deserialize(header_data.message_type, content_buffer)?;
 
         let tlv_buffer = &content_buffer
             .get(body.wire_size()..)

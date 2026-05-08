@@ -1,10 +1,15 @@
 use crate::{Error, common::PortIdentity};
 
+/// Management message body
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ManagementMessage {
+    /// Port identity of the port to which this management message applies
     pub target_port_identity: PortIdentity,
+    /// Maximum number of times this message can be forwarded by boundary clocks in total.
     pub starting_boundary_hops: u8,
+    /// Number of further times this message can be forwarded by a boundary clock.
     pub boundary_hops: u8,
+    /// The requested management action.
     pub action: ManagementAction,
 }
 
@@ -36,18 +41,24 @@ impl ManagementMessage {
     }
 }
 
-/// See: 15.4.1.6
+/// Requested action for management of the port, see: 15.4.1.6
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[expect(
+#[allow(
     clippy::upper_case_acronyms,
     reason = "Match the exact terminology used in IEEE1588.2019"
 )]
 pub enum ManagementAction {
+    /// Reserved for future use
     Reserved,
+    /// Get the requested values
     GET,
+    /// Set the requested values
     SET,
+    /// Response to an earlier management request
     RESPONSE,
+    /// Request the receiver to perform an action
     COMMAND,
+    /// Acknowledgement of an earlier management request.
     ACKNOWLEDGE,
 }
 

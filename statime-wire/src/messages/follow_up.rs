@@ -1,7 +1,9 @@
 use crate::{Error, common::Timestamp};
 
+/// Follow up message for a sync message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FollowUpMessage {
+    /// Precise time the matching sync message was transmitted.
     pub precise_origin_timestamp: Timestamp,
 }
 
