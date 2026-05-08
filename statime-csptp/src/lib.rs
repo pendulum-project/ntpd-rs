@@ -133,7 +133,21 @@
 #![warn(clippy::wildcard_imports)]
 #![warn(clippy::zero_sized_map_values)]
 
+use statime_wire::{ClockIdentity, ClockQuality};
+
 #[cfg(feature = "std")]
 extern crate std;
 
 mod messages;
+
+// TODO: Figure out how to actually deal with the state.
+struct CsptpState {
+    grandmaster_identity: ClockIdentity,
+    grandmaster_priority_1: u8,
+    grandmaster_priority_2: u8,
+    grandmaster_clock_quality: ClockQuality,
+    steps_removed: u16,
+    ptp_timescale: bool,
+    time_traceable: bool,
+    frequency_traceable: bool,
+}
