@@ -13,6 +13,8 @@ use crate::{
 
 mod tlvs;
 
+pub(crate) const MAX_MESSAGE_SIZE: usize = 512;
+
 /// A message with additional restrictions to ensure it is a valid CSPTP Message.
 pub(crate) struct CsptpMessage<'a> {
     message: Message<'a>,
@@ -51,7 +53,6 @@ impl<'a> CsptpMessage<'a> {
     /// # Errors
     /// This returns an error when the provided buffer does not contain a valid
     /// PTP message, or when the provided message is incomplete.
-    #[expect(unused)]
     pub(crate) fn deserialize(buffer: &'a [u8]) -> Result<Self, statime_wire::Error> {
         let message = Message::deserialize(buffer)?;
         if message.header.sdo_id != SdoId::try_from(0x300).unwrap()
@@ -96,7 +97,6 @@ impl<'a> CsptpMessage<'a> {
         Ok(CsptpMessage { message })
     }
 
-    #[expect(unused)]
     pub(crate) fn is_request(&self) -> bool {
         matches!(self.message.body, MessageBody::Sync(_))
             && self
@@ -141,7 +141,6 @@ impl<'a> CsptpMessage<'a> {
     }
 
     /// Generate a response to a request. A buffer of 30 bytes will always be able to contain the response
-    #[expect(unused)]
     pub(crate) fn new_response(
         buffer: &'a mut [u8],
         request: &CsptpMessage<'_>,
@@ -202,7 +201,6 @@ impl<'a> CsptpMessage<'a> {
         })
     }
 
-    #[expect(unused)]
     pub(crate) fn new_follow_up(
         response: &CsptpMessage<'_>,
         send_timestamp: Timestamp,
