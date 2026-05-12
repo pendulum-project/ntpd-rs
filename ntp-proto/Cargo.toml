@@ -21,7 +21,7 @@ __internal-api = []
 [dependencies]
 # Note: md5 is needed to calculate ReferenceIDs for IPv6 addresses per RFC5905
 md-5.workspace = true
-rand.workspace = true
+rand = { workspace = true, features = ["std", "std_rng"] }
 tracing.workspace = true
 tokio = { workspace = true, features = ["io-util", "time"] }
 tokio-rustls.workspace = true

@@ -1513,6 +1513,7 @@ name = "statime-csptp"
 version = "1.8.0"
 dependencies = [
  "ntp-proto",
+ "rand 0.8.6",
  "statime-wire",
 ]
 
