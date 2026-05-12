@@ -1,19 +1,27 @@
-use super::Header;
 use crate::{
     Error,
     common::{ClockIdentity, ClockQuality, TimeSource, Timestamp},
 };
 
+/// The body of an announce message
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AnnounceMessage {
-    pub header: Header,
+    /// Timestamp this announce was generated on the remote.
     pub origin_timestamp: Timestamp,
+    /// Current offset between UTC and TAI.
     pub current_utc_offset: i16,
+    /// Grandmaster priority 1 as used in the BMCA.
     pub grandmaster_priority_1: u8,
+    /// Quality of the grandmaster clock.
     pub grandmaster_clock_quality: ClockQuality,
+    /// Grandmaster priority 2 as used in the BMCA.
     pub grandmaster_priority_2: u8,
+    /// Identity of the Grandmaster clock
     pub grandmaster_identity: ClockIdentity,
+    /// Number of steps in the synchronization graph between sender
+    /// of the announce message and the Grandmaster clock.
     pub steps_removed: u16,
+    /// Type of time source used by the grandmaster clock.
     pub time_source: TimeSource,
 }
 
@@ -40,13 +48,12 @@ impl AnnounceMessage {
         Ok(())
     }
 
-    pub(crate) fn deserialize_content(header: Header, buffer: &[u8]) -> Result<Self, Error> {
+    pub(crate) fn deserialize_content(buffer: &[u8]) -> Result<Self, Error> {
         if buffer.len() < 30 {
             return Err(Error::BufferTooShort);
         }
 
         Ok(Self {
-            header,
             origin_timestamp: Timestamp::deserialize(&buffer[0..10])?,
             current_utc_offset: i16::from_be_bytes(buffer[10..12].try_into().unwrap()),
             grandmaster_priority_1: buffer[13],
@@ -73,7 +80,6 @@ mod tests {
                 0x80, 0x80,
             ],
             AnnounceMessage {
-                header: Header::new(1),
                 origin_timestamp: Timestamp::new(1_169_232_218, 175_326_816).unwrap(),
                 current_utc_offset: 0,
                 grandmaster_priority_1: 96,
@@ -101,7 +107,7 @@ mod tests {
 
             // Test the deserialization output
             let deserialized_data =
-                AnnounceMessage::deserialize_content(Header::new(1), &byte_representation).unwrap();
+                AnnounceMessage::deserialize_content(&byte_representation).unwrap();
             assert_eq!(deserialized_data, object_representation);
         }
     }

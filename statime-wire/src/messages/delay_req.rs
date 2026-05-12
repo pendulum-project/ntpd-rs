@@ -1,7 +1,9 @@
 use crate::{Error, common::Timestamp};
 
+/// Delay request message body
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DelayReqMessage {
+    /// Time this delay request was sent.
     pub origin_timestamp: Timestamp,
 }
 

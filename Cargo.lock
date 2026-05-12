@@ -1509,6 +1509,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
+name = "statime-csptp"
+version = "1.8.0"
+dependencies = [
+ "ntp-proto",
+ "rand 0.8.6",
+ "statime-wire",
+]
+
+[[package]]
 name = "statime-wire"
 version = "1.8.0"
 dependencies = [

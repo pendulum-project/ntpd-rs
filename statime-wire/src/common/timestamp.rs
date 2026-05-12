@@ -68,7 +68,11 @@ impl Timestamp {
         }
     }
 
-    pub(crate) fn serialize(self, buffer: &mut [u8]) -> Result<(), Error> {
+    /// Serialize the timestmap to the provided buffer (expected to be 10 bytes long).
+    ///
+    /// # Errors
+    /// Fails when the provided buffer is too short.
+    pub fn serialize(self, buffer: &mut [u8]) -> Result<(), Error> {
         buffer
             .get_mut(0..6)
             .ok_or(Error::BufferTooShort)?
@@ -80,7 +84,16 @@ impl Timestamp {
         Ok(())
     }
 
-    pub(crate) fn deserialize(buffer: &[u8]) -> Result<Self, Error> {
+    /// Deserialize the timestamp from the provided buffer (expected to be 10 bytes long).
+    ///
+    /// # Errors
+    /// Fails when the provided buffer is too short, or when the number of nanoseconds
+    /// encoded in the buffer is outside of the interval [0, 1000000000).
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "Clippy can't tell the try_into will never fail"
+    )]
+    pub fn deserialize(buffer: &[u8]) -> Result<Self, Error> {
         let mut seconds_buffer = [0; 8];
         seconds_buffer[2..8].copy_from_slice(buffer.get(0..6).ok_or(Error::BufferTooShort)?);
 
