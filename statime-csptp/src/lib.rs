@@ -142,10 +142,12 @@ mod manager;
 mod messages;
 mod platform;
 mod server;
+mod source;
 
 pub use manager::{CsptpConfig, CsptpManager};
 pub use platform::{InternalState, StateMutex};
 pub use server::{ServerRecvResult, ServerSocket, serve};
+pub use source::{ClientRecvResult, ClientSocket, CsptpSource, CsptpSourceConfig};
 
 /// Observable CSPTP state
 #[derive(Debug, Copy, Clone)]

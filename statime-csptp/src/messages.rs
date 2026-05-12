@@ -6,12 +6,11 @@ use statime_wire::{
     SyncMessage, TimeInterval, Timestamp, TlvSetBuilder, TlvType,
 };
 
-use crate::{
-    CsptpState,
-    messages::tlvs::{CsptpRequestTlv, CsptpResponseTlv, CsptpStatusTlv},
-};
+use crate::CsptpState;
 
 mod tlvs;
+
+pub(crate) use tlvs::{CsptpRequestTlv, CsptpResponseTlv, CsptpStatusTlv};
 
 pub(crate) const MAX_MESSAGE_SIZE: usize = 512;
 
@@ -116,7 +115,6 @@ impl<'a> CsptpMessage<'a> {
     }
 
     /// Generate a new request message. The buffer must be at least 8 bytes long
-    #[expect(unused)]
     pub(crate) fn new_request(
         buffer: &'a mut [u8],
         domain_number: u8,
