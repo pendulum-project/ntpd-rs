@@ -77,7 +77,6 @@ pub(crate) struct CsptpStatusTlv {
 }
 
 impl CsptpStatusTlv {
-    #[expect(unused)]
     pub(crate) fn try_from(tlv: &Tlv<'_>) -> Option<Self> {
         (tlv.tlv_type == TlvType::CsptpStatus)
             .then(|| {
