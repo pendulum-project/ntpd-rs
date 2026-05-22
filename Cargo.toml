@@ -18,7 +18,7 @@ homepage = "https://github.com/pendulum-project/ntpd-rs"
 readme = "./README.md"
 description = "Full-featured implementation of NTP with NTS support"
 publish = true
-rust-version = "1.88" # MSRV
+rust-version = "1.95" # MSRV
 
 # Because of the async runtime, we really want panics to cause an abort, otherwise
 # the binary can keep on running as a ghost
@@ -39,7 +39,7 @@ pps-time = "0.2.3"
 rand = "0.8.0"
 serde = { version = "1.0.166", features = ["derive"] }
 serde_json = "1.0"
-timestamped-socket = "0.2.2"
+timestamped-socket = "0.3.0"
 tokio = "1.37"
 toml = { version = ">=0.6.0,<0.9.0", default-features = false, features = ["parse"] }
 tracing = "0.1.37"
