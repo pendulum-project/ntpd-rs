@@ -233,6 +233,7 @@ where
                             Ok(opt_send_timestamp) => {
                                 // update the last_send_timestamp with the one given by the kernel, if available
                                 self.last_send_timestamp = opt_send_timestamp
+                                    .selected_timestamp()
                                     .map(convert_net_timestamp)
                                     .or(self.last_send_timestamp);
                             }
@@ -351,10 +352,10 @@ fn accept_packet<'a, C: NtpClock>(
     match result {
         Ok(RecvResult {
             bytes_read: size,
-            timestamp,
+            timestamp_data,
             ..
         }) => {
-            let recv_timestamp = timestamp.map_or_else(
+            let recv_timestamp = timestamp_data.selected_timestamp().map_or_else(
                 || match clock.now() {
                     Ok(now) => {
                         debug!(?size, "received a packet without a timestamp, substituting");
@@ -541,6 +542,7 @@ mod tests {
         let test_socket = open_ip(
             SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
             GeneralTimestampMode::SoftwareRecv,
+            false,
         )
         .unwrap();
 
@@ -641,11 +643,12 @@ mod tests {
         let mut buf = [0; 48];
         let RecvResult {
             bytes_read: size,
-            timestamp,
+            timestamp_data,
             remote_addr,
+            ..
         } = socket.recv(&mut buf).await.unwrap();
         assert_eq!(size, 48);
-        let timestamp = timestamp.unwrap();
+        let timestamp = timestamp_data.selected_timestamp().unwrap();
 
         let rec_packet = NtpPacket::deserialize(&buf, &NoCipher).unwrap().0;
         let send_packet = NtpPacket::timestamp_response(
@@ -681,11 +684,12 @@ mod tests {
             let mut buf = [0; 48];
             let RecvResult {
                 bytes_read: size,
-                timestamp,
+                timestamp_data,
                 remote_addr,
+                ..
             } = socket.recv(&mut buf).await.unwrap();
             assert_eq!(size, 48);
-            assert!(timestamp.is_some());
+            assert!(timestamp_data.selected_timestamp().is_some());
 
             let rec_packet = NtpPacket::deserialize(&buf, &NoCipher).unwrap().0;
             let send_packet = NtpPacket::deny_response(rec_packet);
