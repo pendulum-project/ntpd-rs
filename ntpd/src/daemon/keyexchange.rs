@@ -242,6 +242,9 @@ mod tests {
 
     #[tokio::test]
     async fn key_exchange_connection_limiter() {
+        #[cfg(feature = "openssl")]
+        let _ = rustls_openssl::default_provider().install_default();
+
         let port = alloc_port();
 
         let provider = KeySetProvider::new(1);
@@ -325,6 +328,9 @@ mod tests {
 
     #[tokio::test]
     async fn key_exchange_roundtrip_with_port_server() {
+        #[cfg(feature = "openssl")]
+        let _ = rustls_openssl::default_provider().install_default();
+
         let port = alloc_port();
 
         let provider = KeySetProvider::new(1);

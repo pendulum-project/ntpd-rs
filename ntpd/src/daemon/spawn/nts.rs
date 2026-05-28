@@ -206,6 +206,9 @@ mod tests {
 
     #[tokio::test]
     async fn direct_name_resolution() {
+        #[cfg(feature = "openssl")]
+        let _ = rustls_openssl::default_provider().install_default();
+
         let listener = TcpListener::bind("[::]:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let server = tokio::task::spawn(async move {
@@ -236,6 +239,9 @@ mod tests {
 
     #[tokio::test]
     async fn allow_srv_direct_name_resolution() {
+        #[cfg(feature = "openssl")]
+        let _ = rustls_openssl::default_provider().install_default();
+
         let listener = TcpListener::bind("[::]:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let server = tokio::task::spawn(async move {

@@ -15,6 +15,7 @@ rust-version.workspace = true
 [features]
 default = ["aws-lc"]
 aws-lc = ["rustls23/aws-lc-rs", "rustls23/prefer-post-quantum"] # the latter also turns on aws-lc-rs
+openssl = ["dep:rustls-openssl"]
 __internal-fuzz = ["arbitrary", "__internal-api"]
 __internal-test = ["__internal-api"]
 __internal-api = []
@@ -28,6 +29,7 @@ tokio = { workspace = true, features = ["io-util"] }
 tokio-rustls.workspace = true
 serde.workspace = true
 rustls23.workspace = true
+rustls-openssl = { workspace = true, optional = true }
 rustls-platform-verifier.workspace = true
 arbitrary = { workspace = true, optional = true }
 aead.workspace = true

@@ -47,6 +47,7 @@ tracing-subscriber = { version = "0.3.0", default-features = false, features = [
 
 # TLS
 rustls23 = { package = "rustls", version = "0.23.16", default-features = false, features = ["logging", "std", "tls12"] }
+rustls-openssl = "0.3.1"
 rustls-platform-verifier = "0.5.0"
 tokio-rustls = { version = "0.26.0", default-features = false, features = ["logging", "tls12"] }
 

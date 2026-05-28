@@ -876,6 +876,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_keyexchange_roundtrip_v4() {
+        #[cfg(feature = "openssl")]
+        let _ = rustls_openssl::default_provider().install_default();
+
         let (client, server) = tokio::io::duplex(2048);
 
         let client = async move {
@@ -938,6 +941,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_keyexchange_roundtrip_v5() {
+        #[cfg(feature = "openssl")]
+        let _ = rustls_openssl::default_provider().install_default();
+
         let (client, server) = tokio::io::duplex(2048);
 
         let client = async move {
@@ -1000,6 +1006,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_keyexchange_roundtrip_upgrading() {
+        #[cfg(feature = "openssl")]
+        let _ = rustls_openssl::default_provider().install_default();
+
         let (client, server) = tokio::io::duplex(2048);
 
         let client = async move {
@@ -1062,6 +1071,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_keyexchange_roundtrip_no_upgrade_possible() {
+        #[cfg(feature = "openssl")]
+        let _ = rustls_openssl::default_provider().install_default();
+
         let (client, server) = tokio::io::duplex(2048);
 
         let client = async move {
@@ -1124,6 +1136,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_keyexchange_roundtrip_no_proto_overlap() {
+        #[cfg(feature = "openssl")]
+        let _ = rustls_openssl::default_provider().install_default();
+
         let (client, server) = tokio::io::duplex(2048);
 
         let client = async move {
@@ -1170,6 +1185,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_key_exchange_roundtrip_no_cookies() {
+        #[cfg(feature = "openssl")]
+        let _ = rustls_openssl::default_provider().install_default();
+
         let (client, server) = tokio::io::duplex(2048);
 
         let client = async move {
@@ -1227,6 +1245,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_keyexchange_roundtrip_fixed_key() {
+        #[cfg(feature = "openssl")]
+        let _ = rustls_openssl::default_provider().install_default();
+
         let (client, server) = tokio::io::duplex(2048);
 
         let client = async move {
@@ -1330,6 +1351,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_keyexchange_roundtrip_fixed_key_keep_alive() {
+        #[cfg(feature = "openssl")]
+        let _ = rustls_openssl::default_provider().install_default();
+
         let (client, server) = tokio::io::duplex(2048);
 
         let client = async move {
@@ -1452,6 +1476,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_keyexchange_roundtrip_fixed_key_no_permit() {
+        #[cfg(feature = "openssl")]
+        let _ = rustls_openssl::default_provider().install_default();
+
         let (client, server) = tokio::io::duplex(2048);
 
         let client = async move {
@@ -1555,6 +1582,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_keyexchange_fixed_key_no_permission() {
+        #[cfg(feature = "openssl")]
+        let _ = rustls_openssl::default_provider().install_default();
+
         let (client, server) = tokio::io::duplex(2048);
 
         let client = async move {
@@ -1626,6 +1656,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_keyexchange_roundtrip_supports() {
+        #[cfg(feature = "openssl")]
+        let _ = rustls_openssl::default_provider().install_default();
+
         let (client, server) = tokio::io::duplex(2048);
 
         let client = async move {
@@ -1713,6 +1746,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_keyexchange_supports_no_permission() {
+        #[cfg(feature = "openssl")]
+        let _ = rustls_openssl::default_provider().install_default();
+
         let (client, server) = tokio::io::duplex(2048);
 
         let client = async move {

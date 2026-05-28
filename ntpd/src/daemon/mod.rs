@@ -38,6 +38,11 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub fn main() -> Result<(), Box<dyn Error>> {
     let options = NtpDaemonOptions::try_parse_from(std::env::args())?;
 
+    #[cfg(feature = "openssl")]
+    rustls_openssl::default_provider()
+        .install_default()
+        .expect("Failed to use rustls_openssl");
+
     match options.action {
         config::NtpDaemonAction::Help => {
             println!("{}", config::long_help_message());
