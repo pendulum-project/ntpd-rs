@@ -29,6 +29,7 @@ serde.workspace = true
 serde_json.workspace = true
 
 rustls23.workspace = true
+rustls-openssl = { workspace = true, optional = true }
 
 [dev-dependencies]
 ntp-proto = { workspace = true, features = ["__internal-test",] }
@@ -40,6 +41,7 @@ hardware-timestamping = []
 pps = [ "dep:pps-time" ]
 srv = [ "dep:hickory-resolver" ]
 aws-lc = ["rustls23/aws-lc-rs", "rustls23/prefer-post-quantum"] # the latter also turns on aws-lc-rs
+openssl = ["dep:rustls-openssl"]
 
 [package.metadata.deb]
 name = "ntpd-rs"
