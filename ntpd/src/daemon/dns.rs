@@ -1,17 +1,18 @@
-use std::{net::SocketAddr, process::exit, sync::OnceLock};
+use std::net::SocketAddr;
 
+#[cfg(feature = "srv")]
 use hickory_resolver::{
     TokioResolver,
     net::NetError,
     proto::rr::{IntoName, Name},
 };
-use rand::Rng;
 use tokio::net::lookup_host;
 
-use crate::daemon::{config::NormalizedAddress, exitcode};
+use crate::daemon::config::NormalizedAddress;
 
 // We keep the resolver globally to avoid reloading its configuration constantly.
-static RESOLVER: OnceLock<TokioResolver> = OnceLock::new();
+#[cfg(feature = "srv")]
+static RESOLVER: std::sync::OnceLock<TokioResolver> = std::sync::OnceLock::new();
 
 pub(crate) struct KeResolutionResult {
     pub(crate) addr: SocketAddr,
@@ -22,10 +23,13 @@ pub(crate) async fn resolve_ke(
     addr: &NormalizedAddress,
 ) -> Result<impl Iterator<Item = KeResolutionResult>, std::io::Error> {
     // Kludge allowing us to return two types of iterator.
+    #[cfg(feature = "srv")]
     enum Either<A, B> {
         A(A),
         B(B),
     }
+
+    #[cfg(feature = "srv")]
     impl<A: Iterator<Item = KeResolutionResult>, B: Iterator<Item = KeResolutionResult>> Iterator
         for Either<A, B>
     {
@@ -40,6 +44,7 @@ pub(crate) async fn resolve_ke(
     }
 
     // First try looking up SRV records
+    #[cfg(feature = "srv")]
     if let Ok(srv_names) = resolve_srv(format!("_ntske._tcp.{}", addr.server_name)).await {
         let mut result = vec![];
         for name in srv_names.into_iter().map(|v| v.to_ascii()) {
@@ -56,17 +61,25 @@ pub(crate) async fn resolve_ke(
     }
 
     // Otherwise do a direct name lookup
-    Ok(Either::B(
-        lookup_host((addr.server_name.as_str(), addr.port))
-            .await?
-            .map(|addr| KeResolutionResult {
-                addr,
-                srv_record_name: None,
-            }),
-    ))
+    let lookup_result = lookup_host((addr.server_name.as_str(), addr.port))
+        .await?
+        .map(|addr| KeResolutionResult {
+            addr,
+            srv_record_name: None,
+        });
+
+    #[cfg(feature = "srv")]
+    return Ok(Either::B(lookup_result));
+    #[cfg(not(feature = "srv"))]
+    return Ok(lookup_result);
 }
 
+#[cfg(feature = "srv")]
 async fn resolve_srv<N: IntoName>(name: N) -> Result<Vec<Name>, NetError> {
+    use crate::daemon::exitcode;
+    use rand::Rng;
+    use std::process::exit;
+
     let resolver = RESOLVER.get_or_init(|| {
         let mut builder = match TokioResolver::builder_tokio() {
             Ok(builder) => builder,

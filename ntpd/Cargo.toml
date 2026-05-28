@@ -14,7 +14,7 @@ build = "build.rs"
 [dependencies]
 ntp-proto.workspace = true
 
-hickory-resolver.workspace = true
+hickory-resolver = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "io-util", "io-std", "fs", "sync", "net", "macros", "signal"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
@@ -35,9 +35,10 @@ ntp-proto = { workspace = true, features = ["__internal-test",] }
 tokio-rustls.workspace = true
 
 [features]
-default = [ "pps" ]
+default = [ "pps", "srv" ]
 hardware-timestamping = []
 pps = [ "dep:pps-time" ]
+srv = [ "dep:hickory-resolver" ]
 
 [package.metadata.deb]
 name = "ntpd-rs"
