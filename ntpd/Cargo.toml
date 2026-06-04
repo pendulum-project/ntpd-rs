@@ -35,6 +35,11 @@ rustls-openssl = { workspace = true, optional = true }
 ntp-proto = { workspace = true, features = ["__internal-test",] }
 tokio-rustls.workspace = true
 
+[target.'cfg(target_env = "musl")'.dependencies.rustls-openssl]
+workspace = true
+optional = true
+features = ["vendored"]
+
 [features]
 default = [ "aws-lc", "pps", "srv" ]
 hardware-timestamping = []
