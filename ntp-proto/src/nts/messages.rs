@@ -142,15 +142,15 @@ impl Request<'_> {
 
                 let (c2s_key, s2c_key): (Box<dyn Cipher>, Box<dyn Cipher>) = match algorithms[0] {
                     AeadAlgorithm::AeadAesSivCmac256 => match (
-                        AesSivCmac256::from_key_bytes(&key_bytes.0),
-                        AesSivCmac256::from_key_bytes(&key_bytes.1),
+                        AesSivCmac256::try_from(&key_bytes.0),
+                        AesSivCmac256::try_from(&key_bytes.1),
                     ) {
                         (Ok(c2s), Ok(s2c)) => (Box::new(c2s), Box::new(s2c)),
                         _ => return Err(NtsError::IncorrectSizedKey),
                     },
                     AeadAlgorithm::AeadAesSivCmac512 => match (
-                        AesSivCmac512::from_key_bytes(&key_bytes.0),
-                        AesSivCmac512::from_key_bytes(&key_bytes.1),
+                        AesSivCmac512::try_from(&key_bytes.0),
+                        AesSivCmac512::try_from(&key_bytes.1),
                     ) {
                         (Ok(c2s), Ok(s2c)) => (Box::new(c2s), Box::new(s2c)),
                         _ => return Err(NtsError::IncorrectSizedKey),

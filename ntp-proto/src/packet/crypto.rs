@@ -171,7 +171,7 @@ impl AesSivCmac256 {
         Self::new(GenericArray::default()).key.len()
     }
 
-    pub fn from_key_bytes(key_bytes: &[u8]) -> Result<Self, KeyError> {
+    pub fn try_from(key_bytes: &[u8]) -> Result<Self, KeyError> {
         (key_bytes.len() == Self::key_size())
             .then(|| Self::new(aead::Key::<Aes128Siv>::clone_from_slice(key_bytes)))
             .ok_or(KeyError)
@@ -244,9 +244,18 @@ pub struct AesSivCmac512 {
     key: Key<Aes256Siv>,
 }
 
+use std::borrow::Borrow;
+
 impl AesSivCmac512 {
+    // this is necessary for call sites where we want to use type-driven inference
     pub fn new(key: Key<Aes256Siv>) -> Self {
-        AesSivCmac512 { key }
+        Self { key }
+    }
+
+    pub fn from(bytes: impl IntoIterator<Item: Borrow<u8>>) -> Self {
+        Self {
+            key: bytes.into_iter().map(|x| *x.borrow()).collect(),
+        }
     }
 
     pub fn key_size() -> usize {
@@ -254,14 +263,16 @@ impl AesSivCmac512 {
         Self::new(GenericArray::default()).key.len()
     }
 
-    pub fn from_key_bytes(key_bytes: &[u8]) -> Result<Self, KeyError> {
+    pub fn try_from(key_bytes: &[u8]) -> Result<Self, KeyError> {
         (key_bytes.len() == Self::key_size())
-            .then(|| Self::new(aead::Key::<Aes256Siv>::clone_from_slice(key_bytes)))
+            .then(|| Self::from(key_bytes))
             .ok_or(KeyError)
     }
 
     pub fn new_random() -> Self {
-        Self::new(aes_siv::Aes256SivAead::generate_key(rand::thread_rng()))
+        Self {
+            key: aes_siv::Aes256SivAead::generate_key(rand::thread_rng()),
+        }
     }
 }
 
@@ -490,18 +501,12 @@ mod tests {
         assert_eq!(Aes256Siv::key_size(), AesSivCmac512::key_size());
 
         let key_bytes = (1..=64).collect::<Vec<u8>>();
-        assert!(AesSivCmac256::from_key_bytes(&key_bytes).is_err());
+        assert!(AesSivCmac256::try_from(&key_bytes).is_err());
 
         let slice = &key_bytes[..AesSivCmac256::key_size()];
-        assert_eq!(
-            AesSivCmac256::from_key_bytes(slice).unwrap().key_bytes(),
-            slice
-        );
+        assert_eq!(AesSivCmac256::try_from(slice).unwrap().key_bytes(), slice);
 
         let slice = &key_bytes[..AesSivCmac512::key_size()];
-        assert_eq!(
-            AesSivCmac512::from_key_bytes(slice).unwrap().key_bytes(),
-            slice
-        );
+        assert_eq!(AesSivCmac512::try_from(slice).unwrap().key_bytes(), slice);
     }
 }
