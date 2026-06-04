@@ -173,7 +173,7 @@ impl AesSivCmac256 {
 
     pub fn from_key_bytes(key_bytes: &[u8]) -> Result<Self, KeyError> {
         (key_bytes.len() == Self::key_size())
-            .then(|| Self::new(*aead::Key::<Aes128Siv>::from_slice(key_bytes)))
+            .then(|| Self::new(aead::Key::<Aes128Siv>::clone_from_slice(key_bytes)))
             .ok_or(KeyError)
     }
 }
@@ -256,8 +256,12 @@ impl AesSivCmac512 {
 
     pub fn from_key_bytes(key_bytes: &[u8]) -> Result<Self, KeyError> {
         (key_bytes.len() == Self::key_size())
-            .then(|| Self::new(*aead::Key::<Aes256Siv>::from_slice(key_bytes)))
+            .then(|| Self::new(aead::Key::<Aes256Siv>::clone_from_slice(key_bytes)))
             .ok_or(KeyError)
+    }
+
+    pub fn new_random() -> Self {
+        Self::new(aes_siv::Aes256SivAead::generate_key(rand::thread_rng()))
     }
 }
 
