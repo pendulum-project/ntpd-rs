@@ -53,9 +53,7 @@ impl KeySetProvider {
     pub fn new(history: usize) -> Self {
         KeySetProvider {
             current: Arc::new(KeySet {
-                keys: vec![AesSivCmac512::new(aes_siv::Aes256SivAead::generate_key(
-                    rand::thread_rng(),
-                ))],
+                keys: vec![AesSivCmac512::new_random()],
                 id_offset: 0,
                 primary: 0,
             }),
@@ -77,7 +75,7 @@ impl KeySetProvider {
 
     /// Rotate a new key in as primary, forgetting an old one if needed
     pub fn rotate(&mut self) {
-        let next_key = AesSivCmac512::new(aes_siv::Aes256SivAead::generate_key(rand::thread_rng()));
+        let next_key = AesSivCmac512::new_random();
         let mut keys = Vec::with_capacity((self.history + 1).min(self.current.keys.len() + 1));
         for key in &self.current.keys
             [self.current.keys.len().saturating_sub(self.history)..self.current.keys.len()]
