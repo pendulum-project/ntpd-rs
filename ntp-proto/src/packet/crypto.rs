@@ -1,14 +1,20 @@
 use std::borrow::Borrow;
 use std::fmt::Display;
 
-use aead::generic_array::GenericArray;
+#[cfg(feature = "rustcrypto")]
 use aes_siv::{Key, KeyInit, siv::Aes128Siv, siv::Aes256Siv};
+#[cfg(feature = "rustcrypto")]
 use rand::Rng;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::keyset::DecodedServerCookie;
 
 use super::extension_fields::ExtensionField;
+
+#[cfg(feature = "openssl")]
+mod openssl_defs;
+#[cfg(feature = "openssl")]
+use openssl_defs::{Aes128Siv, Aes256Siv, Key};
 
 #[derive(Debug)]
 pub struct DecryptError;
@@ -32,47 +38,10 @@ impl Display for KeyError {
 
 impl std::error::Error for KeyError {}
 
-struct Buffer<'a> {
-    buffer: &'a mut [u8],
-    valid: usize,
-}
-
-impl<'a> Buffer<'a> {
-    fn new(buffer: &'a mut [u8], valid: usize) -> Self {
-        Self { buffer, valid }
-    }
-
-    fn valid(&self) -> usize {
-        self.valid
-    }
-}
-
-impl AsMut<[u8]> for Buffer<'_> {
-    fn as_mut(&mut self) -> &mut [u8] {
-        &mut self.buffer[..self.valid]
-    }
-}
-
-impl AsRef<[u8]> for Buffer<'_> {
-    fn as_ref(&self) -> &[u8] {
-        &self.buffer[..self.valid]
-    }
-}
-
-impl aead::Buffer for Buffer<'_> {
-    fn extend_from_slice(&mut self, other: &[u8]) -> aead::Result<()> {
-        self.buffer
-            .get_mut(self.valid..(self.valid + other.len()))
-            .ok_or(aead::Error)?
-            .copy_from_slice(other);
-        self.valid += other.len();
-        Ok(())
-    }
-
-    fn truncate(&mut self, len: usize) {
-        self.valid = std::cmp::min(self.valid, len);
-    }
-}
+#[cfg(feature = "rustcrypto")]
+mod buffer;
+#[cfg(feature = "rustcrypto")]
+use buffer::Buffer;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EncryptResult {
@@ -169,23 +138,30 @@ impl AesSivCmac256 {
 
     pub fn key_size() -> usize {
         // prefer trust in compiler optimisation over trust in mental arithmetic
-        Self::new(GenericArray::default()).key.len()
+        Self::new(Key::<Aes128Siv>::default()).key.len()
     }
 
     pub fn try_from(key_bytes: &[u8]) -> Result<Self, KeyError> {
-        (key_bytes.len() == Self::key_size())
-            .then(|| Self::new(aead::Key::<Aes128Siv>::clone_from_slice(key_bytes)))
+        let bytes = key_bytes.iter();
+        (bytes.len() == Self::key_size())
+            .then(|| Self {
+                key: bytes.copied().collect(),
+            })
             .ok_or(KeyError)
     }
 }
 
 impl Drop for AesSivCmac256 {
     fn drop(&mut self) {
-        self.key.zeroize();
+        // this is necessary so this code doesn't depend on the
+        // exact static type -- both a GenericArray as a
+        // openssl_defs::Key will implement AsMut.
+        AsMut::<[u8]>::as_mut(&mut self.key).zeroize();
     }
 }
 
 impl Cipher for AesSivCmac256 {
+    #[cfg(feature = "rustcrypto")]
     fn encrypt(
         &self,
         buffer: &mut [u8],
@@ -216,6 +192,7 @@ impl Cipher for AesSivCmac256 {
         })
     }
 
+    #[cfg(feature = "rustcrypto")]
     fn decrypt(
         &self,
         nonce: &[u8],
@@ -227,8 +204,28 @@ impl Cipher for AesSivCmac256 {
             .map_err(|_| DecryptError)
     }
 
+    #[cfg(feature = "openssl")]
+    fn encrypt(
+        &self,
+        buffer: &mut [u8],
+        plaintext_length: usize,
+        associated_data: &[u8],
+    ) -> std::io::Result<EncryptResult> {
+        todo!()
+    }
+
+    #[cfg(feature = "openssl")]
+    fn decrypt(
+        &self,
+        nonce: &[u8],
+        ciphertext: &[u8],
+        associated_data: &[u8],
+    ) -> Result<Vec<u8>, DecryptError> {
+        todo!()
+    }
+
     fn key_bytes(&self) -> &[u8] {
-        &self.key
+        self.key.as_ref()
     }
 }
 
@@ -253,7 +250,7 @@ impl AesSivCmac512 {
 
     pub fn key_size() -> usize {
         // prefer trust in compiler optimisation over trust in mental arithmetic
-        Self::new(GenericArray::default()).key.len()
+        Self::new(Key::<Aes256Siv>::default()).key.len()
     }
 
     pub fn try_from(
@@ -268,9 +265,12 @@ impl AesSivCmac512 {
     }
 
     pub fn new_random() -> Self {
-        Self {
-            key: aes_siv::Aes256SivAead::generate_key(rand::thread_rng()),
-        }
+        #[cfg(feature = "rustcrypto")]
+        let key = aes_siv::Aes256SivAead::generate_key(rand::thread_rng());
+        #[cfg(feature = "openssl")]
+        let key = todo!();
+
+        Self { key }
     }
 }
 
@@ -278,11 +278,13 @@ impl ZeroizeOnDrop for AesSivCmac512 {}
 
 impl Drop for AesSivCmac512 {
     fn drop(&mut self) {
-        self.key.zeroize();
+        // see above
+        AsMut::<[u8]>::as_mut(&mut self.key).zeroize();
     }
 }
 
 impl Cipher for AesSivCmac512 {
+    #[cfg(feature = "rustcrypto")]
     fn encrypt(
         &self,
         buffer: &mut [u8],
@@ -313,6 +315,7 @@ impl Cipher for AesSivCmac512 {
         })
     }
 
+    #[cfg(feature = "rustcrypto")]
     fn decrypt(
         &self,
         nonce: &[u8],
@@ -324,8 +327,28 @@ impl Cipher for AesSivCmac512 {
             .map_err(|_| DecryptError)
     }
 
+    #[cfg(feature = "openssl")]
+    fn encrypt(
+        &self,
+        buffer: &mut [u8],
+        plaintext_length: usize,
+        associated_data: &[u8],
+    ) -> std::io::Result<EncryptResult> {
+        todo!()
+    }
+
+    #[cfg(feature = "openssl")]
+    fn decrypt(
+        &self,
+        nonce: &[u8],
+        ciphertext: &[u8],
+        associated_data: &[u8],
+    ) -> Result<Vec<u8>, DecryptError> {
+        todo!()
+    }
+
     fn key_bytes(&self) -> &[u8] {
-        &self.key
+        self.key.as_ref()
     }
 }
 
