@@ -15,7 +15,7 @@ rust-version.workspace = true
 [features]
 default = ["aws-lc", "rustcrypto"]
 aws-lc = ["rustls23/aws-lc-rs", "rustls23/prefer-post-quantum"] # the latter also turns on aws-lc-rs
-rustcrypto = ["dep:md-5"]
+rustcrypto = ["dep:md-5", "dep:aead", "dep:aes-siv"]
 openssl = ["dep:rustls-openssl", "dep:openssl"]
 __internal-fuzz = ["arbitrary", "__internal-api"]
 __internal-test = ["__internal-api"]
@@ -36,8 +36,8 @@ zeroize.workspace = true
 
 # crypto
 md-5 = { workspace = true, optional = true }
-aead = { workspace = true, optional = false }
-aes-siv = { workspace = true, optional = false }
+aead = { workspace = true, optional = true }
+aes-siv = { workspace = true, optional = true }
 openssl = { workspace = true, optional = true }
 
 [target.'cfg(target_env = "musl")'.dependencies.rustls-openssl]
