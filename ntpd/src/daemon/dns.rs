@@ -19,17 +19,30 @@ pub(crate) struct KeResolutionResult {
     pub(crate) srv_record_name: Option<String>,
 }
 
+#[cfg(not(feature = "srv"))]
+pub(crate) async fn resolve_ke(
+    addr: &NormalizedAddress,
+) -> Result<impl Iterator<Item = KeResolutionResult>, std::io::Error> {
+    let lookup_result = lookup_host((addr.server_name.as_str(), addr.port))
+        .await?
+        .map(|addr| KeResolutionResult {
+            addr,
+            srv_record_name: None,
+        });
+
+    Ok(lookup_result)
+}
+
+#[cfg(feature = "srv")]
 pub(crate) async fn resolve_ke(
     addr: &NormalizedAddress,
 ) -> Result<impl Iterator<Item = KeResolutionResult>, std::io::Error> {
     // Kludge allowing us to return two types of iterator.
-    #[cfg(feature = "srv")]
     enum Either<A, B> {
         A(A),
         B(B),
     }
 
-    #[cfg(feature = "srv")]
     impl<A: Iterator<Item = KeResolutionResult>, B: Iterator<Item = KeResolutionResult>> Iterator
         for Either<A, B>
     {
@@ -44,7 +57,6 @@ pub(crate) async fn resolve_ke(
     }
 
     // First try looking up SRV records
-    #[cfg(feature = "srv")]
     if let Ok(srv_names) = resolve_srv(format!("_ntske._tcp.{}", addr.server_name)).await {
         let mut result = vec![];
         for name in srv_names.into_iter().map(|v| v.to_ascii()) {
@@ -68,10 +80,7 @@ pub(crate) async fn resolve_ke(
             srv_record_name: None,
         });
 
-    #[cfg(feature = "srv")]
-    return Ok(Either::B(lookup_result));
-    #[cfg(not(feature = "srv"))]
-    return Ok(lookup_result);
+    Ok(Either::B(lookup_result))
 }
 
 #[cfg(feature = "srv")]
