@@ -3,8 +3,6 @@ use std::{
     sync::Arc,
 };
 
-use aead::KeyInit;
-
 use crate::{
     nts::AeadAlgorithm,
     packet::{

@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::fmt::Display;
 
 use aead::generic_array::GenericArray;
@@ -243,8 +244,6 @@ pub struct AesSivCmac512 {
     // the number of bits of security (aes_siv crate)
     key: Key<Aes256Siv>,
 }
-
-use std::borrow::Borrow;
 
 impl AesSivCmac512 {
     // this is necessary for call sites where we want to use type-driven inference
