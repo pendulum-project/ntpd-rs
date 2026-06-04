@@ -36,6 +36,11 @@ aead.workspace = true
 aes-siv.workspace = true
 zeroize.workspace = true
 
+[target.'cfg(target_env = "musl")'.dependencies.rustls-openssl]
+workspace = true
+optional = true
+features = ["vendored"]
+
 [dev-dependencies]
 serde_json.workspace = true
 tokio = { workspace = true, features = ["rt", "macros"] }
