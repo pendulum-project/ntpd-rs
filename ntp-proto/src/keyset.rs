@@ -81,7 +81,7 @@ impl KeySetProvider {
             [self.current.keys.len().saturating_sub(self.history)..self.current.keys.len()]
         {
             // This is the rare case where we do really want to make a copy.
-            keys.push(AesSivCmac512::from(key.key_bytes()));
+            keys.push(AesSivCmac512::try_from(key.key_bytes()).unwrap());
         }
         keys.push(next_key);
         self.current = Arc::new(KeySet {
@@ -111,7 +111,7 @@ impl KeySetProvider {
         let mut keys = vec![];
         for _ in 0..len {
             reader.read_exact(&mut buf[0..64])?;
-            keys.push(AesSivCmac512::from(buf));
+            keys.push(AesSivCmac512::try_from(buf).unwrap());
         }
         Ok((
             KeySetProvider {
@@ -238,8 +238,8 @@ impl KeySet {
 
                 DecodedServerCookie {
                     algorithm,
-                    s2c: Box::new(AesSivCmac512::from(s2c)),
-                    c2s: Box::new(AesSivCmac512::from(c2s)),
+                    s2c: Box::new(AesSivCmac512::try_from(s2c).unwrap()),
+                    c2s: Box::new(AesSivCmac512::try_from(c2s).unwrap()),
                 }
             }
             AeadAlgorithm::Unknown(_) => return Err(DecryptError),
@@ -249,7 +249,7 @@ impl KeySet {
     #[cfg(test)]
     pub(crate) fn new() -> Self {
         Self {
-            keys: vec![AesSivCmac512::from(std::iter::repeat_n(0, 64))],
+            keys: vec![AesSivCmac512::try_from(std::iter::repeat_n(0, 64)).unwrap()],
             id_offset: 1,
             primary: 0,
         }
@@ -309,7 +309,7 @@ mod tests {
         };
 
         let keyset = KeySet {
-            keys: vec![AesSivCmac512::from(std::iter::repeat_n(0, 64))],
+            keys: vec![AesSivCmac512::try_from(std::iter::repeat_n(0, 64)).unwrap()],
             id_offset: 1,
             primary: 0,
         };
@@ -344,12 +344,12 @@ mod tests {
     fn can_decode_cookie_with_padding() {
         let decoded = DecodedServerCookie {
             algorithm: AeadAlgorithm::AeadAesSivCmac512,
-            s2c: Box::new(AesSivCmac512::from(0..64_u8)),
-            c2s: Box::new(AesSivCmac512::from(64..128_u8)),
+            s2c: Box::new(AesSivCmac512::try_from(0..64_u8).unwrap()),
+            c2s: Box::new(AesSivCmac512::try_from(64..128_u8).unwrap()),
         };
 
         let keyset = KeySet {
-            keys: vec![AesSivCmac512::from(std::iter::repeat_n(0, 64))],
+            keys: vec![AesSivCmac512::try_from(std::iter::repeat_n(0, 64)).unwrap()],
             id_offset: 1,
             primary: 0,
         };
@@ -367,12 +367,12 @@ mod tests {
     fn roundtrip_aes_siv_cmac_512() {
         let decoded = DecodedServerCookie {
             algorithm: AeadAlgorithm::AeadAesSivCmac512,
-            s2c: Box::new(AesSivCmac512::from(0..64_u8)),
-            c2s: Box::new(AesSivCmac512::from((64..128_u8))),
+            s2c: Box::new(AesSivCmac512::try_from(0..64_u8).unwrap()),
+            c2s: Box::new(AesSivCmac512::try_from(64..128_u8).unwrap()),
         };
 
         let keyset = KeySet {
-            keys: vec![AesSivCmac512::from(std::iter::repeat_n(0, 64))],
+            keys: vec![AesSivCmac512::try_from(std::iter::repeat_n(0, 64)).unwrap()],
             id_offset: 1,
             primary: 0,
         };

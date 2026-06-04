@@ -252,20 +252,19 @@ impl AesSivCmac512 {
         Self { key }
     }
 
-    pub fn from(bytes: impl IntoIterator<Item: Borrow<u8>>) -> Self {
-        Self {
-            key: bytes.into_iter().map(|x| *x.borrow()).collect(),
-        }
-    }
-
     pub fn key_size() -> usize {
         // prefer trust in compiler optimisation over trust in mental arithmetic
         Self::new(GenericArray::default()).key.len()
     }
 
-    pub fn try_from(key_bytes: &[u8]) -> Result<Self, KeyError> {
-        (key_bytes.len() == Self::key_size())
-            .then(|| Self::from(key_bytes))
+    pub fn try_from(
+        key_bytes: impl IntoIterator<Item: Borrow<u8>, IntoIter: ExactSizeIterator>,
+    ) -> Result<Self, KeyError> {
+        let bytes = key_bytes.into_iter();
+        (bytes.len() == Self::key_size())
+            .then(|| Self {
+                key: bytes.map(|x| *x.borrow()).collect(),
+            })
             .ok_or(KeyError)
     }
 
