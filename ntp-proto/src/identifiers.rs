@@ -1,6 +1,11 @@
 use std::net::IpAddr;
 
+#[cfg(feature = "rustcrypto")]
 use md5::{Digest, Md5};
+
+#[cfg(feature = "openssl")]
+use openssl::hash::{MessageDigest, hash};
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -21,9 +26,14 @@ impl ReferenceId {
     pub fn from_ip(addr: IpAddr) -> ReferenceId {
         match addr {
             IpAddr::V4(addr) => ReferenceId(u32::from_be_bytes(addr.octets())),
-            IpAddr::V6(addr) => ReferenceId(u32::from_be_bytes(
-                Md5::digest(addr.octets())[0..4].try_into().unwrap(),
-            )),
+            IpAddr::V6(addr) => {
+                #[cfg(feature = "rustcrypto")]
+                let digest = Md5::digest(addr.octets());
+                #[cfg(feature = "openssl")]
+                let digest = hash(MessageDigest::md5(), &addr.octets())
+                    .expect("OpenSSL could not compute MD5");
+                ReferenceId(u32::from_be_bytes(digest[0..4].try_into().unwrap()))
+            }
         }
     }
 

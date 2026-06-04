@@ -41,12 +41,13 @@ optional = true
 features = ["vendored"]
 
 [features]
-default = [ "aws-lc", "pps", "srv" ]
+default = [ "aws-lc", "rustcrypto", "pps", "srv" ]
 hardware-timestamping = []
 pps = [ "dep:pps-time" ]
 srv = [ "dep:hickory-resolver" ]
 aws-lc = ["rustls23/aws-lc-rs", "rustls23/prefer-post-quantum"] # the latter also turns on aws-lc-rs
-openssl = ["dep:rustls-openssl"]
+rustcrypto = ["ntp-proto/rustcrypto"]
+openssl = ["dep:rustls-openssl", "ntp-proto/openssl"]
 
 [package.metadata.deb]
 name = "ntpd-rs"
