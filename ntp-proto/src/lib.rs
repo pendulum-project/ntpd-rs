@@ -140,6 +140,9 @@
 #![warn(clippy::zero_sized_map_values)]
 #![cfg_attr(not(feature = "__internal-api"), allow(unused))]
 
+#[cfg(not(any(feature = "rustcrypto", feature = "openssl")))]
+compile_error!("A crypto provider is needed, use '--features rustcrypto' or '--features openssl'");
+
 mod algorithm;
 mod clock;
 mod config;

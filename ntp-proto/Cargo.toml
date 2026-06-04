@@ -13,16 +13,16 @@ rust-version.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["aws-lc"]
+default = ["aws-lc", "rustcrypto"]
 aws-lc = ["rustls23/aws-lc-rs", "rustls23/prefer-post-quantum"] # the latter also turns on aws-lc-rs
-openssl = ["dep:rustls-openssl"]
+rustcrypto = ["dep:md-5"]
+openssl = ["dep:rustls-openssl", "dep:openssl"]
 __internal-fuzz = ["arbitrary", "__internal-api"]
 __internal-test = ["__internal-api"]
 __internal-api = []
 
 [dependencies]
 # Note: md5 is needed to calculate ReferenceIDs for IPv6 addresses per RFC5905
-md-5.workspace = true
 rand.workspace = true
 tracing.workspace = true
 tokio = { workspace = true, features = ["io-util"] }
@@ -32,9 +32,13 @@ rustls23.workspace = true
 rustls-openssl = { workspace = true, optional = true }
 rustls-platform-verifier.workspace = true
 arbitrary = { workspace = true, optional = true }
-aead.workspace = true
-aes-siv.workspace = true
 zeroize.workspace = true
+
+# crypto
+md-5 = { workspace = true, optional = true }
+aead = { workspace = true, optional = false }
+aes-siv = { workspace = true, optional = false }
+openssl = { workspace = true, optional = true }
 
 [target.'cfg(target_env = "musl")'.dependencies.rustls-openssl]
 workspace = true

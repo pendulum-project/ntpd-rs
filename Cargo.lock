@@ -976,6 +976,7 @@ dependencies = [
  "aes-siv",
  "arbitrary",
  "md-5",
+ "openssl",
  "rand 0.8.6",
  "rustls",
  "rustls-openssl",

@@ -57,6 +57,8 @@ aes-siv = "0.7.0"
 # Note: md5 is needed to calculate ReferenceIDs for IPv6 addresses per RFC5905
 md-5 = "0.10.0"
 zeroize = "1.8.1"
+# OpenSSL is an alternative crypto provider
+openssl = "0.10.79"
 
 # development
 serde_test = { version = "1.0.176" }
