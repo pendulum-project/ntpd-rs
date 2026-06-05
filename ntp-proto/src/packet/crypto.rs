@@ -558,9 +558,14 @@ mod tests {
 
     #[test]
     fn key_functions_correctness() {
-        use aead::KeySizeUser;
-        assert_eq!(Aes128Siv::key_size(), AesSivCmac256::key_size());
-        assert_eq!(Aes256Siv::key_size(), AesSivCmac512::key_size());
+        assert_eq!(
+            std::mem::size_of::<Key<Aes128Siv>>(),
+            AesSivCmac256::key_size()
+        );
+        assert_eq!(
+            std::mem::size_of::<Key<Aes256Siv>>(),
+            AesSivCmac512::key_size()
+        );
 
         let key_bytes = (1..=64).collect::<Vec<u8>>();
         assert!(AesSivCmac256::try_from(&key_bytes).is_err());
