@@ -82,6 +82,20 @@ where
     }
 }
 
+#[cfg(test)]
+impl From<<Self as Deref>::Target> for Key<Aes128Siv> {
+    fn from(data: <Self as Deref>::Target) -> Self {
+        Self(data)
+    }
+}
+
+#[cfg(test)]
+impl From<<Self as Deref>::Target> for Key<Aes256Siv> {
+    fn from(data: <Self as Deref>::Target) -> Self {
+        Self(data)
+    }
+}
+
 pub trait SSLName {
     fn name() -> &'static str;
 }
@@ -147,4 +161,29 @@ where
     ctx.tag(tag)?;
 
     Ok(ciphertext_length + tag.len())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn simple_roundtrip() {
+        let payload: [u8; 16] = std::array::from_fn(|i| i as u8);
+        let mut buf = [0; 32];
+        buf[..16].copy_from_slice(&payload);
+        let key: Key<Aes128Siv> = Default::default();
+        let size = encrypt_in_place(&key, &mut buf, 16, [&[1], &[2]]).unwrap();
+        let ciphertext = &buf[..size];
+        let plaintext = decrypt_vec(&key, ciphertext, [&[1], &[2]]).unwrap();
+        assert_eq!(plaintext, payload);
+
+        let mut buf = [0; 32];
+        buf[..16].copy_from_slice(&payload);
+        let key: Key<Aes256Siv> = Default::default();
+        let size = encrypt_in_place(&key, &mut buf, 16, [&[1], &[2]]).unwrap();
+        let ciphertext = &buf[..size];
+        let plaintext = decrypt_vec(&key, ciphertext, [&[1], &[2]]).unwrap();
+        assert_eq!(plaintext, payload);
+    }
 }
