@@ -3,7 +3,6 @@ use std::fmt::Display;
 
 #[cfg(feature = "rustcrypto")]
 use aes_siv::{Key, KeyInit, siv::Aes128Siv, siv::Aes256Siv};
-#[cfg(feature = "rustcrypto")]
 use rand::Rng;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
@@ -14,7 +13,7 @@ use super::extension_fields::ExtensionField;
 #[cfg(feature = "openssl")]
 mod openssl_defs;
 #[cfg(feature = "openssl")]
-use openssl_defs::{Aes128Siv, Aes256Siv, Key};
+use openssl_defs::{Aes128Siv, Aes256Siv, Key, SSLName};
 
 #[derive(Debug)]
 pub struct DecryptError;
@@ -160,6 +159,23 @@ impl Drop for AesSivCmac256 {
     }
 }
 
+/// Prepare the buffer for in place encryption by moving the plaintext
+/// back, creating space for the nonce.
+/// And place the nonce where the caller expects it
+fn prepend_nonce<'a>(
+    buffer: &'a mut [u8],
+    length: usize,
+    nonce: &[u8],
+) -> std::io::Result<&'a mut [u8]> {
+    if buffer.len() < nonce.len() + length {
+        return Err(std::io::ErrorKind::WriteZero.into());
+    }
+    buffer.copy_within(..length, nonce.len());
+    buffer[..nonce.len()].copy_from_slice(nonce);
+
+    Ok(&mut buffer[nonce.len()..])
+}
+
 impl Cipher for AesSivCmac256 {
     #[cfg(feature = "rustcrypto")]
     fn encrypt(
@@ -171,18 +187,11 @@ impl Cipher for AesSivCmac256 {
         let mut siv = Aes128Siv::new(&self.key);
         let nonce: [u8; 16] = rand::thread_rng().r#gen();
 
-        // Prepare the buffer for in place encryption by moving the plaintext
-        // back, creating space for the nonce.
-        if buffer.len() < nonce.len() + plaintext_length {
-            return Err(std::io::ErrorKind::WriteZero.into());
-        }
-        buffer.copy_within(..plaintext_length, nonce.len());
-        // And place the nonce where the caller expects it
-        buffer[..nonce.len()].copy_from_slice(&nonce);
+        let buffer = prepend_nonce(buffer, plaintext_length, &nonce)?;
 
         // Create a wrapper around the plaintext portion of the buffer that has
         // the methods aes_siv needs to do encryption in-place.
-        let mut buffer_wrap = Buffer::new(&mut buffer[nonce.len()..], plaintext_length);
+        let mut buffer_wrap = Buffer::new(buffer, plaintext_length);
         siv.encrypt_in_place([associated_data, &nonce], &mut buffer_wrap)
             .map_err(|_| std::io::ErrorKind::Other)?;
 
@@ -211,7 +220,21 @@ impl Cipher for AesSivCmac256 {
         plaintext_length: usize,
         associated_data: &[u8],
     ) -> std::io::Result<EncryptResult> {
-        todo!()
+        let nonce: [u8; 16] = rand::thread_rng().r#gen();
+
+        let buffer = prepend_nonce(buffer, plaintext_length, &nonce)?;
+
+        let ciphertext_length = openssl_defs::encrypt_in_place(
+            &self.key,
+            buffer,
+            plaintext_length,
+            [associated_data, nonce.as_slice()],
+        )?;
+
+        Ok(EncryptResult {
+            nonce_length: nonce.len(),
+            ciphertext_length,
+        })
     }
 
     #[cfg(feature = "openssl")]
@@ -221,7 +244,8 @@ impl Cipher for AesSivCmac256 {
         ciphertext: &[u8],
         associated_data: &[u8],
     ) -> Result<Vec<u8>, DecryptError> {
-        todo!()
+        openssl_defs::decrypt_vec(&self.key, ciphertext, [associated_data, nonce])
+            .map_err(|_| DecryptError)
     }
 
     fn key_bytes(&self) -> &[u8] {
@@ -268,7 +292,16 @@ impl AesSivCmac512 {
         #[cfg(feature = "rustcrypto")]
         let key = aes_siv::Aes256SivAead::generate_key(rand::thread_rng());
         #[cfg(feature = "openssl")]
-        let key = todo!();
+        let key = {
+            //NOTE: call sites for this function don't expect failure, maybe that should be adjusted
+            let mut key_data = Key::<Aes256Siv>::default();
+            let cipher = &openssl::cipher::Cipher::fetch(None, Aes256Siv::name(), None).unwrap();
+            let mut ctx = openssl::cipher_ctx::CipherCtx::new().unwrap();
+            ctx.encrypt_init(Some(cipher), None, None).unwrap();
+            ctx.rand_key(key_data.as_mut()).unwrap();
+
+            key_data
+        };
 
         Self { key }
     }
@@ -294,18 +327,11 @@ impl Cipher for AesSivCmac512 {
         let mut siv = Aes256Siv::new(&self.key);
         let nonce: [u8; 16] = rand::thread_rng().r#gen();
 
-        // Prepare the buffer for in place encryption by moving the plaintext
-        // back, creating space for the nonce.
-        if buffer.len() < nonce.len() + plaintext_length {
-            return Err(std::io::ErrorKind::WriteZero.into());
-        }
-        buffer.copy_within(..plaintext_length, nonce.len());
-        // And place the nonce where the caller expects it
-        buffer[..nonce.len()].copy_from_slice(&nonce);
+        let buffer = prepend_nonce(buffer, plaintext_length, &nonce)?;
 
         // Create a wrapper around the plaintext portion of the buffer that has
         // the methods aes_siv needs to do encryption in-place.
-        let mut buffer_wrap = Buffer::new(&mut buffer[nonce.len()..], plaintext_length);
+        let mut buffer_wrap = Buffer::new(buffer, plaintext_length);
         siv.encrypt_in_place([associated_data, &nonce], &mut buffer_wrap)
             .map_err(|_| std::io::ErrorKind::Other)?;
 
@@ -334,7 +360,21 @@ impl Cipher for AesSivCmac512 {
         plaintext_length: usize,
         associated_data: &[u8],
     ) -> std::io::Result<EncryptResult> {
-        todo!()
+        let nonce: [u8; 16] = rand::thread_rng().r#gen();
+
+        let buffer = prepend_nonce(buffer, plaintext_length, &nonce)?;
+
+        let ciphertext_length = openssl_defs::encrypt_in_place(
+            &self.key,
+            buffer,
+            plaintext_length,
+            [associated_data, nonce.as_slice()],
+        )?;
+
+        Ok(EncryptResult {
+            nonce_length: nonce.len(),
+            ciphertext_length,
+        })
     }
 
     #[cfg(feature = "openssl")]
@@ -344,7 +384,8 @@ impl Cipher for AesSivCmac512 {
         ciphertext: &[u8],
         associated_data: &[u8],
     ) -> Result<Vec<u8>, DecryptError> {
-        todo!()
+        openssl_defs::decrypt_vec(&self.key, ciphertext, [associated_data, nonce])
+            .map_err(|_| DecryptError)
     }
 
     fn key_bytes(&self) -> &[u8] {

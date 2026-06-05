@@ -1,5 +1,6 @@
 //! This file contains file types that mimic those in RustCrypto, so *at a source level* code sharing can be maximized.
 
+use std::io;
 use std::ops::Deref;
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -8,10 +9,18 @@ pub struct Aes128Siv;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Aes256Siv;
 
-#[repr(transparent)]
-pub struct Key<T>(<Key<T> as Deref>::Target)
-where
-    Key<T>: Deref;
+impl SSLName for Aes128Siv {
+    // NOTE: the argument is used to prevent coding mistakes at compile time
+    fn name() -> &'static str {
+        "AES-128-SIV"
+    }
+}
+
+impl SSLName for Aes256Siv {
+    fn name() -> &'static str {
+        "AES-256-SIV"
+    }
+}
 
 impl Deref for Key<Aes128Siv> {
     type Target = [u8; 32];
@@ -27,6 +36,8 @@ impl Deref for Key<Aes256Siv> {
     }
 }
 
+// The following is boilerplate or generic code
+
 impl Default for Key<Aes128Siv> {
     fn default() -> Self {
         Self([0; _])
@@ -38,6 +49,11 @@ impl Default for Key<Aes256Siv> {
         Self([0; _])
     }
 }
+
+#[repr(transparent)]
+pub struct Key<T>(<Key<T> as Deref>::Target)
+where
+    Key<T>: Deref;
 
 impl<T> FromIterator<u8> for Key<T>
 where
@@ -64,4 +80,71 @@ where
     fn as_mut(&mut self) -> &mut [u8] {
         self.0.as_mut()
     }
+}
+
+pub trait SSLName {
+    fn name() -> &'static str;
+}
+
+// NOTE for future modifications: if AES-GCM-SIV is to be added, keep in mind lessons learned the hard way:
+// - the tag is at the end of the ciphertext, whereas with AES-SIV it sits at the beginning
+// - the nonce needs to be set using crypt_init as the IV and is not provided as associated data
+
+pub fn decrypt_vec<T: SSLName>(
+    key: &Key<T>,
+    ciphertext: &[u8],
+    aad: [&[u8]; 2],
+) -> io::Result<Vec<u8>>
+where
+    Key<T>: Deref,
+    <Key<T> as Deref>::Target: AsRef<[u8]>,
+{
+    let cipher = &openssl::cipher::Cipher::fetch(None, T::name(), None)?;
+    let mut ctx = openssl::cipher_ctx::CipherCtx::new()?;
+
+    ctx.decrypt_init(Some(cipher), Some(key.as_ref()), None)?;
+
+    let (tag, ciphertext) = ciphertext
+        .split_at_checked(ctx.tag_length())
+        .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
+
+    let mut output = Vec::new();
+    ctx.set_tag(tag)?;
+    for aad_data in aad.into_iter() {
+        ctx.cipher_update(aad_data, None)?;
+    }
+    ctx.cipher_update_vec(ciphertext, &mut output)?;
+    ctx.cipher_final_vec(&mut output)?;
+
+    Ok(output)
+}
+
+pub fn encrypt_in_place<T: SSLName>(
+    key: &Key<T>,
+    buffer: &mut [u8],
+    plaintext_length: usize,
+    aad: [&[u8]; 2],
+) -> io::Result<usize>
+where
+    Key<T>: Deref,
+    <Key<T> as Deref>::Target: AsRef<[u8]>,
+{
+    let cipher = &openssl::cipher::Cipher::fetch(None, T::name(), None)?;
+    let mut ctx = openssl::cipher_ctx::CipherCtx::new()?;
+
+    ctx.encrypt_init(Some(cipher), Some(key.as_ref()), None)?;
+
+    let (tag, ciphertext) = buffer
+        .split_at_mut_checked(ctx.tag_length())
+        .ok_or_else(|| io::Error::from(io::ErrorKind::WriteZero))?;
+
+    for aad_data in aad.into_iter() {
+        ctx.cipher_update(aad_data, None)?;
+    }
+    let mut ciphertext_length = ctx.cipher_update_inplace(ciphertext, plaintext_length)?;
+    ciphertext_length += ctx.cipher_final(&mut ciphertext[ciphertext_length..])?;
+
+    ctx.tag(tag)?;
+
+    Ok(ciphertext_length + tag.len())
 }
