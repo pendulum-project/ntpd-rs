@@ -148,9 +148,14 @@ where
 
     ctx.encrypt_init(Some(cipher), Some(key.as_ref()), None)?;
 
-    let (tag, ciphertext) = buffer
-        .split_at_mut_checked(ctx.tag_length())
-        .ok_or_else(|| io::Error::from(io::ErrorKind::WriteZero))?;
+    // this is annoying since we're copying a second time; but it does make
+    // the layer above more logical to follow
+    if buffer.len() < plaintext_length + ctx.tag_length() {
+        return Err(std::io::ErrorKind::WriteZero.into());
+    }
+    buffer.copy_within(..plaintext_length, ctx.tag_length());
+
+    let (tag, ciphertext) = buffer.split_at_mut(ctx.tag_length());
 
     for aad_data in aad.into_iter() {
         ctx.cipher_update(aad_data, None)?;
