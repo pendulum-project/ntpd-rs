@@ -162,7 +162,7 @@ impl Drop for AesSivCmac256 {
 /// Prepare the buffer for in place encryption by moving the plaintext
 /// back, creating space for the nonce.
 /// And place the nonce where the caller expects it
-fn prepend_nonce<'a>(
+fn prepend_slice<'a>(
     buffer: &'a mut [u8],
     length: usize,
     nonce: &[u8],
@@ -187,7 +187,7 @@ impl Cipher for AesSivCmac256 {
         let mut siv = Aes128Siv::new(&self.key);
         let nonce: [u8; 16] = rand::thread_rng().r#gen();
 
-        let buffer = prepend_nonce(buffer, plaintext_length, &nonce)?;
+        let buffer = prepend_slice(buffer, plaintext_length, &nonce)?;
 
         // Create a wrapper around the plaintext portion of the buffer that has
         // the methods aes_siv needs to do encryption in-place.
@@ -222,7 +222,7 @@ impl Cipher for AesSivCmac256 {
     ) -> std::io::Result<EncryptResult> {
         let nonce: [u8; 16] = rand::thread_rng().r#gen();
 
-        let buffer = prepend_nonce(buffer, plaintext_length, &nonce)?;
+        let buffer = prepend_slice(buffer, plaintext_length, &nonce)?;
 
         let ciphertext_length = openssl_defs::encrypt_in_place(
             &self.key,
@@ -327,7 +327,7 @@ impl Cipher for AesSivCmac512 {
         let mut siv = Aes256Siv::new(&self.key);
         let nonce: [u8; 16] = rand::thread_rng().r#gen();
 
-        let buffer = prepend_nonce(buffer, plaintext_length, &nonce)?;
+        let buffer = prepend_slice(buffer, plaintext_length, &nonce)?;
 
         // Create a wrapper around the plaintext portion of the buffer that has
         // the methods aes_siv needs to do encryption in-place.
@@ -362,7 +362,7 @@ impl Cipher for AesSivCmac512 {
     ) -> std::io::Result<EncryptResult> {
         let nonce: [u8; 16] = rand::thread_rng().r#gen();
 
-        let buffer = prepend_nonce(buffer, plaintext_length, &nonce)?;
+        let buffer = prepend_slice(buffer, plaintext_length, &nonce)?;
 
         let ciphertext_length = openssl_defs::encrypt_in_place(
             &self.key,
