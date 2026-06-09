@@ -10,9 +10,9 @@ use crate::keyset::DecodedServerCookie;
 
 use super::extension_fields::ExtensionField;
 
-#[cfg(feature = "openssl")]
+#[cfg(all(feature = "openssl", not(feature = "rustcrypto")))]
 mod openssl_defs;
-#[cfg(feature = "openssl")]
+#[cfg(all(feature = "openssl", not(feature = "rustcrypto")))]
 use openssl_defs::{Aes128Siv, Aes256Siv, Key, SSLName};
 
 #[derive(Debug)]
@@ -213,7 +213,7 @@ impl Cipher for AesSivCmac256 {
             .map_err(|_| DecryptError)
     }
 
-    #[cfg(feature = "openssl")]
+    #[cfg(all(feature = "openssl", not(feature = "rustcrypto")))]
     fn encrypt(
         &self,
         buffer: &mut [u8],
@@ -237,7 +237,7 @@ impl Cipher for AesSivCmac256 {
         })
     }
 
-    #[cfg(feature = "openssl")]
+    #[cfg(all(feature = "openssl", not(feature = "rustcrypto")))]
     fn decrypt(
         &self,
         nonce: &[u8],
@@ -291,7 +291,7 @@ impl AesSivCmac512 {
     pub fn new_random() -> Self {
         #[cfg(feature = "rustcrypto")]
         let key = aes_siv::Aes256SivAead::generate_key(rand::thread_rng());
-        #[cfg(feature = "openssl")]
+        #[cfg(all(feature = "openssl", not(feature = "rustcrypto")))]
         let key = {
             //NOTE: call sites for this function don't expect failure, maybe that should be adjusted
             let mut key_data = Key::<Aes256Siv>::default();
@@ -353,7 +353,7 @@ impl Cipher for AesSivCmac512 {
             .map_err(|_| DecryptError)
     }
 
-    #[cfg(feature = "openssl")]
+    #[cfg(all(feature = "openssl", not(feature = "rustcrypto")))]
     fn encrypt(
         &self,
         buffer: &mut [u8],
@@ -377,7 +377,7 @@ impl Cipher for AesSivCmac512 {
         })
     }
 
-    #[cfg(feature = "openssl")]
+    #[cfg(all(feature = "openssl", not(feature = "rustcrypto")))]
     fn decrypt(
         &self,
         nonce: &[u8],
