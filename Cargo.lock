@@ -1602,6 +1602,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "statime-netptp"
+version = "1.9.0"
+dependencies = [
+ "timestamped-socket",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "statime-wire"
 version = "1.9.0"
 dependencies = [
