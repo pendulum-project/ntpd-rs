@@ -474,6 +474,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "serde")]
     #[test]
     fn sdo_id_checks() {
         use serde_test::{Token, assert_de_tokens_error, assert_tokens};
