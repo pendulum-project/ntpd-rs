@@ -2,7 +2,7 @@
 members = [
     "ntp-proto",
     "ntpd"
-, "statime-wire"]
+, "statime-wire", "statime-netptp"]
 exclude = [ ]
 
 # Properly take compiler version into account when resolving crates.

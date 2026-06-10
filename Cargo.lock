@@ -1509,6 +1509,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
+name = "statime-netptp"
+version = "1.8.0"
+dependencies = [
+ "timestamped-socket",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "statime-wire"
 version = "1.8.0"
 dependencies = [
@@ -1642,7 +1651,7 @@ checksum = "7694e1cfe791f8d31026952abf09c69ca6f6fa4e1a1229e18988f06a04a12dca"
 [[package]]
 name = "timestamped-socket"
 version = "0.2.8"
-source = "git+https://github.com/pendulum-project/timestamped-socket.git?branch=polling-networking#770852311b99f9276666d8837f7f82acffcf3c35"
+source = "git+https://github.com/pendulum-project/timestamped-socket.git?branch=polling-networking#12e34030d7b8c067da0c81c3ded2797f75a7f54b"
 dependencies = [
  "libc",
  "serde",
