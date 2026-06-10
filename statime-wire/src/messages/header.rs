@@ -234,7 +234,7 @@ impl<'de> serde::Deserialize<'de> for SdoId {
     }
 }
 
-#[cfg(all(feature = "serde", feature = "std"))]
+#[cfg(feature = "serde")]
 impl<'de> serde::de::Visitor<'de> for SdoIdVisitor {
     type Value = SdoId;
 
