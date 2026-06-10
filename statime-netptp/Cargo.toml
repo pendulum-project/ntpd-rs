@@ -1,0 +1,16 @@
+[package]
+name = "statime-netptp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+timestamped-socket.workspace = true
+tokio = { workspace = true, features = ["sync"] }
+tracing.workspace = true
