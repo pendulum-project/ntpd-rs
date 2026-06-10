@@ -78,12 +78,12 @@ impl NtsRecord<'_> {
             5 => Self::parse_new_cookie(body).await,
             6 => Self::parse_server(body).await,
             7 => Self::parse_port(body).await,
-            0x4000 => Self::parse_keep_alive(body).await,
-            0x4004 => Self::parse_supported_next_protocol_list(body).await,
-            0x4001 => Self::parse_supported_algorithm_list(body).await,
-            0x4002 => Self::parse_fixed_key_request(body).await,
-            0x4003 => Self::parse_ntp_server_deny(body).await,
-            0x4005 => Self::parse_authentication(body).await,
+            8 => Self::parse_keep_alive(body).await,
+            9 => Self::parse_supported_next_protocol_list(body).await,
+            10 => Self::parse_supported_algorithm_list(body).await,
+            12 => Self::parse_fixed_key_request(body).await,
+            13 => Self::parse_ntp_server_deny(body).await,
+            14 => Self::parse_authentication(body).await,
             _ => {
                 let mut data = vec![0; size.into()];
                 body.read_exact(&mut data).await?;
@@ -322,12 +322,12 @@ impl NtsRecord<'_> {
                 critical,
                 ..
             } => record_type | if *critical { CRITICAL_BIT } else { 0 },
-            NtsRecord::KeepAlive => 0x4000,
-            NtsRecord::SupportedNextProtocolList { .. } => 0x4004 | CRITICAL_BIT,
-            NtsRecord::SupportedAlgorithmList { .. } => 0x4001 | CRITICAL_BIT,
-            NtsRecord::FixedKeyRequest { .. } => 0x4002 | CRITICAL_BIT,
-            NtsRecord::NtpServerDeny { .. } => 0x4003,
-            NtsRecord::Authentication { .. } => 0x4005,
+            NtsRecord::KeepAlive => 8,
+            NtsRecord::SupportedNextProtocolList { .. } => 9 | CRITICAL_BIT,
+            NtsRecord::SupportedAlgorithmList { .. } => 10 | CRITICAL_BIT,
+            NtsRecord::FixedKeyRequest { .. } => 12 | CRITICAL_BIT,
+            NtsRecord::NtpServerDeny { .. } => 13,
+            NtsRecord::Authentication { .. } => 14,
         }
     }
 
@@ -674,27 +674,27 @@ mod tests {
 
     #[test]
     fn test_keep_alive() {
-        assert!(matches!(parse(&[0x40, 0, 0, 0]), Ok(NtsRecord::KeepAlive)));
+        assert!(matches!(parse(&[0, 8, 0, 0]), Ok(NtsRecord::KeepAlive)));
         assert!(matches!(
-            parse(&[0xC0, 0, 0, 2, 0, 3]),
+            parse(&[0x80, 8, 0, 2, 0, 3]),
             Ok(NtsRecord::KeepAlive)
         ));
         assert!(matches!(
-            parse(&[0x40, 0, 0, 0, 0, 3]),
+            parse(&[0, 8, 0, 0, 0, 3]),
             Ok(NtsRecord::KeepAlive)
         ));
-        assert!(parse(&[0x40, 0, 0, 2]).is_err());
+        assert!(parse(&[0, 8, 0, 2]).is_err());
 
         let mut buf = vec![];
         serialize(&NtsRecord::KeepAlive, &mut buf);
-        assert_eq!(buf, [0x40, 0, 0, 0]);
+        assert_eq!(buf, [0, 8, 0, 0]);
     }
 
     #[test]
     fn test_supported_next_protocol_list() {
         let Ok(NtsRecord::SupportedNextProtocolList {
             supported_protocols,
-        }) = parse(&[0xC0, 4, 0, 0])
+        }) = parse(&[0x80, 9, 0, 0])
         else {
             panic!("Expected succesful parse");
         };
@@ -702,7 +702,7 @@ mod tests {
 
         let Ok(NtsRecord::SupportedNextProtocolList {
             supported_protocols,
-        }) = parse(&[0xC0, 4, 0, 4, 0, 0, 0, 1])
+        }) = parse(&[0x80, 9, 0, 4, 0, 0, 0, 1])
         else {
             panic!("Expected succesful parse");
         };
@@ -713,7 +713,7 @@ mod tests {
 
         let Ok(NtsRecord::SupportedNextProtocolList {
             supported_protocols,
-        }) = parse(&[0x40, 4, 0, 4, 0, 0, 0, 1, 2, 3, 4, 5])
+        }) = parse(&[0, 9, 0, 4, 0, 0, 0, 1, 2, 3, 4, 5])
         else {
             panic!("Expected succesful parse");
         };
@@ -722,8 +722,8 @@ mod tests {
             [NextProtocol::NTPv4, NextProtocol::Unknown(1)].as_slice()
         );
 
-        assert!(parse(&[0xC0, 4, 0, 4, 0, 0]).is_err());
-        assert!(parse(&[0xC0, 4, 0, 3, 0, 0, 1]).is_err());
+        assert!(parse(&[0x80, 9, 0, 4, 0, 0]).is_err());
+        assert!(parse(&[0x80, 9, 0, 3, 0, 0, 1]).is_err());
 
         let mut buf = vec![];
         serialize(
@@ -734,7 +734,7 @@ mod tests {
             },
             &mut buf,
         );
-        assert_eq!(buf, [0xC0, 4, 0, 4, 0, 1, 0, 2]);
+        assert_eq!(buf, [0x80, 9, 0, 4, 0, 1, 0, 2]);
 
         let mut buf = vec![];
         serialize(
@@ -743,14 +743,14 @@ mod tests {
             },
             &mut buf,
         );
-        assert_eq!(buf, [0xC0, 4, 0, 0]);
+        assert_eq!(buf, [0x80, 9, 0, 0]);
     }
 
     #[test]
     fn test_supported_algorithm_list() {
         let Ok(NtsRecord::SupportedAlgorithmList {
             supported_algorithms,
-        }) = parse(&[0xC0, 1, 0, 0])
+        }) = parse(&[0x80, 10, 0, 0])
         else {
             panic!("Expected succesful parse");
         };
@@ -758,7 +758,7 @@ mod tests {
 
         let Ok(NtsRecord::SupportedAlgorithmList {
             supported_algorithms,
-        }) = parse(&[0xC0, 1, 0, 8, 0, 15, 0, 32, 0, 17, 0, 64])
+        }) = parse(&[0x80, 10, 0, 8, 0, 15, 0, 32, 0, 17, 0, 64])
         else {
             panic!("Expected succesful parse");
         };
@@ -779,7 +779,7 @@ mod tests {
 
         let Ok(NtsRecord::SupportedAlgorithmList {
             supported_algorithms,
-        }) = parse(&[0xC0, 1, 0, 8, 0, 15, 0, 32, 0, 17, 0, 64])
+        }) = parse(&[0x80, 10, 0, 8, 0, 15, 0, 32, 0, 17, 0, 64])
         else {
             panic!("Expected succesful parse");
         };
@@ -805,7 +805,7 @@ mod tests {
             },
             &mut buf,
         );
-        assert_eq!(buf, [0xc0, 1, 0, 0]);
+        assert_eq!(buf, [0x80, 10, 0, 0]);
 
         let mut buf = vec![];
         serialize(
@@ -819,26 +819,25 @@ mod tests {
             },
             &mut buf,
         );
-        assert_eq!(buf, [0xc0, 1, 0, 4, 0, 17, 0, 64]);
+        assert_eq!(buf, [0x80, 10, 0, 4, 0, 17, 0, 64]);
     }
 
     #[test]
     fn test_fixed_key_request() {
-        let Ok(NtsRecord::FixedKeyRequest { c2s, s2c }) = parse(&[0xC0, 2, 0, 0]) else {
+        let Ok(NtsRecord::FixedKeyRequest { c2s, s2c }) = parse(&[0x80, 12, 0, 0]) else {
             panic!("Expected succesful parse");
         };
         assert_eq!(c2s, [].as_slice() as &[u8]);
         assert_eq!(s2c, [].as_slice() as &[u8]);
 
-        let Ok(NtsRecord::FixedKeyRequest { c2s, s2c }) = parse(&[0x40, 2, 0, 4, 1, 2, 3, 4])
-        else {
+        let Ok(NtsRecord::FixedKeyRequest { c2s, s2c }) = parse(&[0, 12, 0, 4, 1, 2, 3, 4]) else {
             panic!("Expected succesful parse");
         };
         assert_eq!(c2s, [1, 2].as_slice());
         assert_eq!(s2c, [3, 4].as_slice());
 
-        assert!(parse(&[0xC0, 2, 0, 3, 1, 2, 3]).is_err());
-        assert!(parse(&[0xC0, 2, 0, 4, 1, 2, 3]).is_err());
+        assert!(parse(&[0x80, 12, 0, 3, 1, 2, 3]).is_err());
+        assert!(parse(&[0x80, 12, 0, 4, 1, 2, 3]).is_err());
 
         let mut buf = vec![];
         serialize(
@@ -848,25 +847,25 @@ mod tests {
             },
             &mut buf,
         );
-        assert_eq!(buf, [0xc0, 2, 0, 4, 5, 6, 7, 8]);
+        assert_eq!(buf, [0x80, 12, 0, 4, 5, 6, 7, 8]);
     }
 
     #[test]
     fn test_server_deny() {
         let Ok(NtsRecord::NtpServerDeny { denied }) =
-            parse(&[0x40, 3, 0, 5, b'h', b'e', b'l', b'l', b'o'])
+            parse(&[0, 13, 0, 5, b'h', b'e', b'l', b'l', b'o'])
         else {
             panic!("Expected succesful parse");
         };
         assert_eq!(denied, "hello");
         let Ok(NtsRecord::NtpServerDeny { denied }) =
-            parse(&[0xC0, 3, 0, 5, b'h', b'e', b'l', b'l', b'o', b' ', b'w'])
+            parse(&[0x80, 13, 0, 5, b'h', b'e', b'l', b'l', b'o', b' ', b'w'])
         else {
             panic!("Expected succesful parse");
         };
         assert_eq!(denied, "hello");
 
-        assert!(parse(&[0x40, 3, 0, 5, b'h', b'e', b'l']).is_err());
+        assert!(parse(&[0, 13, 0, 5, b'h', b'e', b'l']).is_err());
 
         let mut buf = vec![];
         serialize(
@@ -875,7 +874,7 @@ mod tests {
             },
             &mut buf,
         );
-        assert_eq!(buf, &[0x40, 3, 0, 2, b'h', b'i']);
+        assert_eq!(buf, &[0, 13, 0, 2, b'h', b'i']);
     }
 
     #[test]
