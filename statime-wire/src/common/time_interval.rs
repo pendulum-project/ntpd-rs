@@ -39,7 +39,7 @@ impl TimeInterval {
 
     /// Create a new interval with the given length.
     ///
-    /// This will round to the closest possible value.
+    /// This conversion is not exact.
     ///
     /// # Errors
     /// This will error if the input is NaN or of magnitude larger than
@@ -47,7 +47,7 @@ impl TimeInterval {
     pub fn from_nanos(nanos: f64) -> Result<Self, Error> {
         // We need to do the checks for the conversion manually unfortunately,
         // as rust doesn't have usable builtin conversions for floats.
-        let ticks = (nanos * f64::from(1 << 16)).round();
+        let ticks = nanos * f64::from(1 << 16);
         // The as casts in the check are not exact, but that is acceptable as
         // the MAX value rounds up by 1, which can be solved with checking for
         // equality as well, and the MIN value is exactly representable. After
