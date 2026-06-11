@@ -16,8 +16,14 @@ use crate::{
     addresses::{BoundInterface, SealedPtpAddressFamily},
 };
 
+#[cfg(not(test))]
 const EVENT_PORT: u16 = 319;
+#[cfg(not(test))]
 const GENERAL_PORT: u16 = 320;
+#[cfg(test)]
+const EVENT_PORT: u16 = 4319;
+#[cfg(test)]
+const GENERAL_PORT: u16 = 4320;
 
 type RecvTimestampFuture =
     dyn Future<Output = Result<(SendTimestampToken, TimestampData)>> + Sync + Send + 'static;
