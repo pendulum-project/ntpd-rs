@@ -9,56 +9,48 @@ pub struct Aes128Siv;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Aes256Siv;
 
-impl SSLName for Aes128Siv {
-    // NOTE: the argument is used to prevent coding mistakes at compile time
+pub trait EVPCipher {
+    type Key: AsRef<[u8]> + AsMut<[u8]>;
+    fn name() -> &'static str;
+}
+
+impl EVPCipher for Aes128Siv {
+    type Key = [u8; 32];
+
     fn name() -> &'static str {
         "AES-128-SIV"
     }
 }
 
-impl SSLName for Aes256Siv {
+impl EVPCipher for Aes256Siv {
+    type Key = [u8; 64];
+
     fn name() -> &'static str {
         "AES-256-SIV"
     }
 }
 
-impl Deref for Key<Aes128Siv> {
-    type Target = [u8; 32];
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Deref for Key<Aes256Siv> {
-    type Target = [u8; 64];
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
+#[repr(transparent)]
+pub struct Key<T: EVPCipher>(T::Key);
 
 // The following is boilerplate or generic code
 
-impl Default for Key<Aes128Siv> {
+impl<T: EVPCipher> Deref for Key<T> {
+    type Target = T::Key;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<const N: usize, T: EVPCipher<Key = [u8; N]>> Default for Key<T> {
     fn default() -> Self {
         Self([0; _])
     }
 }
 
-impl Default for Key<Aes256Siv> {
-    fn default() -> Self {
-        Self([0; _])
-    }
-}
-
-#[repr(transparent)]
-pub struct Key<T>(<Key<T> as Deref>::Target)
+impl<T: EVPCipher> FromIterator<u8> for Key<T>
 where
-    Key<T>: Deref;
-
-impl<T> FromIterator<u8> for Key<T>
-where
-    Key<T>: Deref + Default,
-    <Key<T> as Deref>::Target: AsMut<[u8]>,
+    Self: Default,
 {
     fn from_iter<I: IntoIterator<Item = u8>>(data: I) -> Self {
         let mut iter = data.into_iter();
@@ -72,46 +64,29 @@ where
     }
 }
 
-impl<T> AsMut<[u8]> for Key<T>
-where
-    Key<T>: Deref,
-    <Key<T> as Deref>::Target: AsMut<[u8]>,
-{
+impl<T: EVPCipher> AsMut<[u8]> for Key<T> {
     fn as_mut(&mut self) -> &mut [u8] {
         self.0.as_mut()
     }
 }
 
 #[cfg(test)]
-impl From<<Self as Deref>::Target> for Key<Aes128Siv> {
-    fn from(data: <Self as Deref>::Target) -> Self {
+impl<const N: usize, T: EVPCipher<Key = [u8; N]>> From<[u8; N]> for Key<T> {
+    fn from(data: [u8; N]) -> Self {
         Self(data)
     }
-}
-
-#[cfg(test)]
-impl From<<Self as Deref>::Target> for Key<Aes256Siv> {
-    fn from(data: <Self as Deref>::Target) -> Self {
-        Self(data)
-    }
-}
-
-pub trait SSLName {
-    fn name() -> &'static str;
 }
 
 // NOTE for future modifications: if AES-GCM-SIV is to be added, keep in mind lessons learned the hard way:
 // - the tag is at the end of the ciphertext, whereas with AES-SIV it sits at the beginning
 // - the nonce needs to be set using crypt_init as the IV and is not provided as associated data
 
-pub fn decrypt_vec<T: SSLName>(
+pub fn decrypt_vec<T: EVPCipher>(
     key: &Key<T>,
     ciphertext: &[u8],
     aad: [&[u8]; 2],
 ) -> io::Result<Vec<u8>>
 where
-    Key<T>: Deref,
-    <Key<T> as Deref>::Target: AsRef<[u8]>,
 {
     let cipher = &openssl::cipher::Cipher::fetch(None, T::name(), None)?;
     let mut ctx = openssl::cipher_ctx::CipherCtx::new()?;
@@ -133,15 +108,13 @@ where
     Ok(output)
 }
 
-pub fn encrypt_in_place<T: SSLName>(
+pub fn encrypt_in_place<T: EVPCipher>(
     key: &Key<T>,
     buffer: &mut [u8],
     plaintext_length: usize,
     aad: [&[u8]; 2],
 ) -> io::Result<usize>
 where
-    Key<T>: Deref,
-    <Key<T> as Deref>::Target: AsRef<[u8]>,
 {
     let cipher = &openssl::cipher::Cipher::fetch(None, T::name(), None)?;
     let mut ctx = openssl::cipher_ctx::CipherCtx::new()?;

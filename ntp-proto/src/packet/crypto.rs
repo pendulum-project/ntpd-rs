@@ -13,7 +13,7 @@ use super::extension_fields::ExtensionField;
 #[cfg(all(feature = "openssl", not(feature = "rustcrypto")))]
 mod openssl_defs;
 #[cfg(all(feature = "openssl", not(feature = "rustcrypto")))]
-use openssl_defs::{Aes128Siv, Aes256Siv, Key, SSLName};
+use openssl_defs::{Aes128Siv, Aes256Siv, EVPCipher, Key};
 
 #[derive(Debug)]
 pub struct DecryptError;
