@@ -17,6 +17,7 @@ default = ["aws-lc", "rustcrypto"]
 aws-lc = ["rustls23/aws-lc-rs", "rustls23/prefer-post-quantum"] # the latter also turns on aws-lc-rs
 rustcrypto = ["dep:md-5", "dep:aead", "dep:aes-siv"]
 openssl = ["dep:rustls-openssl", "dep:openssl"]
+openssl-vendored = ["openssl", "rustls-openssl/vendored", "openssl/vendored"]
 __internal-fuzz = ["arbitrary", "__internal-api"]
 __internal-test = ["__internal-api"]
 __internal-api = []
@@ -39,11 +40,6 @@ md-5 = { workspace = true, optional = true }
 aead = { workspace = true, optional = true }
 aes-siv = { workspace = true, optional = true }
 openssl = { workspace = true, optional = true }
-
-[target.'cfg(target_env = "musl")'.dependencies.rustls-openssl]
-workspace = true
-optional = true
-features = ["vendored"]
 
 [dev-dependencies]
 serde_json.workspace = true

@@ -35,11 +35,6 @@ rustls-openssl = { workspace = true, optional = true }
 ntp-proto = { workspace = true, features = ["__internal-test",] }
 tokio-rustls.workspace = true
 
-[target.'cfg(target_env = "musl")'.dependencies.rustls-openssl]
-workspace = true
-optional = true
-features = ["vendored"]
-
 [features]
 default = [ "aws-lc", "rustcrypto", "pps", "srv" ]
 hardware-timestamping = []
@@ -48,6 +43,7 @@ srv = [ "dep:hickory-resolver" ]
 aws-lc = ["rustls23/aws-lc-rs", "rustls23/prefer-post-quantum"] # the latter also turns on aws-lc-rs
 rustcrypto = ["ntp-proto/rustcrypto"]
 openssl = ["dep:rustls-openssl", "ntp-proto/openssl"]
+openssl-vendored = ["openssl", "rustls-openssl/vendored"]
 
 [package.metadata.deb]
 name = "ntpd-rs"
