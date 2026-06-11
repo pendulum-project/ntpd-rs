@@ -60,7 +60,7 @@ jobs:
             target: "aarch64-apple-darwin"
           - rust: "stable"
             os: ubuntu-latest
-            features: "--no-default-features --features aws-lc"
+            features: "--no-default-features --features rustcrypto,aws-lc"
             target: "x86_64-unknown-linux-gnu"
           - rust: "stable"
             os: ubuntu-latest
@@ -68,11 +68,15 @@ jobs:
             target: "x86_64-unknown-linux-gnu"
           - rust: "stable"
             os: ubuntu-latest
-            features: "--no-default-features --features aws-lc,srv"
+            features: "--no-default-features --features rustcrypto,openssl"
             target: "x86_64-unknown-linux-gnu"
           - rust: "stable"
             os: ubuntu-latest
-            features: "--no-default-features --features aws-lc,pps"
+            features: "--no-default-features --features rustcrypto,aws-lc,srv"
+            target: "x86_64-unknown-linux-gnu"
+          - rust: "stable"
+            os: ubuntu-latest
+            features: "--no-default-features --features rustcrypto,aws-lc,pps"
             target: "x86_64-unknown-linux-gnu"
     steps:
       - name: Checkout sources
