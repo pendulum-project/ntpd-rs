@@ -117,18 +117,29 @@ impl BoundInterface for Ipv4BoundInterface {
     }
 
     fn poll_recv(&self, buf: &mut [u8], cx: &mut Context) -> Poll<Result<RecvResult<Self::Addr>>> {
-        if let Poll::Ready(result) = self.event_socket.poll_recv(buf, cx) {
-            Poll::Ready(result)
-        } else {
-            self.general_socket.poll_recv(buf, cx)
+        loop {
+            return if let Poll::Ready(result) = self.event_socket.poll_recv(buf, cx) {
+                if let Ok(recv_result) = &result
+                    && recv_result.remote_addr.port() != GENERAL_PORT
+                    && recv_result.remote_addr.port() != EVENT_PORT
+                {
+                    // Ignore messages not sent from the PORTS we can send messages to.
+                    // This avoids the potentially confusing situation of a message send
+                    // from a random port triggering a response being send to port 319 or 320.
+                    continue;
+                }
+                Poll::Ready(result)
+            } else {
+                self.general_socket.poll_recv(buf, cx)
+            }
+            .map_ok(|result| RecvResult {
+                bytes_read: result.bytes_read,
+                remote_addr: *result.remote_addr.ip(),
+                local_addr: *result.local_addr.ip(),
+                timestamp: result.timestamp,
+                full_timestamp_data: result.full_timestamp_data,
+            });
         }
-        .map_ok(|result| RecvResult {
-            bytes_read: result.bytes_read,
-            remote_addr: *result.remote_addr.ip(),
-            local_addr: *result.local_addr.ip(),
-            timestamp: result.timestamp,
-            full_timestamp_data: result.full_timestamp_data,
-        })
     }
 
     fn poll_recv_timestamp(
