@@ -379,3 +379,6 @@ enum TimestampSource {
     System,
     Hardware,
 }
+
+#[cfg(all(test, feature = "privileged_tests"))]
+mod test;
