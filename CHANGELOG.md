@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.9.0]
+
+### Added
+- Support for using openssl for cryptography, instead of aws-lc-sys and rust-crypto.
+
+### Changed
+- Switched to IANA early-allocated codepoints for the KELB style NTS pool (experimental).
+- Updated dependencies.
+
 ## [1.8.0]
 
 ### Added
@@ -357,6 +366,8 @@ process.
 - Fixed a bug in peer dispersion calculation which resulted in overly
   pessimistic dispersion estimates.
 
+[1.9.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.8.0...v1.9.0
+[1.8.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.7.2...v1.8.0
 [1.7.2]: https://github.com/pendulum-project/ntpd-rs/compare/v1.7.1...v1.7.2
 [1.7.1]: https://github.com/pendulum-project/ntpd-rs/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.6.2...v1.7.0

@@ -1,5 +1,5 @@
 <!-- ---
-title: NTP-CTL(8) ntpd-rs 1.8.0 | ntpd-rs
+title: NTP-CTL(8) ntpd-rs 1.9.0 | ntpd-rs
 --- -->
 
 # NAME
