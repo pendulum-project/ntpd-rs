@@ -7,10 +7,10 @@ use tracing::warn;
 
 use super::super::config::PoolSourceConfig;
 
-use super::{SourceId, SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId};
+use super::{ClockId, SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId};
 
 struct PoolSource {
-    id: SourceId,
+    id: ClockId,
     addr: SocketAddr,
 }
 
@@ -78,7 +78,7 @@ impl Spawner for PoolSpawner {
         // Try and add sources to our pool
         while self.current_sources.len() < self.config.count {
             if let Some(addr) = self.known_ips.pop() {
-                let id = SourceId::new();
+                let id = ClockId::new();
                 self.current_sources.push(PoolSource { id, addr });
                 let action = SpawnAction::create_ntp(
                     id,
