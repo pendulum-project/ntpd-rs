@@ -592,6 +592,7 @@ mod tests {
         let test_socket = open_ip(
             SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
             GeneralTimestampMode::SoftwareRecv,
+            false,
         )
         .unwrap();
 
@@ -702,6 +703,7 @@ mod tests {
             bytes_read: size,
             timestamp,
             remote_addr,
+            ..
         } = socket.recv(&mut buf).await.unwrap();
         assert_eq!(size, 48);
         let timestamp = timestamp.unwrap();
@@ -743,6 +745,7 @@ mod tests {
                 bytes_read: size,
                 timestamp,
                 remote_addr,
+                ..
             } = socket.recv(&mut buf).await.unwrap();
             assert_eq!(size, 48);
             assert!(timestamp.is_some());
