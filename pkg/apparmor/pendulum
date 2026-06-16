@@ -1,0 +1,38 @@
+#abi <abi/4.0>,
+
+include <tunables/global>
+
+#NOTE: this should probably be written as an attached profile, in the form of:
+#
+# /usr/sbin/ntp-daemon flags=(enforce) {
+#
+# but for development this profile is easier to work with.
+#
+# Load it using `apparmor_parser -r pkg/apparmor/pendulum`
+# and then apply it using `aa-exec -p pendulum -- <ntpd-rs command>`
+#
+profile pendulum flags=(enforce) {
+  include <abstractions/base>
+  include <abstractions/nameservice>
+  include <abstractions/user-tmp>
+
+  capability sys_time,
+  capability dac_read_search,
+
+  /dev/pps[0-9]*        rw,
+
+  @{PROC}/@{pid}/cgroup r,
+  /sys/fs/cgroup/**/cpu.max  r,
+
+  /etc/ntpd-rs/** r,
+
+  /run/ntpd-rs/**     rw,
+
+  # NOTE: this is for development only, assuming ntpd-rs is checked out in your home folder
+  @{HOME}/ntpd-rs/**   r,
+  @{HOME}/**/ntpd-rs/**   r,
+
+  # NOTE: site-specific additions and overrides; this should probably also be something like
+  # local/home.usr.sbin.ntp-daemon if we turn this into an attached profile
+  # include <local/pendulum>
+}
