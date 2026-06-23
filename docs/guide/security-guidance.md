@@ -78,6 +78,7 @@ The clock steering is based on the ntpd-rs configuration file. If an attacker ca
 Similarly, for logs it is recommended to restrict who can read the logs. It is also strongly advisable to configure log rotation and limits on the maximum size of the log through the systems logging facilities, to prevent logs from accidentally becoming so large as to impede normal system operation. When configured with a `log-level` of info or higher, the daemon should not log in direct response to random network traffic. However, log output is proportional to the number of remote time sources configured.
 
 Furthermore, the ntpd-rs daemon can be configured to expose two sockets:
+
 - The observe socket is read-only and exposes some of the source and clock
   algorithm state.
 - The configuration socket accepts commands and allows changing of some of the

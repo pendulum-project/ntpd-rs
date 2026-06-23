@@ -12,7 +12,7 @@ differences:
   only supports these modes).
 - Fields in the NTP server and client messages have been defined more clearly.
 - NTPv5 has a better mechanism for handling loop detection.
-- Several other minor improvments and changes.
+- Several other minor improvements and changes.
 
 All of this taken together, we believe that NTPv5 is a significant improvement
 over NTPv4. Because of this, you can already use ntpd-rs as an NTPv5 client or
