@@ -21,6 +21,7 @@ which are purposefully kept small and only offer a safe API.
 
 The `ntp-proto` crate contains the main NTP protocol implementation. It
 implements:
+
  - Serialization and deserialization of the on-wire protocol.
  - Packet handling decision logic of the source.
  - Measurement logic of the source, including the per-source filtering.
@@ -73,6 +74,7 @@ Immediately after, further configuration is read from file and used to generate
 the definitive logging system. At this point, the main configuration steps are
 completed, and the combined command line and file base configuration is used to
 set up at least these kinds of tasks:
+
  - The main clock steering task.
  - One source task per configured source (remote server).
  - One server task per configured interface on which to serve time.
@@ -87,6 +89,7 @@ sending the poll message to start a clock difference measurement, handling the
 response, and doing an initial filtering step over the measurements.
 
 The main loop of the source waits on 3 futures concurrently:
+
  - A timer, which triggers sending a new poll message.
  - The network socket, receiving a packet here triggers packet processing and
    measurement filtering.
@@ -104,6 +107,7 @@ responsible for managing the socket for that interface, reading messages and
 providing the proper server responses.
 
 The main loop of the server waits on 2 futures concurrently:
+
  - The network socket
  - A channel providing synchronization state updates
 
