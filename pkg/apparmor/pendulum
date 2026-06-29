@@ -17,7 +17,6 @@ profile pendulum flags=(enforce) {
   include <abstractions/user-tmp>
 
   capability sys_time,
-  capability dac_read_search,
 
   /dev/pps[0-9]*        rw,
 
