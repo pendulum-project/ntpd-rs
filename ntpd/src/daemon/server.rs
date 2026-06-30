@@ -142,6 +142,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     let socket_res = open_ip(
                         self.config.listen,
                         timestamped_socket::socket::GeneralTimestampMode::SoftwareRecv,
+                        false,
                     );
 
                     match socket_res {
@@ -168,6 +169,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                             bytes_read: length,
                             remote_addr: source_addr,
                             timestamp: Some(timestamp),
+                            ..
                         }) => {
                             let mut send_buf = [0u8; MAX_PACKET_SIZE];
                             match self.server.handle(source_addr.ip(), convert_net_timestamp(timestamp), &buf[..length], &mut send_buf[..length], &mut self.stats) {
@@ -304,6 +306,7 @@ mod tests {
         let socket = open_ip(
             SocketAddr::new("127.0.0.1".parse().unwrap(), alloc_port()),
             GeneralTimestampMode::SoftwareRecv,
+            false,
         )
         .unwrap();
         let mut socket = socket
