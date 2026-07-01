@@ -19,7 +19,7 @@ pub(crate) trait SealedPtpAddressFamily {
     type BoundInterface: BoundInterface<Addr = Self>;
 }
 
-pub(crate) trait BoundInterface: Sized {
+pub(crate) trait BoundInterface: Sized + Sync + Send {
     type Addr;
 
     fn open(interface: Option<InterfaceName>, hardware_clock: Option<u32>) -> Result<Self>;
