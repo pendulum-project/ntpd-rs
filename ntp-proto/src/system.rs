@@ -148,6 +148,7 @@ pub enum SourceType {
     Pps,
     Sock,
     Ntp,
+    Csptp,
 }
 
 #[derive(Default, Copy, Clone)]
@@ -246,6 +247,10 @@ impl NtpManager {
                     source_id: ReferenceId::SOCK,
                 }),
                 SourceType::Ntp => source_snapshots.get(&id).copied().map(SourceSnapshot::Ntp),
+                SourceType::Csptp => Some(SourceSnapshot::External {
+                    stratum: 0,
+                    source_id: ReferenceId::CSPTP,
+                }),
             })
             .collect();
         drop(source_snapshots);

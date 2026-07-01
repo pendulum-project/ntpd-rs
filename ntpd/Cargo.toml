@@ -31,6 +31,11 @@ serde_json.workspace = true
 rustls23.workspace = true
 rustls-openssl = { workspace = true, optional = true }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+statime-wire = { workspace = true, features = ["serde"] }
+statime-netptp.workspace = true
+statime-csptp.workspace = true
+
 [dev-dependencies]
 ntp-proto = { workspace = true, features = ["__internal-test",] }
 tokio-rustls.workspace = true
