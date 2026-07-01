@@ -1,3 +1,5 @@
+#[cfg(target_os = "linux")]
+use crate::daemon::config::CsptpConfig;
 #[cfg(feature = "pps")]
 use crate::daemon::pps_source::PpsSourceTask;
 use crate::daemon::{
@@ -20,9 +22,11 @@ use super::{
 #[cfg(feature = "pps")]
 use super::spawn::pps::PpsSpawner;
 
+#[cfg(target_os = "linux")]
+use std::net::Ipv6Addr;
 use std::{
     collections::HashMap,
-    net::IpAddr,
+    net::{IpAddr, Ipv4Addr},
     sync::{Arc, Mutex, RwLock},
 };
 
@@ -45,6 +49,10 @@ pub struct DaemonChannels {
 }
 
 /// Spawn the NTP daemon
+#[expect(
+    clippy::too_many_arguments,
+    reason = "FIXME: System needs a larger refactor to properly receive configuration"
+)]
 pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper>>(
     synchronization_config: SynchronizationConfig,
     algorithm_config: Controller::AlgorithmConfig,
@@ -53,6 +61,7 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper>>(
     source_configs: &[NtpSourceConfig],
     server_configs: &[ServerConfig],
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
+    #[cfg(target_os = "linux")] csptp_config: CsptpConfig,
 ) -> std::io::Result<(JoinHandle<std::io::Result<()>>, DaemonChannels)> {
     let ip_list = super::local_ip_provider::spawn()?;
 
@@ -65,6 +74,8 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper>>(
         &keyset,
         ip_list,
         !source_configs.is_empty(),
+        #[cfg(target_os = "linux")]
+        csptp_config,
     );
 
     for source_config in source_configs {
@@ -110,6 +121,10 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper>>(
             NtpSourceConfig::Pps(cfg) => {
                 system.add_spawner(PpsSpawner::new(cfg.clone(), source_defaults_config));
             }
+            #[cfg(target_os = "linux")]
+            NtpSourceConfig::Csptp(cfg) => {
+                system.add_spawner(crate::daemon::spawn::csptp::CsptpSpawner::new(cfg.clone()));
+            }
         }
     }
 
@@ -130,6 +145,14 @@ struct SystemSpawnerData {
 struct SystemTask<C: NtpClock, Controller: TimeSyncController<Clock = C>> {
     controller: Arc<Controller>,
     ntp_manager: Arc<NtpManager>,
+
+    #[cfg(target_os = "linux")]
+    ptp_networking_ipv4: Option<&'static statime_netptp::NetworkManager<Ipv4Addr>>,
+    #[cfg(target_os = "linux")]
+    ptp_networking_ipv6: Option<&'static statime_netptp::NetworkManager<Ipv6Addr>>,
+    #[cfg(target_os = "linux")]
+    csptp_manager:
+        &'static statime_csptp::CsptpManager<std::sync::RwLock<statime_csptp::InternalState>>,
 
     system_snapshot_sender: tokio::sync::watch::Sender<SystemSnapshot>,
     source_snapshots: Arc<std::sync::RwLock<HashMap<ClockId, ObservableSourceState>>>,
@@ -167,6 +190,7 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C>> SystemTask<C
         keyset: &tokio::sync::watch::Receiver<Arc<KeySet>>,
         ip_list: tokio::sync::watch::Receiver<Arc<[IpAddr]>>,
         have_sources: bool,
+        #[cfg(target_os = "linux")] csptp_config: CsptpConfig,
     ) -> (Self, DaemonChannels) {
         let Ok(controller) =
             Controller::new(clock.clone(), synchronization_config, algorithm_config)
@@ -200,6 +224,23 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C>> SystemTask<C
             SystemTask {
                 controller: Arc::new(controller),
                 ntp_manager: Arc::new(ntp_manager),
+
+                #[cfg(target_os = "linux")]
+                ptp_networking_ipv4: None,
+                #[cfg(target_os = "linux")]
+                ptp_networking_ipv6: None,
+                #[cfg(target_os = "linux")]
+                csptp_manager: Box::leak(Box::new(statime_csptp::CsptpManager::new(
+                    statime_csptp::CsptpConfig {
+                        identity: csptp_config.identity,
+                        priority_1: csptp_config.priority_1,
+                        priority_2: csptp_config.priority_2,
+                        clock_quality: csptp_config.clock_quality,
+                        ptp_timescale: csptp_config.ptp_timescale,
+                        time_traceable: csptp_config.time_traceable,
+                        frequency_traceable: csptp_config.frequency_traceable,
+                    },
+                ))),
 
                 system_snapshot_sender,
                 source_snapshots: source_snapshots.clone(),
@@ -398,11 +439,15 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C>> SystemTask<C
         Ok(())
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "FIXME: Find a good way to split this function up."
+    )]
     async fn create_source(
         &mut self,
         spawner_id: SpawnerId,
         mut params: SourceCreateParameters,
-    ) -> Result<ClockId, C::Error> {
+    ) -> Result<(), C::Error> {
         let source_id = params.get_id();
         info!(source_id=?source_id, addr=?params.get_addr(), spawner=?spawner_id, "new source");
         self.sources.lock().unwrap().insert(
@@ -415,6 +460,8 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C>> SystemTask<C
                     SourceCreateParameters::Sock(_) => SourceType::Sock,
                     #[cfg(feature = "pps")]
                     SourceCreateParameters::Pps(_) => SourceType::Pps,
+                    #[cfg(target_os = "linux")]
+                    SourceCreateParameters::Csptp(_) => SourceType::Csptp,
                 },
             },
         );
@@ -486,6 +533,65 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C>> SystemTask<C
                     source,
                 );
             }
+            #[cfg(target_os = "linux")]
+            SourceCreateParameters::Csptp(ref params) => match params.addr {
+                IpAddr::V4(addr) => {
+                    let network = if let Some(network) = self.ptp_networking_ipv4 {
+                        network
+                    } else {
+                        let manager = match statime_netptp::NetworkManager::new() {
+                            Ok(manager) => manager,
+                            Err(e) => {
+                                tracing::warn!("Could not create source: {e}");
+                                return Ok(());
+                            }
+                        };
+                        let manager: &'static statime_netptp::NetworkManager<_> =
+                            Box::leak(Box::new(manager));
+                        self.ptp_networking_ipv4 = Some(manager);
+                        manager
+                    };
+                    let controller = self
+                        .controller
+                        .add_source(params.id, SourceConfig::default());
+                    crate::daemon::csptp_source::CsptpSourceTask::spawn(
+                        params.id,
+                        addr,
+                        params.config.clone(),
+                        controller,
+                        self.csptp_manager,
+                        network,
+                    );
+                }
+                IpAddr::V6(addr) => {
+                    let network = if let Some(network) = self.ptp_networking_ipv6 {
+                        network
+                    } else {
+                        let manager = match statime_netptp::NetworkManager::new() {
+                            Ok(manager) => manager,
+                            Err(e) => {
+                                tracing::warn!("Could not create source: {e}");
+                                return Ok(());
+                            }
+                        };
+                        let manager: &'static statime_netptp::NetworkManager<_> =
+                            Box::leak(Box::new(manager));
+                        self.ptp_networking_ipv6 = Some(manager);
+                        manager
+                    };
+                    let controller = self
+                        .controller
+                        .add_source(params.id, SourceConfig::default());
+                    crate::daemon::csptp_source::CsptpSourceTask::spawn(
+                        params.id,
+                        addr,
+                        params.config.clone(),
+                        controller,
+                        self.csptp_manager,
+                        network,
+                    );
+                }
+            },
         }
 
         // Try and find a related spawner and notify that spawner.
@@ -498,7 +604,7 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C>> SystemTask<C
                 .await;
         }
 
-        Ok(source_id)
+        Ok(())
     }
 
     async fn handle_spawn_event(&mut self, event: SpawnEvent) -> Result<(), C::Error> {
