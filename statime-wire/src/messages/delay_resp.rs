@@ -3,9 +3,12 @@ use crate::{
     common::{PortIdentity, Timestamp},
 };
 
+/// Delay response message body
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DelayRespMessage {
+    /// Time the delay request was received by the remote.
     pub receive_timestamp: Timestamp,
+    /// Port identity of the PTP port that sent the request.
     pub requesting_port_identity: PortIdentity,
 }
 

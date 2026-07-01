@@ -2,7 +2,7 @@
 members = [
     "ntp-proto",
     "ntpd"
-, "statime-wire", "statime-netptp"]
+, "statime-csptp", "statime-wire", "statime-netptp"]
 exclude = [ ]
 
 # Properly take compiler version into account when resolving crates.
@@ -36,7 +36,7 @@ clock-steering = "0.2.1"
 hickory-resolver = { version = "0.26.0", features = ["dnssec-aws-lc-rs"] }
 libc = "0.2.154"
 pps-time = "0.2.3"
-rand = "0.8.0"
+rand = { version = "0.8.0", default-features = false }
 serde = { version = "1.0.166", features = ["derive"] }
 serde_json = "1.0"
 timestamped-socket = { git = "https://github.com/pendulum-project/timestamped-socket.git", branch="polling-networking" }
@@ -66,3 +66,4 @@ serde_test = { version = "1.0.176" }
 # our own crates used as dependencies, same version as the workspace version
 # NOTE: keep this part at the bottom of the file, do not change this line
 ntp-proto = { version = "1.9.0", path = "./ntp-proto", default-features = false, features = ["__internal-api"] }
+statime-wire = { version = "1.9.0", path = "./statime-wire", default-features = false }

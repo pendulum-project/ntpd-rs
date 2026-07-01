@@ -9,7 +9,11 @@ pub struct TimeInterval(
 );
 
 impl TimeInterval {
-    pub(crate) fn serialize(self, buffer: &mut [u8]) -> Result<(), Error> {
+    /// Serialize the timestamp to an 8 byte buffer.
+    ///
+    /// # Errors
+    /// Fails when the provided buffer is too short.
+    pub fn serialize(self, buffer: &mut [u8]) -> Result<(), Error> {
         buffer
             .get_mut(0..8)
             .ok_or(Error::BufferTooShort)?
@@ -17,7 +21,15 @@ impl TimeInterval {
         Ok(())
     }
 
-    pub(crate) fn deserialize(buffer: &[u8]) -> Result<Self, Error> {
+    /// Deserialize the timestamp from an 8 byte buffer.
+    ///
+    /// # Errors
+    /// Fails when the provided buffer is too short.
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "Clippy can't tell the try_into will never fail"
+    )]
+    pub fn deserialize(buffer: &[u8]) -> Result<Self, Error> {
         Ok(Self(i64::from_be_bytes(
             buffer
                 .get(0..8)

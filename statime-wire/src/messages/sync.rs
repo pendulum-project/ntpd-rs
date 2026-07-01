@@ -1,7 +1,9 @@
 use crate::{Error, common::Timestamp};
 
+/// Sync message body
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SyncMessage {
+    /// Time this message was sent.
     pub origin_timestamp: Timestamp,
 }
 
