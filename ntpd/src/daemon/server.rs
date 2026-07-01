@@ -168,23 +168,37 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                         Ok(RecvResult {
                             bytes_read: length,
                             remote_addr: source_addr,
+                            local_addr,
                             timestamp: Some(timestamp),
                             ..
                         }) => {
                             let mut send_buf = [0u8; MAX_PACKET_SIZE];
-                            match self.server.handle(source_addr.ip(), convert_net_timestamp(timestamp), &buf[..length], &mut send_buf[..length], &mut self.stats) {
-                                ntp_proto::ServerAction::Ignore => { /* explicitly do nothing */ },
+                            match self.server.handle(
+                                source_addr.ip(),
+                                convert_net_timestamp(timestamp),
+                                &buf[..length],
+                                &mut send_buf[..length],
+                                &mut self.stats,
+                            ) {
+                                ntp_proto::ServerAction::Ignore => { /* explicitly do nothing */ }
                                 ntp_proto::ServerAction::Respond { message } => {
-                                    if let Err(send_err) = socket.send_to(message, source_addr).await {
+                                    if let Err(send_err) =
+                                        socket.send_from_to(message, local_addr, source_addr).await
+                                    {
                                         self.stats.response_send_errors.inc();
                                         debug!(error=?send_err, "Could not send response packet");
                                     }
-                                },
+                                }
                             }
                         }
                         Ok(_) => {
                             debug!("received a packet without a timestamp");
-                            self.stats.register(0, false, ServerReason::InternalError, ServerResponse::Ignore);
+                            self.stats.register(
+                                0,
+                                false,
+                                ServerReason::InternalError,
+                                ServerResponse::Ignore,
+                            );
                         }
                         Err(receive_error) => {
                             warn!(?receive_error, "could not receive packet");
