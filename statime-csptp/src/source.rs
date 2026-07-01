@@ -124,12 +124,12 @@ impl<Mutex: StateMutex, Controller: SourceController> CsptpSource<'_, Mutex, Con
         clippy::missing_panics_doc,
         reason = "Function should never panic unless there is an implementation fault"
     )]
-    pub async fn run<Error, Socket: ClientSocket, F: Future<Output = ()>>(
+    pub async fn run<Error, Socket: ClientSocket, F: Future<Output = ()>, R: rand::Rng>(
         &mut self,
         shutdown: impl Future<Output = ()>,
         mut create_socket: impl FnMut() -> Result<Socket, Error>,
         mut sleep: impl FnMut(Duration) -> F,
-        rng: &mut impl rand::Rng,
+        mut rng: impl FnMut() -> R,
     ) -> Result<(), Error> {
         let mut shutdown = core::pin::pin!(shutdown);
 
@@ -140,7 +140,7 @@ impl<Mutex: StateMutex, Controller: SourceController> CsptpSource<'_, Mutex, Con
             loop {
                 poll_interval.as_mut().await;
 
-                let next_poll = rng
+                let next_poll = rng()
                     .gen_range((self.config.poll_interval * 9)..=(self.config.poll_interval * 11))
                     / 10;
                 poll_interval.set(sleep(next_poll));
