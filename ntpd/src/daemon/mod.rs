@@ -1,5 +1,7 @@
 mod clock;
 pub mod config;
+#[cfg(target_os = "linux")]
+mod csptp_source;
 mod dns;
 pub mod keyexchange;
 mod local_ip_provider;
@@ -161,6 +163,8 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
                 &config.sources,
                 &config.servers,
                 keyset.clone(),
+                #[cfg(target_os = "linux")]
+                config.csptp,
             )
             .await?;
 
