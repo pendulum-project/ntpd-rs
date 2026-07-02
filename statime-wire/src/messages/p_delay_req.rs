@@ -1,7 +1,9 @@
 use crate::{Error, common::Timestamp};
 
+/// Peer delay message body
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PDelayReqMessage {
+    /// Time this message was sent.
     pub origin_timestamp: Timestamp,
 }
 

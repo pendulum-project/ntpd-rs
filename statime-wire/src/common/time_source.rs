@@ -24,10 +24,11 @@ pub enum TimeSource {
 }
 
 impl TimeSource {
-    /// Converts enum variants back to their primitive values
-    /// as specified in *IEEE1588-2019 section 7.6.2.8*
+    /// Get the u8 primitive representation of the `TimeSource`
+    // Converts enum variants back to their primitive values
+    // as specified in *IEEE1588-2019 section 7.6.2.8*
     #[must_use]
-    pub(crate) fn to_primitive(self) -> u8 {
+    pub fn to_primitive(self) -> u8 {
         match self {
             Self::AtomicClock => 0x10,
             Self::Gnss => 0x20,
@@ -42,7 +43,9 @@ impl TimeSource {
         }
     }
 
-    pub(crate) fn from_primitive(value: u8) -> Self {
+    /// Create a `TimeSource` from its representation as a u8 primitive.
+    #[must_use]
+    pub fn from_primitive(value: u8) -> Self {
         match value {
             0x10 => Self::AtomicClock,
             0x20 => Self::Gnss,

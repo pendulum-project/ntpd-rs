@@ -12,7 +12,11 @@ pub struct PortIdentity {
 }
 
 impl PortIdentity {
-    pub(crate) fn serialize(&self, buffer: &mut [u8]) -> Result<(), Error> {
+    /// Serialize a port identity into a 10 byte buffer.
+    ///
+    /// # Errors
+    /// Fails when the provided buffer is too short.
+    pub fn serialize(&self, buffer: &mut [u8]) -> Result<(), Error> {
         self.clock_identity
             .serialize(buffer.get_mut(0..8).ok_or(Error::BufferTooShort)?)?;
         buffer
@@ -22,6 +26,10 @@ impl PortIdentity {
         Ok(())
     }
 
+    /// Deserialize a port identity from a 10 byte buffer.
+    ///
+    /// # Errors
+    /// Fails when the provided buffer is too short.
     pub(crate) fn deserialize(buffer: &[u8]) -> Result<Self, Error> {
         Ok(Self {
             clock_identity: ClockIdentity::deserialize(

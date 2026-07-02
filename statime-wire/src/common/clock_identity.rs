@@ -31,7 +31,15 @@ impl ClockIdentity {
         this
     }
 
-    pub(crate) fn serialize(self, buffer: &mut [u8]) -> Result<(), Error> {
+    /// Serialize a clock identity to a buffer of 8 bytes
+    ///
+    /// # Errors
+    /// Fails when the provided buffer is of insufficient length.
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "Clippy can't see copy_from_slice will never panic here"
+    )]
+    pub fn serialize(self, buffer: &mut [u8]) -> Result<(), Error> {
         buffer
             .get_mut(0..self.0.len())
             .ok_or(Error::BufferTooShort)?
@@ -39,7 +47,15 @@ impl ClockIdentity {
         Ok(())
     }
 
-    pub(crate) fn deserialize(buffer: &[u8]) -> Result<Self, Error> {
+    /// Deserialize a clock identity from a buffer of 8 bytes
+    ///
+    /// # Errors
+    /// Fails when the provided buffer is too short.
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "Clippy can't tell the try_into will never fail"
+    )]
+    pub fn deserialize(buffer: &[u8]) -> Result<Self, Error> {
         Ok(Self(
             buffer
                 .get(0..8)

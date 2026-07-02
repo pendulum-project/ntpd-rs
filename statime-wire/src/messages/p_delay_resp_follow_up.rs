@@ -3,9 +3,12 @@ use crate::{
     common::{PortIdentity, Timestamp},
 };
 
+/// Peer delay response follow up message
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PDelayRespFollowUpMessage {
+    /// Precise time the peer delay response was sent.
     pub response_origin_timestamp: Timestamp,
+    /// Port identity of the port that sent the original peer delay request.
     pub requesting_port_identity: PortIdentity,
 }
 
