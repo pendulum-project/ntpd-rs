@@ -13,7 +13,7 @@ mod ipv6;
 
 /// An address type which can be used for PTP/CSPTP traffic.
 #[expect(private_bounds)]
-pub trait PtpAddressFamily: SealedPtpAddressFamily + Copy + Eq + 'static {}
+pub trait PtpAddressFamily: SealedPtpAddressFamily + Send + Sync + Copy + Eq + 'static {}
 
 pub(crate) trait SealedPtpAddressFamily {
     type BoundInterface: BoundInterface<Addr = Self>;
