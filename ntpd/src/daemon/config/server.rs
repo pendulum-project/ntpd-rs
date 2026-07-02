@@ -41,6 +41,24 @@ fn default_stale_key_count() -> usize {
     7
 }
 
+// FIXME: This enum is temporary, to encode that we are listening on all interfaces
+// We need to implement better binding for CSPTP servers, both to addresses and
+// specific interfaces, once we are further with the algorithm stuff.
+#[cfg(target_os = "linux")]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Interface {
+    #[default]
+    Any,
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct CsptpServerConfig {
+    pub interface: Interface,
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ServerConfig {
