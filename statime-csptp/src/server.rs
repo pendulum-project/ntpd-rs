@@ -78,7 +78,7 @@ async fn handle_packet<S: ServerSocket>(
         return;
     }
 
-    let mut response_buf = [0u8; 30];
+    let mut response_buf = [0u8; 128];
     let Ok(response) = manager.state.with_ref(|state| {
         CsptpMessage::new_response(
             &mut response_buf,
