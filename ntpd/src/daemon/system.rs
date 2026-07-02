@@ -60,6 +60,7 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper>>(
     clock_config: ClockConfig,
     source_configs: &[NtpSourceConfig],
     server_configs: &[ServerConfig],
+    #[cfg(target_os = "linux")] csptp_server_configs: &[crate::daemon::config::CsptpServerConfig],
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
     #[cfg(target_os = "linux")] csptp_config: CsptpConfig,
 ) -> std::io::Result<(JoinHandle<std::io::Result<()>>, DaemonChannels)> {
@@ -130,6 +131,14 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper>>(
 
     for server_config in server_configs {
         system.add_server(server_config.to_owned()).await;
+    }
+
+    #[cfg(target_os = "linux")]
+    for csptp_server_config in csptp_server_configs {
+        info!("Starting csptp server");
+        system
+            .add_csptp_server(csptp_server_config.to_owned())
+            .await;
     }
 
     let handle = tokio::spawn(async move { system.run().await });
@@ -635,6 +644,38 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C>> SystemTask<C
             NETWORK_WAIT_PERIOD,
         );
         let _ = self.server_data_sender.send(self.servers.clone());
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn add_csptp_server(&mut self, config: crate::daemon::config::CsptpServerConfig) {
+        let network_v4 = if let Some(network) = self.ptp_networking_ipv4 { network } else {
+            let manager = match statime_netptp::NetworkManager::new() {
+                Ok(manager) => manager,
+                Err(e) => {
+                    tracing::warn!("Could not create csptp server: {e}");
+                    return;
+                }
+            };
+            let manager: &'static statime_netptp::NetworkManager<_> =
+                Box::leak(Box::new(manager));
+            self.ptp_networking_ipv4 = Some(manager);
+            manager
+        };
+        let network_v6 = if let Some(network) = self.ptp_networking_ipv6 { network } else {
+            let manager = match statime_netptp::NetworkManager::new() {
+                Ok(manager) => manager,
+                Err(e) => {
+                    tracing::error!("Could not create csptp server: {e}");
+                    return;
+                }
+            };
+            let manager: &'static statime_netptp::NetworkManager<_> =
+                Box::leak(Box::new(manager));
+            self.ptp_networking_ipv6 = Some(manager);
+            manager
+        };
+        crate::daemon::csptp_server::CsptpServerTask::spawn(self.csptp_manager, network_v4, config);
+        crate::daemon::csptp_server::CsptpServerTask::spawn(self.csptp_manager, network_v6, config);
     }
 }
 

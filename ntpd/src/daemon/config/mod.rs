@@ -402,6 +402,9 @@ pub struct Config {
     pub sources: Vec<NtpSourceConfig>,
     #[serde(rename = "server", default)]
     pub servers: Vec<ServerConfig>,
+    #[cfg(target_os = "linux")]
+    #[serde(rename = "csptp-server", default)]
+    pub csptp_servers: Vec<server::CsptpServerConfig>,
     #[serde(rename = "nts-ke-server", default)]
     pub nts_ke: Vec<NtsKeConfig>,
     #[serde(default)]
