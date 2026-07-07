@@ -77,7 +77,7 @@ where
     C: 'static + NtpClock + Send + Sync,
     T: Wait,
 {
-    async fn setup_socket(&mut self) -> SocketResult {
+    fn setup_socket(&mut self) -> SocketResult {
         let socket_res = match self.interface {
             #[cfg(target_os = "linux")]
             Some(interface) => {
@@ -179,7 +179,7 @@ where
             for action in actions {
                 match action {
                     ntp_proto::NtpSourceAction::Send(packet) => {
-                        if matches!(self.setup_socket().await, SocketResult::Abort) {
+                        if matches!(self.setup_socket(), SocketResult::Abort) {
                             self.channels
                                 .msg_for_system_sender
                                 .send(MsgForSystem::NetworkIssue(self.index))
@@ -532,7 +532,11 @@ mod tests {
         }
     }
 
-    async fn test_startup<T: Wait>() -> (
+    #[expect(
+        clippy::type_complexity,
+        reason = "this complex type is only used in testing"
+    )]
+    fn test_startup<T: Wait>() -> (
         SourceTask<TestClock, TwoWaySourceControllerWrapper<TwoWayKalmanSourceController>, T>,
         Socket<SocketAddr, Open>,
         mpsc::Receiver<MsgForSystem>,
@@ -588,7 +592,7 @@ mod tests {
     #[tokio::test]
     async fn test_poll_sends_state_update_and_packet() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, socket, _) = test_startup().await;
+        let (mut process, socket, _) = test_startup();
 
         let (poll_wait, poll_send) = TestWait::new();
 
@@ -619,7 +623,7 @@ mod tests {
     #[tokio::test]
     async fn test_timeroundtrip() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, mut socket, mut msg_recv) = test_startup().await;
+        let (mut process, mut socket, mut msg_recv) = test_startup();
 
         let server_info = NtpServerInfo {
             time_snapshot: TimeSnapshot {
@@ -668,7 +672,7 @@ mod tests {
     #[tokio::test]
     async fn test_deny_stops_poll() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, mut socket, mut msg_recv) = test_startup().await;
+        let (mut process, mut socket, mut msg_recv) = test_startup();
 
         let (poll_wait, poll_send) = TestWait::new();
 
