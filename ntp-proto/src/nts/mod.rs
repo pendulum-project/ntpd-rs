@@ -665,11 +665,11 @@ impl KeyExchangeServer {
                 let protocol = protocols
                     .iter()
                     .find(|v| self.protocols.contains(v))
-                    .cloned();
+                    .copied();
                 let algorithm = algorithms
                     .iter()
                     .find(|v| !matches!(v, AeadAlgorithm::Unknown(_)))
-                    .cloned();
+                    .copied();
 
                 let result = match (protocol, algorithm) {
                     (None, _) => {

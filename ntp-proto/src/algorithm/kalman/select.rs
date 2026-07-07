@@ -89,7 +89,7 @@ pub(super) fn select(
                     && snapshot.offset() + radius >= maxtlow
                     && snapshot.leap_indicator.is_synchronized()
             })
-            .cloned()
+            .copied()
             .collect()
     } else {
         vec![]
