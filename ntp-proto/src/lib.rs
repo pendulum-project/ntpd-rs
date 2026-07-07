@@ -19,7 +19,7 @@
 #![warn(clippy::cast_ptr_alignment)]
 //FIXME: Enable #![warn(clippy::cast_sign_loss)]
 #![warn(clippy::checked_conversions)]
-//FIXME: Enable #![warn(clippy::cloned_instead_of_copied)]
+#![warn(clippy::cloned_instead_of_copied)]
 #![warn(clippy::comparison_chain)]
 #![warn(clippy::copy_iterator)]
 #![warn(clippy::default_trait_access)]

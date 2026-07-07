@@ -133,7 +133,7 @@ impl<C: NtpClock> KalmanClockController<C> {
                     if *usable { state.as_ref() } else { None }
                 },
             )
-            .cloned()
+            .copied()
             .collect();
         let selection =
             select::select(&self.synchronization_config, &self.algo_config, &candidates);
