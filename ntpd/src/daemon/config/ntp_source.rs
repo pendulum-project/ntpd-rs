@@ -106,8 +106,11 @@ where
     match certificates_from_file(&certificate_path) {
         Ok(certificates) => Ok(Arc::from(certificates)),
         Err(io_error) => {
-            let msg =
-                format!("error while parsing certificate file {certificate_path:?}: {io_error:?}");
+            let msg = format!(
+                "error while parsing certificate file {}: {:?}",
+                certificate_path.display(),
+                io_error
+            );
             Err(de::Error::custom(msg))
         }
     }
