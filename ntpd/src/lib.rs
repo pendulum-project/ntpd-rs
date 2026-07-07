@@ -10,7 +10,6 @@
 #![allow(clippy::float_cmp)]
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::struct_excessive_bools)]
-#![allow(clippy::unnecessary_wraps)]
 #![allow(clippy::unreadable_literal)]
 
 mod ctl;

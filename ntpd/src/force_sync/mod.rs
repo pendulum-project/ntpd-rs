@@ -173,7 +173,7 @@ pub(crate) fn force_sync(config: Option<&Path>) -> std::io::Result<ExitCode> {
 
 use std::{path::Path, process::ExitCode};
 
-pub(crate) fn force_sync(_config: Option<&Path>) -> std::io::Result<ExitCode> {
+pub(crate) fn force_sync(_config: Option<&Path>) -> ExitCode {
     println!("Disabled for now");
-    Ok(ExitCode::FAILURE)
+    ExitCode::FAILURE
 }
