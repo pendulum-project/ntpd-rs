@@ -124,7 +124,7 @@
 #![warn(clippy::unnested_or_patterns)]
 //FIXME: Enable #![warn(clippy::unreadable_literal)]
 #![warn(clippy::unsafe_derive_deserialize)]
-//FIXME: Enable #![warn(clippy::unused_async)]
+#![warn(clippy::unused_async)]
 //FIXME: Enable #![warn(clippy::unused_self)]
 #![warn(clippy::used_underscore_binding)]
 #![warn(clippy::used_underscore_items)]

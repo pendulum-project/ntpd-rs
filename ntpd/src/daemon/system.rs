@@ -114,7 +114,7 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper>>(
     }
 
     for server_config in server_configs {
-        system.add_server(server_config.to_owned()).await;
+        system.add_server(server_config.to_owned());
     }
 
     let handle = tokio::spawn(async move { system.run().await });
@@ -510,7 +510,7 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C>> SystemTask<C
         Ok(())
     }
 
-    async fn add_server(&mut self, config: ServerConfig) {
+    fn add_server(&mut self, config: ServerConfig) {
         let stats = ServerStats::default();
         self.servers.push(ServerData {
             stats: stats.clone(),
