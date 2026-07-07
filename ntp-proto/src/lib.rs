@@ -33,7 +33,7 @@
 #![warn(clippy::explicit_deref_methods)]
 #![warn(clippy::explicit_into_iter_loop)]
 #![warn(clippy::explicit_iter_loop)]
-//FIXME: Enable #![warn(clippy::filter_map_next)]
+#![warn(clippy::filter_map_next)]
 #![warn(clippy::flat_map_option)]
 //FIXME: Enable #![warn(clippy::float_cmp)]
 #![warn(clippy::fn_params_excessive_bools)]
