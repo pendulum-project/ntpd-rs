@@ -24,7 +24,7 @@ enum Unit {
 }
 
 impl Unit {
-    fn as_str(&self) -> &str {
+    fn as_str(self) -> &'static str {
         "seconds"
     }
 }

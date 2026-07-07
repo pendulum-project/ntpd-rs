@@ -187,7 +187,7 @@ impl Spawner for NtsSpawner {
         self.config.address.to_string()
     }
 
-    fn get_description(&self) -> &str {
+    fn get_description(&self) -> &'static str {
         "nts"
     }
 }
