@@ -118,7 +118,7 @@
 #![warn(clippy::unnecessary_box_returns)]
 #![warn(clippy::unnecessary_debug_formatting)]
 #![warn(clippy::unnecessary_join)]
-//FIXME: Enable #![warn(clippy::unnecessary_literal_bound)]
+#![warn(clippy::unnecessary_literal_bound)]
 #![warn(clippy::unnecessary_semicolon)]
 //FIXME: Enable #![warn(clippy::unnecessary_wraps)]
 //FIXME: Enable #![warn(clippy::unnested_or_patterns)]
