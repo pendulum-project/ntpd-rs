@@ -116,7 +116,7 @@
 //FIXME: Enable #![warn(clippy::unchecked_duration_subtraction)]
 #![warn(clippy::unicode_not_nfc)]
 #![warn(clippy::unnecessary_box_returns)]
-//FIXME: Enable #![warn(clippy::unnecessary_debug_formatting)]
+#![warn(clippy::unnecessary_debug_formatting)]
 #![warn(clippy::unnecessary_join)]
 //FIXME: Enable #![warn(clippy::unnecessary_literal_bound)]
 #![warn(clippy::unnecessary_semicolon)]

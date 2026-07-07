@@ -64,7 +64,10 @@ fn create_unix_socket(path: &Path) -> std::io::Result<tokio::net::UnixListener> 
 
         let meta = std::fs::metadata(path)?;
         if !meta.file_type().is_socket() {
-            return other_error(format!("path {path:?} exists but is not a socket"));
+            return other_error(format!(
+                "path {} exists but is not a socket",
+                path.display()
+            ));
         }
 
         std::fs::remove_file(path)?;
@@ -81,16 +84,17 @@ fn create_unix_socket(path: &Path) -> std::io::Result<tokio::net::UnixListener> 
         && !parent.exists()
     {
         let msg = format!(
-            r"Could not create observe socket at {:?} because its parent directory does not exist",
-            &path
+            r"Could not create observe socket at {} because its parent directory does not exist",
+            &path.display()
         );
         return other_error(msg);
     }
 
     // otherwise, just forward the OS error
     let msg = format!(
-        "Could not create observe socket at {:?}: {:?}",
-        &path, error
+        "Could not create observe socket at {}: {:?}",
+        &path.display(),
+        error
     );
 
     other_error(msg)

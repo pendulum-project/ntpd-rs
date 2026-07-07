@@ -45,15 +45,17 @@ async fn run_nts_ke(
     let certificate_chain_file = std::fs::File::open(&nts_ke_config.certificate_chain_path)
         .map_err(|e| {
             io_error(&format!(
-                "error reading certificate_chain_path at `{:?}`: {:?}",
-                nts_ke_config.certificate_chain_path, e
+                "error reading certificate_chain_path at `{}`: {:?}",
+                nts_ke_config.certificate_chain_path.display(),
+                e
             ))
         })?;
 
     let private_key_file = std::fs::File::open(&nts_ke_config.private_key_path).map_err(|e| {
         io_error(&format!(
-            "error reading key_der_path at `{:?}`: {:?}",
-            nts_ke_config.private_key_path, e
+            "error reading key_der_path at `{}`: {:?}",
+            nts_ke_config.private_key_path.display(),
+            e
         ))
     })?;
 
