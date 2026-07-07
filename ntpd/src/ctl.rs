@@ -150,7 +150,7 @@ impl NtpCtlOptions {
     }
 }
 
-fn validate(config: Option<&Path>) -> std::io::Result<ExitCode> {
+fn validate(config: Option<&Path>) -> ExitCode {
     // Late completion not needed, so ignore result.
     crate::daemon::tracing::tracing_init(LogLevel::Info, None, true)
         .0
@@ -159,14 +159,14 @@ fn validate(config: Option<&Path>) -> std::io::Result<ExitCode> {
         Ok(config) => {
             if config.check() {
                 eprintln!("Config looks good");
-                Ok(ExitCode::SUCCESS)
+                ExitCode::SUCCESS
             } else {
-                Ok(ExitCode::FAILURE)
+                ExitCode::FAILURE
             }
         }
         Err(e) => {
             eprintln!("Error: Could not load configuration: {e}");
-            Ok(ExitCode::FAILURE)
+            ExitCode::FAILURE
         }
     }
 }
@@ -188,8 +188,8 @@ pub fn main() -> std::io::Result<ExitCode> {
             eprintln!("ntp-ctl {VERSION}");
             Ok(ExitCode::SUCCESS)
         }
-        NtpCtlAction::Validate => validate(options.config.as_deref()),
-        NtpCtlAction::ForceSync => force_sync::force_sync(options.config.as_deref()),
+        NtpCtlAction::Validate => Ok(validate(options.config.as_deref())),
+        NtpCtlAction::ForceSync => Ok(force_sync::force_sync(options.config.as_deref())),
         NtpCtlAction::Status => {
             let config = Config::from_args(options.config.as_ref(), vec![], vec![]);
 

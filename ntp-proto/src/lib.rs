@@ -29,7 +29,6 @@
 #![allow(clippy::stable_sort_primitive)]
 #![allow(clippy::struct_field_names)]
 #![allow(clippy::trivially_copy_pass_by_ref)]
-#![allow(clippy::unnecessary_wraps)]
 #![allow(clippy::unreadable_literal)]
 
 #[cfg(not(any(feature = "rustcrypto", feature = "openssl")))]
