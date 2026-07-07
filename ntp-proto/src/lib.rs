@@ -51,7 +51,7 @@
 #![warn(clippy::inline_always)]
 #![warn(clippy::into_iter_without_iter)]
 #![warn(clippy::invalid_upcast_comparisons)]
-#![warn(clippy::ip_constant)]
+//ENABLE#![warn(clippy::ip_constant)]
 #![warn(clippy::items_after_statements)]
 #![warn(clippy::iter_filter_is_ok)]
 #![warn(clippy::iter_filter_is_some)]

@@ -249,8 +249,7 @@ impl<'de> serde::de::Visitor<'de> for SdoIdVisitor {
         use serde::{Deserialize, de::Error};
         let v = u16::deserialize(deserializer)?;
         SdoId::try_from(v).or(Err(D::Error::custom(std::format!(
-            "SdoId not in range of 0..=0xFFF: {}",
-            v
+            "SdoId not in range of 0..=0xFFF: {v}",
         ))))
     }
 
@@ -259,8 +258,7 @@ impl<'de> serde::de::Visitor<'de> for SdoIdVisitor {
         E: serde::de::Error,
     {
         SdoId::try_from(v).or(Err(E::custom(std::format!(
-            "SdoId not in range of 0..=0xFFF: {}",
-            v
+            "SdoId not in range of 0..=0xFFF: {v}",
         ))))
     }
 }
@@ -365,8 +363,7 @@ mod tests {
             assert_eq!(
                 serialization_buffer[6..8],
                 byte_representation,
-                "The serialized flag field is not what it's supposed to for variant {}",
-                i
+                "The serialized flag field is not what it's supposed to for variant {i}",
             );
 
             // Test the deserialization output
@@ -376,8 +373,7 @@ mod tests {
                 Header::deserialize_header(&serialization_buffer).unwrap();
             assert_eq!(
                 deserialized_flag_field.header, flag_representation,
-                "The deserialized flag field is not what it's supposed to for variant {}",
-                i
+                "The deserialized flag field is not what it's supposed to for variant {i}",
             );
         }
     }

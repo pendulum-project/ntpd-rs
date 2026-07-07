@@ -74,7 +74,7 @@ impl core::fmt::Display for ClockIdentity {
                 write!(f, ":")?;
             }
 
-            write!(f, "{:02x}", val)?;
+            write!(f, "{val:02x}")?;
         }
 
         Ok(())
