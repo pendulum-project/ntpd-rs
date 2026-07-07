@@ -394,7 +394,7 @@ impl KeyExchangeClient {
         )?;
 
         let mut cookies = CookieStash::default();
-        for cookie in response.cookies.into_owned().into_iter() {
+        for cookie in response.cookies.into_owned() {
             cookies.store(cookie.into_owned());
         }
 

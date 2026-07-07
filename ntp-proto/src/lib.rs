@@ -31,7 +31,7 @@
 #![warn(clippy::enum_glob_use)]
 #![warn(clippy::expl_impl_clone_on_copy)]
 #![warn(clippy::explicit_deref_methods)]
-//FIXME: Enable #![warn(clippy::explicit_into_iter_loop)]
+#![warn(clippy::explicit_into_iter_loop)]
 #![warn(clippy::explicit_iter_loop)]
 //FIXME: Enable #![warn(clippy::filter_map_next)]
 #![warn(clippy::flat_map_option)]
