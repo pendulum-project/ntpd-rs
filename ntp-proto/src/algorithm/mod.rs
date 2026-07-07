@@ -327,7 +327,7 @@ impl<T: InternalTimeSyncController> TimeSyncController for TimeSyncControllerWra
                         },
                     }
                 },
-                _ = sleeper.as_mut() => {
+                () = sleeper.as_mut() => {
                     let update = self.inner.lock().unwrap().time_update();
                     if let Some(source_message) = update.source_message {
                         for source in self.oneway_sources.lock().unwrap().iter().filter_map(Weak::upgrade) {

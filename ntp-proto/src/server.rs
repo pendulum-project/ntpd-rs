@@ -184,7 +184,7 @@ impl<C: NtpClock> Server<C> {
 
         let mut cursor = Cursor::new(buffer);
         match packet.serialize(&mut cursor, &cipher.as_deref(), desired_size) {
-            Ok(_) => {
+            Ok(()) => {
                 stats_handler.register(version.into(), nts, reason, action);
                 let length = cursor.position();
                 ServerAction::Respond {

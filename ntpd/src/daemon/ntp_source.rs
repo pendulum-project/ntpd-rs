@@ -713,7 +713,7 @@ mod tests {
 
         let mut buf = [0; 48];
         tokio::select! {
-            _ = tokio::time::sleep(Duration::from_millis(10)) => {/*expected */},
+            () = tokio::time::sleep(Duration::from_millis(10)) => {/*expected */},
             _ = socket.recv(&mut buf) => { unreachable!("should not receive anything") }
         }
 
