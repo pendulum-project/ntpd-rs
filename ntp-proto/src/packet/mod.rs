@@ -313,10 +313,10 @@ impl<'a> NtpPacket<'a> {
             3 => {
                 let (header, header_size) =
                     NtpHeaderV3V4::deserialize(data).map_err(ParsingError::generalize)?;
-                let mac = if header_size != data.len() {
-                    Some(Mac::deserialize(&data[header_size..]).map_err(ParsingError::generalize)?)
-                } else {
+                let mac = if header_size == data.len() {
                     None
+                } else {
+                    Some(Mac::deserialize(&data[header_size..]).map_err(ParsingError::generalize)?)
                 };
                 Ok((
                     NtpPacket {
@@ -332,10 +332,10 @@ impl<'a> NtpPacket<'a> {
                     NtpHeaderV3V4::deserialize(data).map_err(ParsingError::generalize)?;
 
                 let construct_packet = |remaining_bytes: &'a [u8], efdata| {
-                    let mac = if !remaining_bytes.is_empty() {
-                        Some(Mac::deserialize(remaining_bytes)?)
-                    } else {
+                    let mac = if remaining_bytes.is_empty() {
                         None
+                    } else {
+                        Some(Mac::deserialize(remaining_bytes)?)
                     };
 
                     let packet = NtpPacket {
@@ -375,10 +375,10 @@ impl<'a> NtpPacket<'a> {
                     v5::NtpHeaderV5::deserialize(data).map_err(ParsingError::generalize)?;
 
                 let construct_packet = |remaining_bytes: &'a [u8], efdata| {
-                    let mac = if !remaining_bytes.is_empty() {
-                        Some(Mac::deserialize(remaining_bytes)?)
-                    } else {
+                    let mac = if remaining_bytes.is_empty() {
                         None
+                    } else {
+                        Some(Mac::deserialize(remaining_bytes)?)
                     };
 
                     let packet = NtpPacket {

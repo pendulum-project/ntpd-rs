@@ -40,7 +40,7 @@
 #![warn(clippy::format_collect)]
 #![warn(clippy::format_push_string)]
 #![warn(clippy::from_iter_instead_of_collect)]
-//FIXME: Enable #![warn(clippy::if_not_else)]
+#![warn(clippy::if_not_else)]
 #![warn(clippy::ignore_without_reason)]
 //FIXME: Enable #![warn(clippy::ignored_unit_patterns)]
 #![warn(clippy::implicit_clone)]
