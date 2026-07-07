@@ -5,7 +5,7 @@
 #![warn(clippy::bool_to_int_with_if)]
 #![warn(clippy::borrow_as_ptr)]
 #![warn(clippy::case_sensitive_file_extension_comparisons)]
-//FIXME: Enable #![warn(clippy::cast_lossless)]
+#![warn(clippy::cast_lossless)]
 //FIXME: Enable #![warn(clippy::cast_possible_truncation)]
 #![warn(clippy::cast_possible_wrap)]
 //FIXME: Enable #![warn(clippy::cast_precision_loss)]

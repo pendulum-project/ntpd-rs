@@ -40,11 +40,10 @@ impl NtpClock for NtpClockWrapper {
         offset: ntp_proto::NtpDuration,
     ) -> Result<ntp_proto::NtpTimestamp, Self::Error> {
         let (seconds, nanos) = offset.as_seconds_nanos();
+        #[cfg(not(target_pointer_width = "32"))]
+        let seconds = seconds.into();
         self.0
-            .step_clock(TimeOffset {
-                seconds: seconds as _,
-                nanos,
-            })
+            .step_clock(TimeOffset { seconds, nanos })
             .map(convert_clock_timestamp)
     }
 
