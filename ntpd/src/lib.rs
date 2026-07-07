@@ -31,7 +31,7 @@
 //FIXME: Enable #![warn(clippy::float_cmp)]
 #![warn(clippy::fn_params_excessive_bools)]
 #![warn(clippy::format_collect)]
-//FIXME: Enable #![warn(clippy::format_push_string)]
+#![warn(clippy::format_push_string)]
 #![warn(clippy::from_iter_instead_of_collect)]
 #![warn(clippy::if_not_else)]
 #![warn(clippy::ignore_without_reason)]
