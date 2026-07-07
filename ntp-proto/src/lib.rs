@@ -18,7 +18,7 @@
 //FIXME: Enable #![warn(clippy::cast_precision_loss)]
 #![warn(clippy::cast_ptr_alignment)]
 //FIXME: Enable #![warn(clippy::cast_sign_loss)]
-//FIXME: Enable #![warn(clippy::checked_conversions)]
+#![warn(clippy::checked_conversions)]
 //FIXME: Enable #![warn(clippy::cloned_instead_of_copied)]
 #![warn(clippy::comparison_chain)]
 #![warn(clippy::copy_iterator)]
