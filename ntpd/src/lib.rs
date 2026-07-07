@@ -23,7 +23,7 @@
 #![warn(clippy::empty_enum)]
 //FIXME: Enable #![warn(clippy::enum_glob_use)]
 #![warn(clippy::expl_impl_clone_on_copy)]
-//FIXME: Enable #![warn(clippy::explicit_deref_methods)]
+#![warn(clippy::explicit_deref_methods)]
 #![warn(clippy::explicit_into_iter_loop)]
 #![warn(clippy::explicit_iter_loop)]
 #![warn(clippy::filter_map_next)]
