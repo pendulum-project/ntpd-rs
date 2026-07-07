@@ -38,7 +38,7 @@
 #![warn(clippy::ignored_unit_patterns)]
 #![warn(clippy::implicit_clone)]
 #![warn(clippy::implicit_hasher)]
-//FIXME: Enable #![warn(clippy::inconsistent_struct_constructor)]
+#![warn(clippy::inconsistent_struct_constructor)]
 #![warn(clippy::index_refutable_slice)]
 #![warn(clippy::inefficient_to_string)]
 #![warn(clippy::inline_always)]
