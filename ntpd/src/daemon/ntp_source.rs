@@ -210,24 +210,24 @@ where
                             Err(error) => {
                                 warn!(?error, "poll message could not be sent");
 
-                                match error.raw_os_error() {
-                                    Some(libc::EHOSTDOWN)
-                                    | Some(libc::EHOSTUNREACH)
-                                    | Some(libc::ENETDOWN)
-                                    | Some(libc::ENETUNREACH) => {
-                                        self.channels
-                                            .msg_for_system_sender
-                                            .send(MsgForSystem::NetworkIssue(self.index))
-                                            .await
-                                            .ok();
-                                        self.channels
-                                            .source_snapshots
-                                            .write()
-                                            .expect("Unexpected poisoned mutex")
-                                            .remove(&self.index);
-                                        return;
-                                    }
-                                    _ => {}
+                                if let Some(
+                                    libc::EHOSTDOWN
+                                    | libc::EHOSTUNREACH
+                                    | libc::ENETDOWN
+                                    | libc::ENETUNREACH,
+                                ) = error.raw_os_error()
+                                {
+                                    self.channels
+                                        .msg_for_system_sender
+                                        .send(MsgForSystem::NetworkIssue(self.index))
+                                        .await
+                                        .ok();
+                                    self.channels
+                                        .source_snapshots
+                                        .write()
+                                        .expect("Unexpected poisoned mutex")
+                                        .remove(&self.index);
+                                    return;
                                 }
                             }
                             Ok(opt_send_timestamp) => {
@@ -384,10 +384,9 @@ fn accept_packet<'a, C: NtpClock>(
             warn!(?receive_error, "could not receive packet");
 
             match receive_error.raw_os_error() {
-                Some(libc::EHOSTDOWN)
-                | Some(libc::EHOSTUNREACH)
-                | Some(libc::ENETDOWN)
-                | Some(libc::ENETUNREACH) => AcceptResult::NetworkGone,
+                Some(libc::EHOSTDOWN | libc::EHOSTUNREACH | libc::ENETDOWN | libc::ENETUNREACH) => {
+                    AcceptResult::NetworkGone
+                }
                 _ => AcceptResult::Ignore,
             }
         }
