@@ -1,2 +1,2 @@
-msrv = "1.88"
+msrv = "1.95"
 allow-one-hash-in-raw-strings = true
