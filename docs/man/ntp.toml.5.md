@@ -246,7 +246,7 @@ ntp-metrics-exporter(8).
     daemon. Levels higher than the given log level are logged as well.
 
 `log-path` = *path* (**unset**)
-:   Path to which the deamon should direct its log output. The file at this
+:   Path to which the daemon should direct its log output. The file at this
     location is reopened on SIGHUP. When not present, log output will be
     directed to stdout.
 
