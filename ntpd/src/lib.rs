@@ -113,7 +113,7 @@
 #![warn(clippy::too_many_lines)]
 #![warn(clippy::transmute_ptr_to_ptr)]
 #![warn(clippy::trivially_copy_pass_by_ref)]
-//FIXME: Enable #![warn(clippy::unchecked_duration_subtraction)]
+#![warn(clippy::unchecked_duration_subtraction)]
 #![warn(clippy::unicode_not_nfc)]
 #![warn(clippy::unnecessary_box_returns)]
 #![warn(clippy::unnecessary_debug_formatting)]
