@@ -1,3 +1,4 @@
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::{fmt::Display, path::Path};
 
@@ -95,6 +96,10 @@ fn create_socket<T: AsRef<Path>>(path: T) -> std::io::Result<UnixDatagram> {
     }
     debug!("Creating socket at {:?}", path);
     let socket = UnixDatagram::bind(path)?;
+    std::os::unix::fs::chown(path, None, Some(123))?;
+    let mut permissions = std::fs::metadata(path)?.permissions();
+    permissions.set_mode(permissions.mode() | 0o020);
+    std::fs::set_permissions(path, permissions)?;
     Ok(socket)
 }
 
