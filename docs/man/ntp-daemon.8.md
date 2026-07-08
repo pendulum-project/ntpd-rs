@@ -15,7 +15,7 @@ title: NTP-DAEMON(8) ntpd-rs 1.9.0 | ntpd-rs
 # DESCRIPTION
 
 `ntp-daemon` is the Network Time Protocol (NTP) service daemon for ntpd-rs, an
-NTP implementation with a focus on security and stability. The `ntp-deamon` can
+NTP implementation with a focus on security and stability. The `ntp-daemon` can
 be configured as both an NTP client and an NTP server. The daemon also works
 with the Network Time Security (NTS) protocol. Details of the configuration
 of the daemon and implementation details can be found in ntp.toml(5), where
