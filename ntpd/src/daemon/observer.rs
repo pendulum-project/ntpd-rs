@@ -125,12 +125,7 @@ async fn observer<C: 'static + NtpClock + Send>(
                 debug!("Unexpectedly closed unix socket: {e}");
                 continue;
             }
-            Err(e)
-                if matches!(
-                    e.raw_os_error(),
-                    Some(ENFILE) | Some(EMFILE) | Some(ENOMEM) | Some(ENOBUFS)
-                ) =>
-            {
+            Err(e) if matches!(e.raw_os_error(), Some(ENFILE | EMFILE | ENOMEM | ENOBUFS)) => {
                 error!(
                     "Not enough resources available to accept incoming observability socket: {e}"
                 );

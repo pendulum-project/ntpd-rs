@@ -121,7 +121,7 @@
 #![warn(clippy::unnecessary_literal_bound)]
 #![warn(clippy::unnecessary_semicolon)]
 //FIXME: Enable #![warn(clippy::unnecessary_wraps)]
-//FIXME: Enable #![warn(clippy::unnested_or_patterns)]
+#![warn(clippy::unnested_or_patterns)]
 //FIXME: Enable #![warn(clippy::unreadable_literal)]
 #![warn(clippy::unsafe_derive_deserialize)]
 //FIXME: Enable #![warn(clippy::unused_async)]
