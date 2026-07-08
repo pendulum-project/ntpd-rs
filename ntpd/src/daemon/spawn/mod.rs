@@ -248,7 +248,7 @@ pub async fn spawner_task<S: Spawner + Send + 'static>(
             system_notify.recv().await
         } else {
             timeout(
-                NETWORK_WAIT_PERIOD - last_ticket_time.elapsed(),
+                NETWORK_WAIT_PERIOD.saturating_sub(last_ticket_time.elapsed()),
                 system_notify.recv(),
             )
             .await
