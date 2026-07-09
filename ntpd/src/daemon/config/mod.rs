@@ -90,7 +90,7 @@ impl CliArg {
                         if let Some(next) = arg_iter.next() {
                             processed.push(CliArg::Argument(long_arg.to_string(), next));
                         } else {
-                            Err(format!("'{}' expects an argument", &long_arg))?;
+                            Err(format!("'{}' expects an argument", long_arg))?;
                         }
                     } else {
                         processed.push(CliArg::Flag(arg));
