@@ -147,7 +147,7 @@ fn run(options: &NtpMetricsExporterOptions) -> Result<(), Box<dyn std::error::Er
 
         println!(
             "starting ntp-metrics-exporter on {}",
-            &config.observability.metrics_exporter_listen
+            config.observability.metrics_exporter_listen
         );
 
         let _ = notify_ready().await;
