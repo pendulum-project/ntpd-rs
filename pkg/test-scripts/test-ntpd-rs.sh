@@ -9,7 +9,7 @@ case $1 in
       id ntpd-rs
       id ntpd-rs-observe
 
-      # Ensure deamon and ctl client are present
+      # Ensure daemon and ctl client are present
       # and configuration validates.
       echo -e "\nNTPD-RS HELP OUTPUT:"
       /usr/bin/ntp-daemon --help

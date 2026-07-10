@@ -236,10 +236,10 @@ impl Spawner for NtsPoolSpawner {
     }
 
     fn get_addr_description(&self) -> String {
-        format!("{} ({})", self.config.addr.deref(), self.config.count)
+        format!("{} ({})", *self.config.addr, self.config.count)
     }
 
-    fn get_description(&self) -> &str {
+    fn get_description(&self) -> &'static str {
         "nts-pool"
     }
 }

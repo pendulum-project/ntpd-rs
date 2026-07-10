@@ -90,7 +90,7 @@ impl CliArg {
                         if let Some(next) = arg_iter.next() {
                             processed.push(CliArg::Argument(long_arg.to_string(), next));
                         } else {
-                            Err(format!("'{}' expects an argument", &long_arg))?;
+                            Err(format!("'{}' expects an argument", long_arg))?;
                         }
                     } else {
                         processed.push(CliArg::Flag(arg));
@@ -290,6 +290,50 @@ impl TimestampMode {
     }
 }
 
+#[cfg(target_os = "linux")]
+#[derive(Deserialize, Debug, Copy, Clone)]
+pub struct CsptpConfig {
+    #[serde(default)]
+    pub identity: statime_wire::ClockIdentity,
+    #[serde(default = "csptp_config_default_priority")]
+    pub priority_1: u8,
+    #[serde(default = "csptp_config_default_priority")]
+    pub priority_2: u8,
+    #[serde(default)]
+    pub clock_quality: statime_wire::ClockQuality,
+    #[serde(default = "csptp_config_default_true")]
+    pub ptp_timescale: bool,
+    #[serde(default)]
+    pub time_traceable: bool,
+    #[serde(default)]
+    pub frequency_traceable: bool,
+}
+
+#[cfg(target_os = "linux")]
+impl Default for CsptpConfig {
+    fn default() -> Self {
+        Self {
+            identity: statime_wire::ClockIdentity::default(),
+            priority_1: 128,
+            priority_2: 128,
+            clock_quality: statime_wire::ClockQuality::default(),
+            ptp_timescale: true,
+            time_traceable: false,
+            frequency_traceable: false,
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn csptp_config_default_priority() -> u8 {
+    128
+}
+
+#[cfg(target_os = "linux")]
+fn csptp_config_default_true() -> bool {
+    true
+}
+
 #[derive(Deserialize, Debug, Copy, Clone, Default)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ClockConfig {
@@ -358,6 +402,9 @@ pub struct Config {
     pub sources: Vec<NtpSourceConfig>,
     #[serde(rename = "server", default)]
     pub servers: Vec<ServerConfig>,
+    #[cfg(target_os = "linux")]
+    #[serde(rename = "csptp-server", default)]
+    pub csptp_servers: Vec<server::CsptpServerConfig>,
     #[serde(rename = "nts-ke-server", default)]
     pub nts_ke: Vec<NtsKeConfig>,
     #[serde(default)]
@@ -371,6 +418,9 @@ pub struct Config {
     #[serde(default)]
     #[cfg(feature = "hardware-timestamping")]
     pub clock: ClockConfig,
+    #[cfg(target_os = "linux")]
+    #[serde(default)]
+    pub csptp: CsptpConfig,
 }
 
 impl Config {
@@ -447,6 +497,8 @@ impl Config {
                 NtpSourceConfig::Sock(_) => count += 1,
                 #[cfg(feature = "pps")]
                 NtpSourceConfig::Pps(_) => {} // PPS sources don't count
+                #[cfg(target_os = "linux")]
+                NtpSourceConfig::Csptp(_) => count += 1,
             }
         }
         count
@@ -482,6 +534,8 @@ impl Config {
             NtpSourceConfig::Sock(_) => false,
             #[cfg(feature = "pps")]
             NtpSourceConfig::Pps(_) => false,
+            #[cfg(target_os = "linux")]
+            NtpSourceConfig::Csptp(_) => false,
             NtpSourceConfig::Standard(config) => {
                 matches!(config.first.ntp_version, ProtocolVersion::V5)
             }

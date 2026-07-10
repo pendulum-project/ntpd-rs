@@ -1003,6 +1003,9 @@ dependencies = [
  "rustls-openssl",
  "serde",
  "serde_json",
+ "statime-csptp",
+ "statime-netptp",
+ "statime-wire",
  "timestamped-socket",
  "tokio",
  "tokio-rustls",
@@ -1599,6 +1602,15 @@ dependencies = [
  "ntp-proto",
  "rand 0.8.6",
  "statime-wire",
+]
+
+[[package]]
+name = "statime-netptp"
+version = "1.9.0"
+dependencies = [
+ "timestamped-socket",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

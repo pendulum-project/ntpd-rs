@@ -45,15 +45,17 @@ async fn run_nts_ke(
     let certificate_chain_file = std::fs::File::open(&nts_ke_config.certificate_chain_path)
         .map_err(|e| {
             io_error(&format!(
-                "error reading certificate_chain_path at `{:?}`: {:?}",
-                nts_ke_config.certificate_chain_path, e
+                "error reading certificate_chain_path at `{}`: {:?}",
+                nts_ke_config.certificate_chain_path.display(),
+                e
             ))
         })?;
 
     let private_key_file = std::fs::File::open(&nts_ke_config.private_key_path).map_err(|e| {
         io_error(&format!(
-            "error reading key_der_path at `{:?}`: {:?}",
-            nts_ke_config.private_key_path, e
+            "error reading key_der_path at `{}`: {:?}",
+            nts_ke_config.private_key_path.display(),
+            e
         ))
     })?;
 
@@ -122,12 +124,7 @@ async fn run_key_exchange_server(
                     debug!("Potential client-triggered accept error in NTS-KE: {}", e);
                     continue;
                 }
-                Err(e)
-                    if matches!(
-                        e.raw_os_error(),
-                        Some(ENFILE) | Some(EMFILE) | Some(ENOMEM) | Some(ENOBUFS)
-                    ) =>
-                {
+                Err(e) if matches!(e.raw_os_error(), Some(ENFILE | EMFILE | ENOMEM | ENOBUFS)) => {
                     error!(
                         "Out of resources in NTS-KE, consider raising limits or lowering max parallel connections: {}",
                         e

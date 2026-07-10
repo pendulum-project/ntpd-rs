@@ -394,7 +394,7 @@ impl KeyExchangeClient {
         )?;
 
         let mut cookies = CookieStash::default();
-        for cookie in response.cookies.into_owned().into_iter() {
+        for cookie in response.cookies.into_owned() {
             cookies.store(cookie.into_owned());
         }
 
@@ -665,11 +665,11 @@ impl KeyExchangeServer {
                 let protocol = protocols
                     .iter()
                     .find(|v| self.protocols.contains(v))
-                    .cloned();
+                    .copied();
                 let algorithm = algorithms
                     .iter()
                     .find(|v| !matches!(v, AeadAlgorithm::Unknown(_)))
-                    .cloned();
+                    .copied();
 
                 let result = match (protocol, algorithm) {
                     (None, _) => {
@@ -1239,7 +1239,7 @@ mod tests {
             server.shutdown().await.unwrap();
         };
 
-        let (kexresult, _) = tokio::join!(client, server);
+        let (kexresult, ()) = tokio::join!(client, server);
         assert!(matches!(kexresult, Err(NtsError::NoCookie)));
     }
 
@@ -1441,7 +1441,7 @@ mod tests {
             })
             .unwrap();
             let keyset = Arc::new(KeySet::new());
-            let (_, io) = kex
+            let ((), io) = kex
                 .handle_connection(server, &keyset, || Some(()))
                 .await
                 .unwrap()
@@ -1734,7 +1734,7 @@ mod tests {
                 .unwrap();
         };
 
-        let (response, _) = tokio::join!(client, server);
+        let (response, ()) = tokio::join!(client, server);
 
         assert_eq!(
             response,

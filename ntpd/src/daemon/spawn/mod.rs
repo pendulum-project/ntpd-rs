@@ -7,10 +7,14 @@ use tokio::{
 };
 use tracing::warn;
 
+#[cfg(target_os = "linux")]
+use crate::daemon::config::CsptpSourceConfig;
 use crate::daemon::config::NtpAddress;
 
 use super::{config::NormalizedAddress, system::NETWORK_WAIT_PERIOD};
 
+#[cfg(target_os = "linux")]
+pub mod csptp;
 pub mod nts;
 pub mod nts_pool;
 pub mod pool;
@@ -118,6 +122,8 @@ pub enum SourceCreateParameters {
     Sock(SockSourceCreateParameters),
     #[cfg(feature = "pps")]
     Pps(PpsSourceCreateParameters),
+    #[cfg(target_os = "linux")]
+    Csptp(CsptpSourceCreateParameters),
 }
 
 impl SourceCreateParameters {
@@ -127,6 +133,8 @@ impl SourceCreateParameters {
             Self::Sock(params) => params.id,
             #[cfg(feature = "pps")]
             Self::Pps(params) => params.id,
+            #[cfg(target_os = "linux")]
+            Self::Csptp(params) => params.id,
         }
     }
 
@@ -136,6 +144,8 @@ impl SourceCreateParameters {
             Self::Sock(params) => params.path.display().to_string(),
             #[cfg(feature = "pps")]
             Self::Pps(params) => params.path.display().to_string(),
+            #[cfg(target_os = "linux")]
+            Self::Csptp(params) => params.addr.to_string(),
         }
     }
 }
@@ -148,6 +158,14 @@ pub struct NtpSourceCreateParameters {
     pub protocol_version: ProtocolVersion,
     pub config: SourceConfig,
     pub nts: Option<Box<SourceNtsData>>,
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Debug)]
+pub struct CsptpSourceCreateParameters {
+    pub id: ClockId,
+    pub addr: std::net::IpAddr,
+    pub config: CsptpSourceConfig,
 }
 
 #[derive(Debug)]
@@ -222,7 +240,7 @@ pub trait Spawner {
     fn get_addr_description(&self) -> String;
 
     /// Get a description of the type of spawner
-    fn get_description(&self) -> &str;
+    fn get_description(&self) -> &'static str;
 }
 
 pub async fn spawner_task<S: Spawner + Send + 'static>(
@@ -248,7 +266,7 @@ pub async fn spawner_task<S: Spawner + Send + 'static>(
             system_notify.recv().await
         } else {
             timeout(
-                NETWORK_WAIT_PERIOD - last_ticket_time.elapsed(),
+                NETWORK_WAIT_PERIOD.saturating_sub(last_ticket_time.elapsed()),
                 system_notify.recv(),
             )
             .await

@@ -116,7 +116,7 @@ impl Spawner for StandardSpawner {
         self.config.address.to_string()
     }
 
-    fn get_description(&self) -> &str {
+    fn get_description(&self) -> &'static str {
         "standard"
     }
 }

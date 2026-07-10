@@ -19,6 +19,7 @@ impl ReferenceId {
     pub const NONE: ReferenceId = ReferenceId(u32::from_be_bytes(*b"XNON"));
     pub const SOCK: ReferenceId = ReferenceId(u32::from_be_bytes(*b"SOCK"));
     pub const PPS: ReferenceId = ReferenceId(u32::from_be_bytes(*b"PPS\0"));
+    pub const CSPTP: ReferenceId = ReferenceId(u32::from_be_bytes(*b"CPTP"));
 
     // Network Time Security (NTS) negative-acknowledgment (NAK), from rfc8915
     pub const KISS_NTSN: ReferenceId = ReferenceId(u32::from_be_bytes(*b"NTSN"));
@@ -82,15 +83,15 @@ mod tests {
 
     #[test]
     fn referenceid_kiss_codes() {
-        let a = [b'R', b'A', b'T', b'E'];
+        let a = *b"RATE";
         let b = ReferenceId::from_bytes(a);
         assert!(b.is_rate());
 
-        let a = [b'R', b'S', b'T', b'R'];
+        let a = *b"RSTR";
         let b = ReferenceId::from_bytes(a);
         assert!(b.is_rstr());
 
-        let a = [b'D', b'E', b'N', b'Y'];
+        let a = *b"DENY";
         let b = ReferenceId::from_bytes(a);
         assert!(b.is_deny());
     }

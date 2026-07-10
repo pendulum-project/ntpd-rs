@@ -1,5 +1,7 @@
 #[cfg(test)]
 use std::sync::Mutex;
+#[cfg(target_os = "linux")]
+use std::time::Duration;
 use std::{
     fmt,
     net::{IpAddr, SocketAddr},
@@ -106,8 +108,11 @@ where
     match certificates_from_file(&certificate_path) {
         Ok(certificates) => Ok(Arc::from(certificates)),
         Err(io_error) => {
-            let msg =
-                format!("error while parsing certificate file {certificate_path:?}: {io_error:?}");
+            let msg = format!(
+                "error while parsing certificate file {}: {:?}",
+                certificate_path.display(),
+                io_error
+            );
             Err(de::Error::custom(msg))
         }
     }
@@ -321,6 +326,122 @@ pub struct FlattenedPair<T, U> {
     pub second: U,
 }
 
+#[cfg(target_os = "linux")]
+#[derive(Debug, PartialEq, Clone)]
+pub struct CsptpSourceConfig {
+    pub address: String,
+    pub domain: u8,
+    pub poll_interval: Duration,
+    pub response_interval: Duration,
+}
+
+#[cfg(target_os = "linux")]
+impl<'de> Deserialize<'de> for CsptpSourceConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(field_identifier, rename_all = "snake_case")]
+        enum Field {
+            Address,
+            Domain,
+            PollInterval,
+            ResponseInterval,
+        }
+
+        struct CsptpSourceConfigVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for CsptpSourceConfigVisitor {
+            type Value = CsptpSourceConfig;
+
+            fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
+                formatter.write_str("struct CsptpSourceConfig")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<CsptpSourceConfig, V::Error>
+            where
+                V: serde::de::MapAccess<'de>,
+            {
+                let mut address = None;
+                let mut domain = None;
+                let mut poll_interval = None;
+                let mut response_interval = None;
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        Field::Address => {
+                            if address.is_some() {
+                                return Err(de::Error::duplicate_field("address"));
+                            }
+                            address = Some(map.next_value()?);
+                        }
+                        Field::Domain => {
+                            if domain.is_some() {
+                                return Err(de::Error::duplicate_field("domain"));
+                            }
+                            let cand_domain: u8 = map.next_value()?;
+                            if !(128..=239).contains(&cand_domain) {
+                                return Err(de::Error::invalid_value(
+                                    serde::de::Unexpected::Unsigned(cand_domain.into()),
+                                    &"a domain in the range 128-239",
+                                ));
+                            }
+                            domain = Some(cand_domain);
+                        }
+                        Field::PollInterval => {
+                            if poll_interval.is_some() {
+                                return Err(de::Error::duplicate_field("poll_interval"));
+                            }
+                            let cand_poll_interval: f64 = map.next_value()?;
+                            if cand_poll_interval > 0.0
+                                && let Ok(cand_poll_interval) =
+                                    Duration::try_from_secs_f64(cand_poll_interval)
+                            {
+                                poll_interval = Some(cand_poll_interval);
+                            } else {
+                                return Err(de::Error::invalid_value(
+                                    serde::de::Unexpected::Float(cand_poll_interval),
+                                    &"a positive number of seconds representing a valid poll interval.",
+                                ));
+                            }
+                        }
+                        Field::ResponseInterval => {
+                            if response_interval.is_some() {
+                                return Err(de::Error::duplicate_field("response_interval"));
+                            }
+                            let cand_response_interval: f64 = map.next_value()?;
+                            if cand_response_interval > 0.0
+                                && let Ok(cand_response_interval) =
+                                    Duration::try_from_secs_f64(cand_response_interval)
+                            {
+                                response_interval = Some(cand_response_interval);
+                            } else {
+                                return Err(de::Error::invalid_value(
+                                    serde::de::Unexpected::Float(cand_response_interval),
+                                    &"a positive number of seconds representing a valid poll interval.",
+                                ));
+                            }
+                        }
+                    }
+                }
+                let address = address.ok_or_else(|| serde::de::Error::missing_field("address"))?;
+                let domain = domain.unwrap_or(128);
+                let poll_interval = poll_interval.unwrap_or(Duration::from_secs(1));
+                let response_interval = response_interval.unwrap_or(Duration::from_secs(5));
+                Ok(CsptpSourceConfig {
+                    address,
+                    domain,
+                    poll_interval,
+                    response_interval,
+                })
+            }
+        }
+
+        const FIELDS: &[&str] = &["path", "precision", "measurement_noise_estimate"];
+        deserializer.deserialize_struct("CsptpSourceConfig", FIELDS, CsptpSourceConfigVisitor)
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct PpsSourceConfig {
     pub path: PathBuf,
@@ -466,6 +587,9 @@ pub enum NtpSourceConfig {
     #[cfg(feature = "pps")]
     #[serde(rename = "pps")]
     Pps(PpsSourceConfig),
+    #[cfg(target_os = "linux")]
+    #[serde(rename = "csptp")]
+    Csptp(CsptpSourceConfig),
 }
 
 /// A normalized address has a host and a port part. However, the host may be
@@ -749,6 +873,8 @@ mod tests {
             NtpSourceConfig::Sock(_c) => String::new(),
             #[cfg(feature = "pps")]
             NtpSourceConfig::Pps(_c) => String::new(),
+            #[cfg(target_os = "linux")]
+            NtpSourceConfig::Csptp(c) => c.address.clone(),
         }
     }
 

@@ -147,7 +147,7 @@ fn run(options: &NtpMetricsExporterOptions) -> Result<(), Box<dyn std::error::Er
 
         println!(
             "starting ntp-metrics-exporter on {}",
-            &config.observability.metrics_exporter_listen
+            config.observability.metrics_exporter_listen
         );
 
         let _ = notify_ready().await;
@@ -193,7 +193,7 @@ fn run(options: &NtpMetricsExporterOptions) -> Result<(), Box<dyn std::error::Er
                 Err(e)
                     if matches!(
                         e.raw_os_error(),
-                        Some(ENFILE) | Some(EMFILE) | Some(ENOMEM) | Some(ENOBUFS)
+                        Some(ENFILE | EMFILE | ENOMEM | ENOBUFS)
                     ) =>
                 {
                     error!("Not enough resources available to accept incoming connection: {e}");
