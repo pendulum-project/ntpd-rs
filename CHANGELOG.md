@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.0.0-alpha.20260715]
+
+### Added
+- An AppArmor profile for the daemon is now available in the repository.
+- Implemented support for multi-homed ntp servers reachable over multiple IP addresses.
+- Implemented experimental CSPTP support
+
+### Changed
+- Started on a large rework of the internals of the time synchronization daemon.
+- Updated dependencies.
+
+### Removed
+- Because of the refactorings, the force-sync command is temporarily disabled.
+
 ## [1.9.0]
 
 ### Added
@@ -366,6 +380,7 @@ process.
 - Fixed a bug in peer dispersion calculation which resulted in overly
   pessimistic dispersion estimates.
 
+[2.0.0-alpha.20260715]: https://github.com/pendulum-project/ntpd-rs/compare/v1.9.0...v2.0.0-alpha.20260715
 [1.9.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.7.2...v1.8.0
 [1.7.2]: https://github.com/pendulum-project/ntpd-rs/compare/v1.7.1...v1.7.2
