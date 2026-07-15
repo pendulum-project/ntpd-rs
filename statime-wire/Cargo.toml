@@ -10,6 +10,9 @@ description.workspace = true
 publish.workspace = true
 rust-version.workspace = true
 
+[lints]
+workspace = true
+
 [features]
 default = ["std", "serde"]
 std = []

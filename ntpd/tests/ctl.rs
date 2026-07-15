@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::{
     io::Write,
     os::unix::net::UnixListener,

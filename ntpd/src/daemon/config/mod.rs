@@ -626,6 +626,7 @@ impl From<toml::de::Error> for ConfigError {
     clippy::too_many_lines,
     reason = "Long tests are not really a big problem"
 )]
+#[allow(clippy::float_cmp, reason = "Test code")]
 mod tests {
     use ntp_proto::{NtpDuration, ProtocolVersion, StepThreshold};
 
