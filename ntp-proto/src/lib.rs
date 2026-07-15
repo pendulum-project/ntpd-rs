@@ -17,7 +17,6 @@
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::doc_markdown)]
 #![allow(clippy::float_cmp)]
-#![allow(clippy::if_not_else)]
 #![allow(clippy::match_bool)]
 #![allow(clippy::manual_midpoint)]
 #![allow(clippy::missing_errors_doc)]
