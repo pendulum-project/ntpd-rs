@@ -88,6 +88,7 @@ replaces = "time-daemon"
 name = "ntpd-rs"
 # See: https://fedoraproject.org/wiki/Licensing:Main?rd=Licensing#Good_Licenses
 license = "MIT or ASL 2.0"
+version = "1.9.0" #MARKER: RPM-VERSION
 assets = [
   { source = "target/release/ntp-daemon", dest = "/usr/bin/ntp-daemon", mode = "755" },
   { source = "target/release/ntp-ctl", dest = "/usr/bin/ntp-ctl", mode = "755" },

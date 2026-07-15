@@ -8,6 +8,7 @@ fi
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 PROJECT_DIR=$(dirname "$SCRIPT_DIR")
 NEW_VERSION="$1"
+RPM_VERSION=`echo $NEW_VERSION | sed 's/-/~/g'`
 NOTICE_LINE="# NOTE: keep this part at the bottom of the file, do not change this line"
 
 echo "Updating version in Cargo.toml"
@@ -28,6 +29,9 @@ while IFS= read -r line; do
     echo "$line" >> "$tmp_file"
 done < "$PROJECT_DIR/Cargo.toml"
 mv "$tmp_file" "$PROJECT_DIR/Cargo.toml"
+
+echo "Updating rpm version in Cargo.toml"
+sed -i 's/^version = .* #MARKER: RPM-VERSION/version = "'"$RPM_VERSION"'" #MARKER: RPM-VERSION/' "$PROJECT_DIR"/ntpd/Cargo.toml
 
 echo "Updating version in man pages"
 sed -i 's/^title: NTP-CTL(8) ntpd-rs .*/title: NTP-CTL(8) ntpd-rs '"$NEW_VERSION"' | ntpd-rs/' "$PROJECT_DIR"/docs/man/ntp-ctl.8.md
