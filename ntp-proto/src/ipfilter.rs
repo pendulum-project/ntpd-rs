@@ -199,11 +199,24 @@ impl IpFilter {
     }
 
     /// Check whether a given ip address is contained in the filter.
+    ///
+    /// For an IPv4-mapped IPv6 address (`::ffff:a.b.c.d`), this checks both
+    /// the address as given (so existing filter entries written in mapped
+    /// notation, e.g. `::ffff:10.0.0.0/112`, keep working) *and* its
+    /// unmapped IPv4 form (so plain IPv4 filter entries, e.g.
+    /// `10.0.0.0/16`, also match). Without the latter, a dual-stack
+    /// listener (`listen = "[::]:123"`) would receive IPv4 clients as `V6`
+    /// addresses that never match filter entries written in ordinary IPv4
+    /// CIDR notation, even though that's what an operator would expect.
+    /// See <https://github.com/pendulum-project/ntpd-rs/issues/2131>.
+    ///
     /// Complexity: O(1)
     pub fn is_in(&self, addr: &IpAddr) -> bool {
         match addr {
             IpAddr::V4(addr) => self.is_in4(addr),
-            IpAddr::V6(addr) => self.is_in6(addr),
+            IpAddr::V6(addr) => {
+                self.is_in6(addr) || addr.to_ipv4_mapped().is_some_and(|v4| self.is_in4(&v4))
+            }
         }
     }
 
@@ -228,16 +241,24 @@ pub mod fuzz {
     )]
     use super::*;
 
+    fn v4_contains(net: Ipv4Addr, mask: u8, addr: Ipv4Addr) -> bool {
+        let net = u32::from_be_bytes(net.octets());
+        let addr = u32::from_be_bytes(addr.octets());
+        let mask = 0xFFFFFFFF_u32.checked_shl((32 - mask) as u32).unwrap_or(0);
+        (net & mask) == (addr & mask)
+    }
+
     fn contains(subnet: &IpSubnet, addr: &IpAddr) -> bool {
+        // Mirrors the OR-based matching in `IpFilter::is_in`: a v4-mapped
+        // v6 address is checked both as-is against v6 entries, and (if
+        // it's actually mapped) unmapped against v4 entries. Otherwise
+        // this naive reference implementation would disagree with the
+        // real one and break the fuzz equivalence check.
         match (subnet.addr, addr) {
-            (IpAddr::V4(net), IpAddr::V4(addr)) => {
-                let net = u32::from_be_bytes(net.octets());
-                let addr = u32::from_be_bytes(addr.octets());
-                let mask = 0xFFFFFFFF_u32
-                    .checked_shl((32 - subnet.mask) as u32)
-                    .unwrap_or(0);
-                (net & mask) == (addr & mask)
-            }
+            (IpAddr::V4(net), IpAddr::V4(addr)) => v4_contains(net, subnet.mask, *addr),
+            (IpAddr::V4(net), IpAddr::V6(addr)) => addr
+                .to_ipv4_mapped()
+                .is_some_and(|addr| v4_contains(net, subnet.mask, addr)),
             (IpAddr::V6(net), IpAddr::V6(addr)) => {
                 let net = u128::from_be_bytes(net.octets());
                 let addr = u128::from_be_bytes(addr.octets());
@@ -321,5 +342,45 @@ mod tests {
         assert!(!filter.is_in(&"1.2.3.5".parse().unwrap()));
         assert!(filter.is_in(&"10:32:54:76:98:BA:DC:FE".parse().unwrap()));
         assert!(!filter.is_in(&"10:32:54:76:98:BA:DC:FF".parse().unwrap()));
+    }
+
+    /// Regression test for https://github.com/pendulum-project/ntpd-rs/issues/2131
+    ///
+    /// A server listening on a dual-stack IPv6 socket (`listen = "[::]:123"`)
+    /// receives IPv4 clients as IPv4-mapped IPv6 addresses. A filter entry
+    /// written in plain IPv4 CIDR notation (as an operator would naturally
+    /// write it) must still match such an address.
+    #[test]
+    fn test_ipv4_mapped_address_matches_plain_ipv4_filter() {
+        // Same shape as the config in the issue: only a plain IPv4 entry,
+        // no explicit ::ffff:.../96+ workaround entry.
+        let filter = IpFilter::new(&["10.0.0.0/16".parse().unwrap()]);
+
+        // Native IPv4 still works, as before.
+        assert!(filter.is_in(&"10.0.5.1".parse().unwrap()));
+        assert!(!filter.is_in(&"10.1.5.1".parse().unwrap()));
+
+        // The previously-broken case: the same address, but as it actually
+        // arrives on a dual-stack listener.
+        assert!(filter.is_in(&"::ffff:10.0.5.1".parse().unwrap()));
+        assert!(!filter.is_in(&"::ffff:10.1.5.1".parse().unwrap()));
+
+        // A genuine IPv6 address must not spuriously match an IPv4-only
+        // filter just because canonicalization runs.
+        assert!(!filter.is_in(&"2001:db8::1".parse().unwrap()));
+    }
+
+    /// The maintainer noted this paper cut applies to denylists too: an
+    /// admin could believe they've blocked an address, while it's still
+    /// reachable via its IPv4-mapped IPv6 form. `IpFilter` is used
+    /// identically for both allow- and denylists, so this exercises the
+    /// same `is_in` path a denylist check would take.
+    #[test]
+    fn test_ipv4_mapped_address_matches_plain_ipv4_denylist_style_filter() {
+        let denylist = IpFilter::new(&["192.168.100.0/24".parse().unwrap()]);
+
+        assert!(denylist.is_in(&"192.168.100.42".parse().unwrap()));
+        assert!(denylist.is_in(&"::ffff:192.168.100.42".parse().unwrap()));
+        assert!(!denylist.is_in(&"::ffff:192.168.200.42".parse().unwrap()));
     }
 }
