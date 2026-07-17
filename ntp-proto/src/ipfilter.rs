@@ -182,10 +182,14 @@ impl IpFilter {
 
         for subnet in subnets {
             match subnet.addr {
-                IpAddr::V4(addr) => ipv4list.push((
-                    (u32::from_be_bytes(addr.octets()) as u128) << 96,
-                    subnet.mask,
-                )),
+                IpAddr::V4(addr) => {
+                    let mapped = u32::from_be_bytes(addr.octets()) as u128;
+                    ipv4list.push((mapped << 96, subnet.mask));
+                    // Also match this address when it arrives IPv4-mapped
+                    // (::ffff:a.b.c.d) on a dual-stack `[::]` socket, so an
+                    // IPv4 filter entry still applies. See #2131.
+                    ipv6list.push(((0xffff_u128 << 32) | mapped, subnet.mask + 96));
+                }
                 IpAddr::V6(addr) => {
                     ipv6list.push((u128::from_be_bytes(addr.octets()), subnet.mask));
                 }
@@ -321,5 +325,18 @@ mod tests {
         assert!(!filter.is_in(&"1.2.3.5".parse().unwrap()));
         assert!(filter.is_in(&"10:32:54:76:98:BA:DC:FE".parse().unwrap()));
         assert!(!filter.is_in(&"10:32:54:76:98:BA:DC:FF".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_ipv4_mapped_matches_ipv4_entry() {
+        // On a dual-stack `[::]` socket the kernel delivers IPv4 packets with
+        // an IPv4-mapped IPv6 source (::ffff:a.b.c.d). An IPv4 filter entry
+        // must still apply to them. Regression test for #2131.
+        let filter = IpFilter::new(&["192.0.2.0/24".parse().unwrap()]);
+
+        assert!(filter.is_in(&"192.0.2.1".parse().unwrap()));
+        assert!(filter.is_in(&"::ffff:192.0.2.1".parse().unwrap()));
+        assert!(!filter.is_in(&"::ffff:198.51.100.1".parse().unwrap()));
+        assert!(!filter.is_in(&"2001:db8::1".parse().unwrap()));
     }
 }
