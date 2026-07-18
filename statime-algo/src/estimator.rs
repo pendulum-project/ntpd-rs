@@ -1,4 +1,4 @@
-use std::{boxed::Box, vec::Vec};
+use std::{boxed::Box, sync::Arc, vec::Vec};
 
 use crate::matrix::{Matrix, MatrixError};
 
@@ -85,6 +85,7 @@ struct EstimatorState {
     state: Matrix<Box<[f64]>>,
     uncertainty: Matrix<Box<[f64]>>,
     clock_info: Vec<ClockInfo>,
+    external_clocks: Vec<ClockId>,
     link_info: Vec<LinkInfo>,
 }
 
@@ -118,6 +119,7 @@ impl EstimatorState {
             state: Matrix::zero(0, 1),
             uncertainty: Matrix::zero(0, 0),
             clock_info: Vec::new(),
+            external_clocks: Vec::new(),
             link_info: Vec::new(),
         }
     }
@@ -154,6 +156,7 @@ impl EstimatorState {
             state: update.clone() * self.state.clone(),
             uncertainty: update.clone() * self.uncertainty.clone() * update.transpose() + noise,
             clock_info: self.clock_info.clone(),
+            external_clocks: self.external_clocks.clone(),
             link_info: self.link_info.clone(),
         }
     }
@@ -169,6 +172,67 @@ impl EstimatorState {
         offset: UncertainValue,
         link_delay: Option<LinkId>,
     ) -> Result<EstimatorState, EstimatorError> {
+        let from_clock_info = self.get_clock_info(from)?;
+        let to_clock_info = self.get_clock_info(to)?;
+
+        let mut measurement_projection = Matrix::zero(1, self.state.rows());
+        measurement_projection[(0, from_clock_info.offset_index())] = -1.0;
+        measurement_projection[(0, to_clock_info.offset_index())] = 1.0;
+
+        if let Some(link_delay) = link_delay {
+            let link_delay_info = self.get_link_info(link_delay)?;
+            measurement_projection[(0, link_delay_info.index)] = 1.0;
+        }
+
+        let expected = measurement_projection.clone() * self.state.clone();
+        let difference = Matrix::<Box<[f64]>>::from(offset.value) - expected;
+        // The uncertainty of the difference between measurement and prediction is the sum of
+        // the uncertainty of the measurement, and the uncertainty on the prediction. The
+        // prediction uncertainty can be shown to follow from multiplying the state uncertainty
+        // from both sides by the measurement projection. Intuitively this is because the
+        // uncertainty is sort of a square of the state.
+        let difference_covariance = measurement_projection.clone()
+            * self.uncertainty.clone()
+            * measurement_projection.transpose()
+            + offset.uncertainty.powi(2).into();
+
+        // Intuitively, the multiplication with the measurement gives the contribution
+        // for each part of the state to the uncertainty of the measurement prediction.
+        // The division then normalizes that to weights on how large the change to each
+        // part of the state needs to be. This makes sense because where our prediction
+        // has more uncertainty from, the measurement should weigh more.
+        let update_strength = self.uncertainty.clone() * measurement_projection.transpose()
+            / difference_covariance[(0, 0)];
+
+        // This is simply using the strenght we calculated before to update the state
+        let new_state = self.state.clone() + update_strength.clone() * difference;
+
+        // However I don't have a good intuition why this would be its uncertainty. It
+        // is derived well on wikipedia, and when having questions I would suggest looking
+        // at its page on kalman filters.
+        let prev_step_proporitionality =
+            Matrix::identity(self.state.rows()) - update_strength.clone() * measurement_projection;
+        let new_uncertainty = (prev_step_proporitionality.clone()
+            * (self.uncertainty.clone() * prev_step_proporitionality.transpose())
+            + update_strength.clone() * offset.uncertainty.powi(2) * update_strength.transpose())
+        .symmetrize();
+
+        Ok(EstimatorState {
+            time: self.time,
+            state: new_state,
+            uncertainty: new_uncertainty,
+            clock_info: self.clock_info.clone(),
+            external_clocks: self.external_clocks.clone(),
+            link_info: self.link_info.clone(),
+        })
+    }
+
+    /// Add an external clock to the estimator state.
+    pub fn add_external_clock(&self, id: ClockId) -> Result<EstimatorState, EstimatorError> {
+        todo!()
+    }
+
+    pub fn remove_external_clock(&self, id: ClockId) -> Result<EstimatorState, EstimatorError> {
         todo!()
     }
 
@@ -206,6 +270,7 @@ impl EstimatorState {
                 [0.0, initial_frequency.uncertainty.powi(2)],
             ]),
             clock_info,
+            external_clocks: self.external_clocks.clone(),
             link_info: self.link_info.clone(),
         })
     }
@@ -224,6 +289,7 @@ impl EstimatorState {
                 .filter(|info| info.id != id)
                 .map(|info| info.with_moved_index(clock_info.base_index, 2))
                 .collect(),
+            external_clocks: self.external_clocks.clone(),
             link_info: self
                 .link_info
                 .iter()
@@ -257,6 +323,7 @@ impl EstimatorState {
                 .uncertainty
                 .extend([[initial_delay.uncertainty.powi(2)]]),
             clock_info: self.clock_info.clone(),
+            external_clocks: self.external_clocks.clone(),
             link_info,
         })
     }
@@ -274,6 +341,7 @@ impl EstimatorState {
                 .iter()
                 .map(|clock_info| clock_info.with_moved_index(link_info.index, 1))
                 .collect(),
+            external_clocks: self.external_clocks.clone(),
             link_info: self
                 .link_info
                 .iter()
@@ -332,7 +400,10 @@ impl EstimatorState {
 
 #[cfg(test)]
 mod tests {
-    use crate::{ClockId, LinkId, estimator::EstimatorState};
+    use crate::{
+        ClockId, LinkId,
+        estimator::{EstimatorState, UncertainValue},
+    };
 
     macro_rules! assert_almost_eq {
         ($left:expr, $right:expr) => {
@@ -441,4 +512,160 @@ mod tests {
         assert_eq!(state.link_delay(LinkId(1)).unwrap().value, 1.0);
         assert_eq!(state.link_delay(LinkId(1)).unwrap().uncertainty, 2.0);
     }
+
+    #[test]
+    fn test_measure_between_clocks_no_link() {
+        let state = EstimatorState::empty(0.0);
+        let state = state
+            .add_clock(ClockId(1), (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
+            .unwrap();
+        let state = state
+            .add_clock(ClockId(2), (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
+            .unwrap();
+
+        let state = state
+            .measurement(
+                ClockId(1),
+                ClockId(2),
+                (1.0, 2.0f64.sqrt() * 0.1).into(),
+                None,
+            )
+            .unwrap();
+
+        assert_uv_almost_eq!(
+            state.clock_offset(ClockId(1)).unwrap(),
+            UncertainValue::from((-0.25, 0.05 * (3.0f64.sqrt())))
+        );
+        assert_uv_almost_eq!(
+            state.clock_offset(ClockId(2)).unwrap(),
+            UncertainValue::from((0.25, 0.05 * (3.0f64.sqrt())))
+        );
+        assert_uv_almost_eq!(
+            state.clock_frequency(ClockId(1)).unwrap(),
+            UncertainValue::from((0.0, 1e-8))
+        );
+        assert_uv_almost_eq!(
+            state.clock_frequency(ClockId(2)).unwrap(),
+            UncertainValue::from((0.0, 1e-8))
+        );
+
+        let state = EstimatorState::empty(0.0);
+        let state = state
+            .add_clock(ClockId(1), (0.0, 0.0).into(), (0.0, 1e-3).into(), 0.0)
+            .unwrap();
+        let state = state
+            .add_clock(ClockId(2), (0.0, 0.0).into(), (0.0, 1e-3).into(), 0.0)
+            .unwrap();
+
+        let state = state.progress_time(100.0);
+
+        let state = state
+            .measurement(
+                ClockId(1),
+                ClockId(2),
+                (1.0, 2.0f64.sqrt() * 0.1).into(),
+                None,
+            )
+            .unwrap();
+
+        assert_uv_almost_eq!(
+            state.clock_offset(ClockId(1)).unwrap(),
+            UncertainValue::from((-0.25, 0.05 * (3.0f64.sqrt())))
+        );
+        assert_uv_almost_eq!(
+            state.clock_offset(ClockId(2)).unwrap(),
+            UncertainValue::from((0.25, 0.05 * (3.0f64.sqrt())))
+        );
+        assert_uv_almost_eq!(
+            state.clock_frequency(ClockId(1)).unwrap(),
+            UncertainValue::from((-0.0025, 0.0005 * (3.0f64.sqrt())))
+        );
+        assert_uv_almost_eq!(
+            state.clock_frequency(ClockId(2)).unwrap(),
+            UncertainValue::from((0.0025, 0.0005 * (3.0f64.sqrt())))
+        );
+    }
+
+    #[test]
+    fn test_measure_between_clocks_with_link() {
+        let state = EstimatorState::empty(0.0);
+        let state = state
+            .add_clock(ClockId(1), (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
+            .unwrap();
+        let state = state
+            .add_clock(ClockId(2), (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
+            .unwrap();
+        let state = state.add_link(LinkId(1), (1.0, 0.0).into()).unwrap();
+
+        let state = state
+            .measurement(
+                ClockId(1),
+                ClockId(2),
+                (2.0, 2.0f64.sqrt() * 0.1).into(),
+                Some(LinkId(1)),
+            )
+            .unwrap();
+
+        assert_uv_almost_eq!(
+            state.clock_offset(ClockId(1)).unwrap(),
+            UncertainValue::from((-0.25, 0.05 * (3.0f64.sqrt())))
+        );
+        assert_uv_almost_eq!(
+            state.clock_offset(ClockId(2)).unwrap(),
+            UncertainValue::from((0.25, 0.05 * (3.0f64.sqrt())))
+        );
+        assert_uv_almost_eq!(
+            state.clock_frequency(ClockId(1)).unwrap(),
+            UncertainValue::from((0.0, 1e-8))
+        );
+        assert_uv_almost_eq!(
+            state.clock_frequency(ClockId(2)).unwrap(),
+            UncertainValue::from((0.0, 1e-8))
+        );
+        assert_uv_almost_eq!(
+            state.link_delay(LinkId(1)).unwrap(),
+            UncertainValue::from((1.0, 0.0))
+        );
+
+        let state = EstimatorState::empty(0.0);
+        let state = state
+            .add_clock(ClockId(1), (0.0, 0.0).into(), (0.0, 1e-8).into(), 1e-8)
+            .unwrap();
+        let state = state
+            .add_clock(ClockId(2), (0.0, 0.0).into(), (0.0, 1e-8).into(), 1e-8)
+            .unwrap();
+        let state = state.add_link(LinkId(1), (0.0, 0.1).into()).unwrap();
+
+        let state = state
+            .measurement(
+                ClockId(1),
+                ClockId(2),
+                (1.0, 0.1).into(),
+                Some(LinkId(1)),
+            )
+            .unwrap();
+
+        assert_uv_almost_eq!(
+            state.clock_offset(ClockId(1)).unwrap(),
+            UncertainValue::from((0.0, 0.0))
+        );
+        assert_uv_almost_eq!(
+            state.clock_offset(ClockId(2)).unwrap(),
+            UncertainValue::from((0.0, 0.0))
+        );
+        assert_uv_almost_eq!(
+            state.clock_frequency(ClockId(1)).unwrap(),
+            UncertainValue::from((0.0, 1e-8))
+        );
+        assert_uv_almost_eq!(
+            state.clock_frequency(ClockId(2)).unwrap(),
+            UncertainValue::from((0.0, 1e-8))
+        );
+        assert_uv_almost_eq!(
+            state.link_delay(LinkId(1)).unwrap(),
+            UncertainValue::from((0.5, 0.1/(2.0f64.sqrt())))
+        );
+    }
+
+    fn test_measure_external_clock_no_link() {}
 }

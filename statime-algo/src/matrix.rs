@@ -1,4 +1,4 @@
-use core::ops::{Add, AddAssign, Index, IndexMut, Mul, Sub, SubAssign};
+use core::ops::{Add, AddAssign, Div, Index, IndexMut, Mul, Sub, SubAssign};
 
 /// A storage provider for a matrix. Abstracts a dynamically sized array of f64.
 ///
@@ -164,6 +164,20 @@ impl<Storage: MatrixStorage> Matrix<Storage> {
     pub fn transpose(&self) -> Self {
         Matrix::new(self.cols, self.rows, |row, column| self[(column, row)])
     }
+
+    pub fn symmetrize(&self) -> Self {
+        // We can get away here without branching because floating point addition is
+        // symmetric. (IEEE 754, which is used in rust per the reference).
+        Matrix::new(self.rows, self.cols, |r, c| {
+            (self[(r, c)] + self[(c, r)]) / 2.0
+        })
+    }
+}
+
+impl<Storage: MatrixStorage> From<f64> for Matrix<Storage> {
+    fn from(value: f64) -> Self {
+        Matrix::new(1, 1, |_, _| value)
+    }
 }
 
 impl<Storage: MatrixStorage> Index<(usize, usize)> for Matrix<Storage> {
@@ -270,6 +284,20 @@ impl<Storage: MatrixStorage> Mul<f64> for Matrix<Storage> {
             rows: self.rows,
             cols: self.cols,
             storage: Storage::new(self.rows * self.cols, |index| lhs[index] * rhs),
+        }
+    }
+}
+
+impl<Storage: MatrixStorage> Div<f64> for Matrix<Storage> {
+    type Output = Matrix<Storage>;
+
+    fn div(self, rhs: f64) -> Self::Output {
+        let lhs = self.storage.as_ref();
+
+        Matrix {
+            rows: self.rows,
+            cols: self.cols,
+            storage: Storage::new(self.rows * self.cols, |index| lhs[index] / rhs),
         }
     }
 }
