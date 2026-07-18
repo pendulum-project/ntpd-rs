@@ -24,6 +24,17 @@ impl<const N: usize> MatrixStorage for [f64; N] {
     }
 }
 
+/// An error occured while performing a matrix operation.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum MatrixError {
+    /// The matrix is not a vector, but the operation requires it to be.
+    NotAVector,
+    /// The matrix is not square, but the operation requires it to be.
+    NotSquare,
+    /// The operation would have resulted in an out-of-bounds access.
+    OutOfBounds,
+}
+
 #[derive(Debug, Copy, Clone, PartialEq)]
 /// A simple class for computing with matrices.
 ///
@@ -54,6 +65,88 @@ impl<Storage: MatrixStorage> Matrix<Storage> {
             cols,
             storage: Storage::new(rows * cols, |index| values(index / cols, index % cols)),
         }
+    }
+
+    /// Create a new matrix with a single column (i.e. a vector), filling the
+    /// values of the cells using the provided function.
+    pub fn new_vec(rows: usize, values: impl FnMut(usize) -> f64) -> Self {
+        Matrix {
+            rows,
+            cols: 1,
+            storage: Storage::new(rows, values),
+        }
+    }
+
+    /// Given that the current matrix is a vector, remove a portion of the vector.
+    pub fn splice_vec(&self, start: usize, length: usize) -> Result<Self, MatrixError> {
+        if self.cols != 1 {
+            return Err(MatrixError::NotAVector);
+        }
+
+        if start + length > self.rows {
+            return Err(MatrixError::OutOfBounds);
+        }
+
+        Ok(Matrix::new_vec(self.rows() - length, |row| {
+            if row < start {
+                self[(row, 0)]
+            } else {
+                self[(row + length, 0)]
+            }
+        }))
+    }
+
+    /// Given that the current matrix is square, remove a portion of the matrix.
+    ///
+    /// The portion of the matrix is defined by a starting row/column and a length.
+    /// The removed portion starts at the starting column/row and extends for length rows and columns.
+    pub fn splice_square(&self, start: usize, length: usize) -> Result<Self, MatrixError> {
+        if self.rows != self.cols {
+            return Err(MatrixError::NotSquare);
+        }
+
+        if start + length > self.rows {
+            return Err(MatrixError::OutOfBounds);
+        }
+
+        Ok(Matrix::new(
+            self.rows - length,
+            self.cols - length,
+            |row, col| {
+                let row = if row < start { row } else { row + length };
+                let col = if col < start { col } else { col + length };
+                self[(row, col)]
+            },
+        ))
+    }
+
+    pub fn extend_vec<const ROWS: usize>(&self, values: [f64; ROWS]) -> Result<Self, MatrixError> {
+        if self.cols != 1 {
+            return Err(MatrixError::NotAVector);
+        }
+
+        let original_rows = self.rows();
+        Ok(Matrix::new_vec(original_rows + ROWS, |row| {
+            if row < original_rows {
+                self[(row, 0)]
+            } else {
+                values[row - original_rows]
+            }
+        }))
+    }
+
+    pub fn extend<const COLS: usize, const ROWS: usize>(&self, data: [[f64; COLS]; ROWS]) -> Self {
+        let original_rows = self.rows();
+        let original_cols = self.cols();
+        Matrix::new(original_rows + ROWS, original_cols + COLS, |row, col| {
+            if row < original_rows && col < original_cols {
+                self[(row, col)]
+            } else if row >= original_rows && col >= original_cols {
+                data[row - original_rows][col - original_cols]
+            } else {
+                0.0
+            }
+        })
     }
 
     pub fn identity(size: usize) -> Self {
