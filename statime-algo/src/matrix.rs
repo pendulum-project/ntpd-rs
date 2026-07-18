@@ -34,6 +34,18 @@ pub struct Matrix<Storage> {
     storage: Storage,
 }
 
+impl<Storage> Matrix<Storage> {
+    /// Number of rows in the matrix
+    pub fn rows(&self) -> usize {
+        self.rows
+    }
+
+    /// Number of columns in the matrix
+    pub fn cols(&self) -> usize {
+        self.cols
+    }
+}
+
 impl<Storage: MatrixStorage> Matrix<Storage> {
     /// Create a new matrix, filling the values of the cells using the provided function.
     pub fn new(rows: usize, cols: usize, mut values: impl FnMut(usize, usize) -> f64) -> Self {
@@ -42,6 +54,22 @@ impl<Storage: MatrixStorage> Matrix<Storage> {
             cols,
             storage: Storage::new(rows * cols, |index| values(index / cols, index % cols)),
         }
+    }
+
+    pub fn identity(size: usize) -> Self {
+        Matrix::new(
+            size,
+            size,
+            |row, column| if row == column { 1.0 } else { 0.0 },
+        )
+    }
+
+    pub fn zero(rows: usize, cols: usize) -> Self {
+        Matrix::new(rows, cols, |_, _| 0.0)
+    }
+
+    pub fn transpose(&self) -> Self {
+        Matrix::new(self.cols, self.rows, |row, column| self[(column, row)])
     }
 }
 
