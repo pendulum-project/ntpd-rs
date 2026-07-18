@@ -1,6 +1,6 @@
 use std::{boxed::Box, vec::Vec};
 
-use crate::matrix::Matrix;
+use crate::matrix::{Matrix, MatrixError};
 
 use super::{ClockId, LinkId};
 
@@ -8,12 +8,19 @@ use super::{ClockId, LinkId};
 type Timestamp = f64;
 
 //FIXME: Make more permanent error enum
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum EstimatorError {
     ClockNotFound,
     ClockAlreadyExists,
     LinkNotFound,
     LinkAlreadyExists,
+    MatrixError(MatrixError),
+}
+
+impl From<MatrixError> for EstimatorError {
+    fn from(err: MatrixError) -> Self {
+        EstimatorError::MatrixError(err)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -31,12 +38,45 @@ impl ClockInfo {
     fn frequency_index(self) -> usize {
         self.base_index + 1
     }
+
+    fn with_index(self, new_base_index: usize) -> ClockInfo {
+        ClockInfo {
+            id: self.id,
+            base_index: new_base_index,
+            wander: self.wander,
+        }
+    }
+
+    fn with_moved_index(self, from_index: usize, delta: usize) -> ClockInfo {
+        self.with_index(if self.base_index < from_index {
+            self.base_index
+        } else {
+            self.base_index - delta
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
 struct LinkInfo {
     id: LinkId,
     index: usize,
+}
+
+impl LinkInfo {
+    fn with_index(self, new_index: usize) -> LinkInfo {
+        LinkInfo {
+            id: self.id,
+            index: new_index,
+        }
+    }
+
+    fn with_moved_index(self, from_index: usize, delta: usize) -> LinkInfo {
+        self.with_index(if self.index < from_index {
+            self.index
+        } else {
+            self.index - delta
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -48,6 +88,7 @@ struct EstimatorState {
     link_info: Vec<LinkInfo>,
 }
 
+/// Represents an uncertain value, with a best estimate and an uncertainty (standard deviation).
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct UncertainValue {
     /// Best estimate of the value
@@ -57,6 +98,7 @@ struct UncertainValue {
     uncertainty: f64,
 }
 
+/// Convert from a tuple of (value, uncertainty) to an `UncertainValue`.
 impl From<(f64, f64)> for UncertainValue {
     fn from(value: (f64, f64)) -> Self {
         UncertainValue {
@@ -67,6 +109,9 @@ impl From<(f64, f64)> for UncertainValue {
 }
 
 impl EstimatorState {
+    /// Create a new empty estimator state at the given timestamp.
+    ///
+    /// This state has no clocks or links contained in it.
     pub fn empty(time: Timestamp) -> EstimatorState {
         EstimatorState {
             time,
@@ -77,12 +122,14 @@ impl EstimatorState {
         }
     }
 
+    /// Progress the estimator state to the new timestamp.
     pub fn progress_time(&self, new_time: Timestamp) -> EstimatorState {
         let delta_t = new_time - self.time;
 
         let mut update = Matrix::identity(self.state.rows());
         let mut noise = Matrix::zero(self.state.rows(), self.state.rows());
 
+        // For each clock, we need to determine a value for the update and noise matrices.
         for clock_info in &self.clock_info {
             update[(clock_info.offset_index(), clock_info.frequency_index())] = delta_t;
             // We need to square wander as we store it in units of ppm per second,
@@ -111,7 +158,10 @@ impl EstimatorState {
         }
     }
 
-    // Assumes it is happening NOW with respect to the time of the previous estimate
+    /// Add a new measurement to the estimator state.
+    ///
+    /// Assumes the measurements happens at the time the estimator state is
+    /// currently set to.
     pub fn measurement(
         &self,
         from: ClockId,
@@ -122,6 +172,10 @@ impl EstimatorState {
         todo!()
     }
 
+    /// Add a new clock to the estimator state.'
+    ///
+    /// To add a new clock you must provide the initial values for the offset,
+    /// frequency and wander of the clock.
     pub fn add_clock(
         &self,
         id: ClockId,
@@ -144,115 +198,92 @@ impl EstimatorState {
 
         Ok(EstimatorState {
             time: self.time,
-            state: Matrix::new(self.state.rows() + 2, 1, |row, _| {
-                if row == new_clock_info.offset_index() {
-                    initial_offset.value
-                } else if row == new_clock_info.frequency_index() {
-                    initial_frequency.value
-                } else {
-                    self.state[(row, 0)]
-                }
-            }),
-            uncertainty: Matrix::new(
-                self.state.rows() + 2,
-                self.state.rows() + 2,
-                |row, column| {
-                    if row < self.uncertainty.rows() && column < self.uncertainty.cols() {
-                        // Existing uncertainty
-                        self.uncertainty[(row, column)]
-                    } else if row == column && row == new_clock_info.offset_index() {
-                        // New clock has only uncertainty on the diagonal, for offset
-                        initial_offset.uncertainty.powi(2)
-                    } else if row == column && row == new_clock_info.frequency_index() {
-                        // and frequency. No correlations between those yet.
-                        initial_frequency.uncertainty.powi(2)
-                    } else {
-                        // No correlations between uncertainty of new clock and old state yet.
-                        0.0
-                    }
-                },
-            ),
+            state: self
+                .state
+                .extend_vec([initial_offset.value, initial_frequency.value])?,
+            uncertainty: self.uncertainty.extend([
+                [initial_offset.uncertainty.powi(2), 0.0],
+                [0.0, initial_frequency.uncertainty.powi(2)],
+            ]),
             clock_info,
             link_info: self.link_info.clone(),
         })
     }
 
+    /// Remove a clock from the estimator state.
     pub fn remove_clock(&self, id: ClockId) -> Result<EstimatorState, EstimatorError> {
         let clock_info = self.get_clock_info(id)?;
 
         Ok(EstimatorState {
             time: self.time,
-            state: Matrix::new(self.state.rows() - 2, 1, |row, _| {
-                if row < clock_info.base_index {
-                    self.state[(row, 0)]
-                } else {
-                    self.state[(row + 2, 0)]
-                }
-            }),
-            uncertainty: Matrix::new(
-                self.uncertainty.rows() - 2,
-                self.uncertainty.cols() - 2,
-                |row, col| {
-                    let row = if row < clock_info.base_index {
-                        row
-                    } else {
-                        row + 2
-                    };
-                    let col = if col < clock_info.base_index {
-                        col
-                    } else {
-                        col + 2
-                    };
-                    self.uncertainty[(row, col)]
-                },
-            ),
+            state: self.state.splice_vec(clock_info.base_index, 2)?,
+            uncertainty: self.uncertainty.splice_square(clock_info.base_index, 2)?,
             clock_info: self
                 .clock_info
                 .iter()
-                .filter_map(|info| {
-                    if info.id == id {
-                        None
-                    } else {
-                        Some(ClockInfo {
-                            id: info.id,
-                            base_index: if info.base_index < clock_info.base_index {
-                                info.base_index
-                            } else {
-                                info.base_index - 2
-                            },
-                            wander: info.wander,
-                        })
-                    }
-                })
+                .filter(|info| info.id != id)
+                .map(|info| info.with_moved_index(clock_info.base_index, 2))
                 .collect(),
             link_info: self
                 .link_info
                 .iter()
-                .map(|link_info| LinkInfo {
-                    id: link_info.id,
-                    index: if link_info.index < clock_info.base_index {
-                        link_info.index
-                    } else {
-                        link_info.index - 2
-                    },
-                })
+                .map(|link_info| link_info.with_moved_index(clock_info.base_index, 2))
                 .collect(),
         })
     }
 
+    /// Add a new link to the estimator state.
     pub fn add_link(
         &self,
         id: LinkId,
-        initial_delay: f64,
-        initial_delay_uncertainty: f64,
+        initial_delay: UncertainValue,
     ) -> Result<EstimatorState, EstimatorError> {
-        todo!()
+        if self.link_info.iter().any(|info| info.id == id) {
+            return Err(EstimatorError::LinkAlreadyExists);
+        }
+
+        let new_link_info = LinkInfo {
+            id,
+            index: self.state.rows(),
+        };
+
+        let mut link_info = self.link_info.clone();
+        link_info.push(new_link_info);
+
+        Ok(EstimatorState {
+            time: self.time,
+            state: self.state.extend_vec([initial_delay.value])?,
+            uncertainty: self
+                .uncertainty
+                .extend([[initial_delay.uncertainty.powi(2)]]),
+            clock_info: self.clock_info.clone(),
+            link_info,
+        })
     }
 
+    /// Remove a link from the estimator state.
     pub fn remove_link(&self, id: LinkId) -> Result<EstimatorState, EstimatorError> {
-        todo!()
+        let link_info = self.get_link_info(id)?;
+
+        Ok(EstimatorState {
+            time: self.time,
+            state: self.state.splice_vec(link_info.index, 1)?,
+            uncertainty: self.uncertainty.splice_square(link_info.index, 1)?,
+            clock_info: self
+                .clock_info
+                .iter()
+                .map(|clock_info| clock_info.with_moved_index(link_info.index, 1))
+                .collect(),
+            link_info: self
+                .link_info
+                .iter()
+                .filter(|info| info.id != id)
+                .map(|info| info.with_moved_index(link_info.index, 1))
+                .collect(),
+        })
     }
 
+    /// Get the current offset of a clock in the state, along with the uncertainty of that offset.
     pub fn clock_offset(&self, id: ClockId) -> Result<UncertainValue, EstimatorError> {
         let clock_info = self.get_clock_info(id)?;
         Ok(UncertainValue {
@@ -262,6 +293,7 @@ impl EstimatorState {
         })
     }
 
+    /// Get the current freqency of a clock in the state, along with the uncertainty of that frequency.
     pub fn clock_frequency(&self, id: ClockId) -> Result<UncertainValue, EstimatorError> {
         let clock_info = self.get_clock_info(id)?;
         Ok(UncertainValue {
@@ -269,6 +301,15 @@ impl EstimatorState {
             uncertainty: self.uncertainty
                 [(clock_info.frequency_index(), clock_info.frequency_index())]
                 .sqrt(),
+        })
+    }
+
+    /// Get the current delay of a link in the state, along with the uncertainty of that delay.
+    pub fn link_delay(&self, id: LinkId) -> Result<UncertainValue, EstimatorError> {
+        let link_info = self.get_link_info(id)?;
+        Ok(UncertainValue {
+            value: self.state[(link_info.index, 0)],
+            uncertainty: self.uncertainty[(link_info.index, link_info.index)].sqrt(),
         })
     }
 }
@@ -291,7 +332,7 @@ impl EstimatorState {
 
 #[cfg(test)]
 mod tests {
-    use crate::{ClockId, estimator::EstimatorState};
+    use crate::{ClockId, LinkId, estimator::EstimatorState};
 
     macro_rules! assert_almost_eq {
         ($left:expr, $right:expr) => {
@@ -335,6 +376,7 @@ mod tests {
         let state = state
             .add_clock(ClockId(1), (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
             .unwrap();
+        let state = state.add_link(LinkId(1), (0.5, 0.2).into()).unwrap();
         let state = state
             .add_clock(ClockId(2), (0.0, 1e-5).into(), (-1e-6, 1e-7).into(), 0.0)
             .unwrap();
@@ -353,6 +395,11 @@ mod tests {
         );
 
         let state = state.remove_clock(ClockId(1)).unwrap();
+
+        assert_eq!(state.link_delay(LinkId(1)).unwrap().value, 0.5);
+        assert_eq!(state.link_delay(LinkId(1)).unwrap().uncertainty, 0.2);
+
+        let state = state.remove_link(LinkId(1)).unwrap();
 
         assert_eq!(state.clock_frequency(ClockId(2)).unwrap().value, -1e-6);
         assert_eq!(state.clock_frequency(ClockId(2)).unwrap().uncertainty, 1e-7);
@@ -383,5 +430,15 @@ mod tests {
             state_at_once.clock_frequency(ClockId(1)).unwrap(),
             state_via_intermediate.clock_frequency(ClockId(1)).unwrap()
         );
+    }
+
+    #[test]
+    fn test_add_link() {
+        let state = EstimatorState::empty(0.0);
+        let state = state
+            .add_link(LinkId(1), (1.0, 2.0).into())
+            .expect("Failed to add link");
+        assert_eq!(state.link_delay(LinkId(1)).unwrap().value, 1.0);
+        assert_eq!(state.link_delay(LinkId(1)).unwrap().uncertainty, 2.0);
     }
 }
