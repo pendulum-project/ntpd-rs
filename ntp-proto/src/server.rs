@@ -125,10 +125,10 @@ impl<C> Server<C> {
     }
 
     fn intended_action(&mut self, client_ip: IpAddr) -> (ServerResponse, ServerReason) {
-        if self.denyfilter.is_in(&client_ip) {
+        if self.denyfilter.is_in(client_ip) {
             // First apply denylist
             (self.config.denylist.action.into(), ServerReason::Policy)
-        } else if !self.allowfilter.is_in(&client_ip) {
+        } else if !self.allowfilter.is_in(client_ip) {
             // Then allowlist
             (self.config.allowlist.action.into(), ServerReason::Policy)
         } else if !self.client_cache.is_allowed(
@@ -422,6 +422,7 @@ pub enum SubnetParseError {
     Subnet,
     Ip(AddrParseError),
     Mask,
+    MaskV4Range,
 }
 
 impl std::error::Error for SubnetParseError {}
@@ -432,6 +433,10 @@ impl Display for SubnetParseError {
             Self::Subnet => write!(f, "Invalid subnet syntax"),
             Self::Ip(e) => write!(f, "{e} in subnet"),
             Self::Mask => write!(f, "Invalid subnet mask"),
+            Self::MaskV4Range => write!(
+                f,
+                "Subnet mask overflows the IPv4 range of an IPv4-mapped IPv6 address"
+            ),
         }
     }
 }
@@ -449,6 +454,17 @@ impl std::str::FromStr for IpSubnet {
         let (addr, mask) = s.split_once('/').ok_or(SubnetParseError::Subnet)?;
         let addr: IpAddr = addr.parse()?;
         let mask: u8 = mask.parse().map_err(|_| SubnetParseError::Mask)?;
+
+        // Canonicalize IPv4-mapped IPv6 addresses (e.g. `::ffff:192.168.0.0`)
+        // to their IPv4 form so they match against canonicalized filtered IPs.
+        let (addr, mask) = match (addr, addr.to_canonical()) {
+            (IpAddr::V6(_), canonical @ IpAddr::V4(_)) => {
+                let mask = mask.checked_sub(96).ok_or(SubnetParseError::MaskV4Range)?;
+                (canonical, mask)
+            }
+            _ => (addr, mask),
+        };
+
         let max_mask = match addr {
             IpAddr::V4(_) => 32,
             IpAddr::V6(_) => 128,
@@ -456,6 +472,7 @@ impl std::str::FromStr for IpSubnet {
         if mask > max_mask {
             return Err(SubnetParseError::Mask);
         }
+
         Ok(IpSubnet { addr, mask })
     }
 }

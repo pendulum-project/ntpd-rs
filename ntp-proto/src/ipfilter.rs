@@ -200,19 +200,20 @@ impl IpFilter {
 
     /// Check whether a given ip address is contained in the filter.
     /// Complexity: O(1)
-    pub fn is_in(&self, addr: &IpAddr) -> bool {
+    pub fn is_in(&self, addr: IpAddr) -> bool {
+        let addr = addr.to_canonical();
         match addr {
             IpAddr::V4(addr) => self.is_in4(addr),
             IpAddr::V6(addr) => self.is_in6(addr),
         }
     }
 
-    fn is_in4(&self, addr: &Ipv4Addr) -> bool {
+    fn is_in4(&self, addr: Ipv4Addr) -> bool {
         self.ipv4_filter
             .lookup((u32::from_be_bytes(addr.octets()) as u128) << 96)
     }
 
-    fn is_in6(&self, addr: &Ipv6Addr) -> bool {
+    fn is_in6(&self, addr: Ipv6Addr) -> bool {
         self.ipv6_filter.lookup(u128::from_be_bytes(addr.octets()))
     }
 }
@@ -229,7 +230,7 @@ pub mod fuzz {
     use super::*;
 
     fn contains(subnet: &IpSubnet, addr: &IpAddr) -> bool {
-        match (subnet.addr, addr) {
+        match (subnet.addr, addr.to_canonical()) {
             (IpAddr::V4(net), IpAddr::V4(addr)) => {
                 let net = u32::from_be_bytes(net.octets());
                 let addr = u32::from_be_bytes(addr.octets());
@@ -263,13 +264,15 @@ pub mod fuzz {
         let filter = IpFilter::new(nets);
 
         for addr in addr {
-            assert_eq!(filter.is_in(addr), any_contains(nets, addr));
+            assert_eq!(filter.is_in(*addr), any_contains(nets, addr));
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::SubnetParseError;
+
     use super::*;
 
     #[test]
@@ -295,31 +298,45 @@ mod tests {
     fn test_filter() {
         let filter = IpFilter::new(&[
             "127.0.0.0/24".parse().unwrap(),
-            "::FFFF:0000:0000/96".parse().unwrap(),
+            "::FFFF:192.168.0.0/104".parse().unwrap(),
         ]);
-        assert!(filter.is_in(&"127.0.0.1".parse().unwrap()));
-        assert!(!filter.is_in(&"192.168.1.1".parse().unwrap()));
-        assert!(filter.is_in(&"::FFFF:ABCD:0123".parse().unwrap()));
-        assert!(!filter.is_in(&"::FEEF:ABCD:0123".parse().unwrap()));
+        assert!(filter.is_in("127.0.0.1".parse().unwrap()));
+        assert!(!filter.is_in("10.0.1.1".parse().unwrap()));
+        assert!(filter.is_in("::FFFF:192.168.1.1".parse().unwrap()));
+        assert!(!filter.is_in("::FFFF:10.0.0.5".parse().unwrap()));
+        assert!(!filter.is_in("::FEEF:ABCD:1234".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_subnet_mapped_ipv4_overlap() {
+        let subnet_err = "::FFFF:192.168.0.0/95".parse::<IpSubnet>().unwrap_err();
+        assert_eq!(subnet_err, SubnetParseError::MaskV4Range);
+    }
+
+    #[test]
+    fn test_subnet_mapped_ipv4() {
+        let subnet = "::FFFF:192.168.0.0/120".parse::<IpSubnet>().unwrap();
+        assert_eq!(subnet.addr, "192.168.0.0".parse::<IpAddr>().unwrap());
+        assert_eq!(subnet.mask, 24);
     }
 
     #[test]
     fn test_subnet_edgecases() {
         let filter = IpFilter::new(&["0.0.0.0/0".parse().unwrap(), "::/0".parse().unwrap()]);
 
-        assert!(filter.is_in(&"0.0.0.0".parse().unwrap()));
-        assert!(filter.is_in(&"255.255.255.255".parse().unwrap()));
-        assert!(filter.is_in(&"::".parse().unwrap()));
-        assert!(filter.is_in(&"FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF".parse().unwrap()));
+        assert!(filter.is_in("0.0.0.0".parse().unwrap()));
+        assert!(filter.is_in("255.255.255.255".parse().unwrap()));
+        assert!(filter.is_in("::".parse().unwrap()));
+        assert!(filter.is_in("FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF".parse().unwrap()));
 
         let filter = IpFilter::new(&[
             "1.2.3.4/32".parse().unwrap(),
             "10:32:54:76:98:BA:DC:FE/128".parse().unwrap(),
         ]);
 
-        assert!(filter.is_in(&"1.2.3.4".parse().unwrap()));
-        assert!(!filter.is_in(&"1.2.3.5".parse().unwrap()));
-        assert!(filter.is_in(&"10:32:54:76:98:BA:DC:FE".parse().unwrap()));
-        assert!(!filter.is_in(&"10:32:54:76:98:BA:DC:FF".parse().unwrap()));
+        assert!(filter.is_in("1.2.3.4".parse().unwrap()));
+        assert!(!filter.is_in("1.2.3.5".parse().unwrap()));
+        assert!(filter.is_in("10:32:54:76:98:BA:DC:FE".parse().unwrap()));
+        assert!(!filter.is_in("10:32:54:76:98:BA:DC:FF".parse().unwrap()));
     }
 }
