@@ -154,6 +154,7 @@ async fn observer<C: 'static + NtpClock + Send>(
                 server_reader,
                 system_reader,
                 now,
+                update_system_clock,
             )
             .await
         };
