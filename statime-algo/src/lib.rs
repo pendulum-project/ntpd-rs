@@ -9,5 +9,5 @@ struct ClockId(u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct LinkId(u64);
 
-mod matrix;
 mod estimator;
+mod matrix;

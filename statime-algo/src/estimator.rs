@@ -14,6 +14,7 @@ pub(crate) enum EstimatorError {
     ClockAlreadyExists,
     LinkNotFound,
     LinkAlreadyExists,
+    MeasurementBetweenExternalClocks,
     MatrixError(MatrixError),
 }
 
@@ -60,6 +61,8 @@ impl ClockInfo {
 struct LinkInfo {
     id: LinkId,
     index: usize,
+    // Fraction of the link delay that we assume the error increases by every measurement
+    decay_rate: f64,
 }
 
 impl LinkInfo {
@@ -67,6 +70,7 @@ impl LinkInfo {
         LinkInfo {
             id: self.id,
             index: new_index,
+            decay_rate: self.decay_rate,
         }
     }
 
@@ -151,6 +155,11 @@ impl EstimatorState {
                 delta_t * clock_info.wander.powi(2);
         }
 
+        for link_info in &self.link_info {
+            noise[(link_info.index, link_info.index)] =
+                delta_t * ((link_info.decay_rate * self.state[(link_info.index, 0)]).powi(2));
+        }
+
         EstimatorState {
             time: new_time,
             state: update.clone() * self.state.clone(),
@@ -172,12 +181,24 @@ impl EstimatorState {
         offset: UncertainValue,
         link_delay: Option<LinkId>,
     ) -> Result<EstimatorState, EstimatorError> {
-        let from_clock_info = self.get_clock_info(from)?;
-        let to_clock_info = self.get_clock_info(to)?;
-
         let mut measurement_projection = Matrix::zero(1, self.state.rows());
-        measurement_projection[(0, from_clock_info.offset_index())] = -1.0;
-        measurement_projection[(0, to_clock_info.offset_index())] = 1.0;
+
+        let from_external = self.external_clocks.contains(&from);
+        let to_external = self.external_clocks.contains(&to);
+
+        if from_external && to_external {
+            return Err(EstimatorError::MeasurementBetweenExternalClocks);
+        }
+
+        if !from_external {
+            let from_clock_info = self.get_clock_info(from)?;
+            measurement_projection[(0, from_clock_info.offset_index())] = -1.0;
+        }
+
+        if !to_external {
+            let to_clock_info = self.get_clock_info(to)?;
+            measurement_projection[(0, to_clock_info.offset_index())] = 1.0;
+        }
 
         if let Some(link_delay) = link_delay {
             let link_delay_info = self.get_link_info(link_delay)?;
@@ -229,11 +250,41 @@ impl EstimatorState {
 
     /// Add an external clock to the estimator state.
     pub fn add_external_clock(&self, id: ClockId) -> Result<EstimatorState, EstimatorError> {
-        todo!()
+        if self.clock_info.iter().any(|info| info.id == id) || self.external_clocks.contains(&id) {
+            return Err(EstimatorError::ClockAlreadyExists);
+        }
+
+        let mut external_clocks = self.external_clocks.clone();
+        external_clocks.push(id);
+
+        Ok(EstimatorState {
+            time: self.time,
+            state: self.state.clone(),
+            uncertainty: self.uncertainty.clone(),
+            clock_info: self.clock_info.clone(),
+            external_clocks,
+            link_info: self.link_info.clone(),
+        })
     }
 
     pub fn remove_external_clock(&self, id: ClockId) -> Result<EstimatorState, EstimatorError> {
-        todo!()
+        if !self.external_clocks.contains(&id) {
+            return Err(EstimatorError::ClockAlreadyExists);
+        }
+
+        Ok(EstimatorState {
+            time: self.time,
+            state: self.state.clone(),
+            uncertainty: self.uncertainty.clone(),
+            clock_info: self.clock_info.clone(),
+            external_clocks: self
+                .external_clocks
+                .iter()
+                .filter(|val| **val != id)
+                .copied()
+                .collect(),
+            link_info: self.link_info.clone(),
+        })
     }
 
     /// Add a new clock to the estimator state.'
@@ -299,10 +350,13 @@ impl EstimatorState {
     }
 
     /// Add a new link to the estimator state.
+    ///
+    /// The decay rate is the amount the uncertainty on the link delay increases every measurement on this link.
     pub fn add_link(
         &self,
         id: LinkId,
         initial_delay: UncertainValue,
+        decay_rate: f64,
     ) -> Result<EstimatorState, EstimatorError> {
         if self.link_info.iter().any(|info| info.id == id) {
             return Err(EstimatorError::LinkAlreadyExists);
@@ -311,6 +365,7 @@ impl EstimatorState {
         let new_link_info = LinkInfo {
             id,
             index: self.state.rows(),
+            decay_rate,
         };
 
         let mut link_info = self.link_info.clone();
@@ -447,10 +502,11 @@ mod tests {
         let state = state
             .add_clock(ClockId(1), (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
             .unwrap();
-        let state = state.add_link(LinkId(1), (0.5, 0.2).into()).unwrap();
+        let state = state.add_link(LinkId(1), (0.5, 0.2).into(), 0.0).unwrap();
         let state = state
             .add_clock(ClockId(2), (0.0, 1e-5).into(), (-1e-6, 1e-7).into(), 0.0)
             .unwrap();
+        let state = state.add_link(LinkId(2), (2.0, 0.0).into(), 0.1).unwrap();
         let state = state.progress_time(100.0);
         assert_eq!(state.clock_frequency(ClockId(1)).unwrap().value, 1e-6);
         // Random walk noise, so frequency deviation is sqrt(time_interval)*wander.
@@ -478,6 +534,11 @@ mod tests {
         assert_almost_eq!(
             state.clock_offset(ClockId(2)).unwrap().uncertainty,
             1e-5 * (2.0f64.sqrt())
+        );
+
+        assert_uv_almost_eq!(
+            state.link_delay(LinkId(2)).unwrap(),
+            UncertainValue::from((2.0, 2.0))
         );
     }
 
@@ -507,7 +568,7 @@ mod tests {
     fn test_add_link() {
         let state = EstimatorState::empty(0.0);
         let state = state
-            .add_link(LinkId(1), (1.0, 2.0).into())
+            .add_link(LinkId(1), (1.0, 2.0).into(), 0.0)
             .expect("Failed to add link");
         assert_eq!(state.link_delay(LinkId(1)).unwrap().value, 1.0);
         assert_eq!(state.link_delay(LinkId(1)).unwrap().uncertainty, 2.0);
@@ -595,7 +656,7 @@ mod tests {
         let state = state
             .add_clock(ClockId(2), (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
             .unwrap();
-        let state = state.add_link(LinkId(1), (1.0, 0.0).into()).unwrap();
+        let state = state.add_link(LinkId(1), (1.0, 0.0).into(), 0.0).unwrap();
 
         let state = state
             .measurement(
@@ -634,15 +695,10 @@ mod tests {
         let state = state
             .add_clock(ClockId(2), (0.0, 0.0).into(), (0.0, 1e-8).into(), 1e-8)
             .unwrap();
-        let state = state.add_link(LinkId(1), (0.0, 0.1).into()).unwrap();
+        let state = state.add_link(LinkId(1), (0.0, 0.1).into(), 0.0).unwrap();
 
         let state = state
-            .measurement(
-                ClockId(1),
-                ClockId(2),
-                (1.0, 0.1).into(),
-                Some(LinkId(1)),
-            )
+            .measurement(ClockId(1), ClockId(2), (1.0, 0.1).into(), Some(LinkId(1)))
             .unwrap();
 
         assert_uv_almost_eq!(
@@ -663,9 +719,52 @@ mod tests {
         );
         assert_uv_almost_eq!(
             state.link_delay(LinkId(1)).unwrap(),
-            UncertainValue::from((0.5, 0.1/(2.0f64.sqrt())))
+            UncertainValue::from((0.5, 0.1 / (2.0f64.sqrt())))
         );
     }
 
-    fn test_measure_external_clock_no_link() {}
+    #[test]
+    fn test_measure_external_clock_no_link() {
+        let state = EstimatorState::empty(0.0);
+        let state = state
+            .add_clock(ClockId(1), (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
+            .unwrap();
+        let state = state.add_external_clock(ClockId(2)).unwrap();
+
+        let state = state
+            .measurement(ClockId(2), ClockId(1), (1.0, 0.1).into(), None)
+            .unwrap();
+
+        assert_uv_almost_eq!(
+            state.clock_offset(ClockId(1)).unwrap(),
+            UncertainValue::from((0.5, 0.1 / (2.0f64.sqrt())))
+        );
+
+        assert_uv_almost_eq!(
+            state.clock_frequency(ClockId(1)).unwrap(),
+            UncertainValue::from((0.0, 1e-8))
+        );
+
+        let state = EstimatorState::empty(0.0);
+        let state = state
+            .add_clock(ClockId(1), (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
+            .unwrap();
+        let state = state.add_external_clock(ClockId(2)).unwrap();
+
+        let state = state
+            .measurement(ClockId(1), ClockId(2), (1.0, 0.1).into(), None)
+            .unwrap();
+
+        assert_uv_almost_eq!(
+            state.clock_offset(ClockId(1)).unwrap(),
+            UncertainValue::from((-0.5, 0.1 / (2.0f64.sqrt())))
+        );
+
+        assert_uv_almost_eq!(
+            state.clock_frequency(ClockId(1)).unwrap(),
+            UncertainValue::from((0.0, 1e-8))
+        );
+
+        assert!(state.remove_external_clock(ClockId(2)).is_ok());
+    }
 }
