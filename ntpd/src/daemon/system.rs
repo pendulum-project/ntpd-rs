@@ -9,8 +9,7 @@ use crate::daemon::{
 
 use super::spawn::nts_pool::NtsPoolSpawner;
 use super::{
-    clock::NtpClockWrapper,
-    config::{ClockConfig, NtpSourceConfig, ServerConfig, TimestampMode},
+    config::{NtpSourceConfig, ServerConfig, TimestampMode},
     ntp_source::{MsgForSystem, SourceChannels, SourceTask},
     server::{ServerStats, ServerTask},
     spawn::{
