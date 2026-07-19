@@ -18,6 +18,7 @@ use super::{
         nts::NtsSpawner, pool::PoolSpawner, sock::SockSpawner, standard::StandardSpawner,
     },
 };
+use super::clock::TrueTimeClock;
 
 #[cfg(feature = "pps")]
 use super::spawn::pps::PpsSpawner;
@@ -56,23 +57,29 @@ pub struct DaemonChannels {
         reason = "FIXME: System needs a larger refactor to properly receive configuration"
     )
 )]
-pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper>>(
+pub async fn spawn<C, Controller>(
     synchronization_config: SynchronizationConfig,
     algorithm_config: Controller::AlgorithmConfig,
     source_defaults_config: SourceConfig,
-    clock_config: ClockConfig,
+    clock: C,
+    interface: Option<InterfaceName>,
+    timestamp_mode: TimestampMode,
     source_configs: &[NtpSourceConfig],
     server_configs: &[ServerConfig],
     #[cfg(target_os = "linux")] csptp_server_configs: &[crate::daemon::config::CsptpServerConfig],
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
     #[cfg(target_os = "linux")] csptp_config: CsptpConfig,
-) -> std::io::Result<(JoinHandle<std::io::Result<()>>, DaemonChannels)> {
+) -> std::io::Result<(JoinHandle<std::io::Result<()>>, DaemonChannels)>
+where
+    C: NtpClock + TrueTimeClock + Clone + Send + Sync + 'static,
+    Controller: TimeSyncController<Clock = C>,
+{
     let ip_list = super::local_ip_provider::spawn()?;
 
     let (mut system, channels) = SystemTask::<_, Controller>::new(
-        clock_config.clock,
-        clock_config.interface,
-        clock_config.timestamp_mode,
+        clock,
+        interface,
+        timestamp_mode,
         synchronization_config,
         algorithm_config,
         &keyset,
@@ -190,7 +197,7 @@ struct SystemTask<C: NtpClock, Controller: TimeSyncController<Clock = C>> {
     interface: Option<InterfaceName>,
 }
 
-impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C>> SystemTask<C, Controller> {
+impl<C: NtpClock + TrueTimeClock + Sync, Controller: TimeSyncController<Clock = C>> SystemTask<C, Controller> {
     #[expect(clippy::too_many_arguments)]
     fn new(
         clock: C,
@@ -640,6 +647,7 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C>> SystemTask<C
         );
         ServerTask::spawn(
             server,
+            self.clock.clone(),
             config,
             stats,
             self.keyset.clone(),
