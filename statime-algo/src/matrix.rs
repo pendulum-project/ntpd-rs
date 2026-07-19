@@ -198,10 +198,10 @@ impl<Storage: MatrixStorage> IndexMut<(usize, usize)> for Matrix<Storage> {
     }
 }
 
-impl<Storage: MatrixStorage> Add<Matrix<Storage>> for Matrix<Storage> {
+impl<Storage: MatrixStorage> Add<&Matrix<Storage>> for &Matrix<Storage> {
     type Output = Matrix<Storage>;
 
-    fn add(self, rhs: Matrix<Storage>) -> Self::Output {
+    fn add(self, rhs: &Matrix<Storage>) -> Self::Output {
         assert_eq!(self.cols, rhs.cols);
         assert_eq!(self.rows, rhs.rows);
 
@@ -216,8 +216,32 @@ impl<Storage: MatrixStorage> Add<Matrix<Storage>> for Matrix<Storage> {
     }
 }
 
-impl<Storage: MatrixStorage> AddAssign<Matrix<Storage>> for Matrix<Storage> {
-    fn add_assign(&mut self, rhs: Matrix<Storage>) {
+impl<Storage: MatrixStorage> Add<Matrix<Storage>> for &Matrix<Storage> {
+    type Output = Matrix<Storage>;
+
+    fn add(self, rhs: Matrix<Storage>) -> Self::Output {
+        self + &rhs
+    }
+}
+
+impl<Storage: MatrixStorage> Add<&Matrix<Storage>> for Matrix<Storage> {
+    type Output = Matrix<Storage>;
+
+    fn add(self, rhs: &Matrix<Storage>) -> Self::Output {
+        &self + rhs
+    }
+}
+
+impl<Storage: MatrixStorage> Add<Matrix<Storage>> for Matrix<Storage> {
+    type Output = Matrix<Storage>;
+
+    fn add(self, rhs: Matrix<Storage>) -> Self::Output {
+        &self + &rhs
+    }
+}
+
+impl<Storage: MatrixStorage> AddAssign<&Matrix<Storage>> for Matrix<Storage> {
+    fn add_assign(&mut self, rhs: &Matrix<Storage>) {
         assert_eq!(self.cols, rhs.cols);
         assert_eq!(self.rows, rhs.rows);
         let lhs = self.storage.as_mut();
@@ -228,10 +252,16 @@ impl<Storage: MatrixStorage> AddAssign<Matrix<Storage>> for Matrix<Storage> {
     }
 }
 
-impl<Storage: MatrixStorage> Sub<Matrix<Storage>> for Matrix<Storage> {
+impl<Storage: MatrixStorage> AddAssign<Matrix<Storage>> for Matrix<Storage> {
+    fn add_assign(&mut self, rhs: Matrix<Storage>) {
+        *self += &rhs;
+    }
+}
+
+impl<Storage: MatrixStorage> Sub<&Matrix<Storage>> for &Matrix<Storage> {
     type Output = Matrix<Storage>;
 
-    fn sub(self, rhs: Matrix<Storage>) -> Self::Output {
+    fn sub(self, rhs: &Matrix<Storage>) -> Self::Output {
         assert_eq!(self.cols, rhs.cols);
         assert_eq!(self.rows, rhs.rows);
 
@@ -246,8 +276,32 @@ impl<Storage: MatrixStorage> Sub<Matrix<Storage>> for Matrix<Storage> {
     }
 }
 
-impl<Storage: MatrixStorage> SubAssign<Matrix<Storage>> for Matrix<Storage> {
-    fn sub_assign(&mut self, rhs: Matrix<Storage>) {
+impl<Storage: MatrixStorage> Sub<&Matrix<Storage>> for Matrix<Storage> {
+    type Output = Matrix<Storage>;
+
+    fn sub(self, rhs: &Matrix<Storage>) -> Self::Output {
+        &self - rhs
+    }
+}
+
+impl<Storage: MatrixStorage> Sub<Matrix<Storage>> for &Matrix<Storage> {
+    type Output = Matrix<Storage>;
+
+    fn sub(self, rhs: Matrix<Storage>) -> Self::Output {
+        self - &rhs
+    }
+}
+
+impl<Storage: MatrixStorage> Sub<Matrix<Storage>> for Matrix<Storage> {
+    type Output = Matrix<Storage>;
+
+    fn sub(self, rhs: Matrix<Storage>) -> Self::Output {
+        &self - &rhs
+    }
+}
+
+impl<Storage: MatrixStorage> SubAssign<&Matrix<Storage>> for Matrix<Storage> {
+    fn sub_assign(&mut self, rhs: &Matrix<Storage>) {
         assert_eq!(self.cols, rhs.cols);
         assert_eq!(self.rows, rhs.rows);
         let lhs = self.storage.as_mut();
@@ -258,10 +312,16 @@ impl<Storage: MatrixStorage> SubAssign<Matrix<Storage>> for Matrix<Storage> {
     }
 }
 
-impl<Storage: MatrixStorage> Mul<Matrix<Storage>> for f64 {
+impl<Storage: MatrixStorage> SubAssign<Matrix<Storage>> for Matrix<Storage> {
+    fn sub_assign(&mut self, rhs: Matrix<Storage>) {
+        *self -= &rhs;
+    }
+}
+
+impl<Storage: MatrixStorage> Mul<&Matrix<Storage>> for f64 {
     type Output = Matrix<Storage>;
 
-    fn mul(self, rhs: Matrix<Storage>) -> Self::Output {
+    fn mul(self, rhs: &Matrix<Storage>) -> Self::Output {
         let rows = rhs.rows;
         let cols = rhs.cols;
         let rhs = rhs.storage.as_ref();
@@ -274,7 +334,15 @@ impl<Storage: MatrixStorage> Mul<Matrix<Storage>> for f64 {
     }
 }
 
-impl<Storage: MatrixStorage> Mul<f64> for Matrix<Storage> {
+impl<Storage: MatrixStorage> Mul<Matrix<Storage>> for f64 {
+    type Output = Matrix<Storage>;
+
+    fn mul(self, rhs: Matrix<Storage>) -> Self::Output {
+        self * &rhs
+    }
+}
+
+impl<Storage: MatrixStorage> Mul<f64> for &Matrix<Storage> {
     type Output = Matrix<Storage>;
 
     fn mul(self, rhs: f64) -> Self::Output {
@@ -288,7 +356,15 @@ impl<Storage: MatrixStorage> Mul<f64> for Matrix<Storage> {
     }
 }
 
-impl<Storage: MatrixStorage> Div<f64> for Matrix<Storage> {
+impl<Storage: MatrixStorage> Mul<f64> for Matrix<Storage> {
+    type Output = Matrix<Storage>;
+
+    fn mul(self, rhs: f64) -> Self::Output {
+        &self * rhs
+    }
+}
+
+impl<Storage: MatrixStorage> Div<f64> for &Matrix<Storage> {
     type Output = Matrix<Storage>;
 
     fn div(self, rhs: f64) -> Self::Output {
@@ -302,10 +378,18 @@ impl<Storage: MatrixStorage> Div<f64> for Matrix<Storage> {
     }
 }
 
-impl<Storage: MatrixStorage> Mul<Matrix<Storage>> for Matrix<Storage> {
+impl<Storage: MatrixStorage> Div<f64> for Matrix<Storage> {
     type Output = Matrix<Storage>;
 
-    fn mul(self, rhs: Matrix<Storage>) -> Self::Output {
+    fn div(self, rhs: f64) -> Self::Output {
+        &self / rhs
+    }
+}
+
+impl<Storage: MatrixStorage> Mul<&Matrix<Storage>> for &Matrix<Storage> {
+    type Output = Matrix<Storage>;
+
+    fn mul(self, rhs: &Matrix<Storage>) -> Self::Output {
         assert_eq!(self.cols, rhs.rows);
 
         let lhs_storage = self.storage.as_ref();
@@ -322,6 +406,30 @@ impl<Storage: MatrixStorage> Mul<Matrix<Storage>> for Matrix<Storage> {
                     .sum::<f64>()
             }),
         }
+    }
+}
+
+impl<Storage: MatrixStorage> Mul<&Matrix<Storage>> for Matrix<Storage> {
+    type Output = Matrix<Storage>;
+
+    fn mul(self, rhs: &Matrix<Storage>) -> Self::Output {
+        &self * rhs
+    }
+}
+
+impl<Storage: MatrixStorage> Mul<Matrix<Storage>> for &Matrix<Storage> {
+    type Output = Matrix<Storage>;
+
+    fn mul(self, rhs: Matrix<Storage>) -> Self::Output {
+        self * &rhs
+    }
+}
+
+impl<Storage: MatrixStorage> Mul<Matrix<Storage>> for Matrix<Storage> {
+    type Output = Matrix<Storage>;
+
+    fn mul(self, rhs: Matrix<Storage>) -> Self::Output {
+        &self * &rhs
     }
 }
 
