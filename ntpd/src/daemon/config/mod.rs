@@ -385,6 +385,10 @@ fn default_metrics_exporter_listen() -> SocketAddr {
     "127.0.0.1:9975".parse().unwrap()
 }
 
+
+fn default_update_system_clock() -> bool {
+    true
+}
 #[derive(Deserialize, Debug, Default)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct DaemonSynchronizationConfig {
@@ -393,6 +397,9 @@ pub struct DaemonSynchronizationConfig {
 
     #[serde(default)]
     pub algorithm: AlgorithmConfig,
+
+    #[serde(default = "default_update_system_clock", rename = "update-system-clock")]
+    pub update_system_clock: bool,
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -517,6 +524,14 @@ impl Config {
             info!("No sources configured. Daemon will not change system time.");
         }
 
+
+        if !self.synchronization.update_system_clock {
+            warn!(
+                "update-system-clock is disabled. The daemon will not adjust the OS clock. \
+                 Ensure [[server]] blocks are configured if you intend to serve time, \
+                 otherwise this instance will only monitor without acting."
+            );
+        }
         if !self.sources.is_empty()
             && self.count_sources()
                 < self
