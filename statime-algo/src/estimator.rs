@@ -21,6 +21,10 @@ pub enum EstimatorError {
     LinkAlreadyExists,
     /// Measurement between two external clocks is not allowed
     MeasurementBetweenExternalClocks,
+    /// Measurement between a clock with itself is not allowed
+    MeasurementBetweenSelf,
+    /// Time moved backwards, which is not allowed
+    NonMonotonicTimeProgression,
     /// Error from the underlying matrix library
     MatrixError(MatrixError),
 }
@@ -195,6 +199,13 @@ impl LinkInfoList {
 }
 
 /// Represents the state of the estimator at a given point in time.
+///
+/// Note how mutating methods on this all consume self. This is on purpose,
+/// as it makes it easier to reason about the state of the estimator. This
+/// does however mean that errors result in the state being lost. In general
+/// it is expected that most errors are unrecoverable. Typically one would
+/// keep a list of some of the most recent states though, they could be used
+/// for error recovery, but also for tracability and debugging.
 #[derive(Debug, Clone)]
 pub struct EstimatorState {
     time: Timestamp,
@@ -241,7 +252,17 @@ impl EstimatorState {
     }
 
     /// Progress the estimator state to the new timestamp.
-    pub fn progress_time(mut self, new_time: Timestamp) -> EstimatorState {
+    pub fn progress_time(mut self, new_time: Timestamp) -> Result<EstimatorState, EstimatorError> {
+        // time should not move backwards
+        if new_time < self.time {
+            return Err(EstimatorError::NonMonotonicTimeProgression);
+        }
+
+        // no time change, return state as is
+        if new_time == self.time {
+            return Ok(self);
+        }
+
         let delta_t = new_time - self.time;
 
         let mut update = Matrix::identity(self.state.rows());
@@ -276,7 +297,7 @@ impl EstimatorState {
         self.state = &update * &self.state;
         self.uncertainty = &update * &self.uncertainty * update.transpose() + noise;
 
-        self
+        Ok(self)
     }
 
     /// Add a new measurement to the estimator state.
@@ -290,6 +311,10 @@ impl EstimatorState {
         offset: UncertainValue,
         link_delay: Option<LinkId>,
     ) -> Result<EstimatorState, EstimatorError> {
+        if from == to {
+            return Err(EstimatorError::MeasurementBetweenSelf);
+        }
+
         let mut measurement_projection = Matrix::zero(1, self.state.rows());
 
         let from_external = self.external_clocks.contains(from);
@@ -592,7 +617,8 @@ mod tests {
             .unwrap()
             .add_link(LinkId(2), (2.0, 0.0).into(), 0.1)
             .unwrap()
-            .progress_time(100.0);
+            .progress_time(100.0)
+            .unwrap();
         assert_eq!(state.clock_frequency(ClockId(1)).unwrap().value, 1e-6);
         // Random walk noise, so frequency deviation is sqrt(time_interval)*wander.
         assert_almost_eq!(state.clock_frequency(ClockId(1)).unwrap().uncertainty, 1e-7);
@@ -633,8 +659,13 @@ mod tests {
             .add_clock(ClockId(1), (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
             .unwrap();
 
-        let state_via_intermediate = state.clone().progress_time(75.0).progress_time(100.0);
-        let state_at_once = state.progress_time(100.0);
+        let state_via_intermediate = state
+            .clone()
+            .progress_time(75.0)
+            .unwrap()
+            .progress_time(100.0)
+            .unwrap();
+        let state_at_once = state.progress_time(100.0).unwrap();
 
         assert_uv_almost_eq!(
             state_at_once.clock_offset(ClockId(1)).unwrap(),
@@ -693,6 +724,7 @@ mod tests {
             .add_clock(ClockId(2), (0.0, 0.0).into(), (0.0, 1e-3).into(), 0.0)
             .unwrap()
             .progress_time(100.0)
+            .unwrap()
             .measurement(
                 ClockId(1),
                 ClockId(2),
@@ -831,6 +863,15 @@ mod tests {
     }
 
     #[test]
+    fn test_negative_time_step() {
+        let state = EstimatorState::empty(0.0);
+        assert_eq!(
+            state.clone().progress_time(-1.0).unwrap_err(),
+            EstimatorError::NonMonotonicTimeProgression
+        );
+    }
+
+    #[test]
     fn test_invalid_measurements() {
         let state = EstimatorState::empty(0.0)
             .add_external_clock(ClockId(1))
@@ -872,6 +913,14 @@ mod tests {
                 .measurement(ClockId(3), ClockId(4), (0.0, 0.1).into(), Some(LinkId(1)))
                 .unwrap_err(),
             EstimatorError::LinkNotFound
+        );
+
+        assert_eq!(
+            state
+                .clone()
+                .measurement(ClockId(3), ClockId(3), (0.0, 0.1).into(), None)
+                .unwrap_err(),
+            EstimatorError::MeasurementBetweenSelf
         );
     }
 }
