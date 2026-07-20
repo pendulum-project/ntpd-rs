@@ -165,12 +165,16 @@ impl<Storage: MatrixStorage> Matrix<Storage> {
         Matrix::new(self.cols, self.rows, |row, column| self[(column, row)])
     }
 
-    pub fn symmetrize(&self) -> Self {
+    pub fn symmetrize(&self) -> Result<Self, MatrixError> {
+        if self.rows != self.cols {
+            return Err(MatrixError::NotSquare);
+        }
+
         // We can get away here without branching because floating point addition is
         // symmetric. (IEEE 754, which is used in rust per the reference).
-        Matrix::new(self.rows, self.cols, |r, c| {
+        Ok(Matrix::new(self.rows, self.cols, |r, c| {
             (self[(r, c)] + self[(c, r)]) / 2.0
-        })
+        }))
     }
 }
 
