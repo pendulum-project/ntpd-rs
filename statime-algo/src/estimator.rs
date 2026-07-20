@@ -39,7 +39,7 @@ impl ExternalClockList {
         ExternalClockList(Vec::new())
     }
 
-    /// Returns true if the given clock is is known as an external clock.
+    /// Returns true if the given clock is known as an external clock.
     fn contains(&self, id: ClockId) -> bool {
         self.0.contains(&id)
     }
@@ -165,7 +165,7 @@ impl LinkInfoList {
     /// Remove the link info for a given id, if it exists.
     /// This updates the indices for links where needed.
     ///
-    /// Returns the removed clock info.
+    /// Returns the removed link info.
     fn remove(&mut self, id: LinkId) -> Result<LinkInfo, EstimatorError> {
         let removed = if let Some(pos) = self.0.iter().position(|info| info.id == id) {
             Ok(self.0.remove(pos))
@@ -209,10 +209,10 @@ pub struct EstimatorState {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct UncertainValue {
     /// Best estimate of the value
-    value: f64,
+    pub value: f64,
     /// Square root of the variance of the value. Corresponds
     /// to 1 standard deviation.
-    uncertainty: f64,
+    pub uncertainty: f64,
 }
 
 /// Convert from a tuple of (value, uncertainty) to an `UncertainValue`.
@@ -333,17 +333,17 @@ impl EstimatorState {
         let update_strength =
             &self.uncertainty * measurement_projection.transpose() / difference_covariance[(0, 0)];
 
-        // This is simply using the strenght we calculated before to update the state
+        // This is simply using the strength we calculated before to update the state
         self.state = &self.state + &update_strength * difference;
 
         // However I don't have a good intuition why this would be its uncertainty. It
         // is derived well on wikipedia, and when having questions I would suggest looking
         // at its page on kalman filters.
-        let prev_step_proporitionality =
+        let prev_step_proportionality =
             Matrix::identity(self.state.rows()) - &update_strength * measurement_projection;
-        self.uncertainty = (&prev_step_proporitionality
+        self.uncertainty = (&prev_step_proportionality
             * &self.uncertainty
-            * prev_step_proporitionality.transpose()
+            * prev_step_proportionality.transpose()
             + &update_strength * offset.uncertainty.powi(2) * update_strength.transpose())
         .symmetrize();
 
@@ -458,7 +458,7 @@ impl EstimatorState {
         })
     }
 
-    /// Get the current freqency of a clock in the state, along with the uncertainty of that frequency.
+    /// Get the current frequency of a clock in the state, along with the uncertainty of that frequency.
     pub fn clock_frequency(&self, id: ClockId) -> Result<UncertainValue, EstimatorError> {
         let clock_info = self.get_clock_info(id)?;
         Ok(UncertainValue {
