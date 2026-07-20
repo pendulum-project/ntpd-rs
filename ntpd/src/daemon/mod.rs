@@ -24,6 +24,7 @@ use std::{error::Error, io::IsTerminal, path::Path};
 
 use ::tracing::info;
 pub use config::Config;
+use self::clock::{NtpClockWrapper, SoftClock};
 use ntp_proto::{KalmanClockController, TimeSyncControllerWrapper};
 pub use observer::ObservableState;
 pub use system::spawn;
@@ -155,13 +156,15 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
         let clock_config = config::ClockConfig::default();
 
         ::tracing::debug!("Configuration loaded, spawning daemon jobs");
-        let clock = clock_config.clock;
+        let clock = SoftClock::new(clock_config.clock, config.synchronization.update_system_clock);
         let (main_loop_handle, channels) =
-            spawn::<TimeSyncControllerWrapper<KalmanClockController<_>>>(
+            spawn::<SoftClock<NtpClockWrapper>, TimeSyncControllerWrapper<KalmanClockController<SoftClock<NtpClockWrapper>>>>(
                 config.synchronization.synchronization_base,
                 config.synchronization.algorithm,
                 config.source_defaults,
-                clock_config,
+                clock.clone(),
+                clock_config.interface,
+                clock_config.timestamp_mode,
                 &config.sources,
                 &config.servers,
                 #[cfg(target_os = "linux")]
@@ -182,6 +185,7 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
             channels.server_data_receiver,
             channels.system_snapshot_receiver,
             clock,
+            config.synchronization.update_system_clock,
         );
 
         let _ = notify_ready().await;

@@ -13,6 +13,7 @@ use tokio::task::JoinHandle;
 use tracing::{Instrument, Span, debug, instrument, warn};
 
 use super::{config::ServerConfig, util::convert_net_timestamp};
+use super::clock::TrueTimeClock;
 
 // Maximum size of udp packet we handle
 const MAX_PACKET_SIZE: usize = 1024;
@@ -98,18 +99,20 @@ impl<'de> Deserialize<'de> for Counter {
     }
 }
 
-pub struct ServerTask<C: 'static + NtpClock + Send> {
+pub struct ServerTask<C: 'static + NtpClock + TrueTimeClock + Send> {
     config: ServerConfig,
     network_wait_period: std::time::Duration,
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
     server: Server<C>,
+    clock: C,
     stats: ServerStats,
 }
 
-impl<C: 'static + NtpClock + Send> ServerTask<C> {
+impl<C: 'static + NtpClock + TrueTimeClock + Clone + Send> ServerTask<C> {
     #[instrument(level = tracing::Level::ERROR, name = "Ntp Server", skip_all, fields(address = debug(config.listen)))]
     pub fn spawn(
         server: Server<C>,
+        clock: C,
         config: ServerConfig,
         stats: ServerStats,
         keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
@@ -122,6 +125,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                     network_wait_period,
                     keyset,
                     server,
+                    clock,
                     stats,
                 };
 
@@ -173,9 +177,10 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                             ..
                         }) if let Some(timestamp) = timestamp_data.selected_timestamp() => {
                             let mut send_buf = [0u8; MAX_PACKET_SIZE];
+                            let recv_time = self.clock.to_true_time(convert_net_timestamp(timestamp));
                             match self.server.handle(
                                 source_addr.ip(),
-                                convert_net_timestamp(timestamp),
+                                recv_time,
                                 &buf[..length],
                                 &mut send_buf[..length],
                                 &mut self.stats,
@@ -280,6 +285,12 @@ mod tests {
         }
     }
 
+    impl TrueTimeClock for TestClock {
+        fn to_true_time(&self, system_time: NtpTimestamp) -> NtpTimestamp {
+            system_time
+        }
+    }
+
     fn serialize_packet_unencrypted(send_packet: &NtpPacket) -> Vec<u8> {
         let mut buf = vec![0; MAX_PACKET_SIZE];
         let mut cursor = Cursor::new(buf.as_mut_slice());
@@ -304,13 +315,14 @@ mod tests {
 
         let server = Server::new_internal(
             config.clone().into(),
-            clock,
+            clock.clone(),
             server_info,
             keyset.borrow().clone(),
         );
 
         let join = ServerTask::spawn(
             server,
+            clock,
             config,
             ServerStats::default(),
             keyset,

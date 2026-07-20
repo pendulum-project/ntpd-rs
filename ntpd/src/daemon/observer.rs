@@ -19,6 +19,8 @@ pub struct ObservableState {
     pub system: SystemSnapshot,
     pub sources: Vec<ObservableSourceState>,
     pub servers: Vec<ObservableServerState>,
+    pub system_clock_adjustment: bool,
+    pub accumulated_offset_ms: Option<f64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -74,12 +76,13 @@ pub fn spawn<C: 'static + NtpClock + Send>(
     server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
     system_reader: tokio::sync::watch::Receiver<SystemSnapshot>,
     clock: C,
+    update_system_clock: bool,
 ) -> JoinHandle<std::io::Result<()>> {
     let config = config.clone();
     tokio::spawn(
         (async move {
             let result =
-                observer(config, sources_reader, server_reader, system_reader, clock).await;
+                observer(config, sources_reader, server_reader, system_reader, clock, update_system_clock).await;
             if let Err(ref e) = result {
                 warn!("Abnormal termination of the state observer: {e}");
                 warn!("The state observer will not be available");
@@ -96,6 +99,7 @@ async fn observer<C: 'static + NtpClock + Send>(
     server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
     system_reader: tokio::sync::watch::Receiver<SystemSnapshot>,
     clock: C,
+    update_system_clock: bool,
 ) -> std::io::Result<()> {
     let start_time = Instant::now();
     let timeout = std::time::Duration::from_millis(500);
@@ -150,6 +154,7 @@ async fn observer<C: 'static + NtpClock + Send>(
                 server_reader,
                 system_reader,
                 now,
+                update_system_clock,
             )
             .await
         };
@@ -172,6 +177,7 @@ async fn handle_connection(
     server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
     system_reader: tokio::sync::watch::Receiver<SystemSnapshot>,
     now: NtpTimestamp,
+    update_system_clock: bool,
 ) -> std::io::Result<()> {
     let observe = ObservableState {
         program: ProgramData::with_dynamics(start_time.elapsed().as_secs_f64(), now),
@@ -183,6 +189,8 @@ async fn handle_connection(
             .collect(),
         system: *system_reader.borrow(),
         servers: server_reader.borrow().iter().map(Into::into).collect(),
+        system_clock_adjustment: update_system_clock,
+        accumulated_offset_ms: None, // TODO: wire through SoftClock when available
     };
 
     super::sockets::write_json(stream, &observe).await?;
