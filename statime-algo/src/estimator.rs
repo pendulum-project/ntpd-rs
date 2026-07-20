@@ -532,6 +532,19 @@ mod tests {
         assert_eq!(state.clock_offset(ClockId(1)).unwrap().uncertainty, 1.0);
         assert_eq!(state.clock_frequency(ClockId(1)).unwrap().value, 2.0);
         assert_eq!(state.clock_frequency(ClockId(1)).unwrap().uncertainty, 3.0);
+
+        assert_eq!(
+            state.clone().add_external_clock(ClockId(1)).unwrap_err(),
+            EstimatorError::ClockAlreadyExists
+        );
+        let state = state.add_external_clock(ClockId(2)).unwrap();
+
+        assert_eq!(
+            state
+                .add_clock(ClockId(2), (0.0, 1.0).into(), (2.0, 3.0).into(), 1e-8)
+                .unwrap_err(),
+            EstimatorError::ClockAlreadyExists
+        );
     }
 
     #[test]
@@ -815,5 +828,50 @@ mod tests {
         );
 
         assert!(state.remove_external_clock(ClockId(2)).is_ok());
+    }
+
+    #[test]
+    fn test_invalid_measurements() {
+        let state = EstimatorState::empty(0.0)
+            .add_external_clock(ClockId(1))
+            .unwrap()
+            .add_external_clock(ClockId(2))
+            .unwrap()
+            .add_clock(ClockId(3), (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
+            .unwrap()
+            .add_clock(ClockId(4), (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
+            .unwrap();
+
+        assert_eq!(
+            state
+                .clone()
+                .measurement(ClockId(1), ClockId(2), (0.0, 0.1).into(), None)
+                .unwrap_err(),
+            EstimatorError::MeasurementBetweenExternalClocks
+        );
+
+        assert_eq!(
+            state
+                .clone()
+                .measurement(ClockId(3), ClockId(5), (0.0, 0.1).into(), None)
+                .unwrap_err(),
+            EstimatorError::ClockNotFound
+        );
+
+        assert_eq!(
+            state
+                .clone()
+                .measurement(ClockId(5), ClockId(3), (0.0, 0.1).into(), None)
+                .unwrap_err(),
+            EstimatorError::ClockNotFound
+        );
+
+        assert_eq!(
+            state
+                .clone()
+                .measurement(ClockId(3), ClockId(4), (0.0, 0.1).into(), Some(LinkId(1)))
+                .unwrap_err(),
+            EstimatorError::LinkNotFound
+        );
     }
 }
