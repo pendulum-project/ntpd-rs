@@ -370,7 +370,7 @@ impl EstimatorState {
             * &self.uncertainty
             * prev_step_proportionality.transpose()
             + &update_strength * offset.uncertainty.powi(2) * update_strength.transpose())
-        .symmetrize();
+        .symmetrize()?;
 
         Ok(self)
     }
