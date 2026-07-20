@@ -104,7 +104,7 @@ impl ClockInfoList {
     /// Update the base indices of all clocks that have a base index greater
     /// than `from`, by subtracting `delta` from them.
     fn update_indices(&mut self, from: usize, delta: usize) {
-        for info in self.0.iter_mut() {
+        for info in &mut self.0 {
             if info.base_index > from {
                 info.base_index -= delta;
             }
@@ -171,7 +171,7 @@ impl LinkInfoList {
 
     /// Update the indices of all links that have an index greater than `from`, by subtracting `delta` from them.
     fn update_indices(&mut self, from: usize, delta: usize) {
-        for info in self.0.iter_mut() {
+        for info in &mut self.0 {
             if info.index > from {
                 info.index -= delta;
             }
@@ -258,6 +258,7 @@ impl EstimatorState {
     /// Create a new empty estimator state at the given timestamp.
     ///
     /// This state has no clocks or links contained in it.
+    #[must_use]
     pub fn empty(time: Timestamp) -> EstimatorState {
         EstimatorState {
             time,
@@ -277,6 +278,7 @@ impl EstimatorState {
         }
 
         // no time change, return state as is
+        #[expect(clippy::float_cmp, reason = "Explicit delta is zero short circuit")]
         if new_time == self.time {
             return Ok(self);
         }
@@ -462,7 +464,7 @@ impl EstimatorState {
 
     /// Add a new link to the estimator state.
     ///
-    /// The decay rate is the amount the uncertainty on the link delay increases every measurement on this link.
+    /// The decay rate is the amount the uncertainty on the link delay increases every second on this link.
     pub fn add_link(
         mut self,
         id: LinkId,

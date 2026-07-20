@@ -173,7 +173,7 @@ impl<Storage: MatrixStorage> Matrix<Storage> {
         // We can get away here without branching because floating point addition is
         // symmetric. (IEEE 754, which is used in rust per the reference).
         Ok(Matrix::new(self.rows, self.cols, |r, c| {
-            (self[(r, c)] + self[(c, r)]) / 2.0
+            f64::midpoint(self[(r, c)], self[(c, r)])
         }))
     }
 }
@@ -377,6 +377,10 @@ impl<Storage: MatrixStorage> Div<f64> for &Matrix<Storage> {
         Matrix {
             rows: self.rows,
             cols: self.cols,
+            #[expect(
+                clippy::suspicious_arithmetic_impl,
+                reason = "False positive, the multiplication is required for division"
+            )]
             storage: Storage::new(self.rows * self.cols, |index| lhs[index] / rhs),
         }
     }
