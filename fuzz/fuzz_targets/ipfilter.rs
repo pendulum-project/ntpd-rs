@@ -22,8 +22,13 @@ impl<'a> Arbitrary<'a> for ASubnet {
             let addr = IpAddr::V4(Ipv4Addr::from(u.arbitrary::<[u8; 4]>()?));
             Ok(ASubnet(IpSubnet { mask, addr }))
         } else {
-            let mask: u8 = u.int_in_range(0..=128)?;
             let addr = IpAddr::V6(Ipv6Addr::from(u.arbitrary::<[u8; 16]>()?));
+            let addr = addr.to_canonical();
+            let mask: u8 = if addr.is_ipv4() {
+                u.int_in_range(0..=32)?
+            } else {
+                u.int_in_range(0..=128)?
+            };
             Ok(ASubnet(IpSubnet { mask, addr }))
         }
     }
