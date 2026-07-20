@@ -497,10 +497,7 @@ impl EstimatorState {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        ClockId, LinkId,
-        estimator::{EstimatorState, UncertainValue},
-    };
+    use super::*;
 
     macro_rules! assert_almost_eq {
         ($left:expr, $right:expr) => {
@@ -535,6 +532,40 @@ mod tests {
         assert_eq!(state.clock_offset(ClockId(1)).unwrap().uncertainty, 1.0);
         assert_eq!(state.clock_frequency(ClockId(1)).unwrap().value, 2.0);
         assert_eq!(state.clock_frequency(ClockId(1)).unwrap().uncertainty, 3.0);
+    }
+
+    #[test]
+    fn test_clock_removal() {
+        let state = EstimatorState::empty(0.0)
+            .add_clock(ClockId(1), (0.0, 1.0).into(), (0.0, 1.0).into(), 1e-8)
+            .unwrap()
+            .add_external_clock(ClockId(2))
+            .unwrap();
+
+        // remove non-existing clock should fail
+        assert_eq!(
+            state.clone().remove_clock(ClockId(3)).unwrap_err(),
+            EstimatorError::ClockNotFound
+        );
+
+        // remove existing clock via external clock removal should fail
+        assert_eq!(
+            state.clone().remove_external_clock(ClockId(1)).unwrap_err(),
+            EstimatorError::ClockNotFound
+        );
+
+        // remove existing external clock via internal clock removal should fail
+        assert_eq!(
+            state.clone().remove_clock(ClockId(2)).unwrap_err(),
+            EstimatorError::ClockNotFound
+        );
+
+        // removing the existing clocks should succeed
+        state
+            .remove_clock(ClockId(1))
+            .unwrap()
+            .remove_external_clock(ClockId(2))
+            .unwrap();
     }
 
     #[test]
