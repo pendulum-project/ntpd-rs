@@ -77,6 +77,8 @@ struct ClockInfo {
 }
 
 impl ClockInfo {
+    const SIZE: usize = 2;
+
     fn offset_index(self) -> usize {
         self.base_index
     }
@@ -110,17 +112,23 @@ impl ClockInfoList {
     }
 
     /// Remove the clock info for a given id, if it exists.
-    /// This updates the base indices of clocks where needed.
+    ///
+    /// Updates the indices for clocks and links where needed.
     ///
     /// Returns the removed clock info.
-    fn remove(&mut self, id: ClockId) -> Result<ClockInfo, EstimatorError> {
+    fn remove(
+        &mut self,
+        id: ClockId,
+        link_info: &mut LinkInfoList,
+    ) -> Result<ClockInfo, EstimatorError> {
         let removed = if let Some(pos) = self.0.iter().position(|info| info.id == id) {
             Ok(self.0.remove(pos))
         } else {
             Err(EstimatorError::ClockNotFound)
         }?;
 
-        self.update_indices(removed.base_index, 2);
+        self.update_indices(removed.base_index, ClockInfo::SIZE);
+        link_info.update_indices(removed.base_index, ClockInfo::SIZE);
 
         Ok(removed)
     }
@@ -149,6 +157,10 @@ struct LinkInfo {
     decay_rate: f64,
 }
 
+impl LinkInfo {
+    const SIZE: usize = 1;
+}
+
 #[derive(Debug, Clone)]
 struct LinkInfoList(Vec<LinkInfo>);
 
@@ -167,17 +179,23 @@ impl LinkInfoList {
     }
 
     /// Remove the link info for a given id, if it exists.
-    /// This updates the indices for links where needed.
+    ///
+    /// Updates the indices for links and clocks where needed.
     ///
     /// Returns the removed link info.
-    fn remove(&mut self, id: LinkId) -> Result<LinkInfo, EstimatorError> {
+    fn remove(
+        &mut self,
+        id: LinkId,
+        clock_info: &mut ClockInfoList,
+    ) -> Result<LinkInfo, EstimatorError> {
         let removed = if let Some(pos) = self.0.iter().position(|info| info.id == id) {
             Ok(self.0.remove(pos))
         } else {
             Err(EstimatorError::LinkNotFound)
         }?;
 
-        self.update_indices(removed.index, 1);
+        self.update_indices(removed.index, LinkInfo::SIZE);
+        clock_info.update_indices(removed.index, LinkInfo::SIZE);
 
         Ok(removed)
     }
@@ -430,11 +448,14 @@ impl EstimatorState {
 
     /// Remove a clock from the estimator state.
     pub fn remove_clock(mut self, id: ClockId) -> Result<EstimatorState, EstimatorError> {
-        let clock_info = self.clock_info.remove(id)?;
+        let clock_info = self.clock_info.remove(id, &mut self.link_info)?;
 
-        self.state = self.state.splice_vec(clock_info.base_index, 2)?;
-        self.uncertainty = self.uncertainty.splice_square(clock_info.base_index, 2)?;
-        self.link_info.update_indices(clock_info.base_index, 2);
+        self.state = self
+            .state
+            .splice_vec(clock_info.base_index, ClockInfo::SIZE)?;
+        self.uncertainty = self
+            .uncertainty
+            .splice_square(clock_info.base_index, ClockInfo::SIZE)?;
 
         Ok(self)
     }
@@ -465,10 +486,11 @@ impl EstimatorState {
 
     /// Remove a link from the estimator state.
     pub fn remove_link(mut self, id: LinkId) -> Result<EstimatorState, EstimatorError> {
-        let removed_info = self.link_info.remove(id)?;
-        self.state = self.state.splice_vec(removed_info.index, 1)?;
-        self.uncertainty = self.uncertainty.splice_square(removed_info.index, 1)?;
-        self.clock_info.update_indices(removed_info.index, 1);
+        let removed_info = self.link_info.remove(id, &mut self.clock_info)?;
+        self.state = self.state.splice_vec(removed_info.index, LinkInfo::SIZE)?;
+        self.uncertainty = self
+            .uncertainty
+            .splice_square(removed_info.index, LinkInfo::SIZE)?;
 
         Ok(self)
     }
