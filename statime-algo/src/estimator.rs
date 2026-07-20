@@ -145,7 +145,7 @@ impl ClockInfoList {
 struct LinkInfo {
     id: LinkId,
     index: usize,
-    // Fraction of the link delay that we assume the error increases by every measurement
+    /// Fraction of the link delay that we assume the error increases by every second
     decay_rate: f64,
 }
 
