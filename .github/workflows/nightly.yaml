@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - 'release/**'
+      - 'debug-freebsd'
   schedule:
     - cron: '0 4 * * *'
   workflow_dispatch: {}

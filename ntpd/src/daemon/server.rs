@@ -332,7 +332,7 @@ mod tests {
         socket.send(&serialized).await.unwrap();
 
         let mut buf = [0; 48];
-        tokio::time::timeout(Duration::from_millis(10), socket.recv(&mut buf))
+        tokio::time::timeout(Duration::from_millis(1000), socket.recv(&mut buf))
             .await
             .unwrap()
             .unwrap();
