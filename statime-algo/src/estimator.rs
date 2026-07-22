@@ -320,6 +320,20 @@ impl EstimatorState {
         Ok(self)
     }
 
+    /// Absorb a change in frequency of a clock.
+    ///
+    /// This function assumes steering happens at the current filter time.
+    pub fn absorb_frequency_steer(
+        mut self,
+        steered_clock: ClockId,
+        frequency_change: f64,
+    ) -> Result<EstimatorState, EstimatorError> {
+        let clock_info = self.get_clock_info(steered_clock)?;
+        let frequency_index = clock_info.frequency_index();
+        self.state[(frequency_index, 0)] += frequency_change;
+        Ok(self)
+    }
+
     /// Add a new measurement to the estimator state.
     ///
     /// Assumes the measurements happens at the time the estimator state is
@@ -674,6 +688,20 @@ mod tests {
         assert_uv_almost_eq!(
             state.link_delay(LinkId(2)).unwrap(),
             UncertainValue::from((2.0, 2.0))
+        );
+    }
+
+    #[test]
+    fn test_frequency_steering() {
+        let state = EstimatorState::empty(0.0)
+            .add_clock(ClockId(1), (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
+            .unwrap()
+            .absorb_frequency_steer(ClockId(1), -1e-6)
+            .unwrap();
+
+        assert_uv_almost_eq!(
+            state.clock_frequency(ClockId(1)).unwrap(),
+            UncertainValue::from((0.0, 0.0))
         );
     }
 
