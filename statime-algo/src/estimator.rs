@@ -540,6 +540,16 @@ impl EstimatorState {
             uncertainty: self.uncertainty[(link_info.index, link_info.index)].sqrt(),
         })
     }
+
+    /// Is a given clock internal
+    pub fn is_internal_clock(&self, id: ClockId) -> bool {
+        self.clock_info.iter().any(|info| info.id == id)
+    }
+
+    /// Is a given clock external
+    pub fn is_external_clock(&self, id: ClockId) -> bool {
+        self.external_clocks.contains(id)
+    }
 }
 
 impl EstimatorState {
