@@ -1,8 +1,5 @@
-use crate::{
-    ClockId, LinkNoiseError::NotEnoughMeasurements, link_noise::LinkNoiseError::InvalidClocks, ringbuffer::UnorderedRingBuffer,
-};
+use crate::{ClockId, ringbuffer::UnorderedRingBuffer};
 
-const DELAYS: usize = 8;
 const MIN_DELAYS_FOR_ESTIMATES: usize = 4;
 /// FIXME: Consider whether we want this configurable.
 const MAX_TIME_BETWEEN_HALVES: f64 = 0.5;
@@ -39,6 +36,9 @@ pub struct LinkNoiseEstimator {
 
 impl LinkNoiseEstimator {
     /// Create a new estimator for the noise on a link between clocks A and B.
+    /// 
+    /// # Errors
+    /// Returns an error if the clocks on either end of the link are identical.
     pub fn new(a: ClockId, b: ClockId) -> Result<Self, LinkNoiseError> {
         if a == b {
             Err(LinkNoiseError::ClocksEqual)
@@ -53,6 +53,9 @@ impl LinkNoiseEstimator {
     }
 
     /// Use a measurement on the link to update our estimates for the noise on the link.
+    /// 
+    /// # Errors
+    /// Return an error when the provided clocks are not part of the link.
     pub fn measurement(
         mut self,
         from: ClockId,
@@ -81,7 +84,7 @@ impl LinkNoiseEstimator {
                 offset,
                 from,
                 to,
-            })
+            });
         }
 
         Ok(self)
@@ -89,7 +92,7 @@ impl LinkNoiseEstimator {
 
     /// The current estimate of the noise on the link
     ///
-    /// Errors:
+    /// # Errors
     /// The noise estimate is only available if sufficient measurements have
     /// occured for a reliable estimate to be made.
     pub fn noise_estimate(&self) -> Result<f64, LinkNoiseError> {
@@ -97,8 +100,16 @@ impl LinkNoiseEstimator {
         if roundtrip_delays.len() < MIN_DELAYS_FOR_ESTIMATES {
             return Err(LinkNoiseError::NotEnoughMeasurements);
         }
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "roundtrip_delays.len() is at most 8, which will fit, therefore the warning is spurious"
+        )]
         let mean = roundtrip_delays.iter().sum::<f64>() / (roundtrip_delays.len() as f64);
 
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "roundtrip_delays.len()-1 is at most 7, which will fit, therefore the warning is spurious"
+        )]
         let variance = roundtrip_delays
             .iter()
             .map(|f| (f - mean).powi(2))
@@ -110,7 +121,7 @@ impl LinkNoiseEstimator {
 
     /// The current estimate of the delay on the link
     ///
-    /// Errors:
+    /// # Errors
     /// The delay estimate is only available if sufficient measurements have
     /// occured for a reliable estimate to be made.
     pub fn delay_estimate(&self) -> Result<f64, LinkNoiseError> {
@@ -119,6 +130,10 @@ impl LinkNoiseEstimator {
             return Err(LinkNoiseError::NotEnoughMeasurements);
         }
 
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "2*roundtrip_delays.len() is at most 16, which will fit, therefore the warning is spurious"
+        )]
         Ok(roundtrip_delays.iter().sum::<f64>() / ((2 * roundtrip_delays.len()) as f64))
     }
 }
