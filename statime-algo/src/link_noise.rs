@@ -1,5 +1,5 @@
 use crate::{
-    ClockId, LinkNoiseError::NotEnoughMeasurements, link_noise::LinkNoiseError::InvalidClocks,
+    ClockId, LinkNoiseError::NotEnoughMeasurements, link_noise::LinkNoiseError::InvalidClocks, ringbuffer::UnorderedRingBuffer,
 };
 
 const DELAYS: usize = 8;
@@ -8,27 +8,6 @@ const MIN_DELAYS_FOR_ESTIMATES: usize = 4;
 const MAX_TIME_BETWEEN_HALVES: f64 = 0.5;
 
 type Timestamp = f64;
-
-#[derive(Debug, Clone, PartialEq, Default)]
-struct UnorderedRingBuffer {
-    values: [f64; DELAYS],
-    n_values: usize,
-    write_idx: usize,
-}
-
-impl UnorderedRingBuffer {
-    fn insert(&mut self, value: f64) {
-        self.values[self.write_idx] = value;
-        self.write_idx = (self.write_idx + 1) % DELAYS;
-        self.n_values = (self.n_values + 1).min(DELAYS);
-    }
-}
-
-impl AsRef<[f64]> for UnorderedRingBuffer {
-    fn as_ref(&self) -> &[f64] {
-        &self.values[..self.n_values]
-    }
-}
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct PreviousMeasurement {
