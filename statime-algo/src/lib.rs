@@ -143,6 +143,7 @@ pub struct ClockId(usize);
 
 impl ClockId {
     /// Get a new identifier for a clock.
+    #[expect(clippy::new_without_default, reason = "The new operation is non-trivial and has non-constant output")]
     pub fn new() -> ClockId {
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
         ClockId(COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed))
@@ -156,6 +157,7 @@ pub struct LinkId(usize);
 
 impl LinkId {
     /// Get a new identifier for a clock.
+    #[expect(clippy::new_without_default, reason = "The new operation is non-trivial and has non-constant output")]
     pub fn new() -> LinkId {
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
         LinkId(COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed))
@@ -185,4 +187,5 @@ mod ringbuffer;
 use core::sync::atomic::AtomicUsize;
 
 pub use estimator::{EstimatorError, EstimatorState};
+pub use filter::{LinkFilter, LinkFilterError};
 pub use link_noise::{LinkNoiseError, LinkNoiseEstimator};

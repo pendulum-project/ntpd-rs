@@ -271,6 +271,9 @@ impl EstimatorState {
     }
 
     /// Progress the estimator state to the new timestamp.
+    /// 
+    /// # Errors
+    /// Returns an error if the new time provided is before the current time of the filter.
     pub fn progress_time(mut self, new_time: Timestamp) -> Result<EstimatorState, EstimatorError> {
         // time should not move backwards
         if new_time < self.time {
@@ -323,6 +326,9 @@ impl EstimatorState {
     /// Absorb a change in frequency of a clock.
     ///
     /// This function assumes steering happens at the current filter time.
+    /// 
+    /// # Errors
+    /// Returns an error if the steered clock is unknown to the filter.
     pub fn absorb_frequency_steer(
         mut self,
         steered_clock: ClockId,
@@ -338,6 +344,9 @@ impl EstimatorState {
     ///
     /// Assumes the measurements happens at the time the estimator state is
     /// currently set to.
+    ///
+    /// # Errors
+    /// Returns an error if either of the clock ids, or the link is unknown. Also returns an error if both referenced clocks are external or the same.
     pub fn measurement(
         mut self,
         from: ClockId,
@@ -410,6 +419,9 @@ impl EstimatorState {
     }
 
     /// Add an external clock to the estimator state.
+    ///
+    /// # Errors
+    /// Returns an error if the clock is already known to the filter.
     pub fn add_external_clock(mut self, id: ClockId) -> Result<EstimatorState, EstimatorError> {
         // check in clock info as well
         if self.clock_info.contains(id) {
@@ -422,6 +434,9 @@ impl EstimatorState {
     }
 
     /// Remove an external clock from the estimator state.
+    ///
+    /// # Errors
+    /// Returns an error if the clock in question is not an external clock known to the filter.
     pub fn remove_external_clock(mut self, id: ClockId) -> Result<EstimatorState, EstimatorError> {
         self.external_clocks.remove(id)?;
 
@@ -432,6 +447,9 @@ impl EstimatorState {
     ///
     /// To add a new clock you must provide the initial values for the offset,
     /// frequency and wander of the clock.
+    ///
+    /// # Errors
+    /// Returns an erorr if the clock in question is already known to the filter.
     pub fn add_clock(
         mut self,
         id: ClockId,
@@ -463,6 +481,9 @@ impl EstimatorState {
     }
 
     /// Remove a clock from the estimator state.
+    ///
+    /// # Errors
+    /// Returns an error if the clock in question is not known to the filter.
     pub fn remove_clock(mut self, id: ClockId) -> Result<EstimatorState, EstimatorError> {
         let clock_info = self.clock_info.remove(id, &mut self.link_info)?;
 
@@ -479,6 +500,9 @@ impl EstimatorState {
     /// Add a new link to the estimator state.
     ///
     /// The decay rate is the amount the uncertainty on the link delay increases every second on this link.
+    ///
+    /// # Errors
+    /// Returns an error if the link in question is already known to the filter.
     pub fn add_link(
         mut self,
         id: LinkId,
@@ -501,6 +525,9 @@ impl EstimatorState {
     }
 
     /// Remove a link from the estimator state.
+    ///
+    /// # Errors
+    /// Returns an error if the link in question is unknown.
     pub fn remove_link(mut self, id: LinkId) -> Result<EstimatorState, EstimatorError> {
         let removed_info = self.link_info.remove(id, &mut self.clock_info)?;
         self.state = self.state.splice_vec(removed_info.index, LinkInfo::SIZE)?;
@@ -512,6 +539,9 @@ impl EstimatorState {
     }
 
     /// Get the current offset of a clock in the state, along with the uncertainty of that offset.
+    ///
+    /// # Errors
+    /// Returns an error if the clock in question is unknown.
     pub fn clock_offset(&self, id: ClockId) -> Result<UncertainValue, EstimatorError> {
         let clock_info = self.get_clock_info(id)?;
         Ok(UncertainValue {
@@ -522,6 +552,9 @@ impl EstimatorState {
     }
 
     /// Get the current frequency of a clock in the state, along with the uncertainty of that frequency.
+    /// 
+    /// # Errors
+    /// Returns an error if the clock in question is unknown.
     pub fn clock_frequency(&self, id: ClockId) -> Result<UncertainValue, EstimatorError> {
         let clock_info = self.get_clock_info(id)?;
         Ok(UncertainValue {
@@ -533,6 +566,9 @@ impl EstimatorState {
     }
 
     /// Get the current delay of a link in the state, along with the uncertainty of that delay.
+    ///
+    /// # Errors
+    /// Returns an error if the link in question is unknown.
     pub fn link_delay(&self, id: LinkId) -> Result<UncertainValue, EstimatorError> {
         let link_info = self.get_link_info(id)?;
         Ok(UncertainValue {
@@ -542,11 +578,13 @@ impl EstimatorState {
     }
 
     /// Is a given clock internal
+    #[must_use]
     pub fn is_internal_clock(&self, id: ClockId) -> bool {
         self.clock_info.iter().any(|info| info.id == id)
     }
 
     /// Is a given clock external
+    #[must_use]
     pub fn is_external_clock(&self, id: ClockId) -> bool {
         self.external_clocks.contains(id)
     }
