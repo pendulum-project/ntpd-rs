@@ -4,13 +4,31 @@
 #[cfg(feature = "std")]
 extern crate std;
 
-/// TODO: replace
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ClockId(u64);
+/// Unique identifier for a clock
+// FIXME: Move to statime-base once that exists
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+pub struct ClockId(usize);
 
-/// TODO: replace
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct LinkId(u64);
+impl ClockId {
+    /// Get a new identifier for a clock.
+    pub fn new() -> ClockId {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        ClockId(COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed))
+    }
+}
+
+/// Unique identifier for a clock
+// FIXME: Move to statime-base once that exists
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+pub struct LinkId(usize);
+
+impl LinkId {
+    /// Get a new identifier for a clock.
+    pub fn new() -> LinkId {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        LinkId(COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed))
+    }
+}
 
 #[cfg(test)]
 macro_rules! assert_almost_eq {
@@ -27,8 +45,12 @@ macro_rules! assert_almost_eq {
 }
 
 mod estimator;
+mod filter;
 mod link_noise;
 mod matrix;
+mod ringbuffer;
+
+use core::sync::atomic::AtomicUsize;
 
 pub use estimator::{EstimatorError, EstimatorState};
 pub use link_noise::{LinkNoiseError, LinkNoiseEstimator};
