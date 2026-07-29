@@ -247,6 +247,7 @@ duration_div!(u64);
 duration_div!(i64);
 
 #[cfg(test)]
+#[expect(clippy::float_cmp, reason = "Test code")]
 mod tests {
     use core::hash::Hasher;
     use std::hash::DefaultHasher;
@@ -307,6 +308,10 @@ mod tests {
     #[test]
     fn test_timestamp_clone() {
         let ts = Timestamp::<UTC>::from_seconds_nanos_since_unix_epoch(500, 0);
+        #[expect(
+            clippy::clone_on_copy,
+            reason = "Clone implementation of type is under test"
+        )]
         let ts_clone = ts.clone();
         assert_eq!(ts.0, ts_clone.0);
     }
@@ -375,6 +380,7 @@ mod tests {
     }
 
     #[test]
+    #[expect(clippy::too_many_lines, reason = "Test code")]
     fn test_duration_math() {
         assert_eq!(
             Duration::from_seconds_nanos(50, 0) + Duration::from_seconds_nanos(75, 0),
