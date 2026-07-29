@@ -406,6 +406,8 @@ mod tests {
             system: SystemSnapshot::default(),
             sources: vec![],
             servers: vec![],
+            system_clock_adjustment: true,
+            accumulated_offset_ms: None,
         };
         let result = write_socket_helper(Format::Plain, value).await?;
 
@@ -424,6 +426,8 @@ mod tests {
             system: SystemSnapshot::default(),
             sources: vec![],
             servers: vec![],
+            system_clock_adjustment: true,
+            accumulated_offset_ms: None,
         };
         let result = write_socket_helper(Format::Prometheus, value).await?;
 
