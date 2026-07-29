@@ -246,7 +246,7 @@ duration_div!(i32);
 duration_div!(u64);
 duration_div!(i64);
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 #[expect(clippy::float_cmp, reason = "Test code")]
 mod tests {
     use core::hash::Hasher;
