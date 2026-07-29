@@ -309,6 +309,7 @@ mod tests {
                 servers_reader,
                 system_reader,
                 TestClock,
+                true,
             )
             .await
             .unwrap();
@@ -386,6 +387,7 @@ mod tests {
                 servers_reader,
                 system_reader,
                 TestClock,
+                true,
             )
             .await
             .unwrap();
