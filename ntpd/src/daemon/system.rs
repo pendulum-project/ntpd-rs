@@ -48,6 +48,16 @@ pub struct DaemonChannels {
     pub system_snapshot_receiver: tokio::sync::watch::Receiver<SystemSnapshot>,
 }
 
+#[allow(clippy::too_many_arguments)]
+pub async fn spawn<C, Controller>(
+    synchronization_config: SynchronizationConfig,
+    // ... rest of args
+) -> std::io::Result<(JoinHandle<()>, DaemonChannels)>
+where
+    C: NtpClock + TrueTimeClock + Clone + Send + Sync + 'static,
+    Controller: TimeSyncController<Clock = C>,
+{
+
 /// Spawn the NTP daemon
 #[cfg_attr(
     target_os = "linux",
