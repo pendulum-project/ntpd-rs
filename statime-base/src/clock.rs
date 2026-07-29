@@ -52,12 +52,17 @@ pub trait Clock: Clone + Send + 'static {
         max_error: Duration,
     ) -> Result<(), Self::Error>;
 
-    /// Change the indicators for upcoming leap seconds and
-    /// the clocks synchronization status. Application should happen at the end of the UTC month.
+    /// Change the indicators for upcoming leap seconds. Application should happen at the end of the UTC month.
     ///
     /// # Errors
     /// Should return an error if the status update cannot be applied to the clock.
-    fn status_update(&self, leap_status: LeapStatus) -> Result<(), Self::Error>;
+    fn leap_update(&self, leap_status: LeapStatus) -> Result<(), Self::Error>;
+
+    /// Change the synchronization indicator.
+    ///
+    /// # Errors
+    /// should return an error if the synchronization indicator cannot be updated
+    fn synchronization_update(&self, synchronized: bool) -> Result<(), Self::Error>;
 }
 
 /// Information on what the next leap second is going to be.
