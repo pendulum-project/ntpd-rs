@@ -156,6 +156,67 @@ impl LinkFilter {
         Ok(self)
     }
 
+    /// Absorb a step change in the phase of a clock.
+    ///
+    /// This function assumes steering happens at the current filter time.
+    ///
+    /// # Errors
+    /// Returns an error if the steered clock is unknown to the filter.
+    pub fn absorb_offset_change(
+        mut self,
+        steered_clock: ClockId,
+        offset_change: f64,
+    ) -> Result<LinkFilter, EstimatorError> {
+        self.estimation_state = self
+            .estimation_state
+            .absorb_offset_change(steered_clock, offset_change)?;
+        for link in &mut self.links {
+            match &mut link.link_state {
+                LinkState::Tracked {
+                    link_noise_estimator,
+                    ..
+                } => {
+                    *link_noise_estimator = link_noise_estimator
+                        .clone()
+                        .absorb_offset_change(steered_clock);
+                }
+                LinkState::Untracked(_, _) => {}
+            }
+        }
+        Ok(self)
+    }
+
+    /// Absorb a step change in the phase of a clock which is also used for the filter time.
+    ///
+    /// This function assumes steering happens at the current filter time.
+    ///
+    /// # Errors
+    /// Returns an error if the steered clock is unknown to the filter.
+    pub fn absorb_system_clock_offset_change(
+        mut self,
+        steered_clock: ClockId,
+        offset_change: f64,
+    ) -> Result<LinkFilter, EstimatorError> {
+        self.estimation_state = self
+            .estimation_state
+            .absorb_offset_change(steered_clock, offset_change)?;
+        for link in &mut self.links {
+            match &mut link.link_state {
+                LinkState::Tracked {
+                    link_noise_estimator,
+                    ..
+                } => {
+                    *link_noise_estimator = link_noise_estimator
+                        .clone()
+                        .absorb_system_clock_offset_change(steered_clock, offset_change);
+                }
+                LinkState::Untracked(_, _) => {}
+            }
+        }
+
+        Ok(self)
+    }
+
     /// Process a measurement from one of the links.
     ///
     /// # Errors

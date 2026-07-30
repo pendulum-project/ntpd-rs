@@ -90,6 +90,39 @@ impl LinkNoiseEstimator {
         Ok(self)
     }
 
+    /// Absorb the results of a clock phase jump
+    #[must_use]
+    pub fn absorb_offset_change(mut self, steered_clock: ClockId) -> LinkNoiseEstimator {
+        if self.a == steered_clock || self.b == steered_clock {
+            // One of the clocks in this link has a discontinuity, which makes a delay
+            // estimate accross that invalid, so ignore any previous measurements.
+            self.prev_measurement = None;
+        }
+        self
+    }
+
+    /// Absorb the results of a system clock phase jump
+    #[must_use]
+    pub fn absorb_system_clock_offset_change(
+        mut self,
+        steered_clock: ClockId,
+        offset_change: f64,
+    ) -> LinkNoiseEstimator {
+        if self.a == steered_clock || self.b == steered_clock {
+            // One of the clocks in this link has a discontinuity, which makes a delay
+            // estimate accross that invalid, so ignore any previous measurements.
+            self.prev_measurement = None;
+        } else if let Some(measurement) = &mut self.prev_measurement {
+            // The clocks on this link don't have any discontinuities, however the
+            // time at which the measurements have been taken has changed meaning.
+            // We correct for that by putting the time of the previous measurement
+            // in the frame "as if" the offset discontinuity in the system clock
+            // happened before the first measurement.
+            measurement.time += offset_change;
+        }
+        self
+    }
+
     /// The current estimate of the noise on the link
     ///
     /// # Errors
