@@ -340,6 +340,41 @@ impl EstimatorState {
         Ok(self)
     }
 
+    /// Absorb a step change in the phase of a clock.
+    ///
+    /// This function assumes steering happens at the current filter time.
+    ///
+    /// # Errors
+    /// Returns an error if the steered clock is unknown to the filter.
+    pub fn absorb_offset_change(
+        mut self,
+        steered_clock: ClockId,
+        offset_change: f64,
+    ) -> Result<EstimatorState, EstimatorError> {
+        let clock_info = self.get_clock_info(steered_clock)?;
+        let offset_index = clock_info.offset_index();
+        self.state[(offset_index, 0)] += offset_change;
+        Ok(self)
+    }
+
+    /// Absorb a step change in the phase of a clock which is also used for the filter time.
+    ///
+    /// This function assumes steering happens at the current filter time.
+    ///
+    /// # Errors
+    /// Returns an error if the steered clock is unknown to the filter.
+    pub fn absorb_system_clock_offset_change(
+        mut self,
+        steered_clock: ClockId,
+        offset_change: f64,
+    ) -> Result<EstimatorState, EstimatorError> {
+        let clock_info = self.get_clock_info(steered_clock)?;
+        let offset_index = clock_info.offset_index();
+        self.state[(offset_index, 0)] += offset_change;
+        self.time += offset_change;
+        Ok(self)
+    }
+
     /// Add a new measurement to the estimator state.
     ///
     /// Assumes the measurements happens at the time the estimator state is
@@ -755,6 +790,32 @@ mod tests {
         assert_uv_almost_eq!(
             state.clock_frequency(ClockId(1)).unwrap(),
             UncertainValue::from((0.0, 0.0))
+        );
+    }
+
+    #[test]
+    fn test_clock_offset_steering() {
+        let state = EstimatorState::empty(10.0)
+            .add_clock(ClockId(1), (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
+            .unwrap()
+            .add_clock(ClockId(2), (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
+            .unwrap()
+            .absorb_offset_change(ClockId(2), 1.0)
+            .unwrap();
+
+        assert_almost_eq!(state.time, 10.0);
+        assert_uv_almost_eq!(
+            state.clock_offset(ClockId(2)).unwrap(),
+            UncertainValue::from((1.0, 0.0))
+        );
+
+        let state = state
+            .absorb_system_clock_offset_change(ClockId(1), -1.0)
+            .unwrap();
+        assert_almost_eq!(state.time, 9.0);
+        assert_uv_almost_eq!(
+            state.clock_offset(ClockId(1)).unwrap(),
+            UncertainValue::from((-1.0, 0.0))
         );
     }
 
