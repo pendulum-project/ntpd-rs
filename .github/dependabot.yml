@@ -16,7 +16,7 @@ updates:
   allow:
     - dependency-type: all
   schedule:
-    interval: daily
+    interval: weekly
   versioning-strategy: lockfile-only
   open-pull-requests-limit: 10
   groups:
