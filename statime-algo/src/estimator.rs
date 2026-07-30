@@ -611,6 +611,7 @@ impl EstimatorState {
 }
 
 #[cfg(test)]
+#[allow(clippy::float_cmp, reason = "Test code")]
 mod tests {
     use super::*;
 
