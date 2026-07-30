@@ -139,6 +139,7 @@ impl LinkNoiseEstimator {
 }
 
 #[cfg(test)]
+#[allow(clippy::float_cmp, reason = "Test code")]
 mod tests {
     use crate::{ClockId, estimator::UncertainValue, link_noise::LinkNoiseEstimator};
 

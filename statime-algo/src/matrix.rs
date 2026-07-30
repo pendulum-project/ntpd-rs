@@ -10,7 +10,8 @@ pub trait MatrixStorage: AsRef<[f64]> + AsMut<[f64]> {
     fn new(len: usize, data: impl FnMut(usize) -> f64) -> Self;
 }
 
-#[cfg(feature = "std")]
+// FIXME: Reenable
+// #[cfg(feature = "std")]
 impl MatrixStorage for std::boxed::Box<[f64]> {
     fn new(len: usize, data: impl FnMut(usize) -> f64) -> Self {
         (0..len).map(data).collect()
