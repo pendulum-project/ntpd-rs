@@ -16,6 +16,8 @@ pub enum LinkFilterError {
     BothClocksExternal,
     /// Provided clocks for a link are identical.
     ClocksEqual,
+    /// Provided clocks are not valid for the link
+    InvalidClocks,
     /// An error occured in the underlying estimator.
     EstimatorError(EstimatorError),
     /// An error occured in a link noise estimator.
@@ -35,22 +37,89 @@ impl From<LinkNoiseError> for LinkFilterError {
 }
 
 enum LinkState {
-    Tracked(LinkNoiseEstimator),
+    Tracked {
+        link_noise_estimator: LinkNoiseEstimator,
+        decay_rate: f64,
+    },
     Untracked(ClockId, ClockId),
+}
+
+struct ExternalLinkState {
+    last_offsets: UnorderedRingBuffer,
+    last_offset_uncertainty: f64,
 }
 
 struct LinkInfo {
     id: LinkId,
     active: bool,
-    internal: bool,
     link_state: LinkState,
-    last_offsets: UnorderedRingBuffer,
+    external_link_state: Option<ExternalLinkState>,
+}
+
+struct OffsetWindow {
+    low: f64,
+    high: f64,
+}
+
+impl LinkInfo {
+    fn offset_window(&self, config: &LinkFilterConfig) -> Option<OffsetWindow> {
+        let external_link_state = self.external_link_state.as_ref()?;
+
+        if external_link_state.last_offsets.as_ref().is_empty() {
+            return None;
+        }
+
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "self.last_offsets length is always exactly representable as f64"
+        )]
+        let avg_offset = external_link_state
+            .last_offsets
+            .as_ref()
+            .iter()
+            .sum::<f64>()
+            / (external_link_state.last_offsets.as_ref().len() as f64);
+
+        let half_window_size = match &self.link_state {
+            LinkState::Tracked {
+                link_noise_estimator,
+                ..
+            } => {
+                link_noise_estimator.noise_estimate().ok()? * config.select_link_uncertainty_window
+            }
+            LinkState::Untracked(_, _) => 0.0,
+        } + external_link_state.last_offset_uncertainty
+            * config.select_offset_uncertainty_window;
+
+        Some(OffsetWindow {
+            low: avg_offset - half_window_size,
+            high: avg_offset + half_window_size,
+        })
+    }
 }
 
 /// A state estimation filter with full support for handling selection an dprocessing of links.
 pub struct LinkFilter {
     links: std::vec::Vec<LinkInfo>,
     estimation_state: EstimatorState,
+}
+
+#[derive(Debug, Clone)]
+pub struct LinkFilterConfig {
+    /// Size of the window of uncertainty to assume around source offset for
+    /// judging whether it is a truechimer, based on the observed noise in the
+    /// offset.
+    pub select_offset_uncertainty_window: f64,
+    /// Size of the window of uncertainty to assume around source offset for
+    /// judging whether it is a truechimer, based on the observerd link delay
+    /// noise.
+    pub select_link_uncertainty_window: f64,
+    /// Maximum size of the window of uncertainty before we judge a source to
+    /// be unsuitable for synchronization.
+    pub select_max_window_size: f64,
+    /// Minimum number of sources that need to agree on the current time before
+    /// we enable synchronization.
+    pub minimum_agreeing_sources: usize,
 }
 
 impl LinkFilter {
@@ -64,7 +133,7 @@ impl LinkFilter {
     }
 
     /// Progress the time of the filter.
-    /// 
+    ///
     /// # Errors
     /// Returns an error if the new time is before the current time of the filter.
     pub fn progress_time(mut self, new_time: Timestamp) -> Result<Self, LinkFilterError> {
@@ -73,7 +142,7 @@ impl LinkFilter {
     }
 
     /// Absorb a frequency change of one of the clocks.
-    /// 
+    ///
     /// # Errors
     /// Returns an error if the steered clock is not known to the filter.
     pub fn absorb_frequency_steer(
@@ -92,13 +161,116 @@ impl LinkFilter {
     /// # Errors
     /// Returns an error if the provided clocks are not valid for the provided link, or if the provided link is uknown.
     pub fn measurement(
-        self,
+        mut self,
+        config: &LinkFilterConfig,
         from: ClockId,
         to: ClockId,
         offset: UncertainValue,
-        link: LinkId,
+        link_id: LinkId,
     ) -> Result<Self, LinkFilterError> {
-        todo!()
+        let link = self
+            .links
+            .iter_mut()
+            .find(|info| info.id == link_id)
+            .ok_or(LinkFilterError::UnknownLink)?;
+
+        let (delay, delay_noise, decay_rate, delay_link) = match &mut link.link_state {
+            LinkState::Tracked {
+                link_noise_estimator,
+                decay_rate,
+            } => {
+                *link_noise_estimator = link_noise_estimator.clone().measurement(
+                    from,
+                    to,
+                    offset.value,
+                    self.estimation_state.current_time(),
+                )?;
+                match (
+                    link_noise_estimator.delay_estimate().ok(),
+                    link_noise_estimator.noise_estimate().ok(),
+                ) {
+                    (Some(delay), Some(noise)) => (delay, noise, *decay_rate, Some(link_id)),
+                    // Delay and noise not known yet, so link not yet usable, not even for basic offset estimation.
+                    _ => return Ok(self),
+                }
+            }
+            LinkState::Untracked(a, b) => {
+                if !((*a == from && *b == to) || (*a == to && *b == from)) {
+                    return Err(LinkFilterError::InvalidClocks);
+                }
+                (0.0, 0.0, 0.0, None)
+            }
+        };
+
+        if let Some(external_link_state) = &mut link.external_link_state {
+            // Ensure offset is calculated relative to the external clock, flipping signs
+            // if the measurement direction was different.
+            let offset_to_external = if self.estimation_state.is_external_clock(from) {
+                offset.value - delay
+            } else {
+                -(offset.value - delay)
+            };
+
+            external_link_state.last_offsets.insert(offset_to_external);
+            external_link_state.last_offset_uncertainty = offset.uncertainty;
+
+            let our_window = link.offset_window(config);
+
+            let Some(consensus_window) = self.find_external_consensus_window(config) else {
+                // If there is no consensus currently, wait until there is before we start
+                // discarding links. This ensures that short-term disagreement doesn't
+                // immediately reset synchronization, but that we still don't steer without
+                // consensus.
+                return Ok(self);
+            };
+
+            let link = self
+                .links
+                .iter_mut()
+                .find(|info| info.id == link_id)
+                .ok_or(LinkFilterError::UnknownLink)?;
+
+            // We are active if and only if our window overlaps with the consensus window.
+            if let Some(our_window) = our_window
+                && our_window.low <= consensus_window.high
+                && our_window.high >= consensus_window.low
+            {
+                if !link.active {
+                    link.active = true;
+                    if delay_link.is_some() {
+                        self.estimation_state = self.estimation_state.add_link(
+                            link_id,
+                            UncertainValue {
+                                value: delay,
+                                uncertainty: delay_noise,
+                            },
+                            decay_rate,
+                        )?;
+                    }
+                }
+            } else {
+                if link.active {
+                    link.active = false;
+                    if delay_link.is_some() {
+                        self.estimation_state = self.estimation_state.remove_link(link_id)?;
+                    }
+                }
+                return Ok(self);
+            }
+        }
+
+        self.estimation_state = self.estimation_state.measurement(
+            from,
+            to,
+            UncertainValue {
+                value: offset.value,
+                // Addition formula for uncertainty...
+                uncertainty: (offset.uncertainty.powi(2) + delay_noise.powi(2)).sqrt(),
+            },
+            delay_link,
+        )?;
+
+        Ok(self)
     }
 
     /// Add an external clock to the filter.
@@ -159,36 +331,44 @@ impl LinkFilter {
     /// Returns an error if the provided clocks are invalid, or an invalid combination for the link.
     pub fn add_tracked_link(
         mut self,
-        clock_a: ClockId,
-        clock_b: ClockId,
+        first_clock: ClockId,
+        second_clock: ClockId,
+        decay_rate: f64,
     ) -> Result<(Self, LinkId), LinkFilterError> {
-        if clock_a == clock_b {
+        if first_clock == second_clock {
             return Err(LinkFilterError::ClocksEqual);
         }
 
-        let clock_a_internal = self.estimation_state.is_internal_clock(clock_a);
-        let clock_a_external = self.estimation_state.is_external_clock(clock_a);
-        #[expect(clippy::similar_names, reason = "There really is no better names for these.")]
-        let clock_b_internal = self.estimation_state.is_internal_clock(clock_b);
-        #[expect(clippy::similar_names, reason = "There really is no better names for these.")]
-        let clock_b_external = self.estimation_state.is_external_clock(clock_b);
+        let first_internal = self.estimation_state.is_internal_clock(first_clock);
+        let first_external = self.estimation_state.is_external_clock(first_clock);
+        let second_internal = self.estimation_state.is_internal_clock(second_clock);
+        let second_external = self.estimation_state.is_external_clock(second_clock);
 
-        if !(clock_a_internal || clock_a_external) || !(clock_b_internal || clock_b_external) {
+        if !(first_internal || first_external) || !(second_internal || second_external) {
             return Err(LinkFilterError::UnknownClock);
         }
 
-        if clock_a_external && clock_b_external {
+        if first_external && second_external {
             return Err(LinkFilterError::BothClocksExternal);
         }
 
         let id = LinkId::new();
-        let is_internal = clock_a_internal && clock_b_internal;
+        let is_internal = first_internal && second_internal;
         self.links.push(LinkInfo {
             id,
             active: false,
-            internal: is_internal,
-            link_state: LinkState::Tracked(LinkNoiseEstimator::new(clock_a, clock_b)?),
-            last_offsets: UnorderedRingBuffer::default(),
+            link_state: LinkState::Tracked {
+                link_noise_estimator: LinkNoiseEstimator::new(first_clock, second_clock)?,
+                decay_rate,
+            },
+            external_link_state: if is_internal {
+                None
+            } else {
+                Some(ExternalLinkState {
+                    last_offsets: UnorderedRingBuffer::default(),
+                    last_offset_uncertainty: 0.0,
+                })
+            },
         });
 
         Ok((self, id))
@@ -200,34 +380,40 @@ impl LinkFilter {
     /// Returns an error if the provided clocks are invalid, or an invalid combination for the link.
     pub fn add_untracked_link(
         mut self,
-        clock_a: ClockId,
-        clock_b: ClockId,
+        first_clock: ClockId,
+        second_clock: ClockId,
     ) -> Result<(Self, LinkId), LinkFilterError> {
-        if clock_a == clock_b {
+        if first_clock == second_clock {
             return Err(LinkFilterError::ClocksEqual);
         }
 
-        let clock_a_internal = self.estimation_state.is_internal_clock(clock_a);
-        let clock_a_external = self.estimation_state.is_external_clock(clock_a);
-        let clock_b_internal = self.estimation_state.is_internal_clock(clock_b);
-        let clock_b_external = self.estimation_state.is_external_clock(clock_b);
+        let first_internal = self.estimation_state.is_internal_clock(first_clock);
+        let first_external = self.estimation_state.is_external_clock(first_clock);
+        let second_internal = self.estimation_state.is_internal_clock(second_clock);
+        let second_external = self.estimation_state.is_external_clock(second_clock);
 
-        if !(clock_a_internal || clock_a_external) || !(clock_b_internal || clock_b_external) {
+        if !(first_internal || first_external) || !(second_internal || second_external) {
             return Err(LinkFilterError::UnknownClock);
         }
 
-        if clock_a_external && clock_b_external {
+        if first_external && second_external {
             return Err(LinkFilterError::BothClocksExternal);
         }
 
         let id = LinkId::new();
-        let is_internal = clock_a_internal && clock_b_internal;
+        let is_internal = first_internal && second_internal;
         self.links.push(LinkInfo {
             id,
             active: is_internal,
-            internal: is_internal,
-            link_state: LinkState::Untracked(clock_a, clock_b),
-            last_offsets: UnorderedRingBuffer::default(),
+            link_state: LinkState::Untracked(first_clock, second_clock),
+            external_link_state: if is_internal {
+                None
+            } else {
+                Some(ExternalLinkState {
+                    last_offsets: UnorderedRingBuffer::default(),
+                    last_offset_uncertainty: 0.0,
+                })
+            },
         });
 
         Ok((self, id))
@@ -243,10 +429,76 @@ impl LinkFilter {
         };
 
         let link = self.links.remove(info_index);
-        if link.active && matches!(link.link_state, LinkState::Tracked(_)) {
+        if link.active && matches!(link.link_state, LinkState::Tracked { .. }) {
             self.estimation_state = self.estimation_state.remove_link(id)?;
         }
 
         Ok(self)
+    }
+
+    fn find_external_consensus_window(&self, config: &LinkFilterConfig) -> Option<OffsetWindow> {
+        #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+        enum BoundType {
+            Start,
+            End,
+        }
+        let mut bounds: std::vec::Vec<_> = self
+            .links
+            .iter()
+            .filter_map(|info| {
+                info.offset_window(config).map(|window| {
+                    [
+                        (window.low, BoundType::Start),
+                        (window.high, BoundType::End),
+                    ]
+                })
+            })
+            .flatten()
+            .collect();
+
+        bounds.sort_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+
+        // Find the intersection of the confidence intervals of the maximum
+        // overlapping set. We need this entire interval to properly integrate
+        // periodic sources
+        let mut maxlow: usize = 0;
+        let mut maxhigh: usize = 0;
+        let mut max_offset_low: f64 = 0.0;
+        let mut max_offset_high: f64 = 0.0;
+        let mut cur: usize = 0;
+
+        for (offset, boundtype) in &bounds {
+            match boundtype {
+                BoundType::Start => {
+                    cur += 1;
+                    if cur > maxlow {
+                        maxlow = cur;
+                        max_offset_low = *offset;
+                    }
+                }
+                BoundType::End => {
+                    if cur > maxhigh {
+                        maxhigh = cur;
+                        max_offset_high = *offset;
+                    }
+                    cur -= 1;
+                }
+            }
+        }
+
+        // Check that the lower and upper bound of the intersection agree on how many
+        // sources are part of the maximum set. If not, something has seriously gone
+        // wrong and we shouldn't steer the clock.
+        assert_eq!(maxlow, maxhigh);
+        let max = maxlow;
+
+        if max > config.minimum_agreeing_sources && max * 4 > bounds.len() {
+            Some(OffsetWindow {
+                low: max_offset_low,
+                high: max_offset_high,
+            })
+        } else {
+            None
+        }
     }
 }

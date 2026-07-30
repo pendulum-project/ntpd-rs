@@ -271,7 +271,7 @@ impl EstimatorState {
     }
 
     /// Progress the estimator state to the new timestamp.
-    /// 
+    ///
     /// # Errors
     /// Returns an error if the new time provided is before the current time of the filter.
     pub fn progress_time(mut self, new_time: Timestamp) -> Result<EstimatorState, EstimatorError> {
@@ -326,7 +326,7 @@ impl EstimatorState {
     /// Absorb a change in frequency of a clock.
     ///
     /// This function assumes steering happens at the current filter time.
-    /// 
+    ///
     /// # Errors
     /// Returns an error if the steered clock is unknown to the filter.
     pub fn absorb_frequency_steer(
@@ -352,7 +352,7 @@ impl EstimatorState {
         from: ClockId,
         to: ClockId,
         offset: UncertainValue,
-        link_delay: Option<LinkId>,
+        delay_link: Option<LinkId>,
     ) -> Result<EstimatorState, EstimatorError> {
         if from == to {
             return Err(EstimatorError::MeasurementBetweenSelf);
@@ -377,7 +377,7 @@ impl EstimatorState {
             measurement_projection[(0, to_clock_info.offset_index())] = 1.0;
         }
 
-        if let Some(link_delay) = link_delay {
+        if let Some(link_delay) = delay_link {
             let link_delay_info = self.get_link_info(link_delay)?;
             measurement_projection[(0, link_delay_info.index)] = 1.0;
         }
@@ -552,7 +552,7 @@ impl EstimatorState {
     }
 
     /// Get the current frequency of a clock in the state, along with the uncertainty of that frequency.
-    /// 
+    ///
     /// # Errors
     /// Returns an error if the clock in question is unknown.
     pub fn clock_frequency(&self, id: ClockId) -> Result<UncertainValue, EstimatorError> {
@@ -587,6 +587,10 @@ impl EstimatorState {
     #[must_use]
     pub fn is_external_clock(&self, id: ClockId) -> bool {
         self.external_clocks.contains(id)
+    }
+
+    pub(crate) fn current_time(&self) -> f64 {
+        self.time
     }
 }
 
