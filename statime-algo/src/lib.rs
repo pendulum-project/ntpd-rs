@@ -133,7 +133,8 @@
 #![warn(clippy::wildcard_imports)]
 #![warn(clippy::zero_sized_map_values)]
 
-#[cfg(feature = "std")]
+// FIXME: Make crate no-std capable.
+//#[cfg(feature = "std")]
 extern crate std;
 
 /// Unique identifier for a clock
