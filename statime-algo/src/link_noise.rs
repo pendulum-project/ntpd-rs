@@ -36,7 +36,7 @@ pub struct LinkNoiseEstimator {
 
 impl LinkNoiseEstimator {
     /// Create a new estimator for the noise on a link between clocks A and B.
-    /// 
+    ///
     /// # Errors
     /// Returns an error if the clocks on either end of the link are identical.
     pub fn new(a: ClockId, b: ClockId) -> Result<Self, LinkNoiseError> {
@@ -53,7 +53,7 @@ impl LinkNoiseEstimator {
     }
 
     /// Use a measurement on the link to update our estimates for the noise on the link.
-    /// 
+    ///
     /// # Errors
     /// Return an error when the provided clocks are not part of the link.
     pub fn measurement(
