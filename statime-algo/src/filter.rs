@@ -1,8 +1,9 @@
 use statime_base::{ClockId, Duration, LinkId, TAI, Timestamp};
 
 use crate::{
-    EstimatorError, EstimatorState, LinkNoiseError, LinkNoiseEstimator, estimator::UncertainValue,
-    link_noise::LinkDelayNoiseEstimate, ringbuffer::UnorderedRingBuffer,
+    estimator::{EstimatorError, EstimatorState, UncertainValue},
+    link_noise::{LinkDelayNoiseEstimate, LinkNoiseError, LinkNoiseEstimator},
+    ringbuffer::UnorderedRingBuffer,
 };
 
 /// An error that occured in the link filter.
@@ -331,10 +332,10 @@ impl LinkFilter {
         mut self,
         steered_clock: ClockId,
         offset_change: Duration,
-    ) -> Result<LinkFilter, EstimatorError> {
+    ) -> Result<LinkFilter, LinkFilterError> {
         self.estimation_state = self
             .estimation_state
-            .absorb_offset_change(steered_clock, offset_change.as_seconds())?;
+            .absorb_system_clock_offset_change(steered_clock, offset_change)?;
         for link in &mut self.links {
             if let LinkState::Tracked {
                 link_noise_estimator,
@@ -343,7 +344,7 @@ impl LinkFilter {
             {
                 *link_noise_estimator = link_noise_estimator
                     .clone()
-                    .absorb_offset_change(steered_clock);
+                    .absorb_system_clock_offset_change(steered_clock, offset_change);
             }
         }
 

@@ -616,6 +616,7 @@ impl EstimatorState {
     ///
     /// # Errors
     /// Returns an error if the link in question is unknown.
+    #[cfg(test)]
     pub fn link_delay(&self, id: LinkId) -> Result<UncertainValue, EstimatorError> {
         let link_info = self.get_link_info(id)?;
         Ok(UncertainValue {
