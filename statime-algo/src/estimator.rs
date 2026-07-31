@@ -1,8 +1,8 @@
 use std::{boxed::Box, vec::Vec};
 
-use crate::matrix::{Matrix, MatrixError};
+use statime_base::{ClockId, LinkId};
 
-use super::{ClockId, LinkId};
+use crate::matrix::{Matrix, MatrixError};
 
 //FIXME: Replace with proper Timestamp type
 type Timestamp = f64;
@@ -676,23 +676,26 @@ mod tests {
 
     #[test]
     fn test_add_clock() {
+        let clock_1 = ClockId::new();
+        let clock_2 = ClockId::new();
+
         let state = EstimatorState::empty(0.0)
-            .add_clock(ClockId(1), (0.0, 1.0).into(), (2.0, 3.0).into(), 1e-8)
+            .add_clock(clock_1, (0.0, 1.0).into(), (2.0, 3.0).into(), 1e-8)
             .unwrap();
-        assert_eq!(state.clock_offset(ClockId(1)).unwrap().value, 0.0);
-        assert_eq!(state.clock_offset(ClockId(1)).unwrap().uncertainty, 1.0);
-        assert_eq!(state.clock_frequency(ClockId(1)).unwrap().value, 2.0);
-        assert_eq!(state.clock_frequency(ClockId(1)).unwrap().uncertainty, 3.0);
+        assert_eq!(state.clock_offset(clock_1).unwrap().value, 0.0);
+        assert_eq!(state.clock_offset(clock_1).unwrap().uncertainty, 1.0);
+        assert_eq!(state.clock_frequency(clock_1).unwrap().value, 2.0);
+        assert_eq!(state.clock_frequency(clock_1).unwrap().uncertainty, 3.0);
 
         assert_eq!(
-            state.clone().add_external_clock(ClockId(1)).unwrap_err(),
+            state.clone().add_external_clock(clock_1).unwrap_err(),
             EstimatorError::ClockAlreadyExists
         );
-        let state = state.add_external_clock(ClockId(2)).unwrap();
+        let state = state.add_external_clock(clock_2).unwrap();
 
         assert_eq!(
             state
-                .add_clock(ClockId(2), (0.0, 1.0).into(), (2.0, 3.0).into(), 1e-8)
+                .add_clock(clock_2, (0.0, 1.0).into(), (2.0, 3.0).into(), 1e-8)
                 .unwrap_err(),
             EstimatorError::ClockAlreadyExists
         );
@@ -700,129 +703,146 @@ mod tests {
 
     #[test]
     fn test_clock_removal() {
+        let clock_1 = ClockId::new();
+        let clock_2 = ClockId::new();
+        let clock_3 = ClockId::new();
+
         let state = EstimatorState::empty(0.0)
-            .add_clock(ClockId(1), (0.0, 1.0).into(), (0.0, 1.0).into(), 1e-8)
+            .add_clock(clock_1, (0.0, 1.0).into(), (0.0, 1.0).into(), 1e-8)
             .unwrap()
-            .add_external_clock(ClockId(2))
+            .add_external_clock(clock_2)
             .unwrap();
 
         // remove non-existing clock should fail
         assert_eq!(
-            state.clone().remove_clock(ClockId(3)).unwrap_err(),
+            state.clone().remove_clock(clock_3).unwrap_err(),
             EstimatorError::ClockNotFound
         );
 
         // remove existing clock via external clock removal should fail
         assert_eq!(
-            state.clone().remove_external_clock(ClockId(1)).unwrap_err(),
+            state.clone().remove_external_clock(clock_1).unwrap_err(),
             EstimatorError::ClockNotFound
         );
 
         // remove existing external clock via internal clock removal should fail
         assert_eq!(
-            state.clone().remove_clock(ClockId(2)).unwrap_err(),
+            state.clone().remove_clock(clock_2).unwrap_err(),
             EstimatorError::ClockNotFound
         );
 
         // removing the existing clocks should succeed
         state
-            .remove_clock(ClockId(1))
+            .remove_clock(clock_1)
             .unwrap()
-            .remove_external_clock(ClockId(2))
+            .remove_external_clock(clock_2)
             .unwrap();
     }
 
     #[test]
     fn test_time_evolve() {
+        let clock_1 = ClockId::new();
+        let clock_2 = ClockId::new();
+
+        let link_1 = LinkId::new();
+        let link_2 = LinkId::new();
+
         let state = EstimatorState::empty(0.0)
-            .add_clock(ClockId(1), (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
+            .add_clock(clock_1, (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
             .unwrap()
-            .add_link(LinkId(1), (0.5, 0.2).into(), 0.0)
+            .add_link(link_1, (0.5, 0.2).into(), 0.0)
             .unwrap()
-            .add_clock(ClockId(2), (0.0, 1e-5).into(), (-1e-6, 1e-7).into(), 0.0)
+            .add_clock(clock_2, (0.0, 1e-5).into(), (-1e-6, 1e-7).into(), 0.0)
             .unwrap()
-            .add_link(LinkId(2), (2.0, 0.0).into(), 0.1)
+            .add_link(link_2, (2.0, 0.0).into(), 0.1)
             .unwrap()
             .progress_time(100.0)
             .unwrap();
-        assert_eq!(state.clock_frequency(ClockId(1)).unwrap().value, 1e-6);
+        assert_eq!(state.clock_frequency(clock_1).unwrap().value, 1e-6);
         // Random walk noise, so frequency deviation is sqrt(time_interval)*wander.
-        assert_almost_eq!(state.clock_frequency(ClockId(1)).unwrap().uncertainty, 1e-7);
+        assert_almost_eq!(state.clock_frequency(clock_1).unwrap().uncertainty, 1e-7);
         // Pre-existing frequency offset should cause phase offset.
-        assert_almost_eq!(state.clock_offset(ClockId(1)).unwrap().value, 1e-4);
+        assert_almost_eq!(state.clock_offset(clock_1).unwrap().value, 1e-4);
         // Random walk noise in the derivative, so the integral gives an
         // additional factor of time compared to the frequency deviation.
         // The factor sqrt(3) follows from the structure of how updates work.
         assert_almost_eq!(
-            state.clock_offset(ClockId(1)).unwrap().uncertainty,
+            state.clock_offset(clock_1).unwrap().uncertainty,
             1e-5 / (3.0f64.sqrt())
         );
 
-        let state = state.remove_clock(ClockId(1)).unwrap();
+        let state = state.remove_clock(clock_1).unwrap();
 
-        assert_eq!(state.link_delay(LinkId(1)).unwrap().value, 0.5);
-        assert_eq!(state.link_delay(LinkId(1)).unwrap().uncertainty, 0.2);
+        assert_eq!(state.link_delay(link_1).unwrap().value, 0.5);
+        assert_eq!(state.link_delay(link_1).unwrap().uncertainty, 0.2);
 
-        let state = state.remove_link(LinkId(1)).unwrap();
+        let state = state.remove_link(link_1).unwrap();
 
-        assert_eq!(state.clock_frequency(ClockId(2)).unwrap().value, -1e-6);
-        assert_eq!(state.clock_frequency(ClockId(2)).unwrap().uncertainty, 1e-7);
-        assert_almost_eq!(state.clock_offset(ClockId(2)).unwrap().value, -1e-4);
+        assert_eq!(state.clock_frequency(clock_2).unwrap().value, -1e-6);
+        assert_eq!(state.clock_frequency(clock_2).unwrap().uncertainty, 1e-7);
+        assert_almost_eq!(state.clock_offset(clock_2).unwrap().value, -1e-4);
         assert_almost_eq!(
-            state.clock_offset(ClockId(2)).unwrap().uncertainty,
+            state.clock_offset(clock_2).unwrap().uncertainty,
             1e-5 * (2.0f64.sqrt())
         );
 
         assert_uv_almost_eq!(
-            state.link_delay(LinkId(2)).unwrap(),
+            state.link_delay(link_2).unwrap(),
             UncertainValue::from((2.0, 2.0))
         );
     }
 
     #[test]
     fn test_frequency_steering() {
+        let clock_1 = ClockId::new();
+
         let state = EstimatorState::empty(0.0)
-            .add_clock(ClockId(1), (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
+            .add_clock(clock_1, (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
             .unwrap()
-            .absorb_frequency_steer(ClockId(1), -1e-6)
+            .absorb_frequency_steer(clock_1, -1e-6)
             .unwrap();
 
         assert_uv_almost_eq!(
-            state.clock_frequency(ClockId(1)).unwrap(),
+            state.clock_frequency(clock_1).unwrap(),
             UncertainValue::from((0.0, 0.0))
         );
     }
 
     #[test]
     fn test_clock_offset_steering() {
+        let clock_1 = ClockId::new();
+        let clock_2 = ClockId::new();
+
         let state = EstimatorState::empty(10.0)
-            .add_clock(ClockId(1), (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
+            .add_clock(clock_1, (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
             .unwrap()
-            .add_clock(ClockId(2), (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
+            .add_clock(clock_2, (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
             .unwrap()
-            .absorb_offset_change(ClockId(2), 1.0)
+            .absorb_offset_change(clock_2, 1.0)
             .unwrap();
 
         assert_almost_eq!(state.time, 10.0);
         assert_uv_almost_eq!(
-            state.clock_offset(ClockId(2)).unwrap(),
+            state.clock_offset(clock_2).unwrap(),
             UncertainValue::from((1.0, 0.0))
         );
 
         let state = state
-            .absorb_system_clock_offset_change(ClockId(1), -1.0)
+            .absorb_system_clock_offset_change(clock_1, -1.0)
             .unwrap();
         assert_almost_eq!(state.time, 9.0);
         assert_uv_almost_eq!(
-            state.clock_offset(ClockId(1)).unwrap(),
+            state.clock_offset(clock_1).unwrap(),
             UncertainValue::from((-1.0, 0.0))
         );
     }
 
     #[test]
     fn test_progress_time_composes_well() {
+        let clock_1 = ClockId::new();
+
         let state = EstimatorState::empty(0.0)
-            .add_clock(ClockId(1), (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
+            .add_clock(clock_1, (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
             .unwrap();
 
         let state_via_intermediate = state
@@ -834,198 +854,200 @@ mod tests {
         let state_at_once = state.progress_time(100.0).unwrap();
 
         assert_uv_almost_eq!(
-            state_at_once.clock_offset(ClockId(1)).unwrap(),
-            state_via_intermediate.clock_offset(ClockId(1)).unwrap()
+            state_at_once.clock_offset(clock_1).unwrap(),
+            state_via_intermediate.clock_offset(clock_1).unwrap()
         );
         assert_uv_almost_eq!(
-            state_at_once.clock_frequency(ClockId(1)).unwrap(),
-            state_via_intermediate.clock_frequency(ClockId(1)).unwrap()
+            state_at_once.clock_frequency(clock_1).unwrap(),
+            state_via_intermediate.clock_frequency(clock_1).unwrap()
         );
     }
 
     #[test]
     fn test_add_link() {
+        let link_1 = LinkId::new();
+
         let state = EstimatorState::empty(0.0)
-            .add_link(LinkId(1), (1.0, 2.0).into(), 0.0)
+            .add_link(link_1, (1.0, 2.0).into(), 0.0)
             .expect("Failed to add link");
-        assert_eq!(state.link_delay(LinkId(1)).unwrap().value, 1.0);
-        assert_eq!(state.link_delay(LinkId(1)).unwrap().uncertainty, 2.0);
+        assert_eq!(state.link_delay(link_1).unwrap().value, 1.0);
+        assert_eq!(state.link_delay(link_1).unwrap().uncertainty, 2.0);
     }
 
     #[test]
     fn test_measure_between_clocks_no_link() {
+        let clock_1 = ClockId::new();
+        let clock_2 = ClockId::new();
+
         let state = EstimatorState::empty(0.0)
-            .add_clock(ClockId(1), (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
+            .add_clock(clock_1, (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
             .unwrap()
-            .add_clock(ClockId(2), (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
+            .add_clock(clock_2, (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
             .unwrap()
-            .measurement(
-                ClockId(1),
-                ClockId(2),
-                (1.0, 2.0f64.sqrt() * 0.1).into(),
-                None,
-            )
+            .measurement(clock_1, clock_2, (1.0, 2.0f64.sqrt() * 0.1).into(), None)
             .unwrap();
 
         assert_uv_almost_eq!(
-            state.clock_offset(ClockId(1)).unwrap(),
+            state.clock_offset(clock_1).unwrap(),
             UncertainValue::from((-0.25, 0.05 * (3.0f64.sqrt())))
         );
         assert_uv_almost_eq!(
-            state.clock_offset(ClockId(2)).unwrap(),
+            state.clock_offset(clock_2).unwrap(),
             UncertainValue::from((0.25, 0.05 * (3.0f64.sqrt())))
         );
         assert_uv_almost_eq!(
-            state.clock_frequency(ClockId(1)).unwrap(),
+            state.clock_frequency(clock_1).unwrap(),
             UncertainValue::from((0.0, 1e-8))
         );
         assert_uv_almost_eq!(
-            state.clock_frequency(ClockId(2)).unwrap(),
+            state.clock_frequency(clock_2).unwrap(),
             UncertainValue::from((0.0, 1e-8))
         );
 
         let state = EstimatorState::empty(0.0)
-            .add_clock(ClockId(1), (0.0, 0.0).into(), (0.0, 1e-3).into(), 0.0)
+            .add_clock(clock_1, (0.0, 0.0).into(), (0.0, 1e-3).into(), 0.0)
             .unwrap()
-            .add_clock(ClockId(2), (0.0, 0.0).into(), (0.0, 1e-3).into(), 0.0)
+            .add_clock(clock_2, (0.0, 0.0).into(), (0.0, 1e-3).into(), 0.0)
             .unwrap()
             .progress_time(100.0)
             .unwrap()
-            .measurement(
-                ClockId(1),
-                ClockId(2),
-                (1.0, 2.0f64.sqrt() * 0.1).into(),
-                None,
-            )
+            .measurement(clock_1, clock_2, (1.0, 2.0f64.sqrt() * 0.1).into(), None)
             .unwrap();
 
         assert_uv_almost_eq!(
-            state.clock_offset(ClockId(1)).unwrap(),
+            state.clock_offset(clock_1).unwrap(),
             UncertainValue::from((-0.25, 0.05 * (3.0f64.sqrt())))
         );
         assert_uv_almost_eq!(
-            state.clock_offset(ClockId(2)).unwrap(),
+            state.clock_offset(clock_2).unwrap(),
             UncertainValue::from((0.25, 0.05 * (3.0f64.sqrt())))
         );
         assert_uv_almost_eq!(
-            state.clock_frequency(ClockId(1)).unwrap(),
+            state.clock_frequency(clock_1).unwrap(),
             UncertainValue::from((-0.0025, 0.0005 * (3.0f64.sqrt())))
         );
         assert_uv_almost_eq!(
-            state.clock_frequency(ClockId(2)).unwrap(),
+            state.clock_frequency(clock_2).unwrap(),
             UncertainValue::from((0.0025, 0.0005 * (3.0f64.sqrt())))
         );
     }
 
     #[test]
     fn test_measure_between_clocks_with_link() {
+        let clock_1 = ClockId::new();
+        let clock_2 = ClockId::new();
+        let link_1 = LinkId::new();
+
         let state = EstimatorState::empty(0.0)
-            .add_clock(ClockId(1), (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
+            .add_clock(clock_1, (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
             .unwrap()
-            .add_clock(ClockId(2), (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
+            .add_clock(clock_2, (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
             .unwrap()
-            .add_link(LinkId(1), (1.0, 0.0).into(), 0.0)
+            .add_link(link_1, (1.0, 0.0).into(), 0.0)
             .unwrap()
             .measurement(
-                ClockId(1),
-                ClockId(2),
+                clock_1,
+                clock_2,
                 (2.0, 2.0f64.sqrt() * 0.1).into(),
-                Some(LinkId(1)),
+                Some(link_1),
             )
             .unwrap();
 
         assert_uv_almost_eq!(
-            state.clock_offset(ClockId(1)).unwrap(),
+            state.clock_offset(clock_1).unwrap(),
             UncertainValue::from((-0.25, 0.05 * (3.0f64.sqrt())))
         );
         assert_uv_almost_eq!(
-            state.clock_offset(ClockId(2)).unwrap(),
+            state.clock_offset(clock_2).unwrap(),
             UncertainValue::from((0.25, 0.05 * (3.0f64.sqrt())))
         );
         assert_uv_almost_eq!(
-            state.clock_frequency(ClockId(1)).unwrap(),
+            state.clock_frequency(clock_1).unwrap(),
             UncertainValue::from((0.0, 1e-8))
         );
         assert_uv_almost_eq!(
-            state.clock_frequency(ClockId(2)).unwrap(),
+            state.clock_frequency(clock_2).unwrap(),
             UncertainValue::from((0.0, 1e-8))
         );
         assert_uv_almost_eq!(
-            state.link_delay(LinkId(1)).unwrap(),
+            state.link_delay(link_1).unwrap(),
             UncertainValue::from((1.0, 0.0))
         );
 
         let state = EstimatorState::empty(0.0)
-            .add_clock(ClockId(1), (0.0, 0.0).into(), (0.0, 1e-8).into(), 1e-8)
+            .add_clock(clock_1, (0.0, 0.0).into(), (0.0, 1e-8).into(), 1e-8)
             .unwrap()
-            .add_clock(ClockId(2), (0.0, 0.0).into(), (0.0, 1e-8).into(), 1e-8)
+            .add_clock(clock_2, (0.0, 0.0).into(), (0.0, 1e-8).into(), 1e-8)
             .unwrap()
-            .add_link(LinkId(1), (0.0, 0.1).into(), 0.0)
+            .add_link(link_1, (0.0, 0.1).into(), 0.0)
             .unwrap()
-            .measurement(ClockId(1), ClockId(2), (1.0, 0.1).into(), Some(LinkId(1)))
+            .measurement(clock_1, clock_2, (1.0, 0.1).into(), Some(link_1))
             .unwrap();
 
         assert_uv_almost_eq!(
-            state.clock_offset(ClockId(1)).unwrap(),
+            state.clock_offset(clock_1).unwrap(),
             UncertainValue::from((0.0, 0.0))
         );
         assert_uv_almost_eq!(
-            state.clock_offset(ClockId(2)).unwrap(),
+            state.clock_offset(clock_2).unwrap(),
             UncertainValue::from((0.0, 0.0))
         );
         assert_uv_almost_eq!(
-            state.clock_frequency(ClockId(1)).unwrap(),
+            state.clock_frequency(clock_1).unwrap(),
             UncertainValue::from((0.0, 1e-8))
         );
         assert_uv_almost_eq!(
-            state.clock_frequency(ClockId(2)).unwrap(),
+            state.clock_frequency(clock_2).unwrap(),
             UncertainValue::from((0.0, 1e-8))
         );
         assert_uv_almost_eq!(
-            state.link_delay(LinkId(1)).unwrap(),
+            state.link_delay(link_1).unwrap(),
             UncertainValue::from((0.5, 0.1 / (2.0f64.sqrt())))
         );
     }
 
     #[test]
     fn test_measure_external_clock_no_link() {
+        let clock_1 = ClockId::new();
+        let clock_2 = ClockId::new();
+
         let state = EstimatorState::empty(0.0)
-            .add_clock(ClockId(1), (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
+            .add_clock(clock_1, (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
             .unwrap()
-            .add_external_clock(ClockId(2))
+            .add_external_clock(clock_2)
             .unwrap()
-            .measurement(ClockId(2), ClockId(1), (1.0, 0.1).into(), None)
+            .measurement(clock_2, clock_1, (1.0, 0.1).into(), None)
             .unwrap();
 
         assert_uv_almost_eq!(
-            state.clock_offset(ClockId(1)).unwrap(),
+            state.clock_offset(clock_1).unwrap(),
             UncertainValue::from((0.5, 0.1 / (2.0f64.sqrt())))
         );
 
         assert_uv_almost_eq!(
-            state.clock_frequency(ClockId(1)).unwrap(),
+            state.clock_frequency(clock_1).unwrap(),
             UncertainValue::from((0.0, 1e-8))
         );
 
         let state = EstimatorState::empty(0.0)
-            .add_clock(ClockId(1), (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
+            .add_clock(clock_1, (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
             .unwrap()
-            .add_external_clock(ClockId(2))
+            .add_external_clock(clock_2)
             .unwrap()
-            .measurement(ClockId(1), ClockId(2), (1.0, 0.1).into(), None)
+            .measurement(clock_1, clock_2, (1.0, 0.1).into(), None)
             .unwrap();
 
         assert_uv_almost_eq!(
-            state.clock_offset(ClockId(1)).unwrap(),
+            state.clock_offset(clock_1).unwrap(),
             UncertainValue::from((-0.5, 0.1 / (2.0f64.sqrt())))
         );
 
         assert_uv_almost_eq!(
-            state.clock_frequency(ClockId(1)).unwrap(),
+            state.clock_frequency(clock_1).unwrap(),
             UncertainValue::from((0.0, 1e-8))
         );
 
-        assert!(state.remove_external_clock(ClockId(2)).is_ok());
+        assert!(state.remove_external_clock(clock_2).is_ok());
     }
 
     #[test]
@@ -1039,20 +1061,27 @@ mod tests {
 
     #[test]
     fn test_invalid_measurements() {
+        let clock_1 = ClockId::new();
+        let clock_2 = ClockId::new();
+        let clock_3 = ClockId::new();
+        let clock_4 = ClockId::new();
+        let clock_5 = ClockId::new();
+        let link_1 = LinkId::new();
+
         let state = EstimatorState::empty(0.0)
-            .add_external_clock(ClockId(1))
+            .add_external_clock(clock_1)
             .unwrap()
-            .add_external_clock(ClockId(2))
+            .add_external_clock(clock_2)
             .unwrap()
-            .add_clock(ClockId(3), (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
+            .add_clock(clock_3, (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
             .unwrap()
-            .add_clock(ClockId(4), (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
+            .add_clock(clock_4, (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
             .unwrap();
 
         assert_eq!(
             state
                 .clone()
-                .measurement(ClockId(1), ClockId(2), (0.0, 0.1).into(), None)
+                .measurement(clock_1, clock_2, (0.0, 0.1).into(), None)
                 .unwrap_err(),
             EstimatorError::MeasurementBetweenExternalClocks
         );
@@ -1060,7 +1089,7 @@ mod tests {
         assert_eq!(
             state
                 .clone()
-                .measurement(ClockId(3), ClockId(5), (0.0, 0.1).into(), None)
+                .measurement(clock_3, clock_5, (0.0, 0.1).into(), None)
                 .unwrap_err(),
             EstimatorError::ClockNotFound
         );
@@ -1068,7 +1097,7 @@ mod tests {
         assert_eq!(
             state
                 .clone()
-                .measurement(ClockId(5), ClockId(3), (0.0, 0.1).into(), None)
+                .measurement(clock_5, clock_3, (0.0, 0.1).into(), None)
                 .unwrap_err(),
             EstimatorError::ClockNotFound
         );
@@ -1076,7 +1105,7 @@ mod tests {
         assert_eq!(
             state
                 .clone()
-                .measurement(ClockId(3), ClockId(4), (0.0, 0.1).into(), Some(LinkId(1)))
+                .measurement(clock_3, clock_4, (0.0, 0.1).into(), Some(link_1))
                 .unwrap_err(),
             EstimatorError::LinkNotFound
         );
@@ -1084,7 +1113,7 @@ mod tests {
         assert_eq!(
             state
                 .clone()
-                .measurement(ClockId(3), ClockId(3), (0.0, 0.1).into(), None)
+                .measurement(clock_3, clock_3, (0.0, 0.1).into(), None)
                 .unwrap_err(),
             EstimatorError::MeasurementBetweenSelf
         );
