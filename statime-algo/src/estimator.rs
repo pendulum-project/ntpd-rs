@@ -1,11 +1,8 @@
 use std::{boxed::Box, vec::Vec};
 
-use statime_base::{ClockId, LinkId};
+use statime_base::{ClockId, Duration, LinkId, TAI, Timestamp};
 
 use crate::matrix::{Matrix, MatrixError};
-
-//FIXME: Replace with proper Timestamp type
-type Timestamp = f64;
 
 //FIXME: Make more permanent error enum
 /// Errors that can occur when using the estimator.
@@ -226,7 +223,7 @@ impl LinkInfoList {
 /// for error recovery, but also for tracability and debugging.
 #[derive(Debug, Clone)]
 pub struct EstimatorState {
-    time: Timestamp,
+    time: Timestamp<TAI>,
     state: Matrix<Box<[f64]>>,
     uncertainty: Matrix<Box<[f64]>>,
     clock_info: ClockInfoList,
@@ -259,7 +256,7 @@ impl EstimatorState {
     ///
     /// This state has no clocks or links contained in it.
     #[must_use]
-    pub fn empty(time: Timestamp) -> EstimatorState {
+    pub fn empty(time: Timestamp<TAI>) -> EstimatorState {
         EstimatorState {
             time,
             state: Matrix::zero(0, 1),
@@ -274,19 +271,23 @@ impl EstimatorState {
     ///
     /// # Errors
     /// Returns an error if the new time provided is before the current time of the filter.
-    pub fn progress_time(mut self, new_time: Timestamp) -> Result<EstimatorState, EstimatorError> {
+    pub fn progress_time(
+        mut self,
+        new_time: Timestamp<TAI>,
+    ) -> Result<EstimatorState, EstimatorError> {
+        let delta_t = new_time - self.time;
+
         // time should not move backwards
-        if new_time < self.time {
+        if delta_t < Duration::ZERO {
             return Err(EstimatorError::NonMonotonicTimeProgression);
         }
 
         // no time change, return state as is
-        #[expect(clippy::float_cmp, reason = "Explicit delta is zero short circuit")]
         if new_time == self.time {
             return Ok(self);
         }
 
-        let delta_t = new_time - self.time;
+        let delta_t = delta_t.as_seconds();
 
         let mut update = Matrix::identity(self.state.rows());
         let mut noise = Matrix::zero(self.state.rows(), self.state.rows());
@@ -366,11 +367,11 @@ impl EstimatorState {
     pub fn absorb_system_clock_offset_change(
         mut self,
         steered_clock: ClockId,
-        offset_change: f64,
+        offset_change: Duration,
     ) -> Result<EstimatorState, EstimatorError> {
         let clock_info = self.get_clock_info(steered_clock)?;
         let offset_index = clock_info.offset_index();
-        self.state[(offset_index, 0)] += offset_change;
+        self.state[(offset_index, 0)] += offset_change.as_seconds();
         self.time += offset_change;
         Ok(self)
     }
@@ -624,7 +625,7 @@ impl EstimatorState {
         self.external_clocks.contains(id)
     }
 
-    pub(crate) fn current_time(&self) -> f64 {
+    pub(crate) fn current_time(&self) -> Timestamp<TAI> {
         self.time
     }
 }
@@ -679,7 +680,7 @@ mod tests {
         let clock_1 = ClockId::new();
         let clock_2 = ClockId::new();
 
-        let state = EstimatorState::empty(0.0)
+        let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
             .add_clock(clock_1, (0.0, 1.0).into(), (2.0, 3.0).into(), 1e-8)
             .unwrap();
         assert_eq!(state.clock_offset(clock_1).unwrap().value, 0.0);
@@ -707,7 +708,7 @@ mod tests {
         let clock_2 = ClockId::new();
         let clock_3 = ClockId::new();
 
-        let state = EstimatorState::empty(0.0)
+        let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
             .add_clock(clock_1, (0.0, 1.0).into(), (0.0, 1.0).into(), 1e-8)
             .unwrap()
             .add_external_clock(clock_2)
@@ -747,7 +748,7 @@ mod tests {
         let link_1 = LinkId::new();
         let link_2 = LinkId::new();
 
-        let state = EstimatorState::empty(0.0)
+        let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
             .add_clock(clock_1, (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
             .unwrap()
             .add_link(link_1, (0.5, 0.2).into(), 0.0)
@@ -756,7 +757,7 @@ mod tests {
             .unwrap()
             .add_link(link_2, (2.0, 0.0).into(), 0.1)
             .unwrap()
-            .progress_time(100.0)
+            .progress_time(Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(100, 0))
             .unwrap();
         assert_eq!(state.clock_frequency(clock_1).unwrap().value, 1e-6);
         // Random walk noise, so frequency deviation is sqrt(time_interval)*wander.
@@ -796,7 +797,7 @@ mod tests {
     fn test_frequency_steering() {
         let clock_1 = ClockId::new();
 
-        let state = EstimatorState::empty(0.0)
+        let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
             .add_clock(clock_1, (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
             .unwrap()
             .absorb_frequency_steer(clock_1, -1e-6)
@@ -813,24 +814,31 @@ mod tests {
         let clock_1 = ClockId::new();
         let clock_2 = ClockId::new();
 
-        let state = EstimatorState::empty(10.0)
-            .add_clock(clock_1, (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
-            .unwrap()
-            .add_clock(clock_2, (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
-            .unwrap()
-            .absorb_offset_change(clock_2, 1.0)
-            .unwrap();
+        let state =
+            EstimatorState::empty(Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(10, 0))
+                .add_clock(clock_1, (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
+                .unwrap()
+                .add_clock(clock_2, (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
+                .unwrap()
+                .absorb_offset_change(clock_2, 1.0)
+                .unwrap();
 
-        assert_almost_eq!(state.time, 10.0);
+        assert_eq!(
+            state.time,
+            Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(10, 0)
+        );
         assert_uv_almost_eq!(
             state.clock_offset(clock_2).unwrap(),
             UncertainValue::from((1.0, 0.0))
         );
 
         let state = state
-            .absorb_system_clock_offset_change(clock_1, -1.0)
+            .absorb_system_clock_offset_change(clock_1, Duration::from_seconds_nanos(-1, 0))
             .unwrap();
-        assert_almost_eq!(state.time, 9.0);
+        assert_eq!(
+            state.time,
+            Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(9, 0)
+        );
         assert_uv_almost_eq!(
             state.clock_offset(clock_1).unwrap(),
             UncertainValue::from((-1.0, 0.0))
@@ -841,17 +849,19 @@ mod tests {
     fn test_progress_time_composes_well() {
         let clock_1 = ClockId::new();
 
-        let state = EstimatorState::empty(0.0)
+        let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
             .add_clock(clock_1, (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
             .unwrap();
 
         let state_via_intermediate = state
             .clone()
-            .progress_time(75.0)
+            .progress_time(Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(75, 0))
             .unwrap()
-            .progress_time(100.0)
+            .progress_time(Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(100, 0))
             .unwrap();
-        let state_at_once = state.progress_time(100.0).unwrap();
+        let state_at_once = state
+            .progress_time(Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(100, 0))
+            .unwrap();
 
         assert_uv_almost_eq!(
             state_at_once.clock_offset(clock_1).unwrap(),
@@ -867,7 +877,7 @@ mod tests {
     fn test_add_link() {
         let link_1 = LinkId::new();
 
-        let state = EstimatorState::empty(0.0)
+        let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
             .add_link(link_1, (1.0, 2.0).into(), 0.0)
             .expect("Failed to add link");
         assert_eq!(state.link_delay(link_1).unwrap().value, 1.0);
@@ -879,7 +889,7 @@ mod tests {
         let clock_1 = ClockId::new();
         let clock_2 = ClockId::new();
 
-        let state = EstimatorState::empty(0.0)
+        let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
             .add_clock(clock_1, (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
             .unwrap()
             .add_clock(clock_2, (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
@@ -904,12 +914,12 @@ mod tests {
             UncertainValue::from((0.0, 1e-8))
         );
 
-        let state = EstimatorState::empty(0.0)
+        let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
             .add_clock(clock_1, (0.0, 0.0).into(), (0.0, 1e-3).into(), 0.0)
             .unwrap()
             .add_clock(clock_2, (0.0, 0.0).into(), (0.0, 1e-3).into(), 0.0)
             .unwrap()
-            .progress_time(100.0)
+            .progress_time(Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(100, 0))
             .unwrap()
             .measurement(clock_1, clock_2, (1.0, 2.0f64.sqrt() * 0.1).into(), None)
             .unwrap();
@@ -938,7 +948,7 @@ mod tests {
         let clock_2 = ClockId::new();
         let link_1 = LinkId::new();
 
-        let state = EstimatorState::empty(0.0)
+        let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
             .add_clock(clock_1, (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
             .unwrap()
             .add_clock(clock_2, (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
@@ -974,7 +984,7 @@ mod tests {
             UncertainValue::from((1.0, 0.0))
         );
 
-        let state = EstimatorState::empty(0.0)
+        let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
             .add_clock(clock_1, (0.0, 0.0).into(), (0.0, 1e-8).into(), 1e-8)
             .unwrap()
             .add_clock(clock_2, (0.0, 0.0).into(), (0.0, 1e-8).into(), 1e-8)
@@ -1011,7 +1021,7 @@ mod tests {
         let clock_1 = ClockId::new();
         let clock_2 = ClockId::new();
 
-        let state = EstimatorState::empty(0.0)
+        let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
             .add_clock(clock_1, (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
             .unwrap()
             .add_external_clock(clock_2)
@@ -1029,7 +1039,7 @@ mod tests {
             UncertainValue::from((0.0, 1e-8))
         );
 
-        let state = EstimatorState::empty(0.0)
+        let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
             .add_clock(clock_1, (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
             .unwrap()
             .add_external_clock(clock_2)
@@ -1052,9 +1062,13 @@ mod tests {
 
     #[test]
     fn test_negative_time_step() {
-        let state = EstimatorState::empty(0.0);
+        let state =
+            EstimatorState::empty(Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(1, 0));
         assert_eq!(
-            state.clone().progress_time(-1.0).unwrap_err(),
+            state
+                .clone()
+                .progress_time(Timestamp::UNIX_EPOCH)
+                .unwrap_err(),
             EstimatorError::NonMonotonicTimeProgression
         );
     }
@@ -1068,7 +1082,7 @@ mod tests {
         let clock_5 = ClockId::new();
         let link_1 = LinkId::new();
 
-        let state = EstimatorState::empty(0.0)
+        let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
             .add_external_clock(clock_1)
             .unwrap()
             .add_external_clock(clock_2)

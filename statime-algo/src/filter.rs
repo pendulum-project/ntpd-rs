@@ -1,11 +1,9 @@
-use statime_base::{ClockId, LinkId};
+use statime_base::{ClockId, Duration, LinkId, TAI, Timestamp};
 
 use crate::{
     EstimatorError, EstimatorState, LinkNoiseError, LinkNoiseEstimator, estimator::UncertainValue,
     ringbuffer::UnorderedRingBuffer,
 };
-
-type Timestamp = f64;
 
 /// An error that occured in the link filter.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -131,7 +129,7 @@ pub struct LinkFilterConfig {
 impl LinkFilter {
     /// Create a new, empty `LinkFilter`.
     #[must_use]
-    pub fn empty(time: Timestamp) -> Self {
+    pub fn empty(time: Timestamp<TAI>) -> Self {
         LinkFilter {
             links: std::vec::Vec::new(),
             estimation_state: EstimatorState::empty(time),
@@ -142,7 +140,7 @@ impl LinkFilter {
     ///
     /// # Errors
     /// Returns an error if the new time is before the current time of the filter.
-    pub fn progress_time(mut self, new_time: Timestamp) -> Result<Self, LinkFilterError> {
+    pub fn progress_time(mut self, new_time: Timestamp<TAI>) -> Result<Self, LinkFilterError> {
         self.estimation_state = self.estimation_state.progress_time(new_time)?;
         Ok(self)
     }
@@ -201,11 +199,11 @@ impl LinkFilter {
     pub fn absorb_system_clock_offset_change(
         mut self,
         steered_clock: ClockId,
-        offset_change: f64,
+        offset_change: Duration,
     ) -> Result<LinkFilter, EstimatorError> {
         self.estimation_state = self
             .estimation_state
-            .absorb_offset_change(steered_clock, offset_change)?;
+            .absorb_offset_change(steered_clock, offset_change.as_seconds())?;
         for link in &mut self.links {
             match &mut link.link_state {
                 LinkState::Tracked {

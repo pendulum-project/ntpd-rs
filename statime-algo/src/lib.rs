@@ -160,7 +160,7 @@ mod ringbuffer;
 pub use estimator::{EstimatorError, EstimatorState};
 pub use filter::{LinkFilter, LinkFilterError};
 pub use link_noise::{LinkNoiseError, LinkNoiseEstimator};
-use statime_base::{Clock, ClockId, Duration, Timestamp};
+use statime_base::{Clock, ClockId, Duration};
 
 use crate::estimator::UncertainValue;
 
@@ -206,20 +206,19 @@ impl<C: Clock> KalmanController<C> {
         let start_time = system_clock
             .now()
             .map_err(KalmanControllerError::ClockError)?;
-        let (filter, id) = LinkFilter::empty((start_time - Timestamp::UNIX_EPOCH).as_seconds())
-            .add_clock(
-                UncertainValue {
-                    value: 0.0,
-                    uncertainty: 1e18,
-                },
-                UncertainValue {
-                    value: 0.0,
-                    uncertainty: system_clock
-                        .max_frequency()
-                        .map_err(KalmanControllerError::ClockError)?,
-                },
-                initial_wander,
-            )?;
+        let (filter, id) = LinkFilter::empty(start_time).add_clock(
+            UncertainValue {
+                value: 0.0,
+                uncertainty: 1e18,
+            },
+            UncertainValue {
+                value: 0.0,
+                uncertainty: system_clock
+                    .max_frequency()
+                    .map_err(KalmanControllerError::ClockError)?,
+            },
+            initial_wander,
+        )?;
         Ok((
             Self {
                 clocks: std::vec![ClockInfo {
@@ -304,12 +303,10 @@ impl<C: Clock> KalmanController<C> {
     #[expect(unused)]
     fn steer_clocks(&mut self) -> Result<(), KalmanControllerError<C::Error>> {
         let mut filter = self.filter.clone().progress_time(
-            (self.clocks[0]
+            self.clocks[0]
                 .clock
                 .now()
-                .map_err(KalmanControllerError::ClockError)?
-                - Timestamp::UNIX_EPOCH)
-                .as_seconds(),
+                .map_err(KalmanControllerError::ClockError)?,
         )?;
         for clock_info in &mut self.clocks {
             // FIXME: Make constants configurable.
