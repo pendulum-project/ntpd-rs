@@ -90,6 +90,9 @@ impl<A> core::hash::Hash for Timestamp<A> {
 }
 
 impl Duration {
+    /// A zero-length duration.
+    pub const ZERO: Duration = Duration(0);
+
     /// The length of the duration as a floating point number of seconds.
     #[must_use]
     #[expect(clippy::cast_precision_loss, reason = "We accept precision loss here")]
@@ -115,9 +118,9 @@ impl Duration {
     /// example `from_seconds_nanos(-1, 500_000_000)` represents minus half a
     /// second.
     #[must_use]
-    pub fn from_seconds_nanos(seconds: i64, nanos: u32) -> Self {
-        let converted_nanos = (i128::from(nanos) << 64) / 1_000_000_000;
-        Duration((i128::from(seconds) << 64) + converted_nanos)
+    pub const fn from_seconds_nanos(seconds: i64, nanos: u32) -> Self {
+        let converted_nanos = ((nanos as i128) << 64) / 1_000_000_000;
+        Duration(((seconds as i128) << 64) + converted_nanos)
     }
 }
 

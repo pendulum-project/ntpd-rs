@@ -1,16 +1,14 @@
-use statime_base::ClockId;
+use statime_base::{ClockId, Duration, TAI, Timestamp};
 
 use crate::ringbuffer::UnorderedRingBuffer;
 
 const MIN_DELAYS_FOR_ESTIMATES: usize = 4;
 /// FIXME: Consider whether we want this configurable.
-const MAX_TIME_BETWEEN_HALVES: f64 = 0.5;
-
-type Timestamp = f64;
+const MAX_TIME_BETWEEN_HALVES: Duration = Duration::from_seconds_nanos(0, 500_000_000);
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct PreviousMeasurement {
-    time: Timestamp,
+    time: Timestamp<TAI>,
     offset: f64,
     from: ClockId,
     to: ClockId,
@@ -63,7 +61,7 @@ impl LinkNoiseEstimator {
         from: ClockId,
         to: ClockId,
         offset: f64,
-        time: Timestamp,
+        time: Timestamp<TAI>,
     ) -> Result<LinkNoiseEstimator, LinkNoiseError> {
         if (from != self.a && from != self.b) || (to != self.a && to != self.b) {
             return Err(LinkNoiseError::InvalidClocks);
@@ -108,7 +106,7 @@ impl LinkNoiseEstimator {
     pub fn absorb_system_clock_offset_change(
         mut self,
         steered_clock: ClockId,
-        offset_change: f64,
+        offset_change: Duration,
     ) -> LinkNoiseEstimator {
         if self.a == steered_clock || self.b == steered_clock {
             // One of the clocks in this link has a discontinuity, which makes a delay
@@ -176,7 +174,7 @@ impl LinkNoiseEstimator {
 #[cfg(test)]
 #[allow(clippy::float_cmp, reason = "Test code")]
 mod tests {
-    use statime_base::ClockId;
+    use statime_base::{ClockId, Timestamp};
 
     use crate::{estimator::UncertainValue, link_noise::LinkNoiseEstimator};
 
@@ -187,21 +185,21 @@ mod tests {
 
         let state = LinkNoiseEstimator::new(clock_1, clock_2)
             .unwrap()
-            .measurement(clock_1, clock_2, 1.0, 0.0)
+            .measurement(clock_1, clock_2, 1.0, Timestamp::UNIX_EPOCH)
             .unwrap()
-            .measurement(clock_2, clock_1, 1.0, 0.0)
+            .measurement(clock_2, clock_1, 1.0, Timestamp::UNIX_EPOCH)
             .unwrap()
-            .measurement(clock_1, clock_2, 1.0, 0.0)
+            .measurement(clock_1, clock_2, 1.0, Timestamp::UNIX_EPOCH)
             .unwrap()
-            .measurement(clock_2, clock_1, 1.0, 0.0)
+            .measurement(clock_2, clock_1, 1.0, Timestamp::UNIX_EPOCH)
             .unwrap()
-            .measurement(clock_1, clock_2, 1.0, 0.0)
+            .measurement(clock_1, clock_2, 1.0, Timestamp::UNIX_EPOCH)
             .unwrap()
-            .measurement(clock_2, clock_1, 1.0, 0.0)
+            .measurement(clock_2, clock_1, 1.0, Timestamp::UNIX_EPOCH)
             .unwrap()
-            .measurement(clock_1, clock_2, 1.0, 0.0)
+            .measurement(clock_1, clock_2, 1.0, Timestamp::UNIX_EPOCH)
             .unwrap()
-            .measurement(clock_2, clock_1, 1.0, 0.0)
+            .measurement(clock_2, clock_1, 1.0, Timestamp::UNIX_EPOCH)
             .unwrap();
 
         assert_eq!(state.noise_estimate().unwrap(), 0.0);
@@ -215,21 +213,21 @@ mod tests {
 
         let state = LinkNoiseEstimator::new(clock_1, clock_2)
             .unwrap()
-            .measurement(clock_1, clock_2, 1.0, 0.0)
+            .measurement(clock_1, clock_2, 1.0, Timestamp::UNIX_EPOCH)
             .unwrap()
-            .measurement(clock_2, clock_1, 1.0, 0.0)
+            .measurement(clock_2, clock_1, 1.0, Timestamp::UNIX_EPOCH)
             .unwrap()
-            .measurement(clock_1, clock_2, 1.0, 0.0)
+            .measurement(clock_1, clock_2, 1.0, Timestamp::UNIX_EPOCH)
             .unwrap()
-            .measurement(clock_2, clock_1, 1.0, 0.0)
+            .measurement(clock_2, clock_1, 1.0, Timestamp::UNIX_EPOCH)
             .unwrap()
-            .measurement(clock_1, clock_2, 0.5, 0.0)
+            .measurement(clock_1, clock_2, 0.5, Timestamp::UNIX_EPOCH)
             .unwrap()
-            .measurement(clock_2, clock_1, 0.5, 0.0)
+            .measurement(clock_2, clock_1, 0.5, Timestamp::UNIX_EPOCH)
             .unwrap()
-            .measurement(clock_1, clock_2, 0.5, 0.0)
+            .measurement(clock_1, clock_2, 0.5, Timestamp::UNIX_EPOCH)
             .unwrap()
-            .measurement(clock_2, clock_1, 0.5, 0.0)
+            .measurement(clock_2, clock_1, 0.5, Timestamp::UNIX_EPOCH)
             .unwrap();
 
         assert_almost_eq!(state.noise_estimate().unwrap(), 1.0 / (6.0f64.sqrt()));
@@ -245,25 +243,65 @@ mod tests {
 
         let state = LinkNoiseEstimator::new(a, b)
             .unwrap()
-            .measurement(a, b, delay.value, 0.0)
+            .measurement(a, b, delay.value, Timestamp::UNIX_EPOCH)
             .unwrap()
-            .measurement(b, a, delay.value, 0.0)
+            .measurement(b, a, delay.value, Timestamp::UNIX_EPOCH)
             .unwrap()
-            .measurement(a, b, delay.value + delay.uncertainty / 2.0f64.sqrt(), 0.0)
+            .measurement(
+                a,
+                b,
+                delay.value + delay.uncertainty / 2.0f64.sqrt(),
+                Timestamp::UNIX_EPOCH,
+            )
             .unwrap()
-            .measurement(b, a, delay.value + delay.uncertainty / 2.0f64.sqrt(), 0.0)
+            .measurement(
+                b,
+                a,
+                delay.value + delay.uncertainty / 2.0f64.sqrt(),
+                Timestamp::UNIX_EPOCH,
+            )
             .unwrap()
-            .measurement(a, b, delay.value + delay.uncertainty / 2.0f64.sqrt(), 0.0)
+            .measurement(
+                a,
+                b,
+                delay.value + delay.uncertainty / 2.0f64.sqrt(),
+                Timestamp::UNIX_EPOCH,
+            )
             .unwrap()
-            .measurement(b, a, delay.value + delay.uncertainty / 2.0f64.sqrt(), 0.0)
+            .measurement(
+                b,
+                a,
+                delay.value + delay.uncertainty / 2.0f64.sqrt(),
+                Timestamp::UNIX_EPOCH,
+            )
             .unwrap()
-            .measurement(a, b, delay.value - delay.uncertainty / 2.0f64.sqrt(), 0.0)
+            .measurement(
+                a,
+                b,
+                delay.value - delay.uncertainty / 2.0f64.sqrt(),
+                Timestamp::UNIX_EPOCH,
+            )
             .unwrap()
-            .measurement(b, a, delay.value - delay.uncertainty / 2.0f64.sqrt(), 0.0)
+            .measurement(
+                b,
+                a,
+                delay.value - delay.uncertainty / 2.0f64.sqrt(),
+                Timestamp::UNIX_EPOCH,
+            )
             .unwrap()
-            .measurement(a, b, delay.value - delay.uncertainty / 2.0f64.sqrt(), 0.0)
+            .measurement(
+                a,
+                b,
+                delay.value - delay.uncertainty / 2.0f64.sqrt(),
+                Timestamp::UNIX_EPOCH,
+            )
             .unwrap()
-            .measurement(b, a, delay.value - delay.uncertainty / 2.0f64.sqrt(), 0.0)
+            .measurement(
+                b,
+                a,
+                delay.value - delay.uncertainty / 2.0f64.sqrt(),
+                Timestamp::UNIX_EPOCH,
+            )
             .unwrap();
 
         assert_almost_eq!(state.delay_estimate().unwrap(), delay.value);
