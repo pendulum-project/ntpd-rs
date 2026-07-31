@@ -11,7 +11,8 @@ publish.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+statime-base.workspace = true
 
 [features]
 default = ["std"]
-std = []
+std = ["statime-base/std"]

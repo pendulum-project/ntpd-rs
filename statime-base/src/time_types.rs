@@ -92,12 +92,20 @@ impl<A> core::hash::Hash for Timestamp<A> {
 impl Duration {
     /// The length of the duration as a floating point number of seconds.
     #[must_use]
-    #[expect(
-        clippy::cast_precision_loss,
-        reason = "The expressive range of the target type of the operation as a whole is smaller, so precision loss is to be expected."
-    )]
+    #[expect(clippy::cast_precision_loss, reason = "We accept precision loss here")]
     pub fn as_seconds(self) -> f64 {
         (self.0 as f64) / ((1u128 << 64) as f64)
+    }
+
+    /// Create a duration from a floating point number of seconds.
+    #[must_use]
+    #[expect(clippy::cast_precision_loss, reason = "We accept precision loss here")]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "We accept precision loss here"
+    )]
+    pub fn from_f64_seconds(value: f64) -> Self {
+        Duration((value * ((1u128 << 64) as f64)) as i128)
     }
 
     /// Create a duration from a given number of seconds, plus the given number

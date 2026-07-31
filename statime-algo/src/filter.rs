@@ -36,6 +36,7 @@ impl From<LinkNoiseError> for LinkFilterError {
     }
 }
 
+#[derive(Debug, Clone)]
 enum LinkState {
     Tracked {
         link_noise_estimator: LinkNoiseEstimator,
@@ -44,11 +45,13 @@ enum LinkState {
     Untracked(ClockId, ClockId),
 }
 
+#[derive(Debug, Clone)]
 struct ExternalLinkState {
     last_offsets: UnorderedRingBuffer,
     last_offset_uncertainty: f64,
 }
 
+#[derive(Debug, Clone)]
 struct LinkInfo {
     id: LinkId,
     active: bool,
@@ -99,6 +102,7 @@ impl LinkInfo {
 }
 
 /// A state estimation filter with full support for handling selection an dprocessing of links.
+#[derive(Debug, Clone)]
 pub struct LinkFilter {
     links: std::vec::Vec<LinkInfo>,
     estimation_state: EstimatorState,
@@ -166,7 +170,7 @@ impl LinkFilter {
         mut self,
         steered_clock: ClockId,
         offset_change: f64,
-    ) -> Result<LinkFilter, EstimatorError> {
+    ) -> Result<LinkFilter, LinkFilterError> {
         self.estimation_state = self
             .estimation_state
             .absorb_offset_change(steered_clock, offset_change)?;
@@ -337,7 +341,7 @@ impl LinkFilter {
     /// Add an external clock to the filter.
     ///
     /// # Errors
-    /// Returns an error if the clock is already known to the filter.
+    /// Returns an error if the clock cannot be added due to capacity constraints.
     pub fn add_external_clock(mut self) -> Result<(Self, ClockId), LinkFilterError> {
         let id = ClockId::new();
         self.estimation_state = self.estimation_state.add_external_clock(id)?;
@@ -357,7 +361,7 @@ impl LinkFilter {
     /// Add an internal clock to the filter.
     ///
     /// # Errors
-    /// Returns an error if the clock is already a part of the filter.
+    /// Returns an error if the clock cannot be added due to capacity constraints.
     pub fn add_clock(
         mut self,
         initial_offset: UncertainValue,
@@ -561,5 +565,21 @@ impl LinkFilter {
         } else {
             None
         }
+    }
+
+    /// Get the current offset of a clock.
+    ///
+    /// # Errors
+    /// Fails when the clock is not known to the filter.
+    pub fn clock_offset(&self, clock_id: ClockId) -> Result<UncertainValue, LinkFilterError> {
+        Ok(self.estimation_state.clock_offset(clock_id)?)
+    }
+
+    /// Get the current frequency offset of a clock.
+    ///
+    /// # Errors
+    /// Fails when the clock is not known to the filter.
+    pub fn clock_frequency(&self, clock_id: ClockId) -> Result<UncertainValue, LinkFilterError> {
+        Ok(self.estimation_state.clock_frequency(clock_id)?)
     }
 }
