@@ -1,4 +1,6 @@
-use crate::{ClockId, ringbuffer::UnorderedRingBuffer};
+use statime_base::ClockId;
+
+use crate::ringbuffer::UnorderedRingBuffer;
 
 const MIN_DELAYS_FOR_ESTIMATES: usize = 4;
 /// FIXME: Consider whether we want this configurable.
@@ -174,27 +176,32 @@ impl LinkNoiseEstimator {
 #[cfg(test)]
 #[allow(clippy::float_cmp, reason = "Test code")]
 mod tests {
-    use crate::{ClockId, estimator::UncertainValue, link_noise::LinkNoiseEstimator};
+    use statime_base::ClockId;
+
+    use crate::{estimator::UncertainValue, link_noise::LinkNoiseEstimator};
 
     #[test]
     fn link_noise_measures_link_noise_1() {
-        let state = LinkNoiseEstimator::new(ClockId(1), ClockId(2))
+        let clock_1 = ClockId::new();
+        let clock_2 = ClockId::new();
+
+        let state = LinkNoiseEstimator::new(clock_1, clock_2)
             .unwrap()
-            .measurement(ClockId(1), ClockId(2), 1.0, 0.0)
+            .measurement(clock_1, clock_2, 1.0, 0.0)
             .unwrap()
-            .measurement(ClockId(2), ClockId(1), 1.0, 0.0)
+            .measurement(clock_2, clock_1, 1.0, 0.0)
             .unwrap()
-            .measurement(ClockId(1), ClockId(2), 1.0, 0.0)
+            .measurement(clock_1, clock_2, 1.0, 0.0)
             .unwrap()
-            .measurement(ClockId(2), ClockId(1), 1.0, 0.0)
+            .measurement(clock_2, clock_1, 1.0, 0.0)
             .unwrap()
-            .measurement(ClockId(1), ClockId(2), 1.0, 0.0)
+            .measurement(clock_1, clock_2, 1.0, 0.0)
             .unwrap()
-            .measurement(ClockId(2), ClockId(1), 1.0, 0.0)
+            .measurement(clock_2, clock_1, 1.0, 0.0)
             .unwrap()
-            .measurement(ClockId(1), ClockId(2), 1.0, 0.0)
+            .measurement(clock_1, clock_2, 1.0, 0.0)
             .unwrap()
-            .measurement(ClockId(2), ClockId(1), 1.0, 0.0)
+            .measurement(clock_2, clock_1, 1.0, 0.0)
             .unwrap();
 
         assert_eq!(state.noise_estimate().unwrap(), 0.0);
@@ -203,23 +210,26 @@ mod tests {
 
     #[test]
     fn link_noise_measures_link_noise_2() {
-        let state = LinkNoiseEstimator::new(ClockId(1), ClockId(2))
+        let clock_1 = ClockId::new();
+        let clock_2 = ClockId::new();
+
+        let state = LinkNoiseEstimator::new(clock_1, clock_2)
             .unwrap()
-            .measurement(ClockId(1), ClockId(2), 1.0, 0.0)
+            .measurement(clock_1, clock_2, 1.0, 0.0)
             .unwrap()
-            .measurement(ClockId(2), ClockId(1), 1.0, 0.0)
+            .measurement(clock_2, clock_1, 1.0, 0.0)
             .unwrap()
-            .measurement(ClockId(1), ClockId(2), 1.0, 0.0)
+            .measurement(clock_1, clock_2, 1.0, 0.0)
             .unwrap()
-            .measurement(ClockId(2), ClockId(1), 1.0, 0.0)
+            .measurement(clock_2, clock_1, 1.0, 0.0)
             .unwrap()
-            .measurement(ClockId(1), ClockId(2), 0.5, 0.0)
+            .measurement(clock_1, clock_2, 0.5, 0.0)
             .unwrap()
-            .measurement(ClockId(2), ClockId(1), 0.5, 0.0)
+            .measurement(clock_2, clock_1, 0.5, 0.0)
             .unwrap()
-            .measurement(ClockId(1), ClockId(2), 0.5, 0.0)
+            .measurement(clock_1, clock_2, 0.5, 0.0)
             .unwrap()
-            .measurement(ClockId(2), ClockId(1), 0.5, 0.0)
+            .measurement(clock_2, clock_1, 0.5, 0.0)
             .unwrap();
 
         assert_almost_eq!(state.noise_estimate().unwrap(), 1.0 / (6.0f64.sqrt()));
@@ -229,8 +239,8 @@ mod tests {
     /// Returns a link noise estimator with 0 link noise.
     #[test]
     fn link_noise_measures_link_noise_3() {
-        let a = ClockId(1);
-        let b = ClockId(2);
+        let a = ClockId::new();
+        let b = ClockId::new();
         let delay: UncertainValue = (1.5, 0.1).into();
 
         let state = LinkNoiseEstimator::new(a, b)
