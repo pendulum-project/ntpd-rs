@@ -94,18 +94,30 @@ impl Duration {
     pub const ZERO: Duration = Duration(0);
 
     /// The length of the duration as a floating point number of seconds.
+    ///
+    /// Note: Very large durations will loose precision when converted
+    /// to a floating point.
     #[must_use]
-    #[expect(clippy::cast_precision_loss, reason = "We accept precision loss here")]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Power of two u128 to float cast is exact, other precision rounding errors are acceptable"
+    )]
     pub fn as_seconds(self) -> f64 {
         (self.0 as f64) / ((1u128 << 64) as f64)
     }
 
     /// Create a duration from a floating point number of seconds.
+    ///
+    /// Note: If the provided value is too large or too small to representable as a
+    /// duration, the result will be clamped to the maximum or minimum respectively.
     #[must_use]
-    #[expect(clippy::cast_precision_loss, reason = "We accept precision loss here")]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Power of two u128 to float cast is exact, other precision rounding errors are acceptable"
+    )]
     #[expect(
         clippy::cast_possible_truncation,
-        reason = "We accept precision loss here"
+        reason = "Acceptable: large durations may truncate to the maximum/minimum representable number."
     )]
     pub fn from_f64_seconds(value: f64) -> Self {
         Duration((value * ((1u128 << 64) as f64)) as i128)
