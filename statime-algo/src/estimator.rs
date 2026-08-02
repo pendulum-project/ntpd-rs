@@ -241,6 +241,17 @@ pub struct UncertainValue {
     pub uncertainty: f64,
 }
 
+impl UncertainValue {
+    /// Add some additional uncertainty to the uncertain value.
+    pub fn add_uncertainty(self, extra_uncertainty: f64) -> UncertainValue {
+        UncertainValue {
+            value: self.value,
+            // Addition formula for uncertainty...
+            uncertainty: (self.uncertainty.powi(2) + extra_uncertainty.powi(2)).sqrt(),
+        }
+    }
+}
+
 /// Convert from a tuple of (value, uncertainty) to an `UncertainValue`.
 impl From<(f64, f64)> for UncertainValue {
     fn from(value: (f64, f64)) -> Self {

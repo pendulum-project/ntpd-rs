@@ -25,6 +25,13 @@ pub enum LinkNoiseError {
     NotEnoughMeasurements,
 }
 
+/// A struct containing the delay and noise estimates for a link.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct LinkDelayNoiseEstimate {
+    pub delay: f64,
+    pub noise: f64,
+}
+
 /// Estimator for the noise induced by a given link
 #[derive(Debug, Clone)]
 pub struct LinkNoiseEstimator {
@@ -168,6 +175,18 @@ impl LinkNoiseEstimator {
             reason = "2*roundtrip_delays.len() is at most 16, which will fit, therefore the warning is spurious"
         )]
         Ok(roundtrip_delays.iter().sum::<f64>() / ((2 * roundtrip_delays.len()) as f64))
+    }
+
+    /// The current estimate of the delay and noise on the link
+    ///
+    /// # Errors
+    /// The delay and noise estimates are only available if sufficient
+    /// measurements have occured for a reliable estimate to be made.
+    pub fn delay_and_noise_estimate(&self) -> Result<LinkDelayNoiseEstimate, LinkNoiseError> {
+        Ok(LinkDelayNoiseEstimate {
+            delay: self.delay_estimate()?,
+            noise: self.noise_estimate()?,
+        })
     }
 }
 
