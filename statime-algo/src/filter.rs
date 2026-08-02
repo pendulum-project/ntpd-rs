@@ -2,7 +2,7 @@ use statime_base::{ClockId, Duration, LinkId, TAI, Timestamp};
 
 use crate::{
     EstimatorError, EstimatorState, LinkNoiseError, LinkNoiseEstimator, estimator::UncertainValue,
-    ringbuffer::UnorderedRingBuffer,
+    link_noise::LinkDelayNoiseEstimate, ringbuffer::UnorderedRingBuffer,
 };
 
 /// An error that occured in the link filter.
@@ -45,10 +45,91 @@ enum LinkState {
     Untracked(ClockId, ClockId),
 }
 
+impl LinkState {
+    /// Get the current delay and noise estimate for the link.
+    ///
+    /// # Errors
+    /// Returns an error if the link is tracked but the delay and noise estimate is not yet available.
+    fn delay_and_noise_estimate(&self) -> Result<LinkDelayNoiseEstimate, LinkFilterError> {
+        match self {
+            LinkState::Tracked {
+                link_noise_estimator,
+                ..
+            } => Ok(link_noise_estimator.delay_and_noise_estimate()?),
+            LinkState::Untracked(_, _) => Ok(LinkDelayNoiseEstimate {
+                delay: 0.0,
+                noise: 0.0,
+            }),
+        }
+    }
+
+    /// Get the current noise estimate for the link.
+    ///
+    /// # Errors
+    /// Returns an error if the link is tracked but the noise estimate is not yet available.
+    fn noise_estimate(&self) -> Result<f64, LinkFilterError> {
+        match self {
+            LinkState::Tracked {
+                link_noise_estimator,
+                ..
+            } => Ok(link_noise_estimator.noise_estimate()?),
+            LinkState::Untracked(_, _) => Ok(0.0),
+        }
+    }
+
+    /// Get the decay rate for the link.
+    fn decay_rate(&self) -> f64 {
+        match self {
+            LinkState::Tracked { decay_rate, .. } => *decay_rate,
+            LinkState::Untracked(_, _) => 0.0,
+        }
+    }
+
+    /// Update estimates based on a new measurement.
+    fn measurement(
+        &mut self,
+        from: ClockId,
+        to: ClockId,
+        offset: UncertainValue,
+        time: Timestamp<TAI>,
+    ) -> Result<(), LinkFilterError> {
+        match self {
+            LinkState::Tracked {
+                link_noise_estimator,
+                ..
+            } => {
+                *link_noise_estimator =
+                    link_noise_estimator
+                        .clone()
+                        .measurement(from, to, offset.value, time)?;
+            }
+            LinkState::Untracked(a, b) => {
+                if !((*a == from && *b == to) || (*a == to && *b == from)) {
+                    return Err(LinkFilterError::InvalidClocks);
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone)]
 struct ExternalLinkState {
     last_offsets: UnorderedRingBuffer,
     last_offset_uncertainty: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct OffsetWindow {
+    low: f64,
+    high: f64,
+}
+
+impl OffsetWindow {
+    /// Returns true if this window overlaps the other window
+    pub fn overlaps(self, other: OffsetWindow) -> bool {
+        self.low <= other.high && self.high >= other.low
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -59,12 +140,10 @@ struct LinkInfo {
     external_link_state: Option<ExternalLinkState>,
 }
 
-struct OffsetWindow {
-    low: f64,
-    high: f64,
-}
-
 impl LinkInfo {
+    /// Get an offset window for the link.
+    ///
+    /// Returns None if the link is not with an external clock.
     fn offset_window(&self, config: &LinkFilterConfig) -> Option<OffsetWindow> {
         let external_link_state = self.external_link_state.as_ref()?;
 
@@ -83,16 +162,9 @@ impl LinkInfo {
             .sum::<f64>()
             / (external_link_state.last_offsets.as_ref().len() as f64);
 
-        let half_window_size = match &self.link_state {
-            LinkState::Tracked {
-                link_noise_estimator,
-                ..
-            } => {
-                link_noise_estimator.noise_estimate().ok()? * config.select_link_uncertainty_window
-            }
-            LinkState::Untracked(_, _) => 0.0,
-        } + external_link_state.last_offset_uncertainty
-            * config.select_offset_uncertainty_window;
+        let noise_estimate = self.link_state.noise_estimate().ok()?;
+        let half_window_size = noise_estimate * config.select_link_uncertainty_window
+            + external_link_state.last_offset_uncertainty * config.select_offset_uncertainty_window;
 
         Some(OffsetWindow {
             low: avg_offset - half_window_size,
@@ -101,10 +173,71 @@ impl LinkInfo {
     }
 }
 
+/// A list of links, with some utility functions for finding and iterating over
+/// them.
+#[derive(Debug, Clone)]
+struct LinkInfoList(std::vec::Vec<LinkInfo>);
+
+impl LinkInfoList {
+    /// Create a new, empty `LinkInfoList`.
+    fn new() -> LinkInfoList {
+        LinkInfoList(std::vec::Vec::new())
+    }
+
+    /// Find a link by its id, returning a mutable reference to it.
+    ///
+    /// # Errors
+    /// Returns an error if the link is not found.
+    fn find_by_id_mut(&mut self, id: LinkId) -> Result<&mut LinkInfo, LinkFilterError> {
+        self.0
+            .iter_mut()
+            .find(|info| info.id == id)
+            .ok_or(LinkFilterError::UnknownLink)
+    }
+
+    /// Add a new link to the list.
+    fn add_link(&mut self, link: LinkInfo) {
+        self.0.push(link);
+    }
+
+    /// Remove a link from the list.
+    fn remove_link(&mut self, id: LinkId) -> Result<LinkInfo, LinkFilterError> {
+        let index = self
+            .0
+            .iter()
+            .position(|info| info.id == id)
+            .ok_or(LinkFilterError::UnknownLink)?;
+        Ok(self.0.remove(index))
+    }
+
+    /// Iterate over the links in the list.
+    fn iter(&self) -> impl Iterator<Item = &LinkInfo> {
+        self.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a LinkInfoList {
+    type Item = &'a LinkInfo;
+    type IntoIter = core::slice::Iter<'a, LinkInfo>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut LinkInfoList {
+    type Item = &'a mut LinkInfo;
+    type IntoIter = core::slice::IterMut<'a, LinkInfo>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter_mut()
+    }
+}
+
 /// A state estimation filter with full support for handling selection an dprocessing of links.
 #[derive(Debug, Clone)]
 pub struct LinkFilter {
-    links: std::vec::Vec<LinkInfo>,
+    links: LinkInfoList,
     estimation_state: EstimatorState,
 }
 
@@ -131,7 +264,7 @@ impl LinkFilter {
     #[must_use]
     pub fn empty(time: Timestamp<TAI>) -> Self {
         LinkFilter {
-            links: std::vec::Vec::new(),
+            links: LinkInfoList::new(),
             estimation_state: EstimatorState::empty(time),
         }
     }
@@ -175,16 +308,14 @@ impl LinkFilter {
             .estimation_state
             .absorb_offset_change(steered_clock, offset_change)?;
         for link in &mut self.links {
-            match &mut link.link_state {
-                LinkState::Tracked {
-                    link_noise_estimator,
-                    ..
-                } => {
-                    *link_noise_estimator = link_noise_estimator
-                        .clone()
-                        .absorb_offset_change(steered_clock);
-                }
-                LinkState::Untracked(_, _) => {}
+            if let LinkState::Tracked {
+                link_noise_estimator,
+                ..
+            } = &mut link.link_state
+            {
+                *link_noise_estimator = link_noise_estimator
+                    .clone()
+                    .absorb_offset_change(steered_clock);
             }
         }
         Ok(self)
@@ -205,16 +336,14 @@ impl LinkFilter {
             .estimation_state
             .absorb_offset_change(steered_clock, offset_change.as_seconds())?;
         for link in &mut self.links {
-            match &mut link.link_state {
-                LinkState::Tracked {
-                    link_noise_estimator,
-                    ..
-                } => {
-                    *link_noise_estimator = link_noise_estimator
-                        .clone()
-                        .absorb_system_clock_offset_change(steered_clock, offset_change);
-                }
-                LinkState::Untracked(_, _) => {}
+            if let LinkState::Tracked {
+                link_noise_estimator,
+                ..
+            } = &mut link.link_state
+            {
+                *link_noise_estimator = link_noise_estimator
+                    .clone()
+                    .absorb_offset_change(steered_clock);
             }
         }
 
@@ -233,47 +362,27 @@ impl LinkFilter {
         offset: UncertainValue,
         link_id: LinkId,
     ) -> Result<Self, LinkFilterError> {
-        let link = self
-            .links
-            .iter_mut()
-            .find(|info| info.id == link_id)
-            .ok_or(LinkFilterError::UnknownLink)?;
+        let link = self.links.find_by_id_mut(link_id)?;
 
-        let (delay, delay_noise, decay_rate, delay_link) = match &mut link.link_state {
-            LinkState::Tracked {
-                link_noise_estimator,
-                decay_rate,
-            } => {
-                *link_noise_estimator = link_noise_estimator.clone().measurement(
-                    from,
-                    to,
-                    offset.value,
-                    self.estimation_state.current_time(),
-                )?;
-                match (
-                    link_noise_estimator.delay_estimate().ok(),
-                    link_noise_estimator.noise_estimate().ok(),
-                ) {
-                    (Some(delay), Some(noise)) => (delay, noise, *decay_rate, Some(link_id)),
-                    // Delay and noise not known yet, so link not yet usable, not even for basic offset estimation.
-                    _ => return Ok(self),
-                }
-            }
-            LinkState::Untracked(a, b) => {
-                if !((*a == from && *b == to) || (*a == to && *b == from)) {
-                    return Err(LinkFilterError::InvalidClocks);
-                }
-                (0.0, 0.0, 0.0, None)
-            }
+        link.link_state
+            .measurement(from, to, offset, self.estimation_state.current_time())?;
+        let Ok(estimates) = link.link_state.delay_and_noise_estimate() else {
+            // Delay and noise not known yet, so link not yet usable, not even for basic offset estimation.
+            return Ok(self);
+        };
+        let decay_rate = link.link_state.decay_rate();
+        let delay_link = match &link.link_state {
+            LinkState::Tracked { .. } => Some(link_id),
+            LinkState::Untracked(_, _) => None,
         };
 
         if let Some(external_link_state) = &mut link.external_link_state {
             // Ensure offset is calculated relative to the external clock, flipping signs
             // if the measurement direction was different.
             let offset_to_external = if self.estimation_state.is_external_clock(from) {
-                offset.value - delay
+                offset.value - estimates.delay
             } else {
-                -(offset.value - delay)
+                -(offset.value - estimates.delay)
             };
 
             external_link_state.last_offsets.insert(offset_to_external);
@@ -289,26 +398,18 @@ impl LinkFilter {
                 return Ok(self);
             };
 
-            let link = self
-                .links
-                .iter_mut()
-                .find(|info| info.id == link_id)
-                .ok_or(LinkFilterError::UnknownLink)?;
+            let link = self.links.find_by_id_mut(link_id)?;
 
             // We are active if and only if our window overlaps with the consensus window.
             if let Some(our_window) = our_window
-                && our_window.low <= consensus_window.high
-                && our_window.high >= consensus_window.low
+                && our_window.overlaps(consensus_window)
             {
                 if !link.active {
                     link.active = true;
                     if delay_link.is_some() {
                         self.estimation_state = self.estimation_state.add_link(
                             link_id,
-                            UncertainValue {
-                                value: delay,
-                                uncertainty: delay_noise,
-                            },
+                            (estimates.delay, estimates.noise).into(),
                             decay_rate,
                         )?;
                     }
@@ -327,11 +428,7 @@ impl LinkFilter {
         self.estimation_state = self.estimation_state.measurement(
             from,
             to,
-            UncertainValue {
-                value: offset.value,
-                // Addition formula for uncertainty...
-                uncertainty: (offset.uncertainty.powi(2) + delay_noise.powi(2)).sqrt(),
-            },
+            offset.add_uncertainty(estimates.noise),
             delay_link,
         )?;
 
@@ -419,7 +516,7 @@ impl LinkFilter {
 
         let id = LinkId::new();
         let is_internal = first_internal && second_internal;
-        self.links.push(LinkInfo {
+        self.links.add_link(LinkInfo {
             id,
             active: false,
             link_state: LinkState::Tracked {
@@ -467,7 +564,7 @@ impl LinkFilter {
 
         let id = LinkId::new();
         let is_internal = first_internal && second_internal;
-        self.links.push(LinkInfo {
+        self.links.add_link(LinkInfo {
             id,
             active: is_internal,
             link_state: LinkState::Untracked(first_clock, second_clock),
@@ -489,11 +586,7 @@ impl LinkFilter {
     /// # Errors
     /// Returns an error if the link does not exist.
     pub fn remove_link(mut self, id: LinkId) -> Result<Self, LinkFilterError> {
-        let Some(info_index) = self.links.iter().position(|info| info.id == id) else {
-            return Err(LinkFilterError::UnknownLink);
-        };
-
-        let link = self.links.remove(info_index);
+        let link = self.links.remove_link(id)?;
         if link.active && matches!(link.link_state, LinkState::Tracked { .. }) {
             self.estimation_state = self.estimation_state.remove_link(id)?;
         }
