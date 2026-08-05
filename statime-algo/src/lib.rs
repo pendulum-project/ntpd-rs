@@ -323,9 +323,12 @@ impl<Storage: KalmanStorageInternal<C>, C: Clock> KalmanControllerState<Storage,
         for (index, clock_info) in self.clocks.iter_mut().enumerate() {
             // FIXME: Make constants configurable.
 
-            let offset = self.filter.clock_offset(clock_info.id)?.value;
+            let UncertainValue {
+                value: offset,
+                uncertainty: offset_uncertainty,
+            } = self.filter.clock_offset(clock_info.id)?;
 
-            if offset < 10.0 {
+            if offset < 10.0 && offset > 5.0 * offset_uncertainty {
                 let frequency = self.filter.clock_frequency(clock_info.id)?.value;
 
                 let cur_frequency_steer = clock_info.clock.get_frequency()?;
