@@ -1,29 +1,6 @@
 use core::ops::{Add, AddAssign, Div, Index, IndexMut, Mul, Sub, SubAssign};
 
-/// A storage provider for a matrix. Abstracts a dynamically sized array of f64.
-///
-/// It is explicitly allowed for the  [`AsRef`] and [`AsMut`] implementations to
-/// return references to larger arrays, so long as the additional length is always
-/// identical and modification to the additional entries does not matter.
-pub trait MatrixStorage: AsRef<[f64]> + AsMut<[f64]> {
-    /// Create a new instance of the storage.
-    fn new(len: usize, data: impl FnMut(usize) -> f64) -> Self;
-}
-
-// FIXME: Reenable
-// #[cfg(feature = "std")]
-impl MatrixStorage for std::boxed::Box<[f64]> {
-    fn new(len: usize, data: impl FnMut(usize) -> f64) -> Self {
-        (0..len).map(data).collect()
-    }
-}
-
-impl<const N: usize> MatrixStorage for [f64; N] {
-    fn new(len: usize, mut data: impl FnMut(usize) -> f64) -> Self {
-        assert!(len <= N);
-        core::array::from_fn(|index| if index < len { data(index) } else { 0.0 })
-    }
-}
+use crate::storage::MatrixStorage;
 
 /// An error occured while performing a matrix operation.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

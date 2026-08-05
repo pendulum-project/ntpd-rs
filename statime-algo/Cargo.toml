@@ -14,8 +14,14 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
+arrayvec.workspace = true
+libm.workspace = true
 statime-base.workspace = true
 
 [features]
 default = ["std"]
 std = ["statime-base/std"]
+
+# Ignore unused libm, as it is needed for polyfilling when std is not used.
+[package.metadata.cargo-udeps]
+ignore = [["libm"]]
