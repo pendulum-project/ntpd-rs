@@ -1,4 +1,4 @@
-use statime_base::{ClockId, Duration, LinkId, TAI, Timestamp};
+use statime_base::{ClockId, Direction, Duration, LinkId, TAI, Timestamp};
 
 use crate::{AlgoError, ringbuffer::UnorderedRingBuffer};
 
@@ -10,8 +10,7 @@ const MAX_TIME_BETWEEN_HALVES: Duration = Duration::from_seconds_nanos(0, 500_00
 struct PreviousMeasurement {
     time: Timestamp<TAI>,
     offset: f64,
-    from: ClockId,
-    to: ClockId,
+    direction: Direction,
 }
 
 /// A struct containing the delay and noise estimates for a link.
@@ -24,58 +23,30 @@ pub struct LinkDelayNoiseEstimate {
 /// Estimator for the noise induced by a given link
 #[derive(Debug, Clone)]
 pub struct LinkNoiseEstimator {
-    link_id: LinkId,
-    a: ClockId,
-    b: ClockId,
+    pub(crate) id: LinkId,
     roundtrip_delays: UnorderedRingBuffer,
     prev_measurement: Option<PreviousMeasurement>,
 }
 
 impl LinkNoiseEstimator {
-    /// Create a new estimator for the noise on a link between clocks A and B.
-    ///
-    /// # Errors
-    /// Returns an error if the clocks on either end of the link are identical.
-    pub fn new(link_id: LinkId, a: ClockId, b: ClockId) -> Result<Self, AlgoError> {
-        if a == b {
-            Err(AlgoError::ClocksEqual(a))
-        } else {
-            Ok(LinkNoiseEstimator {
-                link_id,
-                a,
-                b,
-                roundtrip_delays: UnorderedRingBuffer::default(),
-                prev_measurement: None,
-            })
+    /// Create a new estimator for the noise on a link.
+    pub fn new(id: LinkId) -> Self {
+        LinkNoiseEstimator {
+            id,
+            roundtrip_delays: UnorderedRingBuffer::default(),
+            prev_measurement: None,
         }
     }
 
     /// Use a measurement on the link to update our estimates for the noise on the link.
-    ///
-    /// # Errors
-    /// Return an error when the provided clocks are not part of the link.
     pub fn measurement(
         mut self,
-        from: ClockId,
-        to: ClockId,
+        direction: Direction,
         offset: f64,
         time: Timestamp<TAI>,
-    ) -> Result<LinkNoiseEstimator, AlgoError> {
-        if from != self.a && from != self.b {
-            return Err(AlgoError::UnknownClockForLink(self.link_id, from));
-        }
-
-        if to != self.a && to != self.b {
-            return Err(AlgoError::UnknownClockForLink(self.link_id, to));
-        }
-
-        if from == to {
-            return Err(AlgoError::ClocksEqual(from));
-        }
-
+    ) -> LinkNoiseEstimator {
         if let Some(prev_measurement) = self.prev_measurement.take()
-            && prev_measurement.from == to
-            && prev_measurement.to == from
+            && prev_measurement.direction.is_reverse_of(direction)
             && time - prev_measurement.time < MAX_TIME_BETWEEN_HALVES
         {
             self.roundtrip_delays
@@ -84,18 +55,17 @@ impl LinkNoiseEstimator {
             self.prev_measurement = Some(PreviousMeasurement {
                 time,
                 offset,
-                from,
-                to,
+                direction,
             });
         }
 
-        Ok(self)
+        self
     }
 
     /// Absorb the results of a clock phase jump
     #[must_use]
     pub fn absorb_offset_change(mut self, steered_clock: ClockId) -> LinkNoiseEstimator {
-        if self.a == steered_clock || self.b == steered_clock {
+        if self.id.first_clock() == steered_clock || self.id.second_clock() == steered_clock {
             // One of the clocks in this link has a discontinuity, which makes a delay
             // estimate accross that invalid, so ignore any previous measurements.
             self.prev_measurement = None;
@@ -110,7 +80,7 @@ impl LinkNoiseEstimator {
         steered_clock: ClockId,
         offset_change: Duration,
     ) -> LinkNoiseEstimator {
-        if self.a == steered_clock || self.b == steered_clock {
+        if self.id.first_clock() == steered_clock || self.id.second_clock() == steered_clock {
             // One of the clocks in this link has a discontinuity, which makes a delay
             // estimate accross that invalid, so ignore any previous measurements.
             self.prev_measurement = None;
@@ -133,7 +103,7 @@ impl LinkNoiseEstimator {
     pub fn noise_estimate(&self) -> Result<f64, AlgoError> {
         let roundtrip_delays = self.roundtrip_delays.as_ref();
         if roundtrip_delays.len() < MIN_DELAYS_FOR_ESTIMATES {
-            return Err(AlgoError::NotEnoughMeasurements(self.link_id));
+            return Err(AlgoError::NotEnoughMeasurements(self.id));
         }
         #[expect(
             clippy::cast_precision_loss,
@@ -162,7 +132,7 @@ impl LinkNoiseEstimator {
     pub fn delay_estimate(&self) -> Result<f64, AlgoError> {
         let roundtrip_delays = self.roundtrip_delays.as_ref();
         if roundtrip_delays.len() < MIN_DELAYS_FOR_ESTIMATES {
-            return Err(AlgoError::NotEnoughMeasurements(self.link_id));
+            return Err(AlgoError::NotEnoughMeasurements(self.id));
         }
 
         #[expect(
@@ -188,34 +158,25 @@ impl LinkNoiseEstimator {
 #[cfg(test)]
 #[allow(clippy::float_cmp, reason = "Test code")]
 mod tests {
-    use statime_base::{ClockId, LinkId, Timestamp};
+    use statime_base::{ClockId, Direction, LinkId, Timestamp};
 
     use crate::{estimator::UncertainValue, link_noise::LinkNoiseEstimator};
 
     #[test]
     fn link_noise_measures_link_noise_1() {
-        let link = LinkId::new();
         let clock_1 = ClockId::new();
         let clock_2 = ClockId::new();
+        let link = LinkId::new(clock_1, clock_2).unwrap();
 
-        let state = LinkNoiseEstimator::new(link, clock_1, clock_2)
-            .unwrap()
-            .measurement(clock_1, clock_2, 1.0, Timestamp::UNIX_EPOCH)
-            .unwrap()
-            .measurement(clock_2, clock_1, 1.0, Timestamp::UNIX_EPOCH)
-            .unwrap()
-            .measurement(clock_1, clock_2, 1.0, Timestamp::UNIX_EPOCH)
-            .unwrap()
-            .measurement(clock_2, clock_1, 1.0, Timestamp::UNIX_EPOCH)
-            .unwrap()
-            .measurement(clock_1, clock_2, 1.0, Timestamp::UNIX_EPOCH)
-            .unwrap()
-            .measurement(clock_2, clock_1, 1.0, Timestamp::UNIX_EPOCH)
-            .unwrap()
-            .measurement(clock_1, clock_2, 1.0, Timestamp::UNIX_EPOCH)
-            .unwrap()
-            .measurement(clock_2, clock_1, 1.0, Timestamp::UNIX_EPOCH)
-            .unwrap();
+        let state = LinkNoiseEstimator::new(link)
+            .measurement(Direction::Forward, 1.0, Timestamp::UNIX_EPOCH)
+            .measurement(Direction::Reverse, 1.0, Timestamp::UNIX_EPOCH)
+            .measurement(Direction::Forward, 1.0, Timestamp::UNIX_EPOCH)
+            .measurement(Direction::Reverse, 1.0, Timestamp::UNIX_EPOCH)
+            .measurement(Direction::Forward, 1.0, Timestamp::UNIX_EPOCH)
+            .measurement(Direction::Reverse, 1.0, Timestamp::UNIX_EPOCH)
+            .measurement(Direction::Forward, 1.0, Timestamp::UNIX_EPOCH)
+            .measurement(Direction::Reverse, 1.0, Timestamp::UNIX_EPOCH);
 
         assert_eq!(state.noise_estimate().unwrap(), 0.0);
         assert_eq!(state.delay_estimate().unwrap(), 1.0);
@@ -223,28 +184,19 @@ mod tests {
 
     #[test]
     fn link_noise_measures_link_noise_2() {
-        let link = LinkId::new();
         let clock_1 = ClockId::new();
         let clock_2 = ClockId::new();
+        let link = LinkId::new(clock_1, clock_2).unwrap();
 
-        let state = LinkNoiseEstimator::new(link, clock_1, clock_2)
-            .unwrap()
-            .measurement(clock_1, clock_2, 1.0, Timestamp::UNIX_EPOCH)
-            .unwrap()
-            .measurement(clock_2, clock_1, 1.0, Timestamp::UNIX_EPOCH)
-            .unwrap()
-            .measurement(clock_1, clock_2, 1.0, Timestamp::UNIX_EPOCH)
-            .unwrap()
-            .measurement(clock_2, clock_1, 1.0, Timestamp::UNIX_EPOCH)
-            .unwrap()
-            .measurement(clock_1, clock_2, 0.5, Timestamp::UNIX_EPOCH)
-            .unwrap()
-            .measurement(clock_2, clock_1, 0.5, Timestamp::UNIX_EPOCH)
-            .unwrap()
-            .measurement(clock_1, clock_2, 0.5, Timestamp::UNIX_EPOCH)
-            .unwrap()
-            .measurement(clock_2, clock_1, 0.5, Timestamp::UNIX_EPOCH)
-            .unwrap();
+        let state = LinkNoiseEstimator::new(link)
+            .measurement(Direction::Forward, 1.0, Timestamp::UNIX_EPOCH)
+            .measurement(Direction::Reverse, 1.0, Timestamp::UNIX_EPOCH)
+            .measurement(Direction::Forward, 1.0, Timestamp::UNIX_EPOCH)
+            .measurement(Direction::Reverse, 1.0, Timestamp::UNIX_EPOCH)
+            .measurement(Direction::Forward, 0.5, Timestamp::UNIX_EPOCH)
+            .measurement(Direction::Reverse, 0.5, Timestamp::UNIX_EPOCH)
+            .measurement(Direction::Forward, 0.5, Timestamp::UNIX_EPOCH)
+            .measurement(Direction::Reverse, 0.5, Timestamp::UNIX_EPOCH);
 
         assert_almost_eq!(state.noise_estimate().unwrap(), 1.0 / (6.0f64.sqrt()));
         assert_eq!(state.delay_estimate().unwrap(), 0.75);
@@ -253,73 +205,54 @@ mod tests {
     /// Returns a link noise estimator with 0 link noise.
     #[test]
     fn link_noise_measures_link_noise_3() {
-        let link = LinkId::new();
         let a = ClockId::new();
         let b = ClockId::new();
+        let link = LinkId::new(a, b).unwrap();
         let delay: UncertainValue = (1.5, 0.1).into();
 
-        let state = LinkNoiseEstimator::new(link, a, b)
-            .unwrap()
-            .measurement(a, b, delay.value, Timestamp::UNIX_EPOCH)
-            .unwrap()
-            .measurement(b, a, delay.value, Timestamp::UNIX_EPOCH)
-            .unwrap()
+        let state = LinkNoiseEstimator::new(link)
+            .measurement(Direction::Forward, delay.value, Timestamp::UNIX_EPOCH)
+            .measurement(Direction::Reverse, delay.value, Timestamp::UNIX_EPOCH)
             .measurement(
-                a,
-                b,
+                Direction::Forward,
                 delay.value + delay.uncertainty / 2.0f64.sqrt(),
                 Timestamp::UNIX_EPOCH,
             )
-            .unwrap()
             .measurement(
-                b,
-                a,
+                Direction::Reverse,
                 delay.value + delay.uncertainty / 2.0f64.sqrt(),
                 Timestamp::UNIX_EPOCH,
             )
-            .unwrap()
             .measurement(
-                a,
-                b,
+                Direction::Forward,
                 delay.value + delay.uncertainty / 2.0f64.sqrt(),
                 Timestamp::UNIX_EPOCH,
             )
-            .unwrap()
             .measurement(
-                b,
-                a,
+                Direction::Reverse,
                 delay.value + delay.uncertainty / 2.0f64.sqrt(),
                 Timestamp::UNIX_EPOCH,
             )
-            .unwrap()
             .measurement(
-                a,
-                b,
+                Direction::Forward,
                 delay.value - delay.uncertainty / 2.0f64.sqrt(),
                 Timestamp::UNIX_EPOCH,
             )
-            .unwrap()
             .measurement(
-                b,
-                a,
+                Direction::Reverse,
                 delay.value - delay.uncertainty / 2.0f64.sqrt(),
                 Timestamp::UNIX_EPOCH,
             )
-            .unwrap()
             .measurement(
-                a,
-                b,
+                Direction::Forward,
                 delay.value - delay.uncertainty / 2.0f64.sqrt(),
                 Timestamp::UNIX_EPOCH,
             )
-            .unwrap()
             .measurement(
-                b,
-                a,
+                Direction::Reverse,
                 delay.value - delay.uncertainty / 2.0f64.sqrt(),
                 Timestamp::UNIX_EPOCH,
-            )
-            .unwrap();
+            );
 
         assert_almost_eq!(state.delay_estimate().unwrap(), delay.value);
         assert_almost_eq!(state.noise_estimate().unwrap(), delay.uncertainty);

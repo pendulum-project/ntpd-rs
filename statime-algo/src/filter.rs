@@ -1,4 +1,4 @@
-use statime_base::{ClockId, Duration, LinkId, TAI, Timestamp};
+use statime_base::{ClockId, DirectedLinkId, Direction, Duration, LinkId, TAI, Timestamp};
 
 use crate::{
     AlgoError,
@@ -13,7 +13,7 @@ enum LinkState {
         link_noise_estimator: LinkNoiseEstimator,
         decay_rate: f64,
     },
-    Untracked(LinkId, ClockId, ClockId),
+    Untracked,
 }
 
 impl LinkState {
@@ -27,7 +27,7 @@ impl LinkState {
                 link_noise_estimator,
                 ..
             } => Ok(link_noise_estimator.delay_and_noise_estimate()?),
-            LinkState::Untracked(_, _, _) => Ok(LinkDelayNoiseEstimate {
+            LinkState::Untracked => Ok(LinkDelayNoiseEstimate {
                 delay: 0.0,
                 noise: 0.0,
             }),
@@ -44,7 +44,7 @@ impl LinkState {
                 link_noise_estimator,
                 ..
             } => Ok(link_noise_estimator.noise_estimate()?),
-            LinkState::Untracked(_, _, _) => Ok(0.0),
+            LinkState::Untracked => Ok(0.0),
         }
     }
 
@@ -52,38 +52,27 @@ impl LinkState {
     fn decay_rate(&self) -> f64 {
         match self {
             LinkState::Tracked { decay_rate, .. } => *decay_rate,
-            LinkState::Untracked(_, _, _) => 0.0,
+            LinkState::Untracked => 0.0,
         }
     }
 
     /// Update estimates based on a new measurement.
-    fn measurement(
-        &mut self,
-        from: ClockId,
-        to: ClockId,
-        offset: UncertainValue,
-        time: Timestamp<TAI>,
-    ) -> Result<(), AlgoError> {
-        match self {
-            LinkState::Tracked {
-                link_noise_estimator,
-                ..
-            } => {
-                *link_noise_estimator =
-                    link_noise_estimator
-                        .clone()
-                        .measurement(from, to, offset.value, time)?;
-            }
-            LinkState::Untracked(id, a, b) => {
-                if from != *a && from != *b {
-                    return Err(AlgoError::UnknownClockForLink(*id, from));
-                }
-                if to != *a && to != *b {
-                    return Err(AlgoError::UnknownClockForLink(*id, to));
-                }
-            }
+    fn measurement(&mut self, direction: Direction, offset: UncertainValue, time: Timestamp<TAI>) {
+        if let LinkState::Tracked {
+            link_noise_estimator,
+            ..
+        } = self
+        {
+            *link_noise_estimator =
+                link_noise_estimator
+                    .clone()
+                    .measurement(direction, offset.value, time);
         }
-        Ok(())
+    }
+
+    /// Returns true if this is a tracked link, false if it is untracked.
+    fn is_tracked(&self) -> bool {
+        matches!(self, LinkState::Tracked { .. })
     }
 }
 
@@ -327,33 +316,34 @@ impl LinkFilter {
     /// Process a measurement from one of the links.
     ///
     /// # Errors
-    /// Returns an error if the provided clocks are not valid for the provided link, or if the provided link is uknown.
+    /// Returns an error if the provided link is unknown.
     pub fn measurement(
         mut self,
         config: &LinkFilterConfig,
-        from: ClockId,
-        to: ClockId,
+        direction: DirectedLinkId,
         offset: UncertainValue,
-        link_id: LinkId,
     ) -> Result<Self, AlgoError> {
-        let link = self.links.find_by_id_mut(link_id)?;
+        let link = self.links.find_by_id_mut(direction.link_id())?;
 
-        link.link_state
-            .measurement(from, to, offset, self.estimation_state.current_time())?;
+        link.link_state.measurement(
+            direction.direction(),
+            offset,
+            self.estimation_state.current_time(),
+        );
         let Ok(estimates) = link.link_state.delay_and_noise_estimate() else {
             // Delay and noise not known yet, so link not yet usable, not even for basic offset estimation.
             return Ok(self);
         };
         let decay_rate = link.link_state.decay_rate();
-        let delay_link = match &link.link_state {
-            LinkState::Tracked { .. } => Some(link_id),
-            LinkState::Untracked(_, _, _) => None,
-        };
+        let is_tracked_link = link.link_state.is_tracked();
 
         if let Some(external_link_state) = &mut link.external_link_state {
             // Ensure offset is calculated relative to the external clock, flipping signs
             // if the measurement direction was different.
-            let offset_to_external = if self.estimation_state.is_external_clock(from) {
+            let offset_to_external = if self
+                .estimation_state
+                .is_external_clock(direction.from_clock())
+            {
                 offset.value - estimates.delay
             } else {
                 -(offset.value - estimates.delay)
@@ -372,7 +362,7 @@ impl LinkFilter {
                 return Ok(self);
             };
 
-            let link = self.links.find_by_id_mut(link_id)?;
+            let link = self.links.find_by_id_mut(direction.link_id())?;
 
             // We are active if and only if our window overlaps with the consensus window.
             if let Some(our_window) = our_window
@@ -380,9 +370,9 @@ impl LinkFilter {
             {
                 if !link.active {
                     link.active = true;
-                    if delay_link.is_some() {
+                    if is_tracked_link {
                         self.estimation_state = self.estimation_state.add_link(
-                            link_id,
+                            direction.link_id(),
                             (estimates.delay, estimates.noise).into(),
                             decay_rate,
                         )?;
@@ -391,8 +381,9 @@ impl LinkFilter {
             } else {
                 if link.active {
                     link.active = false;
-                    if delay_link.is_some() {
-                        self.estimation_state = self.estimation_state.remove_link(link_id)?;
+                    if is_tracked_link {
+                        self.estimation_state =
+                            self.estimation_state.remove_link(direction.link_id())?;
                     }
                 }
                 return Ok(self);
@@ -400,10 +391,9 @@ impl LinkFilter {
         }
 
         self.estimation_state = self.estimation_state.measurement(
-            from,
-            to,
+            direction,
             offset.add_uncertainty(estimates.noise),
-            delay_link,
+            is_tracked_link,
         )?;
 
         Ok(self)
@@ -452,9 +442,13 @@ impl LinkFilter {
     /// Remove an internal clock from the filter.
     ///
     /// # Errors
-    /// Returns an error if the clock is not known to the filter.
+    /// Returns an error if the clock is not known to the filter or if the
+    /// clock is still in use by any links.
     pub fn remove_clock(mut self, id: ClockId) -> Result<Self, AlgoError> {
-        // FIXME: check for existence of links with this clock
+        if let Some(link) = self.links.iter().find(|l| l.id.contains_clock(id)) {
+            return Err(AlgoError::ClockInUse(id, link.id));
+        }
+
         self.estimation_state = self.estimation_state.remove_clock(id)?;
         Ok(self)
     }
@@ -471,10 +465,6 @@ impl LinkFilter {
         second_clock: ClockId,
         decay_rate: f64,
     ) -> Result<(Self, LinkId), AlgoError> {
-        if first_clock == second_clock {
-            return Err(AlgoError::ClocksEqual(first_clock));
-        }
-
         let first_internal = self.estimation_state.is_internal_clock(first_clock);
         let first_external = self.estimation_state.is_external_clock(first_clock);
         let second_internal = self.estimation_state.is_internal_clock(second_clock);
@@ -492,13 +482,14 @@ impl LinkFilter {
             return Err(AlgoError::BothClocksExternal(first_clock, second_clock));
         }
 
-        let id = LinkId::new();
+        let id =
+            LinkId::new(first_clock, second_clock).ok_or(AlgoError::ClocksEqual(first_clock))?;
         let is_internal = first_internal && second_internal;
         self.links.add_link(LinkInfo {
             id,
             active: false,
             link_state: LinkState::Tracked {
-                link_noise_estimator: LinkNoiseEstimator::new(id, first_clock, second_clock)?,
+                link_noise_estimator: LinkNoiseEstimator::new(id),
                 decay_rate,
             },
             external_link_state: if is_internal {
@@ -523,10 +514,6 @@ impl LinkFilter {
         first_clock: ClockId,
         second_clock: ClockId,
     ) -> Result<(Self, LinkId), AlgoError> {
-        if first_clock == second_clock {
-            return Err(AlgoError::ClocksEqual(first_clock));
-        }
-
         let first_internal = self.estimation_state.is_internal_clock(first_clock);
         let first_external = self.estimation_state.is_external_clock(first_clock);
         let second_internal = self.estimation_state.is_internal_clock(second_clock);
@@ -544,12 +531,13 @@ impl LinkFilter {
             return Err(AlgoError::BothClocksExternal(first_clock, second_clock));
         }
 
-        let id = LinkId::new();
+        let id =
+            LinkId::new(first_clock, second_clock).ok_or(AlgoError::ClocksEqual(first_clock))?;
         let is_internal = first_internal && second_internal;
         self.links.add_link(LinkInfo {
             id,
             active: is_internal,
-            link_state: LinkState::Untracked(id, first_clock, second_clock),
+            link_state: LinkState::Untracked,
             external_link_state: if is_internal {
                 None
             } else {

@@ -26,7 +26,9 @@ mod matrix;
 mod ringbuffer;
 
 use core::marker::PhantomData;
-use statime_base::{Clock, ClockError, ClockId, Duration, LinkId, TAI, Timestamp};
+use statime_base::{
+    Clock, ClockError, ClockId, DirectedLinkId, Direction, Duration, LinkId, TAI, Timestamp,
+};
 
 use crate::{
     estimator::UncertainValue,
@@ -62,10 +64,10 @@ pub enum AlgoError {
     MatrixError(MatrixError),
     /// Error from the underlying clock
     ClockError(ClockError),
-    /// The provided clock is not known to this link.
-    UnknownClockForLink(LinkId, ClockId),
     /// There are insufficient measurements to provide estimates.
     NotEnoughMeasurements(LinkId),
+    /// Clock is in use in the given link and cannot be removed
+    ClockInUse(ClockId, LinkId),
 }
 
 impl From<MatrixError> for AlgoError {
@@ -219,7 +221,8 @@ impl<Mutex: StateMutex> KalmanController<Mutex> {
     /// Remove a clock from the controller
     ///
     /// # Errors
-    /// Fails if the clock is not known to the controller.
+    /// Fails if the clock is not known to the controller, if the clock is the
+    /// system clock or if the clock is in use in a link.
     pub fn remove_clock(&self, clock_id: ClockId) -> Result<(), AlgoError> {
         self.state.with_mut(|state| {
             if state.clocks[0].id == clock_id {
@@ -229,9 +232,8 @@ impl<Mutex: StateMutex> KalmanController<Mutex> {
             let Some(index) = state.clocks.iter().position(|info| info.id == clock_id) else {
                 return Err(AlgoError::UnknownClock(clock_id));
             };
-            state.clocks.remove(index);
-
             state.filter = state.filter.clone().remove_clock(clock_id)?;
+            state.clocks.remove(index);
 
             Ok(())
         })
@@ -270,8 +272,6 @@ impl<Mutex: StateMutex> KalmanController<Mutex> {
         })?;
 
         Ok(KalmanLink {
-            clock_a,
-            clock_b,
             link_id,
             controller: this,
             phantomdata: PhantomData,
@@ -303,8 +303,6 @@ impl<Mutex: StateMutex> KalmanController<Mutex> {
         })?;
 
         Ok(KalmanLink {
-            clock_a,
-            clock_b,
             link_id,
             controller: this,
             phantomdata: PhantomData,
@@ -381,8 +379,6 @@ impl<C: Clock> KalmanControllerState<C> {
 
 /// A measurement link between two clocks, managed by a `KalmanController`.
 pub struct KalmanLink<ControllerRef: AsRef<KalmanController<M>>, M: StateMutex> {
-    clock_a: ClockId,
-    clock_b: ClockId,
     link_id: LinkId,
     // We use a generic reference to the kalman controller here to avoid
     // forced inclusions of lifetimes in this type. This allows a link to
@@ -412,22 +408,13 @@ impl<ControllerRef: AsRef<KalmanController<M>>, M: StateMutex> KalmanLink<Contro
     /// Process a measurement on a connection.
     ///
     /// # Errors
-    /// Fails if the provided measurement is not for the link.
-    pub fn measurement(&self, measurement: Measurement) -> Result<(), AlgoError> {
-        if measurement.send_clock != self.clock_a && measurement.send_clock != self.clock_b {
-            return Err(AlgoError::UnknownClockForLink(
-                self.link_id,
-                measurement.send_clock,
-            ));
-        }
-
-        if measurement.recv_clock != self.clock_a && measurement.recv_clock != self.clock_b {
-            return Err(AlgoError::UnknownClockForLink(
-                self.link_id,
-                measurement.recv_clock,
-            ));
-        }
-
+    /// Fails if there are any issues processing the measurement, mostly resulting
+    /// from unexpected behavior of the underlying clock.
+    pub fn measurement(
+        &self,
+        measurement: Measurement,
+        direction: Direction,
+    ) -> Result<(), AlgoError> {
         self.controller.as_ref().state.with_mut(|state| {
             state.filter = state
                 .filter
@@ -436,13 +423,11 @@ impl<ControllerRef: AsRef<KalmanController<M>>, M: StateMutex> KalmanLink<Contro
 
             state.filter = state.filter.clone().measurement(
                 &state.filter_config,
-                measurement.send_clock,
-                measurement.recv_clock,
+                DirectedLinkId::new(self.link_id, direction),
                 UncertainValue {
                     value: (measurement.recv_timestamp - measurement.send_timestamp).as_seconds(),
                     uncertainty: measurement.uncertainty.as_seconds(),
                 },
-                self.link_id,
             )?;
             state.steer_clocks()?;
             Ok(())
@@ -453,10 +438,6 @@ impl<ControllerRef: AsRef<KalmanController<M>>, M: StateMutex> KalmanLink<Contro
 /// A measurement done on a link.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Measurement {
-    /// The clock timestamping the initiation of the time measurement signal.
-    pub send_clock: ClockId,
-    /// The clock timestamping the reception of the time measurement signal.
-    pub recv_clock: ClockId,
     /// The timestamp at which the synchronization signal was sent.
     pub send_timestamp: Timestamp<TAI>,
     /// The timestamp at which the synchronization signal was received.
