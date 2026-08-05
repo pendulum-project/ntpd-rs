@@ -1,4 +1,6 @@
-use statime_base::{ClockId, DirectedLinkId, Direction, Duration, LinkId, TAI, Timestamp};
+use statime_base::{
+    ClockId, DirectedLinkId, Direction, Duration, LeapStatus, LinkId, TAI, Timestamp,
+};
 
 use crate::{
     AlgoError,
@@ -35,20 +37,6 @@ impl LinkState {
         }
     }
 
-    /// Get the current noise estimate for the link.
-    ///
-    /// # Errors
-    /// Returns an error if the link is tracked but the noise estimate is not yet available.
-    fn noise_estimate(&self) -> Result<f64, AlgoError> {
-        match self {
-            LinkState::Tracked {
-                link_noise_estimator,
-                ..
-            } => Ok(link_noise_estimator.noise_estimate()?),
-            LinkState::Untracked => Ok(0.0),
-        }
-    }
-
     /// Get the decay rate for the link.
     fn decay_rate(&self) -> f64 {
         match self {
@@ -81,6 +69,9 @@ impl LinkState {
 struct ExternalLinkState {
     last_offsets: UnorderedRingBuffer,
     last_offset_uncertainty: f64,
+    root_delay: f64,
+    leap_status: Option<LeapStatus>,
+    usable: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -107,11 +98,11 @@ pub struct LinkInfo {
 impl LinkInfo {
     /// Get an offset window for the link.
     ///
-    /// Returns None if the link is not with an external clock.
+    /// Returns None if the link is not with an external clock, or if the link is not usable.
     fn offset_window(&self, config: &LinkFilterConfig) -> Option<OffsetWindow> {
         let external_link_state = self.external_link_state.as_ref()?;
 
-        if external_link_state.last_offsets.as_ref().is_empty() {
+        if external_link_state.last_offsets.as_ref().is_empty() || !external_link_state.usable {
             return None;
         }
 
@@ -126,9 +117,11 @@ impl LinkInfo {
             .sum::<f64>()
             / (external_link_state.last_offsets.as_ref().len() as f64);
 
-        let noise_estimate = self.link_state.noise_estimate().ok()?;
-        let half_window_size = noise_estimate * config.select_link_uncertainty_window
-            + external_link_state.last_offset_uncertainty * config.select_offset_uncertainty_window;
+        let LinkDelayNoiseEstimate { delay, noise } =
+            self.link_state.delay_and_noise_estimate().ok()?;
+        let half_window_size = noise * config.select_link_uncertainty_window
+            + external_link_state.last_offset_uncertainty * config.select_offset_uncertainty_window
+            + (delay + external_link_state.root_delay) * config.select_delay_uncertainty_window;
 
         Some(OffsetWindow {
             low: avg_offset - half_window_size,
@@ -212,9 +205,13 @@ pub struct LinkFilterConfig {
     /// offset.
     pub select_offset_uncertainty_window: f64,
     /// Size of the window of uncertainty to assume around source offset for
-    /// judging whether it is a truechimer, based on the observerd link delay
+    /// judging whether it is a truechimer, based on the observed link delay
     /// noise.
     pub select_link_uncertainty_window: f64,
+    /// Size of the window of uncertainty to assume around source offset for
+    /// judging whether it is a truechimer, from potential asymmetry due to
+    /// delay and root delay.
+    pub select_delay_uncertainty_window: f64,
     /// Maximum size of the window of uncertainty before we judge a source to
     /// be unsuitable for synchronization.
     pub select_max_window_size: f64,
@@ -409,6 +406,60 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
         Ok(self)
     }
 
+    pub fn external_data_update(
+        mut self,
+        link_id: LinkId,
+        root_delay: f64,
+        leap_status: Option<LeapStatus>,
+        usable: bool,
+    ) -> Result<Self, AlgoError> {
+        let link = self.links.find_by_id_mut(link_id)?;
+        if let Some(external_state) = &mut link.external_link_state {
+            external_state.root_delay = root_delay;
+            external_state.leap_status = leap_status;
+            external_state.usable = usable;
+            Ok(self)
+        } else {
+            Err(AlgoError::LinkNotExternal(link_id))
+        }
+    }
+
+    #[expect(unused)]
+    #[must_use]
+    pub fn leap_vote(&self, config: &LinkFilterConfig) -> Option<LeapStatus> {
+        let consensus_window = self.find_external_consensus_window(config)?;
+
+        let mut count_none = 0;
+        let mut count_59 = 0;
+        let mut count_61 = 0;
+
+        for link in self.links.iter() {
+            if let Some(window) = link.offset_window(config)
+                && window.overlaps(consensus_window)
+                && let Some(state) = &link.external_link_state
+            {
+                match state.leap_status {
+                    Some(LeapStatus::None) => count_none += 1,
+                    Some(LeapStatus::Leap59) => count_59 += 1,
+                    Some(LeapStatus::Leap61) => count_61 += 1,
+                    None => { /* no vote */ }
+                }
+            }
+        }
+
+        let total = count_none + count_59 + count_61;
+
+        if count_none * 2 > total {
+            Some(LeapStatus::None)
+        } else if count_59 * 2 > total {
+            Some(LeapStatus::Leap59)
+        } else if count_61 * 2 > total {
+            Some(LeapStatus::Leap61)
+        } else {
+            None
+        }
+    }
+
     /// Add an external clock to the filter.
     ///
     /// # Errors
@@ -508,6 +559,9 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
                 Some(ExternalLinkState {
                     last_offsets: UnorderedRingBuffer::default(),
                     last_offset_uncertainty: 0.0,
+                    root_delay: 0.0,
+                    leap_status: None,
+                    usable: false,
                 })
             },
         });
@@ -554,6 +608,9 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
                 Some(ExternalLinkState {
                     last_offsets: UnorderedRingBuffer::default(),
                     last_offset_uncertainty: 0.0,
+                    root_delay: 0.0,
+                    leap_status: None,
+                    usable: false,
                 })
             },
         });
