@@ -5,6 +5,7 @@ use crate::{
     estimator::{EstimatorState, UncertainValue},
     link_noise::{LinkDelayNoiseEstimate, LinkNoiseEstimator},
     ringbuffer::UnorderedRingBuffer,
+    storage::{FilterLinkStorage, KalmanStorageBase},
 };
 
 #[derive(Debug, Clone)]
@@ -96,7 +97,7 @@ impl OffsetWindow {
 }
 
 #[derive(Debug, Clone)]
-struct LinkInfo {
+pub struct LinkInfo {
     id: LinkId,
     active: bool,
     link_state: LinkState,
@@ -139,12 +140,12 @@ impl LinkInfo {
 /// A list of links, with some utility functions for finding and iterating over
 /// them.
 #[derive(Debug, Clone)]
-struct LinkInfoList(std::vec::Vec<LinkInfo>);
+struct LinkInfoList<L>(L);
 
-impl LinkInfoList {
+impl<L: FilterLinkStorage> LinkInfoList<L> {
     /// Create a new, empty `LinkInfoList`.
-    fn new() -> LinkInfoList {
-        LinkInfoList(std::vec::Vec::new())
+    fn new() -> Self {
+        LinkInfoList(L::new())
     }
 
     /// Find a link by its id, returning a mutable reference to it.
@@ -179,7 +180,7 @@ impl LinkInfoList {
     }
 }
 
-impl<'a> IntoIterator for &'a LinkInfoList {
+impl<'a, L: FilterLinkStorage> IntoIterator for &'a LinkInfoList<L> {
     type Item = &'a LinkInfo;
     type IntoIter = core::slice::Iter<'a, LinkInfo>;
 
@@ -188,7 +189,7 @@ impl<'a> IntoIterator for &'a LinkInfoList {
     }
 }
 
-impl<'a> IntoIterator for &'a mut LinkInfoList {
+impl<'a, L: FilterLinkStorage> IntoIterator for &'a mut LinkInfoList<L> {
     type Item = &'a mut LinkInfo;
     type IntoIter = core::slice::IterMut<'a, LinkInfo>;
 
@@ -199,9 +200,9 @@ impl<'a> IntoIterator for &'a mut LinkInfoList {
 
 /// A state estimation filter with full support for handling selection an dprocessing of links.
 #[derive(Debug, Clone)]
-pub struct LinkFilter {
-    links: LinkInfoList,
-    estimation_state: EstimatorState,
+pub struct LinkFilter<Storage: KalmanStorageBase> {
+    links: LinkInfoList<Storage::FilterLinkStorage>,
+    estimation_state: EstimatorState<Storage>,
 }
 
 #[derive(Debug, Clone)]
@@ -222,7 +223,7 @@ pub struct LinkFilterConfig {
     pub minimum_agreeing_sources: usize,
 }
 
-impl LinkFilter {
+impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
     /// Create a new, empty `LinkFilter`.
     #[must_use]
     pub fn empty(time: Timestamp<TAI>) -> Self {
@@ -266,7 +267,7 @@ impl LinkFilter {
         mut self,
         steered_clock: ClockId,
         offset_change: f64,
-    ) -> Result<LinkFilter, AlgoError> {
+    ) -> Result<Self, AlgoError> {
         self.estimation_state = self
             .estimation_state
             .absorb_offset_change(steered_clock, offset_change)?;
@@ -294,7 +295,7 @@ impl LinkFilter {
         mut self,
         steered_clock: ClockId,
         offset_change: Duration,
-    ) -> Result<LinkFilter, AlgoError> {
+    ) -> Result<Self, AlgoError> {
         self.estimation_state = self
             .estimation_state
             .absorb_system_clock_offset_change(steered_clock, offset_change)?;
@@ -565,12 +566,7 @@ impl LinkFilter {
     }
 
     fn find_external_consensus_window(&self, config: &LinkFilterConfig) -> Option<OffsetWindow> {
-        #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-        enum BoundType {
-            Start,
-            End,
-        }
-        let mut bounds: std::vec::Vec<_> = self
+        let mut bounds: Storage::BoundStorage = self
             .links
             .iter()
             .filter_map(|info| {
@@ -584,7 +580,7 @@ impl LinkFilter {
             .flatten()
             .collect();
 
-        bounds.sort_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+        bounds.sort_unstable_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
 
         // Find the intersection of the confidence intervals of the maximum
         // overlapping set. We need this entire interval to properly integrate
@@ -595,7 +591,7 @@ impl LinkFilter {
         let mut max_offset_high: f64 = 0.0;
         let mut cur: usize = 0;
 
-        for (offset, boundtype) in &bounds {
+        for (offset, boundtype) in &*bounds {
             match boundtype {
                 BoundType::Start => {
                     cur += 1;
@@ -645,4 +641,10 @@ impl LinkFilter {
     pub fn clock_frequency(&self, clock_id: ClockId) -> Result<UncertainValue, AlgoError> {
         self.estimation_state.clock_frequency(clock_id)
     }
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum BoundType {
+    Start,
+    End,
 }

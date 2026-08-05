@@ -1,8 +1,7 @@
 //! General datastructures as defined by the ptp spec
 #![no_std]
 
-// FIXME: Make crate no-std capable.
-//#[cfg(feature = "std")]
+#[cfg(feature = "std")]
 extern crate std;
 
 #[cfg(test)]
@@ -21,9 +20,12 @@ macro_rules! assert_almost_eq {
 
 mod estimator;
 mod filter;
+#[cfg(not(feature = "std"))]
+mod float_polyfill;
 mod link_noise;
 mod matrix;
 mod ringbuffer;
+mod storage;
 
 use core::marker::PhantomData;
 use statime_base::{
@@ -34,7 +36,12 @@ use crate::{
     estimator::UncertainValue,
     filter::{LinkFilter, LinkFilterConfig},
     matrix::MatrixError,
+    storage::{KalmanStorageInternal, StateMutex, SteeredClockStorage},
 };
+
+#[cfg(feature = "std")]
+pub use storage::StdKalmanStorage;
+pub use {storage::KalmanStorage, storage::NoAllocKalmanStorage};
 
 /// An error that occured in the kalman controller.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,62 +89,40 @@ impl From<ClockError> for AlgoError {
     }
 }
 
-struct ClockInfo<C> {
-    id: ClockId,
-    clock: C,
-}
+mod hidden {
+    use statime_base::{Clock, ClockId};
 
-/// FIXME: Make this internal and part of the storage trait system.
-/// Trait for state management
-pub trait StateMutex {
-    /// Type of clock for the storage.
-    type Clock: Clock;
+    use crate::{
+        filter::{LinkFilter, LinkFilterConfig},
+        storage::KalmanStorageInternal,
+    };
 
-    /// Creates a new instance of the mutex
-    fn new(state: KalmanControllerState<Self::Clock>) -> Self;
-
-    /// Takes a shared reference to the contained state and calls `f` with it
-    fn with_ref<R, F: FnOnce(&KalmanControllerState<Self::Clock>) -> R>(&self, f: F) -> R;
-
-    /// Takes a mutable reference to the contained state and calls `f` with it
-    fn with_mut<R, F: FnOnce(&mut KalmanControllerState<Self::Clock>) -> R>(&self, f: F) -> R;
-}
-
-impl<C: Clock> StateMutex for std::sync::RwLock<KalmanControllerState<C>> {
-    type Clock = C;
-
-    fn new(state: KalmanControllerState<Self::Clock>) -> Self {
-        std::sync::RwLock::new(state)
+    pub struct ClockInfo<C> {
+        pub(crate) id: ClockId,
+        pub(crate) clock: C,
     }
 
-    fn with_ref<R, F: FnOnce(&KalmanControllerState<Self::Clock>) -> R>(&self, f: F) -> R {
-        f(&self.read().unwrap())
-    }
-
-    fn with_mut<R, F: FnOnce(&mut KalmanControllerState<Self::Clock>) -> R>(&self, f: F) -> R {
-        f(&mut self.write().unwrap())
+    /// The main controller struct.
+    pub struct KalmanControllerState<Storage: KalmanStorageInternal<C>, C: Clock> {
+        pub(crate) clocks: Storage::SteeredClockStorage,
+        pub(crate) filter: LinkFilter<Storage>,
+        pub(crate) filter_config: LinkFilterConfig,
     }
 }
-
-/// The main controller struct.
-pub struct KalmanControllerState<C> {
-    clocks: std::vec::Vec<ClockInfo<C>>,
-    filter: LinkFilter,
-    filter_config: LinkFilterConfig,
-}
+pub(crate) use hidden::{ClockInfo, KalmanControllerState};
 
 /// Controller for clocks using a kalman filter as its state estimation mechanism.
-pub struct KalmanController<Mutex> {
-    state: Mutex,
+pub struct KalmanController<Storage: KalmanStorage<C>, C: Clock> {
+    state: Storage::StateMutex,
 }
 
-impl<Mutex: StateMutex> KalmanController<Mutex> {
+impl<Storage: KalmanStorage<C>, C: Clock> KalmanController<Storage, C> {
     /// Create a new clock controller
     ///
     /// # Errors
     /// Fails if the provided system clock is not readable.
     pub fn new(
-        system_clock: Mutex::Clock,
+        system_clock: C,
         initial_wander: f64,
         filter_config: LinkFilterConfig,
     ) -> Result<(Self, ClockId), AlgoError> {
@@ -153,13 +138,15 @@ impl<Mutex: StateMutex> KalmanController<Mutex> {
             },
             initial_wander,
         )?;
+        let mut clocks = Storage::SteeredClockStorage::new();
+        clocks.push(ClockInfo {
+            id,
+            clock: system_clock,
+        });
         Ok((
             Self {
-                state: Mutex::new(KalmanControllerState {
-                    clocks: std::vec![ClockInfo {
-                        id,
-                        clock: system_clock
-                    }],
+                state: Storage::StateMutex::new(KalmanControllerState {
+                    clocks,
                     filter,
                     filter_config,
                 }),
@@ -195,11 +182,7 @@ impl<Mutex: StateMutex> KalmanController<Mutex> {
     ///
     /// # Errors
     /// Fails if there is insufficient storage available for the new clock.
-    pub fn add_clock(
-        &self,
-        clock: Mutex::Clock,
-        initial_wander: f64,
-    ) -> Result<ClockId, AlgoError> {
+    pub fn add_clock(&self, clock: C, initial_wander: f64) -> Result<ClockId, AlgoError> {
         self.state.with_mut(|state| {
             let (filter, id) = state.filter.clone().add_clock(
                 UncertainValue {
@@ -251,7 +234,7 @@ impl<Mutex: StateMutex> KalmanController<Mutex> {
     /// # Errors
     /// Fails if the clocks are not known to the controller, both external, or
     /// when they are the same.
-    pub fn create_tracked_link<ControllerRef: AsRef<KalmanController<Mutex>>>(
+    pub fn create_tracked_link<ControllerRef: AsRef<KalmanController<Storage, C>>>(
         // We can't have a normal self parameter here as we want a generic
         // reference-like thing for the link to store, and we can't use other
         // types as self. See the comments on KalmanLink for the motivation for
@@ -260,7 +243,7 @@ impl<Mutex: StateMutex> KalmanController<Mutex> {
         clock_a: ClockId,
         clock_b: ClockId,
         decay_rate: f64,
-    ) -> Result<KalmanLink<ControllerRef, Mutex>, AlgoError> {
+    ) -> Result<KalmanLink<ControllerRef, Storage, C>, AlgoError> {
         let link_id = this.as_ref().state.with_mut(|state| {
             let (filter, id) = state
                 .filter
@@ -286,7 +269,7 @@ impl<Mutex: StateMutex> KalmanController<Mutex> {
     /// # Errors
     /// Fails if the clocks are not known to the controller, both external, or
     /// when they are the same.
-    pub fn create_untracked_link<ControllerRef: AsRef<KalmanController<Mutex>>>(
+    pub fn create_untracked_link<ControllerRef: AsRef<KalmanController<Storage, C>>>(
         // We can't have a normal self parameter here as we want a generic
         // reference-like thing for the link to store, and we can't use other
         // types as self. See the comments on KalmanLink for the motivation for
@@ -294,7 +277,7 @@ impl<Mutex: StateMutex> KalmanController<Mutex> {
         this: ControllerRef,
         clock_a: ClockId,
         clock_b: ClockId,
-    ) -> Result<KalmanLink<ControllerRef, Mutex>, AlgoError> {
+    ) -> Result<KalmanLink<ControllerRef, Storage, C>, AlgoError> {
         let link_id = this.as_ref().state.with_mut(|state| {
             let (filter, id) = state.filter.clone().add_untracked_link(clock_a, clock_b)?;
             state.filter = filter;
@@ -328,7 +311,7 @@ impl<Mutex: StateMutex> KalmanController<Mutex> {
     }
 }
 
-impl<C: Clock> KalmanControllerState<C> {
+impl<Storage: KalmanStorageInternal<C>, C: Clock> KalmanControllerState<Storage, C> {
     fn steer_clocks(&mut self) -> Result<(), AlgoError> {
         let mut filter = self
             .filter
@@ -378,7 +361,11 @@ impl<C: Clock> KalmanControllerState<C> {
 }
 
 /// A measurement link between two clocks, managed by a `KalmanController`.
-pub struct KalmanLink<ControllerRef: AsRef<KalmanController<M>>, M: StateMutex> {
+pub struct KalmanLink<
+    ControllerRef: AsRef<KalmanController<Storage, C>>,
+    Storage: KalmanStorage<C>,
+    C: Clock,
+> {
     link_id: LinkId,
     // We use a generic reference to the kalman controller here to avoid
     // forced inclusions of lifetimes in this type. This allows a link to
@@ -386,11 +373,11 @@ pub struct KalmanLink<ControllerRef: AsRef<KalmanController<M>>, M: StateMutex> 
     // available, whilst keeping &KalmanController<M> available as option
     // for embedded platforms where things like arc don't exist.
     controller: ControllerRef,
-    phantomdata: PhantomData<KalmanController<M>>,
+    phantomdata: PhantomData<(Storage, C)>,
 }
 
-impl<ControllerRef: AsRef<KalmanController<M>>, M: StateMutex> Drop
-    for KalmanLink<ControllerRef, M>
+impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<C>, C: Clock> Drop
+    for KalmanLink<ControllerRef, Storage, C>
 {
     fn drop(&mut self) {
         self.controller.as_ref().state.with_mut(|state| {
@@ -404,7 +391,9 @@ impl<ControllerRef: AsRef<KalmanController<M>>, M: StateMutex> Drop
     }
 }
 
-impl<ControllerRef: AsRef<KalmanController<M>>, M: StateMutex> KalmanLink<ControllerRef, M> {
+impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<C>, C: Clock>
+    KalmanLink<ControllerRef, Storage, C>
+{
     /// Process a measurement on a connection.
     ///
     /// # Errors

@@ -1,5 +1,7 @@
 use statime_base::{ClockId, Direction, Duration, LinkId, TAI, Timestamp};
 
+#[cfg(not(feature = "std"))]
+use crate::float_polyfill::FloatPolyfill;
 use crate::{AlgoError, ringbuffer::UnorderedRingBuffer};
 
 const MIN_DELAYS_FOR_ESTIMATES: usize = 4;

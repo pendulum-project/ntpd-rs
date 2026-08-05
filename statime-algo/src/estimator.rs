@@ -1,15 +1,22 @@
-use std::{boxed::Box, vec::Vec};
-
 use statime_base::{ClockId, DirectedLinkId, Duration, LinkId, TAI, Timestamp};
 
-use crate::{AlgoError, matrix::Matrix};
+use crate::{
+    AlgoError,
+    matrix::Matrix,
+    storage::{
+        EstimatorLinkStorage, ExternalClockStorage, InternalClockStorage, KalmanStorageBase,
+    },
+};
+
+#[cfg(not(feature = "std"))]
+use crate::float_polyfill::FloatPolyfill;
 
 #[derive(Debug, Clone)]
-struct ExternalClockList(Vec<ClockId>);
+struct ExternalClockList<L>(L);
 
-impl ExternalClockList {
-    fn new() -> ExternalClockList {
-        ExternalClockList(Vec::new())
+impl<L: ExternalClockStorage> ExternalClockList<L> {
+    fn new() -> Self {
+        ExternalClockList(L::new())
     }
 
     /// Returns true if the given clock is known as an external clock.
@@ -39,7 +46,7 @@ impl ExternalClockList {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct ClockInfo {
+pub struct ClockInfo {
     id: ClockId,
     base_index: usize,
     wander: f64,
@@ -58,11 +65,11 @@ impl ClockInfo {
 }
 
 #[derive(Debug, Clone)]
-struct ClockInfoList(Vec<ClockInfo>);
+struct ClockInfoList<L>(L);
 
-impl ClockInfoList {
-    fn new() -> ClockInfoList {
-        ClockInfoList(Vec::new())
+impl<L: InternalClockStorage> ClockInfoList<L> {
+    fn new() -> Self {
+        ClockInfoList(L::new())
     }
 
     /// Checks if the given clock id exists in the current list.
@@ -73,7 +80,7 @@ impl ClockInfoList {
     /// Update the base indices of all clocks that have a base index greater
     /// than `from`, by subtracting `delta` from them.
     fn update_indices(&mut self, from: usize, delta: usize) {
-        for info in &mut self.0 {
+        for info in &mut *self.0 {
             if info.base_index > from {
                 info.base_index -= delta;
             }
@@ -85,10 +92,10 @@ impl ClockInfoList {
     /// Updates the indices for clocks and links where needed.
     ///
     /// Returns the removed clock info.
-    fn remove(
+    fn remove<LL: EstimatorLinkStorage>(
         &mut self,
         id: ClockId,
-        link_info: &mut LinkInfoList,
+        link_info: &mut LinkInfoList<LL>,
     ) -> Result<ClockInfo, AlgoError> {
         let removed = if let Some(pos) = self.0.iter().position(|info| info.id == id) {
             Ok(self.0.remove(pos))
@@ -119,7 +126,7 @@ impl ClockInfoList {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct LinkInfo {
+pub struct LinkInfo {
     id: LinkId,
     index: usize,
     /// Fraction of the link delay that we assume the error increases by every second
@@ -131,16 +138,16 @@ impl LinkInfo {
 }
 
 #[derive(Debug, Clone)]
-struct LinkInfoList(Vec<LinkInfo>);
+struct LinkInfoList<L>(L);
 
-impl LinkInfoList {
-    fn new() -> LinkInfoList {
-        LinkInfoList(Vec::new())
+impl<L: EstimatorLinkStorage> LinkInfoList<L> {
+    fn new() -> Self {
+        LinkInfoList(L::new())
     }
 
     /// Update the indices of all links that have an index greater than `from`, by subtracting `delta` from them.
     fn update_indices(&mut self, from: usize, delta: usize) {
-        for info in &mut self.0 {
+        for info in &mut *self.0 {
             if info.index > from {
                 info.index -= delta;
             }
@@ -152,10 +159,10 @@ impl LinkInfoList {
     /// Updates the indices for links and clocks where needed.
     ///
     /// Returns the removed link info.
-    fn remove(
+    fn remove<CL: InternalClockStorage>(
         &mut self,
         id: LinkId,
-        clock_info: &mut ClockInfoList,
+        clock_info: &mut ClockInfoList<CL>,
     ) -> Result<LinkInfo, AlgoError> {
         let removed = if let Some(pos) = self.0.iter().position(|info| info.id == id) {
             Ok(self.0.remove(pos))
@@ -194,13 +201,13 @@ impl LinkInfoList {
 /// keep a list of some of the most recent states though, they could be used
 /// for error recovery, but also for tracability and debugging.
 #[derive(Debug, Clone)]
-pub struct EstimatorState {
+pub struct EstimatorState<Storage: KalmanStorageBase> {
     time: Timestamp<TAI>,
-    state: Matrix<Box<[f64]>>,
-    uncertainty: Matrix<Box<[f64]>>,
-    clock_info: ClockInfoList,
-    external_clocks: ExternalClockList,
-    link_info: LinkInfoList,
+    state: Matrix<Storage::MatrixStorage>,
+    uncertainty: Matrix<Storage::MatrixStorage>,
+    clock_info: ClockInfoList<Storage::InternalClockStorage>,
+    external_clocks: ExternalClockList<Storage::ExternalClockStorage>,
+    link_info: LinkInfoList<Storage::EstimatorLinkStorage>,
 }
 
 /// Represents an uncertain value, with a best estimate and an uncertainty (standard deviation).
@@ -234,13 +241,13 @@ impl From<(f64, f64)> for UncertainValue {
     }
 }
 
-impl EstimatorState {
+impl<Storage: KalmanStorageBase> EstimatorState<Storage> {
     /// Create a new empty estimator state at the given timestamp.
     ///
     /// This state has no clocks or links contained in it.
     #[must_use]
-    pub fn empty(time: Timestamp<TAI>) -> EstimatorState {
-        EstimatorState {
+    pub fn empty(time: Timestamp<TAI>) -> Self {
+        Self {
             time,
             state: Matrix::zero(0, 1),
             uncertainty: Matrix::zero(0, 0),
@@ -254,7 +261,7 @@ impl EstimatorState {
     ///
     /// # Errors
     /// Returns an error if the new time provided is before the current time of the estimator.
-    pub fn progress_time(mut self, new_time: Timestamp<TAI>) -> Result<EstimatorState, AlgoError> {
+    pub fn progress_time(mut self, new_time: Timestamp<TAI>) -> Result<Self, AlgoError> {
         let delta_t = new_time - self.time;
 
         // time should not move backwards
@@ -317,7 +324,7 @@ impl EstimatorState {
         mut self,
         steered_clock: ClockId,
         frequency_change: f64,
-    ) -> Result<EstimatorState, AlgoError> {
+    ) -> Result<Self, AlgoError> {
         let clock_info = self.get_clock_info(steered_clock)?;
         let frequency_index = clock_info.frequency_index();
         self.state[(frequency_index, 0)] += frequency_change;
@@ -334,7 +341,7 @@ impl EstimatorState {
         mut self,
         steered_clock: ClockId,
         offset_change: f64,
-    ) -> Result<EstimatorState, AlgoError> {
+    ) -> Result<Self, AlgoError> {
         let clock_info = self.get_clock_info(steered_clock)?;
         let offset_index = clock_info.offset_index();
         self.state[(offset_index, 0)] += offset_change;
@@ -351,7 +358,7 @@ impl EstimatorState {
         mut self,
         steered_clock: ClockId,
         offset_change: Duration,
-    ) -> Result<EstimatorState, AlgoError> {
+    ) -> Result<Self, AlgoError> {
         let clock_info = self.get_clock_info(steered_clock)?;
         let offset_index = clock_info.offset_index();
         self.state[(offset_index, 0)] += offset_change.as_seconds();
@@ -372,7 +379,7 @@ impl EstimatorState {
         direction: DirectedLinkId,
         offset: UncertainValue,
         delay_link: bool,
-    ) -> Result<EstimatorState, AlgoError> {
+    ) -> Result<Self, AlgoError> {
         let mut measurement_projection = Matrix::zero(1, self.state.rows());
 
         let from = direction.from_clock();
@@ -400,7 +407,7 @@ impl EstimatorState {
         }
 
         let expected = &measurement_projection * &self.state;
-        let difference = Matrix::<Box<[f64]>>::from(offset.value) - expected;
+        let difference = Matrix::<Storage::MatrixStorage>::from(offset.value) - expected;
         // The uncertainty of the difference between measurement and prediction is the sum of
         // the uncertainty of the measurement, and the uncertainty on the prediction. The
         // prediction uncertainty can be shown to follow from multiplying the state uncertainty
@@ -439,7 +446,7 @@ impl EstimatorState {
     ///
     /// # Errors
     /// Returns an error if the clock is already known to the estimator.
-    pub fn add_external_clock(mut self, id: ClockId) -> Result<EstimatorState, AlgoError> {
+    pub fn add_external_clock(mut self, id: ClockId) -> Result<Self, AlgoError> {
         // check in clock info as well
         if self.clock_info.contains(id) {
             return Err(AlgoError::ClockAlreadyExists(id));
@@ -454,7 +461,7 @@ impl EstimatorState {
     ///
     /// # Errors
     /// Returns an error if the clock in question is not an external clock known to the estimator.
-    pub fn remove_external_clock(mut self, id: ClockId) -> Result<EstimatorState, AlgoError> {
+    pub fn remove_external_clock(mut self, id: ClockId) -> Result<Self, AlgoError> {
         self.external_clocks.remove(id)?;
 
         Ok(self)
@@ -473,7 +480,7 @@ impl EstimatorState {
         initial_offset: UncertainValue,
         initial_frequency: UncertainValue,
         initial_wander: f64,
-    ) -> Result<EstimatorState, AlgoError> {
+    ) -> Result<Self, AlgoError> {
         // check in external clocks as well
         if self.external_clocks.contains(id) {
             return Err(AlgoError::ClockAlreadyExists(id));
@@ -501,7 +508,7 @@ impl EstimatorState {
     ///
     /// # Errors
     /// Returns an error if the clock in question is not known to the estimator.
-    pub fn remove_clock(mut self, id: ClockId) -> Result<EstimatorState, AlgoError> {
+    pub fn remove_clock(mut self, id: ClockId) -> Result<Self, AlgoError> {
         let clock_info = self.clock_info.remove(id, &mut self.link_info)?;
 
         self.state = self
@@ -526,7 +533,7 @@ impl EstimatorState {
         id: LinkId,
         initial_delay: UncertainValue,
         decay_rate: f64,
-    ) -> Result<EstimatorState, AlgoError> {
+    ) -> Result<Self, AlgoError> {
         if !self.is_known_clock(id.first_clock()) {
             return Err(AlgoError::UnknownClock(id.first_clock()));
         }
@@ -554,7 +561,7 @@ impl EstimatorState {
     ///
     /// # Errors
     /// Returns an error if the link in question is unknown.
-    pub fn remove_link(mut self, id: LinkId) -> Result<EstimatorState, AlgoError> {
+    pub fn remove_link(mut self, id: LinkId) -> Result<Self, AlgoError> {
         let removed_info = self.link_info.remove(id, &mut self.clock_info)?;
         self.state = self.state.splice_vec(removed_info.index, LinkInfo::SIZE)?;
         self.uncertainty = self
@@ -625,9 +632,7 @@ impl EstimatorState {
     pub(crate) fn current_time(&self) -> Timestamp<TAI> {
         self.time
     }
-}
 
-impl EstimatorState {
     fn get_clock_info(&self, id: ClockId) -> Result<&ClockInfo, AlgoError> {
         self.clock_info
             .iter()
@@ -643,9 +648,11 @@ impl EstimatorState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 #[allow(clippy::float_cmp, reason = "Test code")]
 mod tests {
+    use crate::storage::StdKalmanStorage;
+
     use super::*;
 
     macro_rules! assert_almost_eq {
@@ -677,7 +684,7 @@ mod tests {
         let clock_1 = ClockId::new();
         let clock_2 = ClockId::new();
 
-        let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
+        let state = EstimatorState::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH)
             .add_clock(clock_1, (0.0, 1.0).into(), (2.0, 3.0).into(), 1e-8)
             .unwrap();
         assert_eq!(state.clock_offset(clock_1).unwrap().value, 0.0);
@@ -705,7 +712,7 @@ mod tests {
         let clock_2 = ClockId::new();
         let clock_3 = ClockId::new();
 
-        let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
+        let state = EstimatorState::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH)
             .add_clock(clock_1, (0.0, 1.0).into(), (0.0, 1.0).into(), 1e-8)
             .unwrap()
             .add_external_clock(clock_2)
@@ -745,7 +752,7 @@ mod tests {
         let link_1 = LinkId::new(clock_1, clock_2).unwrap();
         let link_2 = LinkId::new(clock_1, clock_2).unwrap();
 
-        let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
+        let state = EstimatorState::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH)
             .add_clock(clock_1, (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
             .unwrap()
             .add_clock(clock_2, (0.0, 1e-5).into(), (-1e-6, 1e-7).into(), 0.0)
@@ -794,7 +801,7 @@ mod tests {
     fn test_frequency_steering() {
         let clock_1 = ClockId::new();
 
-        let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
+        let state = EstimatorState::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH)
             .add_clock(clock_1, (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
             .unwrap()
             .absorb_frequency_steer(clock_1, -1e-6)
@@ -811,14 +818,15 @@ mod tests {
         let clock_1 = ClockId::new();
         let clock_2 = ClockId::new();
 
-        let state =
-            EstimatorState::empty(Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(10, 0))
-                .add_clock(clock_1, (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
-                .unwrap()
-                .add_clock(clock_2, (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
-                .unwrap()
-                .absorb_offset_change(clock_2, 1.0)
-                .unwrap();
+        let state = EstimatorState::<StdKalmanStorage<()>>::empty(
+            Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(10, 0),
+        )
+        .add_clock(clock_1, (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
+        .unwrap()
+        .add_clock(clock_2, (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
+        .unwrap()
+        .absorb_offset_change(clock_2, 1.0)
+        .unwrap();
 
         assert_eq!(
             state.time,
@@ -846,7 +854,7 @@ mod tests {
     fn test_progress_time_composes_well() {
         let clock_1 = ClockId::new();
 
-        let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
+        let state = EstimatorState::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH)
             .add_clock(clock_1, (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
             .unwrap();
 
@@ -876,7 +884,7 @@ mod tests {
         let clock_2 = ClockId::new();
         let link_1 = LinkId::new(clock_1, clock_2).unwrap();
 
-        let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
+        let state = EstimatorState::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH)
             .add_clock(clock_1, (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
             .unwrap()
             .add_clock(clock_2, (0.0, 1e-5).into(), (-1e-6, 1e-7).into(), 0.0)
@@ -892,7 +900,7 @@ mod tests {
         let clock_1 = ClockId::new();
         let clock_2 = ClockId::new();
 
-        let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
+        let state = EstimatorState::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH)
             .add_clock(clock_1, (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
             .unwrap()
             .add_clock(clock_2, (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
@@ -921,7 +929,7 @@ mod tests {
             UncertainValue::from((0.0, 1e-8))
         );
 
-        let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
+        let state = EstimatorState::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH)
             .add_clock(clock_1, (0.0, 0.0).into(), (0.0, 1e-3).into(), 0.0)
             .unwrap()
             .add_clock(clock_2, (0.0, 0.0).into(), (0.0, 1e-3).into(), 0.0)
@@ -959,7 +967,7 @@ mod tests {
         let clock_2 = ClockId::new();
         let link_1 = LinkId::new(clock_1, clock_2).unwrap();
 
-        let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
+        let state = EstimatorState::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH)
             .add_clock(clock_1, (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
             .unwrap()
             .add_clock(clock_2, (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
@@ -990,7 +998,7 @@ mod tests {
             UncertainValue::from((1.0, 0.0))
         );
 
-        let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
+        let state = EstimatorState::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH)
             .add_clock(clock_1, (0.0, 0.0).into(), (0.0, 1e-8).into(), 1e-8)
             .unwrap()
             .add_clock(clock_2, (0.0, 0.0).into(), (0.0, 1e-8).into(), 1e-8)
@@ -1027,7 +1035,7 @@ mod tests {
         let clock_1 = ClockId::new();
         let clock_2 = ClockId::new();
 
-        let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
+        let state = EstimatorState::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH)
             .add_clock(clock_1, (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
             .unwrap()
             .add_external_clock(clock_2)
@@ -1049,7 +1057,7 @@ mod tests {
             UncertainValue::from((0.0, 1e-8))
         );
 
-        let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
+        let state = EstimatorState::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH)
             .add_clock(clock_1, (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
             .unwrap()
             .add_external_clock(clock_2)
@@ -1076,8 +1084,9 @@ mod tests {
 
     #[test]
     fn test_negative_time_step() {
-        let state =
-            EstimatorState::empty(Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(1, 0));
+        let state = EstimatorState::<StdKalmanStorage<()>>::empty(
+            Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(1, 0),
+        );
         assert_eq!(
             state
                 .clone()
@@ -1099,7 +1108,7 @@ mod tests {
         let clock_5 = ClockId::new();
         let link_1 = LinkId::new(clock_3, clock_1).unwrap();
 
-        let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
+        let state = EstimatorState::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH)
             .add_external_clock(clock_1)
             .unwrap()
             .add_external_clock(clock_2)
