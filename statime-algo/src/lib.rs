@@ -231,10 +231,17 @@ impl<Mutex: StateMutex> KalmanController<Mutex> {
     /// The resulting link will need measurements in both directions to succesfully
     /// work.
     ///
+    /// This is an associated function instead of a method to allow links to store
+    /// references to the controller in a manner most convenient for the user.
+    ///
     /// # Errors
     /// Fails if the clocks are not known to the controller, both external, or
     /// when they are the same.
     pub fn create_tracked_link<ControllerRef: AsRef<KalmanController<Mutex>>>(
+        // We can't have a normal self parameter here as we want a generic
+        // reference-like thing for the link to store, and we can't use other
+        // types as self. See the comments on KalmanLink for the motivation for
+        // generic reference-like things.
         this: ControllerRef,
         clock_a: ClockId,
         clock_b: ClockId,
@@ -262,12 +269,19 @@ impl<Mutex: StateMutex> KalmanController<Mutex> {
         })
     }
 
-    /// Create a measurement link between clocks without delay estimation
+    /// Create a measurement link between clocks without delay estimation.
+    ///
+    /// This is an associated function instead of a method to allow links to store
+    /// references to the controller in a manner most convenient for the user.
     ///
     /// # Errors
     /// Fails if the clocks are not known to the controller, both external, or
     /// when they are the same.
     pub fn create_untracked_link<ControllerRef: AsRef<KalmanController<Mutex>>>(
+        // We can't have a normal self parameter here as we want a generic
+        // reference-like thing for the link to store, and we can't use other
+        // types as self. See the comments on KalmanLink for the motivation for
+        // generic reference-like things.
         this: ControllerRef,
         clock_a: ClockId,
         clock_b: ClockId,
@@ -382,6 +396,11 @@ pub struct KalmanLink<ControllerRef: AsRef<KalmanController<M>>, M: StateMutex> 
     clock_a: ClockId,
     clock_b: ClockId,
     link_id: LinkId,
+    // We use a generic reference to the kalman controller here to avoid
+    // forced inclusions of lifetimes in this type. This allows a link to
+    // be based on for example an Arc<KalmanController<M>> when std is
+    // available, whilst keeping &KalmanController<M> available as option
+    // for embedded platforms where things like arc don't exist.
     controller: ControllerRef,
     phantomdata: PhantomData<KalmanController<M>>,
 }
