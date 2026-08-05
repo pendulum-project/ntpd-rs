@@ -424,7 +424,6 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
         }
     }
 
-    #[expect(unused)]
     #[must_use]
     pub fn leap_vote(&self, config: &LinkFilterConfig) -> Option<LeapStatus> {
         let consensus_window = self.find_external_consensus_window(config)?;
@@ -458,6 +457,24 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
         } else {
             None
         }
+    }
+
+    #[must_use]
+    pub fn local_root_delay(&self, config: &LinkFilterConfig) -> Option<f64> {
+        let consensus_window = self.find_external_consensus_window(config)?;
+
+        let mut best_delay = f64::MAX;
+        for link in self.links.iter() {
+            if let Some(window) = link.offset_window(config)
+                && window.overlaps(consensus_window)
+                && let Some(state) = &link.external_link_state
+                && let Ok(estimate) = link.link_state.delay_and_noise_estimate()
+            {
+                best_delay = best_delay.min(state.root_delay + estimate.delay);
+            }
+        }
+
+        Some(best_delay)
     }
 
     /// Add an external clock to the filter.

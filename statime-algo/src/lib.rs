@@ -93,7 +93,7 @@ impl From<ClockError> for AlgoError {
 }
 
 mod hidden {
-    use statime_base::{Clock, ClockId};
+    use statime_base::{Clock, ClockId, Duration};
 
     use crate::{
         filter::{LinkFilter, LinkFilterConfig},
@@ -110,6 +110,7 @@ mod hidden {
         pub(crate) clocks: Storage::SteeredClockStorage,
         pub(crate) filter: LinkFilter<Storage>,
         pub(crate) filter_config: LinkFilterConfig,
+        pub(crate) root_delay: Duration,
     }
 }
 pub(crate) use hidden::{ClockInfo, KalmanControllerState};
@@ -152,6 +153,7 @@ impl<Storage: KalmanStorage<C>, C: Clock> KalmanController<Storage, C> {
                     clocks,
                     filter,
                     filter_config,
+                    root_delay: Duration::ZERO,
                 }),
             },
             id,
@@ -320,6 +322,12 @@ impl<Storage: KalmanStorageInternal<C>, C: Clock> KalmanControllerState<Storage,
             .filter
             .clone()
             .progress_time(self.clocks[0].clock.now()?)?;
+
+        let leap_status = self.filter.leap_vote(&self.filter_config);
+        if let Some(root_delay) = self.filter.local_root_delay(&self.filter_config) {
+            self.root_delay = Duration::from_f64_seconds(root_delay);
+        }
+
         for (index, clock_info) in self.clocks.iter_mut().enumerate() {
             // FIXME: Make constants configurable.
 
@@ -358,6 +366,17 @@ impl<Storage: KalmanStorageInternal<C>, C: Clock> KalmanControllerState<Storage,
                     filter = filter.absorb_offset_change(clock_info.id, -offset)?;
                 }
             }
+
+            if let Some(leap_status) = leap_status {
+                clock_info.clock.leap_update(leap_status)?;
+            }
+            clock_info
+                .clock
+                .synchronization_update(offset_uncertainty < 1.0)?;
+            clock_info.clock.error_estimate_update(
+                Duration::from_f64_seconds(offset_uncertainty),
+                self.root_delay,
+            )?;
         }
 
         self.filter = filter;
