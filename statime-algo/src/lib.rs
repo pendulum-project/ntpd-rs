@@ -30,27 +30,53 @@ use statime_base::{Clock, ClockError, ClockId, Duration, LinkId, TAI, Timestamp}
 
 use crate::{
     estimator::UncertainValue,
-    filter::{LinkFilter, LinkFilterConfig, LinkFilterError},
+    filter::{LinkFilter, LinkFilterConfig},
+    matrix::MatrixError,
 };
 
 /// An error that occured in the kalman controller.
-#[derive(Debug, Clone)]
-pub enum KalmanControllerError {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AlgoError {
     /// Clock was not known to the controller
-    UnknownClock,
+    UnknownClock(ClockId),
+    /// Clock already exists in the estimator or filter state
+    ClockAlreadyExists(ClockId),
+    /// Link not found in the estimator or filter state
+    UnknownLink(LinkId),
+    /// Link already exists in the estimator or filter state
+    LinkAlreadyExists(LinkId),
+    /// Measurements or links cannot be between two external clocks
+    BothClocksExternal(ClockId, ClockId),
+    /// Measurements or links between a clock and itself are not allowed
+    ClocksEqual(ClockId),
+    /// Time moved backwards, which is not allowed
+    NonMonotonicTimeProgression {
+        /// The time as was currently known to the algorithm
+        from: Timestamp<TAI>,
+        /// The new time the algorithm was supposed to progress to
+        to: Timestamp<TAI>,
+    },
     /// Tried to remove the system clock.
-    CannotRemoveSystemClock,
-    /// Invalid clock provided for an operation.
-    InvalidClock,
-    /// An error occurred in the link filter.
-    LinkFilterError(LinkFilterError),
-    /// An error occured in one of the clocks.
+    CannotRemoveSystemClock(ClockId),
+    /// Error from the underlying matrix library
+    MatrixError(MatrixError),
+    /// Error from the underlying clock
     ClockError(ClockError),
+    /// The provided clock is not known to this link.
+    UnknownClockForLink(LinkId, ClockId),
+    /// There are insufficient measurements to provide estimates.
+    NotEnoughMeasurements(LinkId),
 }
 
-impl From<LinkFilterError> for KalmanControllerError {
-    fn from(value: LinkFilterError) -> Self {
-        Self::LinkFilterError(value)
+impl From<MatrixError> for AlgoError {
+    fn from(err: MatrixError) -> Self {
+        AlgoError::MatrixError(err)
+    }
+}
+
+impl From<ClockError> for AlgoError {
+    fn from(err: ClockError) -> Self {
+        AlgoError::ClockError(err)
     }
 }
 
@@ -112,10 +138,8 @@ impl<Mutex: StateMutex> KalmanController<Mutex> {
         system_clock: Mutex::Clock,
         initial_wander: f64,
         filter_config: LinkFilterConfig,
-    ) -> Result<(Self, ClockId), KalmanControllerError> {
-        let start_time = system_clock
-            .now()
-            .map_err(KalmanControllerError::ClockError)?;
+    ) -> Result<(Self, ClockId), AlgoError> {
+        let start_time = system_clock.now()?;
         let (filter, id) = LinkFilter::empty(start_time).add_clock(
             UncertainValue {
                 value: 0.0,
@@ -123,9 +147,7 @@ impl<Mutex: StateMutex> KalmanController<Mutex> {
             },
             UncertainValue {
                 value: 0.0,
-                uncertainty: system_clock
-                    .max_frequency()
-                    .map_err(KalmanControllerError::ClockError)?,
+                uncertainty: system_clock.max_frequency()?,
             },
             initial_wander,
         )?;
@@ -148,7 +170,7 @@ impl<Mutex: StateMutex> KalmanController<Mutex> {
     ///
     /// # Errors
     /// Returns an error if the clock is already known to the filter.
-    pub fn add_external_clock(&self) -> Result<ClockId, KalmanControllerError> {
+    pub fn add_external_clock(&self) -> Result<ClockId, AlgoError> {
         self.state.with_mut(|state| {
             let (filter, id) = state.filter.clone().add_external_clock()?;
             state.filter = filter;
@@ -160,7 +182,7 @@ impl<Mutex: StateMutex> KalmanController<Mutex> {
     ///
     /// # Errors
     /// Returns an error if the clock is unknown, or not an external clock.
-    pub fn remove_external_clock(&self, id: ClockId) -> Result<(), KalmanControllerError> {
+    pub fn remove_external_clock(&self, id: ClockId) -> Result<(), AlgoError> {
         self.state.with_mut(|state| {
             state.filter = state.filter.clone().remove_external_clock(id)?;
             Ok(())
@@ -175,7 +197,7 @@ impl<Mutex: StateMutex> KalmanController<Mutex> {
         &self,
         clock: Mutex::Clock,
         initial_wander: f64,
-    ) -> Result<ClockId, KalmanControllerError> {
+    ) -> Result<ClockId, AlgoError> {
         self.state.with_mut(|state| {
             let (filter, id) = state.filter.clone().add_clock(
                 UncertainValue {
@@ -184,9 +206,7 @@ impl<Mutex: StateMutex> KalmanController<Mutex> {
                 },
                 UncertainValue {
                     value: 0.0,
-                    uncertainty: clock
-                        .max_frequency()
-                        .map_err(KalmanControllerError::ClockError)?,
+                    uncertainty: clock.max_frequency()?,
                 },
                 initial_wander,
             )?;
@@ -200,14 +220,14 @@ impl<Mutex: StateMutex> KalmanController<Mutex> {
     ///
     /// # Errors
     /// Fails if the clock is not known to the controller.
-    pub fn remove_clock(&self, clock_id: ClockId) -> Result<(), KalmanControllerError> {
+    pub fn remove_clock(&self, clock_id: ClockId) -> Result<(), AlgoError> {
         self.state.with_mut(|state| {
             if state.clocks[0].id == clock_id {
-                return Err(KalmanControllerError::CannotRemoveSystemClock);
+                return Err(AlgoError::CannotRemoveSystemClock(clock_id));
             }
 
             let Some(index) = state.clocks.iter().position(|info| info.id == clock_id) else {
-                return Err(KalmanControllerError::UnknownClock);
+                return Err(AlgoError::UnknownClock(clock_id));
             };
             state.clocks.remove(index);
 
@@ -238,7 +258,7 @@ impl<Mutex: StateMutex> KalmanController<Mutex> {
         clock_a: ClockId,
         clock_b: ClockId,
         decay_rate: f64,
-    ) -> Result<KalmanLink<ControllerRef, Mutex>, KalmanControllerError> {
+    ) -> Result<KalmanLink<ControllerRef, Mutex>, AlgoError> {
         let link_id = this.as_ref().state.with_mut(|state| {
             let (filter, id) = state
                 .filter
@@ -246,7 +266,7 @@ impl<Mutex: StateMutex> KalmanController<Mutex> {
                 .add_tracked_link(clock_a, clock_b, decay_rate)?;
             state.filter = filter;
 
-            Ok::<_, KalmanControllerError>(id)
+            Ok::<_, AlgoError>(id)
         })?;
 
         Ok(KalmanLink {
@@ -274,12 +294,12 @@ impl<Mutex: StateMutex> KalmanController<Mutex> {
         this: ControllerRef,
         clock_a: ClockId,
         clock_b: ClockId,
-    ) -> Result<KalmanLink<ControllerRef, Mutex>, KalmanControllerError> {
+    ) -> Result<KalmanLink<ControllerRef, Mutex>, AlgoError> {
         let link_id = this.as_ref().state.with_mut(|state| {
             let (filter, id) = state.filter.clone().add_untracked_link(clock_a, clock_b)?;
             state.filter = filter;
 
-            Ok::<_, KalmanControllerError>(id)
+            Ok::<_, AlgoError>(id)
         })?;
 
         Ok(KalmanLink {
@@ -295,32 +315,27 @@ impl<Mutex: StateMutex> KalmanController<Mutex> {
     ///
     /// # Errors
     /// Fails when the clock is not known to the filter.
-    pub fn clock_offset(&self, clock_id: ClockId) -> Result<UncertainValue, KalmanControllerError> {
+    pub fn clock_offset(&self, clock_id: ClockId) -> Result<UncertainValue, AlgoError> {
         self.state
-            .with_ref(|state| Ok(state.filter.clock_offset(clock_id)?))
+            .with_ref(|state| state.filter.clock_offset(clock_id))
     }
 
     /// Get the current frequency offset of a clock.
     ///
     /// # Errors
     /// Fails when the clock is not known to the filter.
-    pub fn clock_frequency(
-        &self,
-        clock_id: ClockId,
-    ) -> Result<UncertainValue, KalmanControllerError> {
+    pub fn clock_frequency(&self, clock_id: ClockId) -> Result<UncertainValue, AlgoError> {
         self.state
-            .with_ref(|state| Ok(state.filter.clock_offset(clock_id)?))
+            .with_ref(|state| state.filter.clock_offset(clock_id))
     }
 }
 
 impl<C: Clock> KalmanControllerState<C> {
-    fn steer_clocks(&mut self) -> Result<(), KalmanControllerError> {
-        let mut filter = self.filter.clone().progress_time(
-            self.clocks[0]
-                .clock
-                .now()
-                .map_err(KalmanControllerError::ClockError)?,
-        )?;
+    fn steer_clocks(&mut self) -> Result<(), AlgoError> {
+        let mut filter = self
+            .filter
+            .clone()
+            .progress_time(self.clocks[0].clock.now()?)?;
         for (index, clock_info) in self.clocks.iter_mut().enumerate() {
             // FIXME: Make constants configurable.
 
@@ -329,14 +344,8 @@ impl<C: Clock> KalmanControllerState<C> {
             if offset < 10.0 {
                 let frequency = self.filter.clock_frequency(clock_info.id)?.value;
 
-                let cur_frequency_steer = clock_info
-                    .clock
-                    .get_frequency()
-                    .map_err(KalmanControllerError::ClockError)?;
-                let max_frequency_steer = clock_info
-                    .clock
-                    .max_frequency()
-                    .map_err(KalmanControllerError::ClockError)?;
+                let cur_frequency_steer = clock_info.clock.get_frequency()?;
+                let max_frequency_steer = clock_info.clock.max_frequency()?;
 
                 let wanted_frequency_steer = cur_frequency_steer - frequency - offset / 8.0;
 
@@ -344,10 +353,7 @@ impl<C: Clock> KalmanControllerState<C> {
                     wanted_frequency_steer.clamp(-max_frequency_steer, max_frequency_steer);
                 // FIXME: Warn here on repeated clamping.
 
-                clock_info
-                    .clock
-                    .set_frequency(actual_frequency_steer)
-                    .map_err(KalmanControllerError::ClockError)?;
+                clock_info.clock.set_frequency(actual_frequency_steer)?;
                 filter = filter.absorb_frequency_steer(
                     clock_info.id,
                     actual_frequency_steer - cur_frequency_steer,
@@ -355,8 +361,7 @@ impl<C: Clock> KalmanControllerState<C> {
             } else {
                 clock_info
                     .clock
-                    .step_clock(Duration::from_f64_seconds(-offset))
-                    .map_err(KalmanControllerError::ClockError)?;
+                    .step_clock(Duration::from_f64_seconds(-offset))?;
                 if index == 0 {
                     filter = filter.absorb_system_clock_offset_change(
                         clock_info.id,
@@ -408,20 +413,26 @@ impl<ControllerRef: AsRef<KalmanController<M>>, M: StateMutex> KalmanLink<Contro
     ///
     /// # Errors
     /// Fails if the provided measurement is not for the link.
-    pub fn measurement(&self, measurement: Measurement) -> Result<(), KalmanControllerError> {
-        if !((measurement.send_clock == self.clock_a && measurement.recv_clock == self.clock_b)
-            || (measurement.send_clock == self.clock_b && measurement.recv_clock == self.clock_a))
-        {
-            return Err(KalmanControllerError::InvalidClock);
+    pub fn measurement(&self, measurement: Measurement) -> Result<(), AlgoError> {
+        if measurement.send_clock != self.clock_a && measurement.send_clock != self.clock_b {
+            return Err(AlgoError::UnknownClockForLink(
+                self.link_id,
+                measurement.send_clock,
+            ));
+        }
+
+        if measurement.recv_clock != self.clock_a && measurement.recv_clock != self.clock_b {
+            return Err(AlgoError::UnknownClockForLink(
+                self.link_id,
+                measurement.recv_clock,
+            ));
         }
 
         self.controller.as_ref().state.with_mut(|state| {
-            state.filter = state.filter.clone().progress_time(
-                state.clocks[0]
-                    .clock
-                    .now()
-                    .map_err(KalmanControllerError::ClockError)?,
-            )?;
+            state.filter = state
+                .filter
+                .clone()
+                .progress_time(state.clocks[0].clock.now()?)?;
 
             state.filter = state.filter.clone().measurement(
                 &state.filter_config,

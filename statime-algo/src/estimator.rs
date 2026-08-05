@@ -2,35 +2,7 @@ use std::{boxed::Box, vec::Vec};
 
 use statime_base::{ClockId, Duration, LinkId, TAI, Timestamp};
 
-use crate::matrix::{Matrix, MatrixError};
-
-//FIXME: Make more permanent error enum
-/// Errors that can occur when using the estimator.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum EstimatorError {
-    /// Clock was not found in the state
-    ClockNotFound,
-    /// Clock already exists in the state
-    ClockAlreadyExists,
-    /// Link not found in the state
-    LinkNotFound,
-    /// Link already exists in the state
-    LinkAlreadyExists,
-    /// Measurement between two external clocks is not allowed
-    MeasurementBetweenExternalClocks,
-    /// Measurement between a clock with itself is not allowed
-    MeasurementBetweenSelf,
-    /// Time moved backwards, which is not allowed
-    NonMonotonicTimeProgression,
-    /// Error from the underlying matrix library
-    MatrixError(MatrixError),
-}
-
-impl From<MatrixError> for EstimatorError {
-    fn from(err: MatrixError) -> Self {
-        EstimatorError::MatrixError(err)
-    }
-}
+use crate::{AlgoError, matrix::Matrix};
 
 #[derive(Debug, Clone)]
 struct ExternalClockList(Vec<ClockId>);
@@ -46,9 +18,9 @@ impl ExternalClockList {
     }
 
     /// Add a new external clock to the list.
-    fn add(&mut self, id: ClockId) -> Result<(), EstimatorError> {
+    fn add(&mut self, id: ClockId) -> Result<(), AlgoError> {
         if self.contains(id) {
-            Err(EstimatorError::ClockAlreadyExists)
+            Err(AlgoError::ClockAlreadyExists(id))
         } else {
             self.0.push(id);
             Ok(())
@@ -56,12 +28,12 @@ impl ExternalClockList {
     }
 
     /// Remove an existing external clock from the list.
-    fn remove(&mut self, id: ClockId) -> Result<(), EstimatorError> {
+    fn remove(&mut self, id: ClockId) -> Result<(), AlgoError> {
         if let Some(pos) = self.0.iter().position(|&x| x == id) {
             self.0.remove(pos);
             Ok(())
         } else {
-            Err(EstimatorError::ClockNotFound)
+            Err(AlgoError::UnknownClock(id))
         }
     }
 }
@@ -117,11 +89,11 @@ impl ClockInfoList {
         &mut self,
         id: ClockId,
         link_info: &mut LinkInfoList,
-    ) -> Result<ClockInfo, EstimatorError> {
+    ) -> Result<ClockInfo, AlgoError> {
         let removed = if let Some(pos) = self.0.iter().position(|info| info.id == id) {
             Ok(self.0.remove(pos))
         } else {
-            Err(EstimatorError::ClockNotFound)
+            Err(AlgoError::UnknownClock(id))
         }?;
 
         self.update_indices(removed.base_index, ClockInfo::SIZE);
@@ -131,9 +103,9 @@ impl ClockInfoList {
     }
 
     /// Add a new clock info to the list, if it doesn't already exist.
-    fn add(&mut self, info: ClockInfo) -> Result<(), EstimatorError> {
+    fn add(&mut self, info: ClockInfo) -> Result<(), AlgoError> {
         if self.0.iter().any(|existing| existing.id == info.id) {
-            Err(EstimatorError::ClockAlreadyExists)
+            Err(AlgoError::ClockAlreadyExists(info.id))
         } else {
             self.0.push(info);
             Ok(())
@@ -184,11 +156,11 @@ impl LinkInfoList {
         &mut self,
         id: LinkId,
         clock_info: &mut ClockInfoList,
-    ) -> Result<LinkInfo, EstimatorError> {
+    ) -> Result<LinkInfo, AlgoError> {
         let removed = if let Some(pos) = self.0.iter().position(|info| info.id == id) {
             Ok(self.0.remove(pos))
         } else {
-            Err(EstimatorError::LinkNotFound)
+            Err(AlgoError::UnknownLink(id))
         }?;
 
         self.update_indices(removed.index, LinkInfo::SIZE);
@@ -198,9 +170,9 @@ impl LinkInfoList {
     }
 
     /// Add a new link info to the list, if it doesn't already exist.
-    fn add(&mut self, info: LinkInfo) -> Result<(), EstimatorError> {
+    fn add(&mut self, info: LinkInfo) -> Result<(), AlgoError> {
         if self.0.iter().any(|existing| existing.id == info.id) {
-            Err(EstimatorError::LinkAlreadyExists)
+            Err(AlgoError::LinkAlreadyExists(info.id))
         } else {
             self.0.push(info);
             Ok(())
@@ -282,15 +254,15 @@ impl EstimatorState {
     ///
     /// # Errors
     /// Returns an error if the new time provided is before the current time of the filter.
-    pub fn progress_time(
-        mut self,
-        new_time: Timestamp<TAI>,
-    ) -> Result<EstimatorState, EstimatorError> {
+    pub fn progress_time(mut self, new_time: Timestamp<TAI>) -> Result<EstimatorState, AlgoError> {
         let delta_t = new_time - self.time;
 
         // time should not move backwards
         if delta_t < Duration::ZERO {
-            return Err(EstimatorError::NonMonotonicTimeProgression);
+            return Err(AlgoError::NonMonotonicTimeProgression {
+                from: self.time,
+                to: new_time,
+            });
         }
 
         // no time change, return state as is
@@ -345,7 +317,7 @@ impl EstimatorState {
         mut self,
         steered_clock: ClockId,
         frequency_change: f64,
-    ) -> Result<EstimatorState, EstimatorError> {
+    ) -> Result<EstimatorState, AlgoError> {
         let clock_info = self.get_clock_info(steered_clock)?;
         let frequency_index = clock_info.frequency_index();
         self.state[(frequency_index, 0)] += frequency_change;
@@ -362,7 +334,7 @@ impl EstimatorState {
         mut self,
         steered_clock: ClockId,
         offset_change: f64,
-    ) -> Result<EstimatorState, EstimatorError> {
+    ) -> Result<EstimatorState, AlgoError> {
         let clock_info = self.get_clock_info(steered_clock)?;
         let offset_index = clock_info.offset_index();
         self.state[(offset_index, 0)] += offset_change;
@@ -379,7 +351,7 @@ impl EstimatorState {
         mut self,
         steered_clock: ClockId,
         offset_change: Duration,
-    ) -> Result<EstimatorState, EstimatorError> {
+    ) -> Result<EstimatorState, AlgoError> {
         let clock_info = self.get_clock_info(steered_clock)?;
         let offset_index = clock_info.offset_index();
         self.state[(offset_index, 0)] += offset_change.as_seconds();
@@ -400,9 +372,9 @@ impl EstimatorState {
         to: ClockId,
         offset: UncertainValue,
         delay_link: Option<LinkId>,
-    ) -> Result<EstimatorState, EstimatorError> {
+    ) -> Result<EstimatorState, AlgoError> {
         if from == to {
-            return Err(EstimatorError::MeasurementBetweenSelf);
+            return Err(AlgoError::ClocksEqual(from));
         }
 
         let mut measurement_projection = Matrix::zero(1, self.state.rows());
@@ -411,7 +383,7 @@ impl EstimatorState {
         let to_external = self.external_clocks.contains(to);
 
         if from_external && to_external {
-            return Err(EstimatorError::MeasurementBetweenExternalClocks);
+            return Err(AlgoError::BothClocksExternal(from, to));
         }
 
         if !from_external {
@@ -469,10 +441,10 @@ impl EstimatorState {
     ///
     /// # Errors
     /// Returns an error if the clock is already known to the filter.
-    pub fn add_external_clock(mut self, id: ClockId) -> Result<EstimatorState, EstimatorError> {
+    pub fn add_external_clock(mut self, id: ClockId) -> Result<EstimatorState, AlgoError> {
         // check in clock info as well
         if self.clock_info.contains(id) {
-            return Err(EstimatorError::ClockAlreadyExists);
+            return Err(AlgoError::ClockAlreadyExists(id));
         }
 
         self.external_clocks.add(id)?;
@@ -484,7 +456,7 @@ impl EstimatorState {
     ///
     /// # Errors
     /// Returns an error if the clock in question is not an external clock known to the filter.
-    pub fn remove_external_clock(mut self, id: ClockId) -> Result<EstimatorState, EstimatorError> {
+    pub fn remove_external_clock(mut self, id: ClockId) -> Result<EstimatorState, AlgoError> {
         self.external_clocks.remove(id)?;
 
         Ok(self)
@@ -503,10 +475,10 @@ impl EstimatorState {
         initial_offset: UncertainValue,
         initial_frequency: UncertainValue,
         initial_wander: f64,
-    ) -> Result<EstimatorState, EstimatorError> {
+    ) -> Result<EstimatorState, AlgoError> {
         // check in external clocks as well
         if self.external_clocks.contains(id) {
-            return Err(EstimatorError::ClockAlreadyExists);
+            return Err(AlgoError::ClockAlreadyExists(id));
         }
 
         let new_clock_info = ClockInfo {
@@ -531,7 +503,7 @@ impl EstimatorState {
     ///
     /// # Errors
     /// Returns an error if the clock in question is not known to the filter.
-    pub fn remove_clock(mut self, id: ClockId) -> Result<EstimatorState, EstimatorError> {
+    pub fn remove_clock(mut self, id: ClockId) -> Result<EstimatorState, AlgoError> {
         let clock_info = self.clock_info.remove(id, &mut self.link_info)?;
 
         self.state = self
@@ -555,7 +527,7 @@ impl EstimatorState {
         id: LinkId,
         initial_delay: UncertainValue,
         decay_rate: f64,
-    ) -> Result<EstimatorState, EstimatorError> {
+    ) -> Result<EstimatorState, AlgoError> {
         let new_link_info = LinkInfo {
             id,
             index: self.state.rows(),
@@ -575,7 +547,7 @@ impl EstimatorState {
     ///
     /// # Errors
     /// Returns an error if the link in question is unknown.
-    pub fn remove_link(mut self, id: LinkId) -> Result<EstimatorState, EstimatorError> {
+    pub fn remove_link(mut self, id: LinkId) -> Result<EstimatorState, AlgoError> {
         let removed_info = self.link_info.remove(id, &mut self.clock_info)?;
         self.state = self.state.splice_vec(removed_info.index, LinkInfo::SIZE)?;
         self.uncertainty = self
@@ -589,7 +561,7 @@ impl EstimatorState {
     ///
     /// # Errors
     /// Returns an error if the clock in question is unknown.
-    pub fn clock_offset(&self, id: ClockId) -> Result<UncertainValue, EstimatorError> {
+    pub fn clock_offset(&self, id: ClockId) -> Result<UncertainValue, AlgoError> {
         let clock_info = self.get_clock_info(id)?;
         Ok(UncertainValue {
             value: self.state[(clock_info.offset_index(), 0)],
@@ -602,7 +574,7 @@ impl EstimatorState {
     ///
     /// # Errors
     /// Returns an error if the clock in question is unknown.
-    pub fn clock_frequency(&self, id: ClockId) -> Result<UncertainValue, EstimatorError> {
+    pub fn clock_frequency(&self, id: ClockId) -> Result<UncertainValue, AlgoError> {
         let clock_info = self.get_clock_info(id)?;
         Ok(UncertainValue {
             value: self.state[(clock_info.frequency_index(), 0)],
@@ -617,7 +589,7 @@ impl EstimatorState {
     /// # Errors
     /// Returns an error if the link in question is unknown.
     #[cfg(test)]
-    pub fn link_delay(&self, id: LinkId) -> Result<UncertainValue, EstimatorError> {
+    pub fn link_delay(&self, id: LinkId) -> Result<UncertainValue, AlgoError> {
         let link_info = self.get_link_info(id)?;
         Ok(UncertainValue {
             value: self.state[(link_info.index, 0)],
@@ -643,18 +615,18 @@ impl EstimatorState {
 }
 
 impl EstimatorState {
-    fn get_clock_info(&self, id: ClockId) -> Result<&ClockInfo, EstimatorError> {
+    fn get_clock_info(&self, id: ClockId) -> Result<&ClockInfo, AlgoError> {
         self.clock_info
             .iter()
             .find(|info| info.id == id)
-            .ok_or(EstimatorError::ClockNotFound)
+            .ok_or(AlgoError::UnknownClock(id))
     }
 
-    fn get_link_info(&self, id: LinkId) -> Result<&LinkInfo, EstimatorError> {
+    fn get_link_info(&self, id: LinkId) -> Result<&LinkInfo, AlgoError> {
         self.link_info
             .iter()
             .find(|info| info.id == id)
-            .ok_or(EstimatorError::LinkNotFound)
+            .ok_or(AlgoError::UnknownLink(id))
     }
 }
 
@@ -702,7 +674,7 @@ mod tests {
 
         assert_eq!(
             state.clone().add_external_clock(clock_1).unwrap_err(),
-            EstimatorError::ClockAlreadyExists
+            AlgoError::ClockAlreadyExists(clock_1)
         );
         let state = state.add_external_clock(clock_2).unwrap();
 
@@ -710,7 +682,7 @@ mod tests {
             state
                 .add_clock(clock_2, (0.0, 1.0).into(), (2.0, 3.0).into(), 1e-8)
                 .unwrap_err(),
-            EstimatorError::ClockAlreadyExists
+            AlgoError::ClockAlreadyExists(clock_2)
         );
     }
 
@@ -729,19 +701,19 @@ mod tests {
         // remove non-existing clock should fail
         assert_eq!(
             state.clone().remove_clock(clock_3).unwrap_err(),
-            EstimatorError::ClockNotFound
+            AlgoError::UnknownClock(clock_3)
         );
 
         // remove existing clock via external clock removal should fail
         assert_eq!(
             state.clone().remove_external_clock(clock_1).unwrap_err(),
-            EstimatorError::ClockNotFound
+            AlgoError::UnknownClock(clock_1)
         );
 
         // remove existing external clock via internal clock removal should fail
         assert_eq!(
             state.clone().remove_clock(clock_2).unwrap_err(),
-            EstimatorError::ClockNotFound
+            AlgoError::UnknownClock(clock_2)
         );
 
         // removing the existing clocks should succeed
@@ -1081,7 +1053,10 @@ mod tests {
                 .clone()
                 .progress_time(Timestamp::UNIX_EPOCH)
                 .unwrap_err(),
-            EstimatorError::NonMonotonicTimeProgression
+            AlgoError::NonMonotonicTimeProgression {
+                from: Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(1, 0),
+                to: Timestamp::UNIX_EPOCH
+            }
         );
     }
 
@@ -1109,7 +1084,7 @@ mod tests {
                 .clone()
                 .measurement(clock_1, clock_2, (0.0, 0.1).into(), None)
                 .unwrap_err(),
-            EstimatorError::MeasurementBetweenExternalClocks
+            AlgoError::BothClocksExternal(clock_1, clock_2)
         );
 
         assert_eq!(
@@ -1117,7 +1092,7 @@ mod tests {
                 .clone()
                 .measurement(clock_3, clock_5, (0.0, 0.1).into(), None)
                 .unwrap_err(),
-            EstimatorError::ClockNotFound
+            AlgoError::UnknownClock(clock_5)
         );
 
         assert_eq!(
@@ -1125,7 +1100,7 @@ mod tests {
                 .clone()
                 .measurement(clock_5, clock_3, (0.0, 0.1).into(), None)
                 .unwrap_err(),
-            EstimatorError::ClockNotFound
+            AlgoError::UnknownClock(clock_5)
         );
 
         assert_eq!(
@@ -1133,7 +1108,7 @@ mod tests {
                 .clone()
                 .measurement(clock_3, clock_4, (0.0, 0.1).into(), Some(link_1))
                 .unwrap_err(),
-            EstimatorError::LinkNotFound
+            AlgoError::UnknownLink(link_1)
         );
 
         assert_eq!(
@@ -1141,7 +1116,7 @@ mod tests {
                 .clone()
                 .measurement(clock_3, clock_3, (0.0, 0.1).into(), None)
                 .unwrap_err(),
-            EstimatorError::MeasurementBetweenSelf
+            AlgoError::ClocksEqual(clock_3)
         );
     }
 }

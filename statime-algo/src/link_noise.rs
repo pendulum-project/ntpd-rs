@@ -1,6 +1,6 @@
-use statime_base::{ClockId, Duration, TAI, Timestamp};
+use statime_base::{ClockId, Duration, LinkId, TAI, Timestamp};
 
-use crate::ringbuffer::UnorderedRingBuffer;
+use crate::{AlgoError, ringbuffer::UnorderedRingBuffer};
 
 const MIN_DELAYS_FOR_ESTIMATES: usize = 4;
 /// FIXME: Consider whether we want this configurable.
@@ -14,17 +14,6 @@ struct PreviousMeasurement {
     to: ClockId,
 }
 
-/// An error that occured during link noise estimation
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum LinkNoiseError {
-    /// One of the provided clocks is not a clock on this link.
-    InvalidClocks,
-    /// Both clocks in the link or in the measurement are the same.
-    ClocksEqual,
-    /// There are insufficient measurements to provide estimates.
-    NotEnoughMeasurements,
-}
-
 /// A struct containing the delay and noise estimates for a link.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct LinkDelayNoiseEstimate {
@@ -35,6 +24,7 @@ pub struct LinkDelayNoiseEstimate {
 /// Estimator for the noise induced by a given link
 #[derive(Debug, Clone)]
 pub struct LinkNoiseEstimator {
+    link_id: LinkId,
     a: ClockId,
     b: ClockId,
     roundtrip_delays: UnorderedRingBuffer,
@@ -46,11 +36,12 @@ impl LinkNoiseEstimator {
     ///
     /// # Errors
     /// Returns an error if the clocks on either end of the link are identical.
-    pub fn new(a: ClockId, b: ClockId) -> Result<Self, LinkNoiseError> {
+    pub fn new(link_id: LinkId, a: ClockId, b: ClockId) -> Result<Self, AlgoError> {
         if a == b {
-            Err(LinkNoiseError::ClocksEqual)
+            Err(AlgoError::ClocksEqual(a))
         } else {
             Ok(LinkNoiseEstimator {
+                link_id,
                 a,
                 b,
                 roundtrip_delays: UnorderedRingBuffer::default(),
@@ -69,13 +60,17 @@ impl LinkNoiseEstimator {
         to: ClockId,
         offset: f64,
         time: Timestamp<TAI>,
-    ) -> Result<LinkNoiseEstimator, LinkNoiseError> {
-        if (from != self.a && from != self.b) || (to != self.a && to != self.b) {
-            return Err(LinkNoiseError::InvalidClocks);
+    ) -> Result<LinkNoiseEstimator, AlgoError> {
+        if from != self.a && from != self.b {
+            return Err(AlgoError::UnknownClockForLink(self.link_id, from));
+        }
+
+        if to != self.a && to != self.b {
+            return Err(AlgoError::UnknownClockForLink(self.link_id, to));
         }
 
         if from == to {
-            return Err(LinkNoiseError::ClocksEqual);
+            return Err(AlgoError::ClocksEqual(from));
         }
 
         if let Some(prev_measurement) = self.prev_measurement.take()
@@ -135,10 +130,10 @@ impl LinkNoiseEstimator {
     /// # Errors
     /// The noise estimate is only available if sufficient measurements have
     /// occured for a reliable estimate to be made.
-    pub fn noise_estimate(&self) -> Result<f64, LinkNoiseError> {
+    pub fn noise_estimate(&self) -> Result<f64, AlgoError> {
         let roundtrip_delays = self.roundtrip_delays.as_ref();
         if roundtrip_delays.len() < MIN_DELAYS_FOR_ESTIMATES {
-            return Err(LinkNoiseError::NotEnoughMeasurements);
+            return Err(AlgoError::NotEnoughMeasurements(self.link_id));
         }
         #[expect(
             clippy::cast_precision_loss,
@@ -164,10 +159,10 @@ impl LinkNoiseEstimator {
     /// # Errors
     /// The delay estimate is only available if sufficient measurements have
     /// occured for a reliable estimate to be made.
-    pub fn delay_estimate(&self) -> Result<f64, LinkNoiseError> {
+    pub fn delay_estimate(&self) -> Result<f64, AlgoError> {
         let roundtrip_delays = self.roundtrip_delays.as_ref();
         if roundtrip_delays.len() < MIN_DELAYS_FOR_ESTIMATES {
-            return Err(LinkNoiseError::NotEnoughMeasurements);
+            return Err(AlgoError::NotEnoughMeasurements(self.link_id));
         }
 
         #[expect(
@@ -182,7 +177,7 @@ impl LinkNoiseEstimator {
     /// # Errors
     /// The delay and noise estimates are only available if sufficient
     /// measurements have occured for a reliable estimate to be made.
-    pub fn delay_and_noise_estimate(&self) -> Result<LinkDelayNoiseEstimate, LinkNoiseError> {
+    pub fn delay_and_noise_estimate(&self) -> Result<LinkDelayNoiseEstimate, AlgoError> {
         Ok(LinkDelayNoiseEstimate {
             delay: self.delay_estimate()?,
             noise: self.noise_estimate()?,
@@ -193,16 +188,17 @@ impl LinkNoiseEstimator {
 #[cfg(test)]
 #[allow(clippy::float_cmp, reason = "Test code")]
 mod tests {
-    use statime_base::{ClockId, Timestamp};
+    use statime_base::{ClockId, LinkId, Timestamp};
 
     use crate::{estimator::UncertainValue, link_noise::LinkNoiseEstimator};
 
     #[test]
     fn link_noise_measures_link_noise_1() {
+        let link = LinkId::new();
         let clock_1 = ClockId::new();
         let clock_2 = ClockId::new();
 
-        let state = LinkNoiseEstimator::new(clock_1, clock_2)
+        let state = LinkNoiseEstimator::new(link, clock_1, clock_2)
             .unwrap()
             .measurement(clock_1, clock_2, 1.0, Timestamp::UNIX_EPOCH)
             .unwrap()
@@ -227,10 +223,11 @@ mod tests {
 
     #[test]
     fn link_noise_measures_link_noise_2() {
+        let link = LinkId::new();
         let clock_1 = ClockId::new();
         let clock_2 = ClockId::new();
 
-        let state = LinkNoiseEstimator::new(clock_1, clock_2)
+        let state = LinkNoiseEstimator::new(link, clock_1, clock_2)
             .unwrap()
             .measurement(clock_1, clock_2, 1.0, Timestamp::UNIX_EPOCH)
             .unwrap()
@@ -256,11 +253,12 @@ mod tests {
     /// Returns a link noise estimator with 0 link noise.
     #[test]
     fn link_noise_measures_link_noise_3() {
+        let link = LinkId::new();
         let a = ClockId::new();
         let b = ClockId::new();
         let delay: UncertainValue = (1.5, 0.1).into();
 
-        let state = LinkNoiseEstimator::new(a, b)
+        let state = LinkNoiseEstimator::new(link, a, b)
             .unwrap()
             .measurement(a, b, delay.value, Timestamp::UNIX_EPOCH)
             .unwrap()
