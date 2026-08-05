@@ -388,6 +388,15 @@ impl LinkFilter {
                 }
                 return Ok(self);
             }
+        } else if !link.active {
+            link.active = true;
+            if is_tracked_link {
+                self.estimation_state = self.estimation_state.add_link(
+                    direction.link_id(),
+                    (estimates.delay, estimates.noise).into(),
+                    decay_rate,
+                )?;
+            }
         }
 
         self.estimation_state = self.estimation_state.measurement(
