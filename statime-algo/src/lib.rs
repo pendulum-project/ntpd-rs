@@ -29,7 +29,8 @@ mod storage;
 
 use core::marker::PhantomData;
 use statime_base::{
-    Clock, ClockError, ClockId, DirectedLinkId, Direction, Duration, LinkId, TAI, Timestamp,
+    Clock, ClockError, ClockId, DirectedLinkId, Direction, Duration, LeapStatus, LinkId, TAI,
+    Timestamp,
 };
 
 use crate::{
@@ -54,6 +55,8 @@ pub enum AlgoError {
     UnknownLink(LinkId),
     /// Link already exists in the estimator or filter state
     LinkAlreadyExists(LinkId),
+    /// The link does not contain an external clock
+    LinkNotExternal(LinkId),
     /// Measurements or links cannot be between two external clocks
     BothClocksExternal(ClockId, ClockId),
     /// Measurements or links between a clock and itself are not allowed
@@ -422,6 +425,27 @@ impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<
             Ok(())
         })
     }
+
+    /// Update additional time keeping information provided by the remote for this link.
+    ///
+    /// # Errors
+    /// Fails if the link does not contain an external clock.
+    pub fn external_data_update(
+        &self,
+        root_delay: Duration,
+        leap_status: Option<LeapStatus>,
+        usable: bool,
+    ) -> Result<(), AlgoError> {
+        self.controller.as_ref().state.with_mut(|state| {
+            state.filter = state.filter.clone().external_data_update(
+                self.link_id,
+                root_delay.as_seconds(),
+                leap_status,
+                usable,
+            )?;
+            Ok(())
+        })
+    }
 }
 
 /// A measurement done on a link.
@@ -433,6 +457,4 @@ pub struct Measurement {
     pub recv_timestamp: Timestamp<TAI>,
     /// The uncertainty of the timestamps.
     pub uncertainty: Duration,
-    /// The delay to UTC of the external clock, if any. Use zero on internal measurements.
-    pub root_delay: Duration,
 }
