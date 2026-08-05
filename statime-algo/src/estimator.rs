@@ -1,6 +1,6 @@
 use std::{boxed::Box, vec::Vec};
 
-use statime_base::{ClockId, Duration, LinkId, TAI, Timestamp};
+use statime_base::{ClockId, DirectedLinkId, Duration, LinkId, TAI, Timestamp};
 
 use crate::{AlgoError, matrix::Matrix};
 
@@ -253,7 +253,7 @@ impl EstimatorState {
     /// Progress the estimator state to the new timestamp.
     ///
     /// # Errors
-    /// Returns an error if the new time provided is before the current time of the filter.
+    /// Returns an error if the new time provided is before the current time of the estimator.
     pub fn progress_time(mut self, new_time: Timestamp<TAI>) -> Result<EstimatorState, AlgoError> {
         let delta_t = new_time - self.time;
 
@@ -309,10 +309,10 @@ impl EstimatorState {
 
     /// Absorb a change in frequency of a clock.
     ///
-    /// This function assumes steering happens at the current filter time.
+    /// This function assumes steering happens at the current estimator time.
     ///
     /// # Errors
-    /// Returns an error if the steered clock is unknown to the filter.
+    /// Returns an error if the steered clock is unknown to the estimator.
     pub fn absorb_frequency_steer(
         mut self,
         steered_clock: ClockId,
@@ -326,10 +326,10 @@ impl EstimatorState {
 
     /// Absorb a step change in the phase of a clock.
     ///
-    /// This function assumes steering happens at the current filter time.
+    /// This function assumes steering happens at the current estimator time.
     ///
     /// # Errors
-    /// Returns an error if the steered clock is unknown to the filter.
+    /// Returns an error if the steered clock is unknown to the estimator.
     pub fn absorb_offset_change(
         mut self,
         steered_clock: ClockId,
@@ -341,12 +341,12 @@ impl EstimatorState {
         Ok(self)
     }
 
-    /// Absorb a step change in the phase of a clock which is also used for the filter time.
+    /// Absorb a step change in the phase of a clock which is also used for the estimator time.
     ///
-    /// This function assumes steering happens at the current filter time.
+    /// This function assumes steering happens at the current estimator time.
     ///
     /// # Errors
-    /// Returns an error if the steered clock is unknown to the filter.
+    /// Returns an error if the steered clock is unknown to the estimator.
     pub fn absorb_system_clock_offset_change(
         mut self,
         steered_clock: ClockId,
@@ -365,20 +365,18 @@ impl EstimatorState {
     /// currently set to.
     ///
     /// # Errors
-    /// Returns an error if either of the clock ids, or the link is unknown. Also returns an error if both referenced clocks are external or the same.
+    /// Returns an error if either of the clock ids, or the link is unknown.
+    /// Also returns an error if both referenced clocks are external.
     pub fn measurement(
         mut self,
-        from: ClockId,
-        to: ClockId,
+        direction: DirectedLinkId,
         offset: UncertainValue,
-        delay_link: Option<LinkId>,
+        delay_link: bool,
     ) -> Result<EstimatorState, AlgoError> {
-        if from == to {
-            return Err(AlgoError::ClocksEqual(from));
-        }
-
         let mut measurement_projection = Matrix::zero(1, self.state.rows());
 
+        let from = direction.from_clock();
+        let to = direction.to_clock();
         let from_external = self.external_clocks.contains(from);
         let to_external = self.external_clocks.contains(to);
 
@@ -396,8 +394,8 @@ impl EstimatorState {
             measurement_projection[(0, to_clock_info.offset_index())] = 1.0;
         }
 
-        if let Some(link_delay) = delay_link {
-            let link_delay_info = self.get_link_info(link_delay)?;
+        if delay_link {
+            let link_delay_info = self.get_link_info(direction.link_id())?;
             measurement_projection[(0, link_delay_info.index)] = 1.0;
         }
 
@@ -440,7 +438,7 @@ impl EstimatorState {
     /// Add an external clock to the estimator state.
     ///
     /// # Errors
-    /// Returns an error if the clock is already known to the filter.
+    /// Returns an error if the clock is already known to the estimator.
     pub fn add_external_clock(mut self, id: ClockId) -> Result<EstimatorState, AlgoError> {
         // check in clock info as well
         if self.clock_info.contains(id) {
@@ -455,7 +453,7 @@ impl EstimatorState {
     /// Remove an external clock from the estimator state.
     ///
     /// # Errors
-    /// Returns an error if the clock in question is not an external clock known to the filter.
+    /// Returns an error if the clock in question is not an external clock known to the estimator.
     pub fn remove_external_clock(mut self, id: ClockId) -> Result<EstimatorState, AlgoError> {
         self.external_clocks.remove(id)?;
 
@@ -468,7 +466,7 @@ impl EstimatorState {
     /// frequency and wander of the clock.
     ///
     /// # Errors
-    /// Returns an erorr if the clock in question is already known to the filter.
+    /// Returns an erorr if the clock in question is already known to the estimator.
     pub fn add_clock(
         mut self,
         id: ClockId,
@@ -502,7 +500,7 @@ impl EstimatorState {
     /// Remove a clock from the estimator state.
     ///
     /// # Errors
-    /// Returns an error if the clock in question is not known to the filter.
+    /// Returns an error if the clock in question is not known to the estimator.
     pub fn remove_clock(mut self, id: ClockId) -> Result<EstimatorState, AlgoError> {
         let clock_info = self.clock_info.remove(id, &mut self.link_info)?;
 
@@ -521,13 +519,22 @@ impl EstimatorState {
     /// The decay rate is the amount the uncertainty on the link delay increases every second on this link.
     ///
     /// # Errors
-    /// Returns an error if the link in question is already known to the filter.
+    /// Returns an error if the link in question is already known or if any of
+    /// the clocks in the link are unknown to the estimator.
     pub fn add_link(
         mut self,
         id: LinkId,
         initial_delay: UncertainValue,
         decay_rate: f64,
     ) -> Result<EstimatorState, AlgoError> {
+        if !self.is_known_clock(id.first_clock()) {
+            return Err(AlgoError::UnknownClock(id.first_clock()));
+        }
+
+        if !self.is_known_clock(id.second_clock()) {
+            return Err(AlgoError::UnknownClock(id.second_clock()));
+        }
+
         let new_link_info = LinkInfo {
             id,
             index: self.state.rows(),
@@ -607,6 +614,12 @@ impl EstimatorState {
     #[must_use]
     pub fn is_external_clock(&self, id: ClockId) -> bool {
         self.external_clocks.contains(id)
+    }
+
+    /// Is a given clock known to the estimator
+    #[must_use]
+    pub fn is_known_clock(&self, id: ClockId) -> bool {
+        self.is_internal_clock(id) || self.is_external_clock(id)
     }
 
     pub(crate) fn current_time(&self) -> Timestamp<TAI> {
@@ -729,15 +742,15 @@ mod tests {
         let clock_1 = ClockId::new();
         let clock_2 = ClockId::new();
 
-        let link_1 = LinkId::new();
-        let link_2 = LinkId::new();
+        let link_1 = LinkId::new(clock_1, clock_2).unwrap();
+        let link_2 = LinkId::new(clock_1, clock_2).unwrap();
 
         let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
             .add_clock(clock_1, (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
             .unwrap()
-            .add_link(link_1, (0.5, 0.2).into(), 0.0)
-            .unwrap()
             .add_clock(clock_2, (0.0, 1e-5).into(), (-1e-6, 1e-7).into(), 0.0)
+            .unwrap()
+            .add_link(link_1, (0.5, 0.2).into(), 0.0)
             .unwrap()
             .add_link(link_2, (2.0, 0.0).into(), 0.1)
             .unwrap()
@@ -859,9 +872,15 @@ mod tests {
 
     #[test]
     fn test_add_link() {
-        let link_1 = LinkId::new();
+        let clock_1 = ClockId::new();
+        let clock_2 = ClockId::new();
+        let link_1 = LinkId::new(clock_1, clock_2).unwrap();
 
         let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
+            .add_clock(clock_1, (0.0, 0.0).into(), (1e-6, 0.0).into(), 1e-8)
+            .unwrap()
+            .add_clock(clock_2, (0.0, 1e-5).into(), (-1e-6, 1e-7).into(), 0.0)
+            .unwrap()
             .add_link(link_1, (1.0, 2.0).into(), 0.0)
             .expect("Failed to add link");
         assert_eq!(state.link_delay(link_1).unwrap().value, 1.0);
@@ -878,7 +897,11 @@ mod tests {
             .unwrap()
             .add_clock(clock_2, (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
             .unwrap()
-            .measurement(clock_1, clock_2, (1.0, 2.0f64.sqrt() * 0.1).into(), None)
+            .measurement(
+                LinkId::new(clock_1, clock_2).unwrap().forward(),
+                (1.0, 2.0f64.sqrt() * 0.1).into(),
+                false,
+            )
             .unwrap();
 
         assert_uv_almost_eq!(
@@ -905,7 +928,11 @@ mod tests {
             .unwrap()
             .progress_time(Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(100, 0))
             .unwrap()
-            .measurement(clock_1, clock_2, (1.0, 2.0f64.sqrt() * 0.1).into(), None)
+            .measurement(
+                LinkId::new(clock_1, clock_2).unwrap().forward(),
+                (1.0, 2.0f64.sqrt() * 0.1).into(),
+                false,
+            )
             .unwrap();
 
         assert_uv_almost_eq!(
@@ -930,7 +957,7 @@ mod tests {
     fn test_measure_between_clocks_with_link() {
         let clock_1 = ClockId::new();
         let clock_2 = ClockId::new();
-        let link_1 = LinkId::new();
+        let link_1 = LinkId::new(clock_1, clock_2).unwrap();
 
         let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
             .add_clock(clock_1, (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
@@ -939,12 +966,7 @@ mod tests {
             .unwrap()
             .add_link(link_1, (1.0, 0.0).into(), 0.0)
             .unwrap()
-            .measurement(
-                clock_1,
-                clock_2,
-                (2.0, 2.0f64.sqrt() * 0.1).into(),
-                Some(link_1),
-            )
+            .measurement(link_1.forward(), (2.0, 2.0f64.sqrt() * 0.1).into(), true)
             .unwrap();
 
         assert_uv_almost_eq!(
@@ -975,7 +997,7 @@ mod tests {
             .unwrap()
             .add_link(link_1, (0.0, 0.1).into(), 0.0)
             .unwrap()
-            .measurement(clock_1, clock_2, (1.0, 0.1).into(), Some(link_1))
+            .measurement(link_1.forward(), (1.0, 0.1).into(), true)
             .unwrap();
 
         assert_uv_almost_eq!(
@@ -1010,7 +1032,11 @@ mod tests {
             .unwrap()
             .add_external_clock(clock_2)
             .unwrap()
-            .measurement(clock_2, clock_1, (1.0, 0.1).into(), None)
+            .measurement(
+                LinkId::new(clock_2, clock_1).unwrap().forward(),
+                (1.0, 0.1).into(),
+                false,
+            )
             .unwrap();
 
         assert_uv_almost_eq!(
@@ -1028,7 +1054,11 @@ mod tests {
             .unwrap()
             .add_external_clock(clock_2)
             .unwrap()
-            .measurement(clock_1, clock_2, (1.0, 0.1).into(), None)
+            .measurement(
+                LinkId::new(clock_1, clock_2).unwrap().forward(),
+                (1.0, 0.1).into(),
+                false,
+            )
             .unwrap();
 
         assert_uv_almost_eq!(
@@ -1067,7 +1097,7 @@ mod tests {
         let clock_3 = ClockId::new();
         let clock_4 = ClockId::new();
         let clock_5 = ClockId::new();
-        let link_1 = LinkId::new();
+        let link_1 = LinkId::new(clock_3, clock_1).unwrap();
 
         let state = EstimatorState::empty(Timestamp::UNIX_EPOCH)
             .add_external_clock(clock_1)
@@ -1082,7 +1112,11 @@ mod tests {
         assert_eq!(
             state
                 .clone()
-                .measurement(clock_1, clock_2, (0.0, 0.1).into(), None)
+                .measurement(
+                    LinkId::new(clock_1, clock_2).unwrap().forward(),
+                    (0.0, 0.1).into(),
+                    false
+                )
                 .unwrap_err(),
             AlgoError::BothClocksExternal(clock_1, clock_2)
         );
@@ -1090,7 +1124,11 @@ mod tests {
         assert_eq!(
             state
                 .clone()
-                .measurement(clock_3, clock_5, (0.0, 0.1).into(), None)
+                .measurement(
+                    LinkId::new(clock_3, clock_5).unwrap().forward(),
+                    (0.0, 0.1).into(),
+                    false
+                )
                 .unwrap_err(),
             AlgoError::UnknownClock(clock_5)
         );
@@ -1098,7 +1136,11 @@ mod tests {
         assert_eq!(
             state
                 .clone()
-                .measurement(clock_5, clock_3, (0.0, 0.1).into(), None)
+                .measurement(
+                    LinkId::new(clock_5, clock_3).unwrap().forward(),
+                    (0.0, 0.1).into(),
+                    false
+                )
                 .unwrap_err(),
             AlgoError::UnknownClock(clock_5)
         );
@@ -1106,17 +1148,9 @@ mod tests {
         assert_eq!(
             state
                 .clone()
-                .measurement(clock_3, clock_4, (0.0, 0.1).into(), Some(link_1))
+                .measurement(link_1.forward(), (0.0, 0.1).into(), true)
                 .unwrap_err(),
             AlgoError::UnknownLink(link_1)
-        );
-
-        assert_eq!(
-            state
-                .clone()
-                .measurement(clock_3, clock_3, (0.0, 0.1).into(), None)
-                .unwrap_err(),
-            AlgoError::ClocksEqual(clock_3)
         );
     }
 }
