@@ -118,7 +118,7 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          shared-key: "cov-${{matrix.rust}}-${{matrix.target}}"
+          shared-key: "cov-${{matrix.rust}}-${{matrix.target}}-${{ replace(replace(replace(matrix.features, ' ', '_'), '-', ''), ',', '_') }}"
       - name: setup coverage environment
         run: cargo --locked llvm-cov show-env --export-prefix >> $GITHUB_ENV
       - name: cleanup workspace related coverage files
