@@ -99,12 +99,24 @@ impl LinkInfo {
     /// Get an offset window for the link.
     ///
     /// Returns None if the link is not with an external clock, or if the link is not usable.
-    fn offset_window(&self, config: &LinkFilterConfig) -> Option<OffsetWindow> {
+    fn offset_window<Storage: KalmanStorageBase>(
+        &self,
+        config: &LinkFilterConfig,
+        state: &EstimatorState<Storage>,
+    ) -> Option<OffsetWindow> {
         let external_link_state = self.external_link_state.as_ref()?;
 
         if external_link_state.last_offsets.as_ref().is_empty() || !external_link_state.usable {
             return None;
         }
+
+        let internal_clock = if state.is_internal_clock(self.id.first_clock()) {
+            self.id.first_clock()
+        } else {
+            self.id.second_clock()
+        };
+
+        let internal_offset = state.clock_offset(internal_clock).ok()?.value;
 
         #[expect(
             clippy::cast_precision_loss,
@@ -125,8 +137,8 @@ impl LinkInfo {
 
         if half_window_size < config.select_max_window_size {
             Some(OffsetWindow {
-                low: avg_offset - half_window_size,
-                high: avg_offset + half_window_size,
+                low: avg_offset - internal_offset - half_window_size,
+                high: avg_offset - internal_offset + half_window_size,
             })
         } else {
             None
@@ -379,7 +391,7 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
             external_link_state.last_offsets.insert(offset_to_external);
             external_link_state.last_offset_uncertainty = offset.uncertainty;
 
-            let our_window = link.offset_window(config);
+            let our_window = link.offset_window(config, &self.estimation_state);
 
             let Some(consensus_window) = self.find_external_consensus_window(config) else {
                 // If there is no consensus currently, wait until there is before we start
@@ -462,7 +474,7 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
         let mut count_61 = 0;
 
         for link in self.links.iter() {
-            if let Some(window) = link.offset_window(config)
+            if let Some(window) = link.offset_window(config, &self.estimation_state)
                 && window.overlaps(consensus_window)
                 && let Some(state) = &link.external_link_state
             {
@@ -494,7 +506,7 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
 
         let mut best_delay = f64::MAX;
         for link in self.links.iter() {
-            if let Some(window) = link.offset_window(config)
+            if let Some(window) = link.offset_window(config, &self.estimation_state)
                 && window.overlaps(consensus_window)
                 && let Some(state) = &link.external_link_state
                 && let Ok(estimate) = link.link_state.delay_and_noise_estimate()
@@ -693,12 +705,13 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
             .links
             .iter()
             .filter_map(|info| {
-                info.offset_window(config).map(|window| {
-                    [
-                        (window.low, BoundType::Start),
-                        (window.high, BoundType::End),
-                    ]
-                })
+                info.offset_window(config, &self.estimation_state)
+                    .map(|window| {
+                        [
+                            (window.low, BoundType::Start),
+                            (window.high, BoundType::End),
+                        ]
+                    })
             })
             .flatten()
             .collect();
@@ -868,59 +881,59 @@ mod tests {
             // link 1
             .external_data_update(link_1, 0.1, None, true)
             .unwrap()
-            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_1.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_1.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_1.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_1.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_1.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_1.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_1.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_1.reverse(), (0.0, 0.001).into())
             .unwrap()
             // link 2
             .external_data_update(link_2, 0.1, None, true)
             .unwrap()
-            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_2.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_2.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_2.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_2.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_2.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_2.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_2.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_2.reverse(), (0.0, 0.001).into())
             .unwrap()
             // link 3
             .external_data_update(link_3, 0.1, None, true)
             .unwrap()
-            .measurement(&config, link_3.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_3.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_3.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_3.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_3.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_3.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_3.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_3.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_3.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_3.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_3.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_3.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_3.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_3.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_3.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_3.reverse(), (0.0, 0.001).into())
             .unwrap();
 
         assert!(filter.link_active(link_1).unwrap());
@@ -948,59 +961,59 @@ mod tests {
             // link 1
             .external_data_update(link_1, 0.1, None, true)
             .unwrap()
-            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_1.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_1.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_1.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_1.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_1.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_1.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_1.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_1.reverse(), (0.0, 0.001).into())
             .unwrap()
             // link 2
             .external_data_update(link_2, 0.1, None, true)
             .unwrap()
-            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_2.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_2.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_2.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_2.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_2.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_2.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_2.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_2.reverse(), (0.0, 0.001).into())
             .unwrap()
             // link 3
             .external_data_update(link_3, 0.1, None, true)
             .unwrap()
-            .measurement(&config, link_3.forward(), (1.0, 0.0).into())
+            .measurement(&config, link_3.forward(), (1.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_3.reverse(), (-1.0, 0.0).into())
+            .measurement(&config, link_3.reverse(), (-1.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_3.forward(), (1.0, 0.0).into())
+            .measurement(&config, link_3.forward(), (1.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_3.reverse(), (-1.0, 0.0).into())
+            .measurement(&config, link_3.reverse(), (-1.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_3.forward(), (1.0, 0.0).into())
+            .measurement(&config, link_3.forward(), (1.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_3.reverse(), (-1.0, 0.0).into())
+            .measurement(&config, link_3.reverse(), (-1.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_3.forward(), (1.0, 0.0).into())
+            .measurement(&config, link_3.forward(), (1.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_3.reverse(), (-1.0, 0.0).into())
+            .measurement(&config, link_3.reverse(), (-1.0, 0.001).into())
             .unwrap();
 
         assert!(filter.link_active(link_1).unwrap());
@@ -1028,59 +1041,59 @@ mod tests {
             // link 1
             .external_data_update(link_1, 0.1, None, true)
             .unwrap()
-            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_1.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_1.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_1.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_1.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_1.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_1.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_1.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_1.reverse(), (0.0, 0.001).into())
             .unwrap()
             // link 2
             .external_data_update(link_2, 0.1, None, true)
             .unwrap()
-            .measurement(&config, link_2.forward(), (1.0, 0.0).into())
+            .measurement(&config, link_2.forward(), (1.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.reverse(), (-1.0, 0.0).into())
+            .measurement(&config, link_2.reverse(), (-1.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.forward(), (1.0, 0.0).into())
+            .measurement(&config, link_2.forward(), (1.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.reverse(), (-1.0, 0.0).into())
+            .measurement(&config, link_2.reverse(), (-1.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.forward(), (1.0, 0.0).into())
+            .measurement(&config, link_2.forward(), (1.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.reverse(), (-1.0, 0.0).into())
+            .measurement(&config, link_2.reverse(), (-1.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.forward(), (1.0, 0.0).into())
+            .measurement(&config, link_2.forward(), (1.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.reverse(), (-1.0, 0.0).into())
+            .measurement(&config, link_2.reverse(), (-1.0, 0.001).into())
             .unwrap()
             // link 3
             .external_data_update(link_3, 0.1, None, true)
             .unwrap()
-            .measurement(&config, link_3.forward(), (1.0, 0.0).into())
+            .measurement(&config, link_3.forward(), (1.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_3.reverse(), (-1.0, 0.0).into())
+            .measurement(&config, link_3.reverse(), (-1.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_3.forward(), (1.0, 0.0).into())
+            .measurement(&config, link_3.forward(), (1.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_3.reverse(), (-1.0, 0.0).into())
+            .measurement(&config, link_3.reverse(), (-1.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_3.forward(), (1.0, 0.0).into())
+            .measurement(&config, link_3.forward(), (1.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_3.reverse(), (-1.0, 0.0).into())
+            .measurement(&config, link_3.reverse(), (-1.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_3.forward(), (1.0, 0.0).into())
+            .measurement(&config, link_3.forward(), (1.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_3.reverse(), (-1.0, 0.0).into())
+            .measurement(&config, link_3.reverse(), (-1.0, 0.001).into())
             .unwrap();
 
         // Link 1 is still active since it came online first.
@@ -1092,9 +1105,9 @@ mod tests {
         assert!(filter.link_active(link_3).unwrap());
 
         let filter = filter
-            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_1.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.forward(), (1.0, 0.0).into())
+            .measurement(&config, link_2.forward(), (1.0, 0.001).into())
             .unwrap();
         //
         assert!(!filter.link_active(link_1).unwrap());
@@ -1223,25 +1236,25 @@ mod tests {
         let filter = filter
             .external_data_update(link_1, 0.1, None, true)
             .unwrap()
-            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_1.forward(), (0.0, 0.001).into())
             .unwrap()
             .external_data_update(link_2, 0.1, None, true)
             .unwrap()
-            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_2.forward(), (0.0, 0.001).into())
             .unwrap()
             .external_data_update(link_3, 0.1, None, true)
             .unwrap()
-            .measurement(&config, link_3.forward(), (10.0, 0.0).into())
+            .measurement(&config, link_3.forward(), (-10.0, 0.001).into())
             .unwrap();
 
         assert!(filter.link_active(link_1).unwrap());
         assert!(filter.link_active(link_2).unwrap());
-        assert!(!filter.link_active(link_3).unwrap());
+        assert!(filter.link_active(link_3).unwrap());
 
         let filter = filter
-            .absorb_offset_change(clock_int_2, 10.0)
+            .absorb_offset_change(clock_int_2, -10.0)
             .unwrap()
-            .measurement(&config, link_3.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_3.forward(), (0.0, 0.001).into())
             .unwrap();
 
         assert!(filter.link_active(link_3).unwrap());
@@ -1265,25 +1278,25 @@ mod tests {
         let filter = filter
             .external_data_update(link_1, 0.1, None, true)
             .unwrap()
-            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_1.forward(), (0.0, 0.001).into())
             .unwrap()
             .external_data_update(link_2, 0.1, None, true)
             .unwrap()
-            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_2.forward(), (0.0, 0.001).into())
             .unwrap()
             .external_data_update(link_3, 0.1, None, true)
             .unwrap()
-            .measurement(&config, link_3.forward(), (-10.0, 0.0).into())
+            .measurement(&config, link_3.forward(), (-10.0, 0.001).into())
             .unwrap();
 
         assert!(filter.link_active(link_1).unwrap());
         assert!(filter.link_active(link_2).unwrap());
-        assert!(!filter.link_active(link_3).unwrap());
+        assert!(filter.link_active(link_3).unwrap());
 
         let filter = filter
             .absorb_system_clock_offset_change(clock_int_2, Duration::from_seconds_nanos(10, 0))
             .unwrap()
-            .measurement(&config, link_3.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_3.forward(), (0.0, 0.001).into())
             .unwrap();
 
         assert!(filter.link_active(link_3).unwrap());
@@ -1393,59 +1406,59 @@ mod tests {
             // link 1
             .external_data_update(link_1, 0.1, None, true)
             .unwrap()
-            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_1.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_1.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_1.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_1.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_1.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_1.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_1.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_1.reverse(), (0.0, 0.001).into())
             .unwrap()
             // link 2
             .external_data_update(link_2, 0.1, None, true)
             .unwrap()
-            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_2.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_2.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_2.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_2.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_2.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_2.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_2.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_2.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_2.reverse(), (0.0, 0.001).into())
             .unwrap()
             // link 3
             .external_data_update(link_3, 0.1, None, true)
             .unwrap()
-            .measurement(&config, link_3.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_3.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_3.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_3.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_3.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_3.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_3.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_3.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_3.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_3.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_3.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_3.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_3.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_3.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_3.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_3.reverse(), (0.0, 0.001).into())
             .unwrap();
 
         let filter = base_filter
@@ -1536,15 +1549,15 @@ mod tests {
         let filter = filter
             .external_data_update(link_1, 0.3, None, true)
             .unwrap()
-            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_1.forward(), (0.0, 0.001).into())
             .unwrap()
             .external_data_update(link_2, 0.2, None, true)
             .unwrap()
-            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_2.forward(), (0.0, 0.001).into())
             .unwrap()
             .external_data_update(link_3, 0.1, None, true)
             .unwrap()
-            .measurement(&config, link_3.forward(), (10.0, 0.0).into())
+            .measurement(&config, link_3.forward(), (10.0, 0.001).into())
             .unwrap();
 
         assert_eq!(filter.local_root_delay(&config), Some(0.2));
