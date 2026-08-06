@@ -20,3 +20,9 @@ impl AsRef<[f64]> for UnorderedRingBuffer {
         &self.values[..self.n_values]
     }
 }
+
+impl AsMut<[f64]> for UnorderedRingBuffer {
+    fn as_mut(&mut self) -> &mut [f64] {
+        &mut self.values[..self.n_values]
+    }
+}
