@@ -1,0 +1,115 @@
+name: Fuzzers
+
+on:
+  schedule:
+    # Runs every night at midnight UTC
+    - cron: '0 0 * * *'
+  # Allows you to manually trigger the workflow from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  fuzz:
+    name: Fuzz with code coverage
+    strategy:
+      matrix:
+        include:
+          - fuzz_target: cookie_parsing_sound
+            corpus: ""
+            features: ''
+          - fuzz_target: duration_from_float
+            corpus: ""
+            features: ''
+          - fuzz_target: encrypted_client_parsing
+            corpus: ""
+            features: ''
+          - fuzz_target: encrypted_server_parsing
+            corpus: ""
+            features: ''
+          - fuzz_target: ipfilter
+            corpus: ""
+            features: ''
+          - fuzz_target: handle
+            corpus: ""
+            features: ''
+          - fuzz_target: key_exchange_response_parsing
+            corpus: ""
+            features: ''
+          - fuzz_target: key_exchange_request_parsing
+            corpus: ""
+            features: ''
+          - fuzz_target: packet_keyset
+            corpus: ""
+            features: ''
+          - fuzz_target: packet_parsing_sound
+            corpus: ""
+            features: ''
+          - fuzz_target: record_encode_decode
+            corpus: ""
+            features: ''
+          - fuzz_target: ptp_message_parsing
+            corpus: ""
+            features: ''
+    runs-on: ubuntu-latest
+    # Grant permissions to write issues and upload artifacts
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install nightly toolchain
+        run: rustup toolchain install nightly --component llvm-tools-preview && rustup default nightly
+      - name: Install cargo fuzz & rustfilt
+        uses: taiki-e/install-action@cb33e69fad06166ca28a42b2575e4dadabf62ee8 # v2.85.8
+        with:
+          tool: cargo-fuzz,rustfilt
+      - name: Run `cargo fuzz`
+        env:
+          RUST_BACKTRACE: "1"
+          # prevents `cargo fuzz coverage` from rebuilding everything
+          RUSTFLAGS: "-C instrument-coverage"
+        run: |
+          cargo fuzz run --target $(rustc --print host-tuple) ${{matrix.features}} ${{matrix.fuzz_target}} ${{matrix.corpus}} -- -max_total_time=10
+      - name: Fuzz codecov
+        run: |
+          cargo fuzz coverage --target $(rustc --print host-tuple) ${{matrix.features}} ${{matrix.fuzz_target}} ${{matrix.corpus}}
+          $(rustc --print sysroot)/lib/rustlib/$(rustc --print host-tuple)/bin/llvm-cov export -Xdemangler=rustfilt \
+              target/x86_64-unknown-linux-musl/coverage/$(rustc --print host-tuple)/release/${{matrix.fuzz_target}} \
+              -instr-profile=fuzz/coverage/${{matrix.fuzz_target}}/coverage.profdata \
+              --format=lcov \
+              -ignore-filename-regex="\.cargo|\.rustup" > lcov.info
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          files: ./lcov.info
+          fail_ci_if_error: false
+          flags: fuzz-${{ matrix.fuzz_target }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+          name: fuzz
+
+      - name: Upload crash artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-crash-artifacts-${{ matrix.fuzz_target }}
+          path: fuzz/artifacts/
+          if-no-files-found: ignore
+
+      - name: Open GitHub issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --title "Crash during fuzzer '${{ matrix.fuzz_target }}' run in nightly job" \
+            --label "bug" \
+            --body "The nightly fuzzing workflow detected a failure or crash.
+
+            ### Details
+            - **Workflow Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            - **Commit:** ${{ github.sha }}
+
+            > [!TIP]
+            > Check the **Actions** tab of this run to download the \`fuzz-crash-artifacts-${{ matrix.fuzz_target }}\` file and reproduce the crash locally."
