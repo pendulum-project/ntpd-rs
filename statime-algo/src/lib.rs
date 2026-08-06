@@ -18,6 +18,20 @@ macro_rules! assert_almost_eq {
     };
 }
 
+#[cfg(test)]
+macro_rules! assert_uv_almost_eq {
+    ($left:expr, $right:expr) => {
+        match (&$left, &$right) {
+            (left_val, right_val) => {
+                assert!((left_val.value - right_val.value).abs() <= 1e-6*right_val.value.abs(),
+                    "Floating point values not almost equal.\nLeft={left_val:?}\nRight={right_val:?}");
+                assert!((left_val.variance - right_val.variance).abs() <= 1e-6*right_val.variance.abs(),
+                    "Floating point uncertainty not almost equal.\nLeft={left_val:?}\nRight={right_val:?}");
+            }
+        }
+    };
+}
+
 mod estimator;
 mod filter;
 #[cfg(not(feature = "std"))]
@@ -251,12 +265,15 @@ impl<Storage: KalmanStorage<C>, C: Clock> KalmanController<Storage, C> {
         clock_a: ClockId,
         clock_b: ClockId,
         decay_rate: f64,
+        period: Option<Duration>,
     ) -> Result<KalmanLink<ControllerRef, Storage, C>, AlgoError> {
         let link_id = this.as_ref().state.with_mut(|state| {
-            let (filter, id) = state
-                .filter
-                .clone()
-                .add_tracked_link(clock_a, clock_b, decay_rate)?;
+            let (filter, id) = state.filter.clone().add_tracked_link(
+                clock_a,
+                clock_b,
+                decay_rate,
+                period.map(Duration::as_seconds),
+            )?;
             state.filter = filter;
 
             Ok::<_, AlgoError>(id)
@@ -285,9 +302,14 @@ impl<Storage: KalmanStorage<C>, C: Clock> KalmanController<Storage, C> {
         this: ControllerRef,
         clock_a: ClockId,
         clock_b: ClockId,
+        period: Option<Duration>,
     ) -> Result<KalmanLink<ControllerRef, Storage, C>, AlgoError> {
         let link_id = this.as_ref().state.with_mut(|state| {
-            let (filter, id) = state.filter.clone().add_untracked_link(clock_a, clock_b)?;
+            let (filter, id) = state.filter.clone().add_untracked_link(
+                clock_a,
+                clock_b,
+                period.map(Duration::as_seconds),
+            )?;
             state.filter = filter;
 
             Ok::<_, AlgoError>(id)

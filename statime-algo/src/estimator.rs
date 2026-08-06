@@ -369,6 +369,30 @@ impl<Storage: KalmanStorageBase> EstimatorState<Storage> {
         Ok(self)
     }
 
+    /// Predicted the outcome of a measurement on the given link in the given
+    /// direction.
+    ///
+    /// Assumes the measurement happens at the time the estimator state is
+    /// currently set to.
+    ///
+    /// # Errors
+    /// Returns an error if either of the clock ids, or the link is unknown.
+    /// Also returns an error if both referenced clocks are external.
+    pub fn prediction(
+        &self,
+        direction: DirectedLinkId,
+        delay_link: bool,
+    ) -> Result<UncertainValue, AlgoError> {
+        let measurement_projection = self.measurement_projection(direction, delay_link)?;
+
+        Ok(UncertainValue {
+            value: (&measurement_projection * &self.state)[(0, 0)],
+            variance: (&measurement_projection
+                * &self.uncertainty
+                * measurement_projection.transpose())[(0, 0)],
+        })
+    }
+
     /// Add a new measurement to the estimator state.
     ///
     /// Assumes the measurements happens at the time the estimator state is
@@ -383,31 +407,7 @@ impl<Storage: KalmanStorageBase> EstimatorState<Storage> {
         offset: UncertainValue,
         delay_link: bool,
     ) -> Result<Self, AlgoError> {
-        let mut measurement_projection = Matrix::zero(1, self.state.rows());
-
-        let from = direction.from_clock();
-        let to = direction.to_clock();
-        let from_external = self.external_clocks.contains(from);
-        let to_external = self.external_clocks.contains(to);
-
-        if from_external && to_external {
-            return Err(AlgoError::BothClocksExternal(from, to));
-        }
-
-        if !from_external {
-            let from_clock_info = self.get_clock_info(from)?;
-            measurement_projection[(0, from_clock_info.offset_index())] = -1.0;
-        }
-
-        if !to_external {
-            let to_clock_info = self.get_clock_info(to)?;
-            measurement_projection[(0, to_clock_info.offset_index())] = 1.0;
-        }
-
-        if delay_link {
-            let link_delay_info = self.get_link_info(direction.link_id())?;
-            measurement_projection[(0, link_delay_info.index)] = 1.0;
-        }
+        let measurement_projection = self.measurement_projection(direction, delay_link)?;
 
         let expected = &measurement_projection * &self.state;
         let difference = Matrix::<Storage::MatrixStorage>::from(offset.value) - expected;
@@ -443,6 +443,40 @@ impl<Storage: KalmanStorageBase> EstimatorState<Storage> {
         .symmetrize()?;
 
         Ok(self)
+    }
+
+    /// Provides the matrix that projects the state and uncertainty matrices to a
+    /// prediction for a measurment on the given link in the given direction.
+    ///
+    /// # Errors
+    /// Returns an error if either of the clock ids, or the link is unknown.
+    /// Also returns an error if both referenced clocks are external.
+    fn measurement_projection(
+        &self,
+        direction: DirectedLinkId,
+        delay_link: bool,
+    ) -> Result<Matrix<Storage::MatrixStorage>, AlgoError> {
+        let mut measurement_projection = Matrix::zero(1, self.state.rows());
+        let from = direction.from_clock();
+        let to = direction.to_clock();
+        let from_external = self.external_clocks.contains(from);
+        let to_external = self.external_clocks.contains(to);
+        if from_external && to_external {
+            return Err(AlgoError::BothClocksExternal(from, to));
+        }
+        if !from_external {
+            let from_clock_info = self.get_clock_info(from)?;
+            measurement_projection[(0, from_clock_info.offset_index())] = -1.0;
+        }
+        if !to_external {
+            let to_clock_info = self.get_clock_info(to)?;
+            measurement_projection[(0, to_clock_info.offset_index())] = 1.0;
+        }
+        if delay_link {
+            let link_delay_info = self.get_link_info(direction.link_id())?;
+            measurement_projection[(0, link_delay_info.index)] = 1.0;
+        }
+        Ok(measurement_projection)
     }
 
     /// Add an external clock to the estimator state.
@@ -653,30 +687,6 @@ mod tests {
     use crate::storage::StdKalmanStorage;
 
     use super::*;
-
-    macro_rules! assert_almost_eq {
-        ($left:expr, $right:expr) => {
-            match (&$left, &$right) {
-                (left_val, right_val) => {
-                    assert!((*left_val - *right_val).abs() <= 1e-6*right_val.abs(),
-                        "Floating point values not almost equal.\nLeft={left_val}\nRight={right_val}")
-                }
-            }
-        };
-    }
-
-    macro_rules! assert_uv_almost_eq {
-        ($left:expr, $right:expr) => {
-            match (&$left, &$right) {
-                (left_val, right_val) => {
-                    assert!((left_val.value - right_val.value).abs() <= 1e-6*right_val.value.abs(),
-                        "Floating point values not almost equal.\nLeft={left_val:?}\nRight={right_val:?}");
-                    assert!((left_val.variance - right_val.variance).abs() <= 1e-6*right_val.variance.abs(),
-                        "Floating point uncertainty not almost equal.\nLeft={left_val:?}\nRight={right_val:?}");
-                }
-            }
-        };
-    }
 
     #[test]
     fn test_add_clock() {
