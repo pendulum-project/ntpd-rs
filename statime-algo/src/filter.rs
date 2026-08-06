@@ -123,10 +123,24 @@ impl LinkInfo {
             + external_link_state.last_offset_uncertainty * config.select_offset_uncertainty_window
             + (delay + external_link_state.root_delay) * config.select_delay_uncertainty_window;
 
-        Some(OffsetWindow {
-            low: avg_offset - half_window_size,
-            high: avg_offset + half_window_size,
-        })
+        if half_window_size < config.select_max_window_size {
+            Some(OffsetWindow {
+                low: avg_offset - half_window_size,
+                high: avg_offset + half_window_size,
+            })
+        } else {
+            None
+        }
+    }
+
+    fn update_link_offsets_from_steer(&mut self, steered_clock: ClockId, offset_change: f64) {
+        if let Some(external_state) = &mut self.external_link_state
+            && self.id.contains_clock(steered_clock)
+        {
+            for offset in external_state.last_offsets.as_mut() {
+                *offset += offset_change;
+            }
+        }
     }
 }
 
@@ -139,6 +153,17 @@ impl<L: FilterLinkStorage> LinkInfoList<L> {
     /// Create a new, empty `LinkInfoList`.
     fn new() -> Self {
         LinkInfoList(L::new())
+    }
+
+    /// Find a link by its id, returning a reference to it.
+    ///
+    /// # Errors
+    /// Returns an error if the link is not found.
+    fn find_by_id(&self, id: LinkId) -> Result<&LinkInfo, AlgoError> {
+        self.0
+            .iter()
+            .find(|info| info.id == id)
+            .ok_or(AlgoError::UnknownLink(id))
     }
 
     /// Find a link by its id, returning a mutable reference to it.
@@ -278,6 +303,8 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
                     .clone()
                     .absorb_offset_change(steered_clock);
             }
+
+            link.update_link_offsets_from_steer(steered_clock, offset_change);
         }
         Ok(self)
     }
@@ -306,6 +333,8 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
                     .clone()
                     .absorb_system_clock_offset_change(steered_clock, offset_change);
             }
+
+            link.update_link_offsets_from_steer(steered_clock, offset_change.as_seconds());
         }
 
         Ok(self)
@@ -648,6 +677,17 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
         Ok(self)
     }
 
+    /// Check whether a given link is currently active. Note that this reflects
+    /// only whether the last measurement was used, not whether the link would be
+    /// chosen now when a new measurement matching the old ones arrives.
+    ///
+    /// # Errors
+    /// Returns an error if the link does not exist.
+    pub fn link_active(&self, id: LinkId) -> Result<bool, AlgoError> {
+        let link = self.links.find_by_id(id)?;
+        Ok(link.active)
+    }
+
     fn find_external_consensus_window(&self, config: &LinkFilterConfig) -> Option<OffsetWindow> {
         let mut bounds: Storage::BoundStorage = self
             .links
@@ -699,7 +739,7 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
         assert_eq!(maxlow, maxhigh);
         let max = maxlow;
 
-        if max > config.minimum_agreeing_sources && max * 4 > bounds.len() {
+        if max >= config.minimum_agreeing_sources && max * 4 > bounds.len() {
             Some(OffsetWindow {
                 low: max_offset_low,
                 high: max_offset_high,
@@ -730,4 +770,842 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
 pub enum BoundType {
     Start,
     End,
+}
+
+#[cfg(all(test, feature = "std"))]
+#[allow(clippy::too_many_lines, reason = "Test code")]
+mod tests {
+    use statime_base::{ClockId, Duration, LeapStatus, Timestamp};
+
+    use crate::{
+        AlgoError, StdKalmanStorage,
+        filter::{LinkFilter, LinkFilterConfig},
+    };
+
+    #[test]
+    fn untracked_internal_link_is_always_active() {
+        let filter = LinkFilter::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH);
+        let (filter, clock_a) = filter
+            .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
+            .unwrap();
+        let (filter, clock_b) = filter
+            .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
+            .unwrap();
+        let (filter, link_id) = filter.add_untracked_link(clock_a, clock_b).unwrap();
+        assert!(filter.link_active(link_id).unwrap());
+    }
+
+    #[test]
+    fn tracked_internal_link_becomes_active() {
+        let config = LinkFilterConfig {
+            select_offset_uncertainty_window: 2.0,
+            select_link_uncertainty_window: 2.0,
+            select_delay_uncertainty_window: 0.7,
+            select_max_window_size: 1.0,
+            minimum_agreeing_sources: 3,
+        };
+
+        let filter = LinkFilter::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH);
+        let (filter, clock_a) = filter
+            .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
+            .unwrap();
+        let (filter, clock_b) = filter
+            .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
+            .unwrap();
+        let (filter, link_id) = filter.add_tracked_link(clock_a, clock_b, 0.01).unwrap();
+
+        assert!(!filter.link_active(link_id).unwrap());
+
+        let filter = filter
+            .measurement(&config, link_id.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_id.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_id.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_id.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_id.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_id.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_id.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_id.reverse(), (0.0, 0.0).into())
+            .unwrap();
+
+        assert!(filter.link_active(link_id).unwrap());
+    }
+
+    #[test]
+    fn external_links_need_consensus() {
+        let config = LinkFilterConfig {
+            select_offset_uncertainty_window: 2.0,
+            select_link_uncertainty_window: 2.0,
+            select_delay_uncertainty_window: 0.7,
+            select_max_window_size: 1.0,
+            minimum_agreeing_sources: 1,
+        };
+
+        let filter = LinkFilter::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH);
+        let (filter, clock_int) = filter
+            .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
+            .unwrap();
+        let (filter, clock_ext_1) = filter.add_external_clock().unwrap();
+        let (filter, clock_ext_2) = filter.add_external_clock().unwrap();
+        let (filter, clock_ext_3) = filter.add_external_clock().unwrap();
+        let (filter, link_1) = filter
+            .add_tracked_link(clock_int, clock_ext_1, 0.01)
+            .unwrap();
+        let (filter, link_2) = filter
+            .add_tracked_link(clock_int, clock_ext_2, 0.01)
+            .unwrap();
+        let (filter, link_3) = filter
+            .add_tracked_link(clock_int, clock_ext_3, 0.01)
+            .unwrap();
+
+        let filter = filter
+            // link 1
+            .external_data_update(link_1, 0.1, None, true)
+            .unwrap()
+            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            // link 2
+            .external_data_update(link_2, 0.1, None, true)
+            .unwrap()
+            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            // link 3
+            .external_data_update(link_3, 0.1, None, true)
+            .unwrap()
+            .measurement(&config, link_3.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_3.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_3.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_3.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_3.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_3.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_3.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_3.reverse(), (0.0, 0.0).into())
+            .unwrap();
+
+        assert!(filter.link_active(link_1).unwrap());
+        assert!(filter.link_active(link_2).unwrap());
+        assert!(filter.link_active(link_3).unwrap());
+
+        let filter = LinkFilter::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH);
+        let (filter, clock_int) = filter
+            .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
+            .unwrap();
+        let (filter, clock_ext_1) = filter.add_external_clock().unwrap();
+        let (filter, clock_ext_2) = filter.add_external_clock().unwrap();
+        let (filter, clock_ext_3) = filter.add_external_clock().unwrap();
+        let (filter, link_1) = filter
+            .add_tracked_link(clock_int, clock_ext_1, 0.01)
+            .unwrap();
+        let (filter, link_2) = filter
+            .add_tracked_link(clock_int, clock_ext_2, 0.01)
+            .unwrap();
+        let (filter, link_3) = filter
+            .add_tracked_link(clock_int, clock_ext_3, 0.01)
+            .unwrap();
+
+        let filter = filter
+            // link 1
+            .external_data_update(link_1, 0.1, None, true)
+            .unwrap()
+            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            // link 2
+            .external_data_update(link_2, 0.1, None, true)
+            .unwrap()
+            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            // link 3
+            .external_data_update(link_3, 0.1, None, true)
+            .unwrap()
+            .measurement(&config, link_3.forward(), (1.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_3.reverse(), (-1.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_3.forward(), (1.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_3.reverse(), (-1.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_3.forward(), (1.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_3.reverse(), (-1.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_3.forward(), (1.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_3.reverse(), (-1.0, 0.0).into())
+            .unwrap();
+
+        assert!(filter.link_active(link_1).unwrap());
+        assert!(filter.link_active(link_2).unwrap());
+        assert!(!filter.link_active(link_3).unwrap());
+
+        let filter = LinkFilter::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH);
+        let (filter, clock_int) = filter
+            .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
+            .unwrap();
+        let (filter, clock_ext_1) = filter.add_external_clock().unwrap();
+        let (filter, clock_ext_2) = filter.add_external_clock().unwrap();
+        let (filter, clock_ext_3) = filter.add_external_clock().unwrap();
+        let (filter, link_1) = filter
+            .add_tracked_link(clock_int, clock_ext_1, 0.01)
+            .unwrap();
+        let (filter, link_2) = filter
+            .add_tracked_link(clock_int, clock_ext_2, 0.01)
+            .unwrap();
+        let (filter, link_3) = filter
+            .add_tracked_link(clock_int, clock_ext_3, 0.01)
+            .unwrap();
+
+        let filter = filter
+            // link 1
+            .external_data_update(link_1, 0.1, None, true)
+            .unwrap()
+            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            // link 2
+            .external_data_update(link_2, 0.1, None, true)
+            .unwrap()
+            .measurement(&config, link_2.forward(), (1.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.reverse(), (-1.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.forward(), (1.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.reverse(), (-1.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.forward(), (1.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.reverse(), (-1.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.forward(), (1.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.reverse(), (-1.0, 0.0).into())
+            .unwrap()
+            // link 3
+            .external_data_update(link_3, 0.1, None, true)
+            .unwrap()
+            .measurement(&config, link_3.forward(), (1.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_3.reverse(), (-1.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_3.forward(), (1.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_3.reverse(), (-1.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_3.forward(), (1.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_3.reverse(), (-1.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_3.forward(), (1.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_3.reverse(), (-1.0, 0.0).into())
+            .unwrap();
+
+        // Link 1 is still active since it came online first.
+        assert!(filter.link_active(link_1).unwrap());
+        // Link 2 is still inactive since, although it is part of the selected set,
+        // it hasn't yet contributed.
+        assert!(!filter.link_active(link_2).unwrap());
+        // Link 3 caused the change so reflects the activity status.
+        assert!(filter.link_active(link_3).unwrap());
+
+        let filter = filter
+            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.forward(), (1.0, 0.0).into())
+            .unwrap();
+        //
+        assert!(!filter.link_active(link_1).unwrap());
+        assert!(filter.link_active(link_2).unwrap());
+    }
+
+    #[test]
+    fn external_links_inactive_when_unusable() {
+        let config = LinkFilterConfig {
+            select_offset_uncertainty_window: 2.0,
+            select_link_uncertainty_window: 2.0,
+            select_delay_uncertainty_window: 0.7,
+            select_max_window_size: 1.0,
+            minimum_agreeing_sources: 1,
+        };
+
+        let filter = LinkFilter::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH);
+        let (filter, clock_int) = filter
+            .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
+            .unwrap();
+        let (filter, clock_ext_1) = filter.add_external_clock().unwrap();
+        let (filter, link_1) = filter.add_untracked_link(clock_int, clock_ext_1).unwrap();
+        let filter = filter
+            .external_data_update(link_1, 0.1, None, true)
+            .unwrap()
+            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .unwrap();
+
+        assert!(filter.link_active(link_1).unwrap());
+
+        let filter = LinkFilter::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH);
+        let (filter, clock_int) = filter
+            .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
+            .unwrap();
+        let (filter, clock_ext_1) = filter.add_external_clock().unwrap();
+        let (filter, link_1) = filter.add_untracked_link(clock_int, clock_ext_1).unwrap();
+        let filter = filter
+            .external_data_update(link_1, 0.1, None, false)
+            .unwrap()
+            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .unwrap();
+
+        assert!(!filter.link_active(link_1).unwrap());
+    }
+
+    #[test]
+    fn internal_link_inactive_on_unusable_measurements() {
+        let config = LinkFilterConfig {
+            select_offset_uncertainty_window: 2.0,
+            select_link_uncertainty_window: 2.0,
+            select_delay_uncertainty_window: 0.7,
+            select_max_window_size: 1.0,
+            minimum_agreeing_sources: 3,
+        };
+
+        let filter = LinkFilter::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH);
+        let (filter, clock_a) = filter
+            .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
+            .unwrap();
+        let (filter, clock_b) = filter
+            .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
+            .unwrap();
+        let (filter, link_id) = filter.add_tracked_link(clock_a, clock_b, 0.01).unwrap();
+
+        assert!(!filter.link_active(link_id).unwrap());
+
+        let filter = filter
+            .measurement(&config, link_id.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .progress_time(Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(0, 600_000_000))
+            .unwrap()
+            .measurement(&config, link_id.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .progress_time(Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(10, 0))
+            .unwrap()
+            .measurement(&config, link_id.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .progress_time(Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(10, 600_000_000))
+            .unwrap()
+            .measurement(&config, link_id.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .progress_time(Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(20, 0))
+            .unwrap()
+            .measurement(&config, link_id.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .progress_time(Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(20, 600_000_000))
+            .unwrap()
+            .measurement(&config, link_id.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .progress_time(Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(30, 0))
+            .unwrap()
+            .measurement(&config, link_id.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .progress_time(Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(30, 600_000_000))
+            .unwrap()
+            .measurement(&config, link_id.reverse(), (0.0, 0.0).into())
+            .unwrap();
+
+        assert!(!filter.link_active(link_id).unwrap());
+    }
+
+    #[test]
+    fn external_links_activity_and_steering_works() {
+        let config = LinkFilterConfig {
+            select_offset_uncertainty_window: 2.0,
+            select_link_uncertainty_window: 2.0,
+            select_delay_uncertainty_window: 0.7,
+            select_max_window_size: 1.0,
+            minimum_agreeing_sources: 1,
+        };
+
+        let filter = LinkFilter::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH);
+        let (filter, clock_int_1) = filter
+            .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
+            .unwrap();
+        let (filter, clock_int_2) = filter
+            .add_clock((10.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
+            .unwrap();
+        let (filter, clock_ext_1) = filter.add_external_clock().unwrap();
+        let (filter, clock_ext_2) = filter.add_external_clock().unwrap();
+        let (filter, clock_ext_3) = filter.add_external_clock().unwrap();
+        let (filter, link_1) = filter.add_untracked_link(clock_int_1, clock_ext_1).unwrap();
+        let (filter, link_2) = filter.add_untracked_link(clock_int_1, clock_ext_2).unwrap();
+        let (filter, link_3) = filter.add_untracked_link(clock_int_2, clock_ext_3).unwrap();
+
+        let filter = filter
+            .external_data_update(link_1, 0.1, None, true)
+            .unwrap()
+            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .external_data_update(link_2, 0.1, None, true)
+            .unwrap()
+            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .external_data_update(link_3, 0.1, None, true)
+            .unwrap()
+            .measurement(&config, link_3.forward(), (10.0, 0.0).into())
+            .unwrap();
+
+        assert!(filter.link_active(link_1).unwrap());
+        assert!(filter.link_active(link_2).unwrap());
+        assert!(!filter.link_active(link_3).unwrap());
+
+        let filter = filter
+            .absorb_offset_change(clock_int_2, 10.0)
+            .unwrap()
+            .measurement(&config, link_3.forward(), (0.0, 0.0).into())
+            .unwrap();
+
+        assert!(filter.link_active(link_3).unwrap());
+
+        let filter = LinkFilter::<StdKalmanStorage<()>>::empty(
+            Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(10, 0),
+        );
+        let (filter, clock_int_1) = filter
+            .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
+            .unwrap();
+        let (filter, clock_int_2) = filter
+            .add_clock((-10.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
+            .unwrap();
+        let (filter, clock_ext_1) = filter.add_external_clock().unwrap();
+        let (filter, clock_ext_2) = filter.add_external_clock().unwrap();
+        let (filter, clock_ext_3) = filter.add_external_clock().unwrap();
+        let (filter, link_1) = filter.add_untracked_link(clock_int_1, clock_ext_1).unwrap();
+        let (filter, link_2) = filter.add_untracked_link(clock_int_1, clock_ext_2).unwrap();
+        let (filter, link_3) = filter.add_untracked_link(clock_ext_3, clock_int_2).unwrap();
+
+        let filter = filter
+            .external_data_update(link_1, 0.1, None, true)
+            .unwrap()
+            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .external_data_update(link_2, 0.1, None, true)
+            .unwrap()
+            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .external_data_update(link_3, 0.1, None, true)
+            .unwrap()
+            .measurement(&config, link_3.forward(), (-10.0, 0.0).into())
+            .unwrap();
+
+        assert!(filter.link_active(link_1).unwrap());
+        assert!(filter.link_active(link_2).unwrap());
+        assert!(!filter.link_active(link_3).unwrap());
+
+        let filter = filter
+            .absorb_system_clock_offset_change(clock_int_2, Duration::from_seconds_nanos(10, 0))
+            .unwrap()
+            .measurement(&config, link_3.forward(), (0.0, 0.0).into())
+            .unwrap();
+
+        assert!(filter.link_active(link_3).unwrap());
+    }
+
+    #[test]
+    fn too_uncertain_external_links_inactive() {
+        let config = LinkFilterConfig {
+            select_offset_uncertainty_window: 2.0,
+            select_link_uncertainty_window: 2.0,
+            select_delay_uncertainty_window: 0.7,
+            select_max_window_size: 1.0,
+            minimum_agreeing_sources: 1,
+        };
+
+        let filter = LinkFilter::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH);
+        let (filter, clock_int) = filter
+            .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
+            .unwrap();
+        let (filter, clock_ext_1) = filter.add_external_clock().unwrap();
+        let (filter, link_1) = filter.add_untracked_link(clock_int, clock_ext_1).unwrap();
+        let filter = filter
+            .external_data_update(link_1, 10.0, None, true)
+            .unwrap()
+            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .unwrap();
+
+        assert!(!filter.link_active(link_1).unwrap());
+
+        let filter = LinkFilter::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH);
+        let (filter, clock_int) = filter
+            .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
+            .unwrap();
+        let (filter, clock_ext_1) = filter.add_external_clock().unwrap();
+        let (filter, link_1) = filter.add_untracked_link(clock_int, clock_ext_1).unwrap();
+        let filter = filter
+            .external_data_update(link_1, 0.0, None, true)
+            .unwrap()
+            .measurement(&config, link_1.forward(), (0.0, 1.0).into())
+            .unwrap();
+
+        assert!(!filter.link_active(link_1).unwrap());
+
+        let filter = LinkFilter::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH);
+        let (filter, clock_int) = filter
+            .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
+            .unwrap();
+        let (filter, clock_ext_1) = filter.add_external_clock().unwrap();
+        let (filter, link_1) = filter
+            .add_tracked_link(clock_int, clock_ext_1, 0.0)
+            .unwrap();
+        let filter = filter
+            .external_data_update(link_1, 10.0, None, true)
+            .unwrap()
+            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.forward(), (1.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.reverse(), (1.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.forward(), (1.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.reverse(), (1.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.forward(), (-1.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.reverse(), (-1.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.forward(), (-1.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.reverse(), (-1.0, 0.0).into())
+            .unwrap();
+
+        assert!(!filter.link_active(link_1).unwrap());
+    }
+
+    #[test]
+    fn leap_vote() {
+        let config = LinkFilterConfig {
+            select_offset_uncertainty_window: 2.0,
+            select_link_uncertainty_window: 2.0,
+            select_delay_uncertainty_window: 0.7,
+            select_max_window_size: 1.0,
+            minimum_agreeing_sources: 1,
+        };
+
+        let filter = LinkFilter::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH);
+        let (filter, clock_int) = filter
+            .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
+            .unwrap();
+        let (filter, clock_ext_1) = filter.add_external_clock().unwrap();
+        let (filter, clock_ext_2) = filter.add_external_clock().unwrap();
+        let (filter, clock_ext_3) = filter.add_external_clock().unwrap();
+        let (filter, link_1) = filter
+            .add_tracked_link(clock_int, clock_ext_1, 0.01)
+            .unwrap();
+        let (filter, link_2) = filter
+            .add_tracked_link(clock_int, clock_ext_2, 0.01)
+            .unwrap();
+        let (filter, link_3) = filter
+            .add_tracked_link(clock_int, clock_ext_3, 0.01)
+            .unwrap();
+
+        let base_filter = filter
+            // link 1
+            .external_data_update(link_1, 0.1, None, true)
+            .unwrap()
+            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_1.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            // link 2
+            .external_data_update(link_2, 0.1, None, true)
+            .unwrap()
+            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_2.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            // link 3
+            .external_data_update(link_3, 0.1, None, true)
+            .unwrap()
+            .measurement(&config, link_3.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_3.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_3.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_3.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_3.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_3.reverse(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_3.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .measurement(&config, link_3.reverse(), (0.0, 0.0).into())
+            .unwrap();
+
+        let filter = base_filter
+            .clone()
+            .external_data_update(link_1, 0.1, Some(LeapStatus::None), true)
+            .unwrap()
+            .external_data_update(link_2, 0.1, Some(LeapStatus::None), true)
+            .unwrap()
+            .external_data_update(link_3, 0.1, Some(LeapStatus::None), true)
+            .unwrap();
+        assert_eq!(filter.leap_vote(&config), Some(LeapStatus::None));
+
+        let filter = base_filter
+            .clone()
+            .external_data_update(link_1, 0.1, Some(LeapStatus::Leap59), true)
+            .unwrap()
+            .external_data_update(link_2, 0.1, Some(LeapStatus::Leap59), true)
+            .unwrap()
+            .external_data_update(link_3, 0.1, Some(LeapStatus::Leap59), true)
+            .unwrap();
+        assert_eq!(filter.leap_vote(&config), Some(LeapStatus::Leap59));
+
+        let filter = base_filter
+            .clone()
+            .external_data_update(link_1, 0.1, Some(LeapStatus::Leap61), true)
+            .unwrap()
+            .external_data_update(link_2, 0.1, Some(LeapStatus::Leap61), true)
+            .unwrap()
+            .external_data_update(link_3, 0.1, Some(LeapStatus::Leap61), true)
+            .unwrap();
+        assert_eq!(filter.leap_vote(&config), Some(LeapStatus::Leap61));
+
+        let filter = base_filter
+            .clone()
+            .external_data_update(link_1, 0.1, Some(LeapStatus::None), true)
+            .unwrap()
+            .external_data_update(link_2, 0.1, Some(LeapStatus::Leap59), true)
+            .unwrap()
+            .external_data_update(link_3, 0.1, Some(LeapStatus::Leap59), true)
+            .unwrap();
+        assert_eq!(filter.leap_vote(&config), Some(LeapStatus::Leap59));
+
+        let filter = base_filter
+            .clone()
+            .external_data_update(link_1, 0.1, Some(LeapStatus::None), true)
+            .unwrap()
+            .external_data_update(link_2, 0.1, None, true)
+            .unwrap()
+            .external_data_update(link_3, 0.1, None, true)
+            .unwrap();
+        assert_eq!(filter.leap_vote(&config), Some(LeapStatus::None));
+
+        let filter = base_filter
+            .clone()
+            .external_data_update(link_1, 0.1, Some(LeapStatus::None), true)
+            .unwrap()
+            .external_data_update(link_2, 0.1, Some(LeapStatus::Leap59), true)
+            .unwrap()
+            .external_data_update(link_3, 0.1, Some(LeapStatus::Leap61), true)
+            .unwrap();
+        assert_eq!(filter.leap_vote(&config), None);
+    }
+
+    #[test]
+    fn local_root_delay() {
+        let config = LinkFilterConfig {
+            select_offset_uncertainty_window: 2.0,
+            select_link_uncertainty_window: 2.0,
+            select_delay_uncertainty_window: 0.7,
+            select_max_window_size: 1.0,
+            minimum_agreeing_sources: 1,
+        };
+
+        let filter = LinkFilter::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH);
+        let (filter, clock_int_1) = filter
+            .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
+            .unwrap();
+        let (filter, clock_int_2) = filter
+            .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
+            .unwrap();
+        let (filter, clock_ext_1) = filter.add_external_clock().unwrap();
+        let (filter, clock_ext_2) = filter.add_external_clock().unwrap();
+        let (filter, clock_ext_3) = filter.add_external_clock().unwrap();
+        let (filter, link_1) = filter.add_untracked_link(clock_int_1, clock_ext_1).unwrap();
+        let (filter, link_2) = filter.add_untracked_link(clock_int_1, clock_ext_2).unwrap();
+        let (filter, link_3) = filter.add_untracked_link(clock_int_2, clock_ext_3).unwrap();
+
+        let filter = filter
+            .external_data_update(link_1, 0.3, None, true)
+            .unwrap()
+            .measurement(&config, link_1.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .external_data_update(link_2, 0.2, None, true)
+            .unwrap()
+            .measurement(&config, link_2.forward(), (0.0, 0.0).into())
+            .unwrap()
+            .external_data_update(link_3, 0.1, None, true)
+            .unwrap()
+            .measurement(&config, link_3.forward(), (10.0, 0.0).into())
+            .unwrap();
+
+        assert_eq!(filter.local_root_delay(&config), Some(0.2));
+
+        let filter = filter.remove_link(link_2).unwrap();
+
+        assert_eq!(filter.local_root_delay(&config), None);
+    }
+
+    #[test]
+    fn test_new_link_validation() {
+        let filter = LinkFilter::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH);
+        let (filter, clock_1) = filter
+            .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
+            .unwrap();
+        let (filter, clock_2) = filter.add_external_clock().unwrap();
+        let (filter, clock_3) = filter.add_external_clock().unwrap();
+        let clock_4 = ClockId::new();
+
+        assert_eq!(
+            filter
+                .clone()
+                .add_untracked_link(clock_4, clock_1)
+                .unwrap_err(),
+            AlgoError::UnknownClock(clock_4)
+        );
+        assert_eq!(
+            filter
+                .clone()
+                .add_untracked_link(clock_2, clock_4)
+                .unwrap_err(),
+            AlgoError::UnknownClock(clock_4)
+        );
+        assert_eq!(
+            filter
+                .clone()
+                .add_untracked_link(clock_2, clock_3)
+                .unwrap_err(),
+            AlgoError::BothClocksExternal(clock_2, clock_3)
+        );
+
+        assert_eq!(
+            filter
+                .clone()
+                .add_tracked_link(clock_4, clock_1, 0.01)
+                .unwrap_err(),
+            AlgoError::UnknownClock(clock_4)
+        );
+        assert_eq!(
+            filter
+                .clone()
+                .add_tracked_link(clock_2, clock_4, 0.01)
+                .unwrap_err(),
+            AlgoError::UnknownClock(clock_4)
+        );
+        assert_eq!(
+            filter
+                .clone()
+                .add_tracked_link(clock_2, clock_3, 0.01)
+                .unwrap_err(),
+            AlgoError::BothClocksExternal(clock_2, clock_3)
+        );
+    }
 }

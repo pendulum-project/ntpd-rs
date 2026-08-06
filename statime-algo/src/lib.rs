@@ -468,6 +468,18 @@ impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<
             Ok(())
         })
     }
+
+    /// Returns whether the link actively contributed to the current time estimates on
+    /// the last measurement.
+    ///
+    /// # Errors
+    /// Fails only when something is bugged in the library.
+    pub fn active(&self) -> Result<bool, AlgoError> {
+        self.controller
+            .as_ref()
+            .state
+            .with_ref(|state| state.filter.link_active(self.link_id))
+    }
 }
 
 /// A measurement done on a link.
