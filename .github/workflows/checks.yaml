@@ -21,8 +21,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CARGO_PROFILE_DEV_DEBUG: 1 # Line numbers debug info only for debug builds only
-  CARGO_PROFILE_TEST_DEBUG: 1 # Line numbers debug info only for test builds only
+  CARGO_PROFILE_DEV_DEBUG: 0 # No debug info for CI dev builds
+  CARGO_PROFILE_TEST_DEBUG: 0 # No debug info for CI test builds
 
 jobs:
   build:
@@ -31,31 +31,18 @@ jobs:
     strategy:
       matrix:
         include:
+          # Stable on x86_64 Linux gnu/musl
           - rust: stable
             runs_on: ubuntu-latest
             features: ""
             target: "x86_64-unknown-linux-gnu"
-          - rust: beta
-            runs_on: ubuntu-latest
-            features: ""
-            target: "x86_64-unknown-linux-gnu"
-          - rust: "msrv"
-            runs_on: ubuntu-latest
-            features: ""
-            target: "x86_64-unknown-linux-gnu"
           - rust: "stable"
             runs_on: ubuntu-latest
             features: ""
             target: "x86_64-unknown-linux-musl"
+
+          # Stable on x86_64 Linux gnu/musl with all features
           - rust: "stable"
-            runs_on: macos-latest
-            features: ""
-            target: "aarch64-apple-darwin"
-          - rust: "stable"
-            runs_on: ubuntu-latest
-            features: "--all-features"
-            target: "x86_64-unknown-linux-gnu"
-          - rust: "msrv"
             runs_on: ubuntu-latest
             features: "--all-features"
             target: "x86_64-unknown-linux-gnu"
@@ -63,10 +50,8 @@ jobs:
             runs_on: ubuntu-latest
             features: "--all-features"
             target: "x86_64-unknown-linux-musl"
-          - rust: "stable"
-            runs_on: macos-latest
-            features: "--all-features"
-            target: "aarch64-apple-darwin"
+
+          # Stable on x86_64 Linux gnu with different featuresets
           - rust: "stable"
             runs_on: ubuntu-latest
             features: "--no-default-features --features rustcrypto,aws-lc"
@@ -87,48 +72,87 @@ jobs:
             runs_on: ubuntu-latest
             features: "--no-default-features --features rustcrypto,aws-lc,pps"
             target: "x86_64-unknown-linux-gnu"
+
+          # Stable on macOS aarch64
+          - rust: "stable"
+            runs_on: macos-latest
+            features: ""
+            target: "aarch64-apple-darwin"
+          - rust: "stable"
+            runs_on: macos-latest
+            features: "--all-features"
+            target: "aarch64-apple-darwin"
+
+          # MSRV on x86_64 Linux (also checking direct-minimal-versions of dependencies)
+          - rust: "msrv"
+            runs_on: ubuntu-latest
+            features: "--all-features"
+            target: "x86_64-unknown-linux-gnu"
+
+          # Beta on x86_64 Linux with all features (ensuring future compatibility)
+          - rust: beta
+            runs_on: ubuntu-latest
+            features: "--all-features"
+            target: "x86_64-unknown-linux-gnu"
     steps:
       - name: Checkout sources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
       - name: Set target rust version
         run: echo "TARGET_RUST_VERSION=$(if [ "${{matrix.rust}}" = "msrv" ]; then grep rust-version Cargo.toml | grep MSRV | cut -d'"' -f2; else echo "${{matrix.rust}}"; fi)" >> $GITHUB_ENV
+
       - name: Install nightly toolchain for direct-minimal-versions
         run: rustup toolchain install nightly
         if: ${{ matrix.rust == 'msrv' }}
+
       - name: Install toolchain
         run: >
           rustup toolchain install "${TARGET_RUST_VERSION}" &&
           rustup default "${TARGET_RUST_VERSION}" &&
           rustup target add "${{ matrix.target }}"
+
       - name: Downgrade direct dependencies to minimal versions
         run: cargo +nightly update -Z direct-minimal-versions
         if: ${{ matrix.rust == 'msrv' }}
+
       - name: Setup tools for cross compilation
         uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # v1.6.3
         with:
           packages: musl-tools musl-dev qemu-user-static crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386
           version: 1
         if: ${{matrix.runs_on == 'ubuntu-latest'}}
+
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cb33e69fad06166ca28a42b2575e4dadabf62ee8 # v2.85.8
         with:
           tool: cargo-llvm-cov
+
+      - name: Determine features cache key
+        run: |
+          CRC=$(printf "%s" "${{ matrix.features }}" | cksum | cut -d' ' -f1)
+          echo "FEATURE_HASH=$CRC" >> $GITHUB_ENV
+
       - name: Rust cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          shared-key: "cov-${{matrix.rust}}-${{matrix.target}}-${{ replace(replace(replace(matrix.features, ' ', '_'), '-', ''), ',', '_') }}"
+          shared-key: "cov-${{matrix.rust}}-${{matrix.target}}-${{ env.FEATURE_HASH }}"
+
       - name: setup coverage environment
         run: cargo --locked llvm-cov show-env --export-prefix >> $GITHUB_ENV
+
       - name: cleanup workspace related coverage files
         run: cargo --locked llvm-cov clean --workspace
+
       - name: cargo build
         run: cargo --locked build --workspace --target ${{matrix.target}} ${{ matrix.features }}
+
       - name: cargo test
         run: cargo --locked llvm-cov --no-clean --workspace --target ${{matrix.target}} ${{ matrix.features }} --lcov --output-path lcov.info
         env:
           RUST_BACKTRACE: 1
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         if: matrix.rust == 'stable'
@@ -148,22 +172,27 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
       - name: Install nightly toolchain for direct-minimal-versions
         run: rustup toolchain install nightly && rustup default nightly
+
       - name: Install udeps
         uses: taiki-e/install-action@cb33e69fad06166ca28a42b2575e4dadabf62ee8 # v2.85.8
         with:
           tool: cargo-udeps
+
       - name: Rust cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: "stable-x86_64-unknown-linux-gnu"
+
       - name: cargo udeps
         run: cargo udeps --target x86_64-unknown-linux-gnu --workspace --all-targets
+
       - name: cargo udeps (fuzzer)
         run: cargo udeps --target x86_64-unknown-linux-gnu --manifest-path ./fuzz/Cargo.toml --all-targets
 
-  #note: can't validate config/nts.*.toml because of intentionally missing files
+  # Note: can't validate config/nts.*.toml because of intentionally missing files
   validate:
     name: Validate configs
     runs-on: ubuntu-latest
@@ -172,18 +201,25 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
       - name: Install rust toolchain
         run: rustup toolchain install stable && rustup default stable
+
       - name: ./ntp.toml
         run: cargo run --bin ntp-ctl -- -c ./ntp.toml validate
+
       - name: ./ntp.server.toml
         run: cargo run --bin ntp-ctl -- -c ./ntp.server.toml validate
+
       - name: ./ntp-proto/test-keys/unsafe.nts.client.toml
         run: cargo run --bin ntp-ctl -- -c ./ntp-proto/test-keys/unsafe.nts.client.toml validate
+
       - name: ./ntp-proto/test-keys/unsafe.nts.server.toml
         run: cargo run --bin ntp-ctl -- -c ./ntp-proto/test-keys/unsafe.nts.server.toml validate
+
       - name: ./config/ntp.demobilize.toml
         run: cargo run --bin ntp-ctl -- -c ./config/ntp.demobilize.toml validate
+
       - name: ./pkg/common/ntp.toml.default
         run: cargo run --bin ntp-ctl -- -c ./docs/examples/conf/ntp.toml.default validate
 
@@ -195,8 +231,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
       - name: Build man pages
         run: utils/generate-man.sh target/docs/man
+
       - name: Compare generated pages with precompiled
         run: diff -r -s --color "docs/precompiled/man" "target/docs/man"
 
@@ -208,12 +246,16 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
       - name: Install rust toolchain
         run: rustup toolchain install stable --component rustfmt && rustup default stable
+
       - name: Check formatting
         run: cargo fmt --all --check
+
       - name: Check formatting (fuzzers)
         run: cargo fmt --manifest-path ./fuzz/Cargo.toml --all --check
+
       - name: Check formatting (fuzz_rand_shim)
         run: cargo fmt --manifest-path ./fuzz/fuzz_rand_shim/Cargo.toml --all --check
 
@@ -237,28 +279,35 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
       - name: Install rust toolchain
         run: rustup toolchain install stable --component clippy && rustup default stable && rustup target add ${{matrix.target}}
+
       - name: Setup tools for cross compilation
         uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # v1.6.3
         with:
           packages: musl-tools musl-dev qemu-user-static crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386
           version: 1
         if: ${{matrix.runs_on == 'ubuntu-latest'}}
+
       - name: Install bindgen-cli
         uses: taiki-e/install-action@cb33e69fad06166ca28a42b2575e4dadabf62ee8 # v2.85.8
         with:
           tool: bindgen-cli
         if: ${{matrix.runs_on == 'ubuntu-latest'}}
+
       - name: Rust cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: "stable-${{matrix.target}}"
+
       - name: Run clippy
         run: cargo clippy --target ${{matrix.target}} --workspace --all-targets --features hardware-timestamping,__internal-fuzz,__internal-test,__internal-api  -- -D warnings
+
       - name: Run clippy (fuzzers)
         run: cargo clippy --target ${{matrix.target}} --manifest-path ./fuzz/Cargo.toml --all-targets -- -D warnings
         if: ${{matrix.fuzzer}}
+
       - name: Run clippy (fuzz_rand_shim)
         run: cargo clippy --target ${{matrix.target}} --manifest-path ./fuzz/fuzz_rand_shim/Cargo.toml --all-targets -- -D warnings
         if: ${{matrix.fuzzer}}
@@ -270,9 +319,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           arguments: --workspace --all-features
+
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           manifest-path: ./fuzz/Cargo.toml
