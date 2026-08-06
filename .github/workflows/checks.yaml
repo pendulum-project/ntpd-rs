@@ -15,106 +15,118 @@ on:
     types: [checks_requested]
   workflow_call: {}
 
+# Cancel any previous runs for the same branch/PR if a new push is made
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_PROFILE_DEV_DEBUG: 1 # Line numbers debug info only for debug builds only
+  CARGO_PROFILE_TEST_DEBUG: 1 # Line numbers debug info only for test builds only
+
 jobs:
   build:
     name: Build and test
-    runs-on: "${{ matrix.os }}"
+    runs-on: "${{ matrix.runs_on }}"
     strategy:
       matrix:
         include:
           - rust: stable
-            os: ubuntu-latest
+            runs_on: ubuntu-latest
             features: ""
             target: "x86_64-unknown-linux-gnu"
           - rust: beta
-            os: ubuntu-latest
+            runs_on: ubuntu-latest
             features: ""
             target: "x86_64-unknown-linux-gnu"
           - rust: "msrv"
-            os: ubuntu-latest
+            runs_on: ubuntu-latest
             features: ""
             target: "x86_64-unknown-linux-gnu"
           - rust: "stable"
-            os: ubuntu-latest
+            runs_on: ubuntu-latest
             features: ""
             target: "x86_64-unknown-linux-musl"
           - rust: "stable"
-            os: macos-latest
+            runs_on: macos-latest
             features: ""
             target: "aarch64-apple-darwin"
           - rust: "stable"
-            os: ubuntu-latest
+            runs_on: ubuntu-latest
             features: "--all-features"
             target: "x86_64-unknown-linux-gnu"
           - rust: "msrv"
-            os: ubuntu-latest
+            runs_on: ubuntu-latest
             features: "--all-features"
             target: "x86_64-unknown-linux-gnu"
           - rust: "stable"
-            os: ubuntu-latest
+            runs_on: ubuntu-latest
             features: "--all-features"
             target: "x86_64-unknown-linux-musl"
           - rust: "stable"
-            os: macos-latest
+            runs_on: macos-latest
             features: "--all-features"
             target: "aarch64-apple-darwin"
           - rust: "stable"
-            os: ubuntu-latest
+            runs_on: ubuntu-latest
             features: "--no-default-features --features rustcrypto,aws-lc"
             target: "x86_64-unknown-linux-gnu"
           - rust: "stable"
-            os: ubuntu-latest
+            runs_on: ubuntu-latest
             features: "--no-default-features --features openssl-vendored"
             target: "x86_64-unknown-linux-gnu"
           - rust: "stable"
-            os: ubuntu-latest
+            runs_on: ubuntu-latest
             features: "--no-default-features --features rustcrypto,openssl-vendored"
             target: "x86_64-unknown-linux-gnu"
           - rust: "stable"
-            os: ubuntu-latest
+            runs_on: ubuntu-latest
             features: "--no-default-features --features rustcrypto,aws-lc,srv"
             target: "x86_64-unknown-linux-gnu"
           - rust: "stable"
-            os: ubuntu-latest
+            runs_on: ubuntu-latest
             features: "--no-default-features --features rustcrypto,aws-lc,pps"
             target: "x86_64-unknown-linux-gnu"
     steps:
       - name: Checkout sources
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Set target rust version
         run: echo "TARGET_RUST_VERSION=$(if [ "${{matrix.rust}}" = "msrv" ]; then grep rust-version Cargo.toml | grep MSRV | cut -d'"' -f2; else echo "${{matrix.rust}}"; fi)" >> $GITHUB_ENV
       - name: Install nightly toolchain for direct-minimal-versions
-        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
-        with:
-          toolchain: nightly
-          targets: "${{ matrix.target }}"
+        run: rustup toolchain install nightly
         if: ${{ matrix.rust == 'msrv' }}
       - name: Install toolchain
-        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
-        with:
-          toolchain: "${TARGET_RUST_VERSION}"
-          targets: "${{ matrix.target }}"
+        run: >
+          rustup toolchain install "${TARGET_RUST_VERSION}" &&
+          rustup default "${TARGET_RUST_VERSION}" &&
+          rustup target add "${{ matrix.target }}"
       - name: Downgrade direct dependencies to minimal versions
         run: cargo +nightly update -Z direct-minimal-versions
         if: ${{ matrix.rust == 'msrv' }}
-      - name: Install cross-compilation tools
-        uses: taiki-e/setup-cross-toolchain-action@12b7ad4acfa95a1476779d6c06699b96ec1691f8
+      - name: Setup tools for cross compilation
+        uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # v1.6.3
         with:
-          target: ${{ matrix.target }}
+          packages: musl-tools musl-dev qemu-user-static crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386
+          version: 1
+        if: ${{matrix.runs_on == 'ubuntu-latest'}}
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@18b1216eba7f8039b0f8d131d5473787f0edce68
+        uses: taiki-e/install-action@cb33e69fad06166ca28a42b2575e4dadabf62ee8 # v2.85.8
         with:
           tool: cargo-llvm-cov
       - name: Rust cache
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          shared-key: "${{matrix.rust}}-${{matrix.target}}"
+          shared-key: "cov-${{matrix.rust}}-${{matrix.target}}"
+      - name: setup coverage environment
+        run: cargo --locked llvm-cov show-env --export-prefix >> $GITHUB_ENV
+      - name: cleanup workspace related coverage files
+        run: cargo --locked llvm-cov clean --workspace
       - name: cargo build
-        run: cargo build ${{ matrix.features }}
+        run: cargo --locked build --workspace --target ${{matrix.target}} ${{ matrix.features }}
       - name: cargo test
-        run: cargo llvm-cov --target ${{matrix.target}} ${{ matrix.features }} --lcov --output-path lcov.info
+        run: cargo --locked llvm-cov --no-clean --workspace --target ${{matrix.target}} ${{ matrix.features }} --lcov --output-path lcov.info
         env:
           RUST_BACKTRACE: 1
       - name: Upload coverage to Codecov
@@ -133,21 +145,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install nightly toolchain
-        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
-        with:
-          toolchain: nightly
+      - name: Install nightly toolchain for direct-minimal-versions
+        run: rustup toolchain install nightly && rustup default nightly
       - name: Install udeps
-        uses: taiki-e/install-action@18b1216eba7f8039b0f8d131d5473787f0edce68
+        uses: taiki-e/install-action@cb33e69fad06166ca28a42b2575e4dadabf62ee8 # v2.85.8
         with:
           tool: cargo-udeps
+      - name: Rust cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: "stable-x86_64-unknown-linux-gnu"
       - name: cargo udeps
-        run: cargo udeps --workspace --all-targets
+        run: cargo udeps --target x86_64-unknown-linux-gnu --workspace --all-targets
       - name: cargo udeps (fuzzer)
-        run: cargo udeps --manifest-path ./fuzz/Cargo.toml --all-targets
+        run: cargo udeps --target x86_64-unknown-linux-gnu --manifest-path ./fuzz/Cargo.toml --all-targets
 
   #note: can't validate config/nts.*.toml because of intentionally missing files
   validate:
@@ -155,9 +169,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Install rust toolchain
+        run: rustup toolchain install stable && rustup default stable
       - name: ./ntp.toml
         run: cargo run --bin ntp-ctl -- -c ./ntp.toml validate
       - name: ./ntp.server.toml
@@ -176,7 +192,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Build man pages
@@ -189,14 +205,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Install rust toolchain
-        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
-        with:
-          toolchain: stable
-          components: rustfmt
+        run: rustup toolchain install stable --component rustfmt && rustup default stable
       - name: Check formatting
         run: cargo fmt --all --check
       - name: Check formatting (fuzzers)
@@ -215,43 +228,32 @@ jobs:
           - target: armv7-unknown-linux-gnueabihf
             runs_on: ubuntu-latest
             fuzzer: false
-          - target: x86_64-unknown-linux-musl
-            runs_on: ubuntu-latest
-            fuzzer: false
           - target: aarch64-apple-darwin
             runs_on: macos-latest
             fuzzer: false
     runs-on: ${{matrix.runs_on}}
     steps:
       - name: Checkout sources
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Install rust toolchain
-        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
-        with:
-          toolchain: stable
-          components: clippy
-          targets: ${{matrix.target}}
-
+        run: rustup toolchain install stable --component clippy && rustup default stable && rustup target add ${{matrix.target}}
       - name: Setup tools for cross compilation
         uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # v1.6.3
         with:
-          packages: musl-tools qemu-user-static crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386
+          packages: musl-tools musl-dev qemu-user-static crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386
           version: 1
         if: ${{matrix.runs_on == 'ubuntu-latest'}}
-
       - name: Install bindgen-cli
-        uses: taiki-e/install-action@18b1216eba7f8039b0f8d131d5473787f0edce68
+        uses: taiki-e/install-action@cb33e69fad06166ca28a42b2575e4dadabf62ee8 # v2.85.8
         with:
           tool: bindgen-cli
         if: ${{matrix.runs_on == 'ubuntu-latest'}}
-
       - name: Rust cache
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: "stable-${{matrix.target}}"
-
       - name: Run clippy
         run: cargo clippy --target ${{matrix.target}} --workspace --all-targets --features hardware-timestamping,__internal-fuzz,__internal-test,__internal-api  -- -D warnings
       - name: Run clippy (fuzzers)
@@ -305,16 +307,13 @@ jobs:
             features: ''
     steps:
       - name: Checkout sources
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Install nightly toolchain
-        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
-        with:
-          toolchain: nightly
-          components: llvm-tools-preview
+        run: rustup toolchain install nightly --component llvm-tools-preview && rustup default nightly
       - name: Install cargo fuzz & rustfilt
-        uses: taiki-e/install-action@18b1216eba7f8039b0f8d131d5473787f0edce68
+        uses: taiki-e/install-action@cb33e69fad06166ca28a42b2575e4dadabf62ee8 # v2.85.8
         with:
           tool: cargo-fuzz,rustfilt
       - name: Run `cargo fuzz`
@@ -333,7 +332,7 @@ jobs:
               --format=lcov \
               -ignore-filename-regex="\.cargo|\.rustup" > lcov.info
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           files: ./lcov.info
           fail_ci_if_error: false
@@ -345,13 +344,13 @@ jobs:
     name: Audit dependencies
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           arguments: --workspace --all-features
-      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           manifest-path: ./fuzz/Cargo.toml
           arguments: --all-features
