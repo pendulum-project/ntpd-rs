@@ -533,7 +533,9 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
     /// # Errors
     /// Returns an error if the clock is unknown, or not an external clock.
     pub fn remove_external_clock(mut self, id: ClockId) -> Result<Self, AlgoError> {
-        // FIXME: check for existence of links with this clock
+        if let Some(link) = self.links.iter().find(|l| l.id.contains_clock(id)) {
+            return Err(AlgoError::ClockInUse(id, link.id));
+        }
         self.estimation_state = self.estimation_state.remove_external_clock(id)?;
         Ok(self)
     }
@@ -1619,6 +1621,41 @@ mod tests {
                 .add_tracked_link(clock_2, clock_3, 0.01)
                 .unwrap_err(),
             AlgoError::BothClocksExternal(clock_2, clock_3)
+        );
+    }
+
+    #[test]
+    fn test_remove_clock_with_link_is_forbidden() {
+        let filter = LinkFilter::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH);
+        let (filter, clock_1) = filter
+            .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 0.0)
+            .unwrap();
+        let (filter, clock_2) = filter.add_external_clock().unwrap();
+        let (filter, link_1) = filter.add_untracked_link(clock_1, clock_2).unwrap();
+
+        assert_eq!(
+            filter.clone().remove_clock(clock_1).unwrap_err(),
+            AlgoError::ClockInUse(clock_1, link_1)
+        );
+        assert_eq!(
+            filter.clone().remove_external_clock(clock_2).unwrap_err(),
+            AlgoError::ClockInUse(clock_2, link_1)
+        );
+
+        let filter = LinkFilter::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH);
+        let (filter, clock_1) = filter
+            .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 0.0)
+            .unwrap();
+        let (filter, clock_2) = filter.add_external_clock().unwrap();
+        let (filter, link_1) = filter.add_tracked_link(clock_1, clock_2, 0.1).unwrap();
+
+        assert_eq!(
+            filter.clone().remove_clock(clock_1).unwrap_err(),
+            AlgoError::ClockInUse(clock_1, link_1)
+        );
+        assert_eq!(
+            filter.clone().remove_external_clock(clock_2).unwrap_err(),
+            AlgoError::ClockInUse(clock_2, link_1)
         );
     }
 }
