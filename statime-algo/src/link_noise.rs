@@ -163,7 +163,7 @@ impl LinkNoiseEstimator {
 mod tests {
     use statime_base::{ClockId, Direction, Duration, LinkId, Timestamp};
 
-    use crate::{AlgoError, estimator::UncertainValue, link_noise::LinkNoiseEstimator};
+    use crate::{AlgoError, link_noise::LinkNoiseEstimator};
 
     #[test]
     fn link_noise_measures_link_noise_1() {
@@ -211,54 +211,55 @@ mod tests {
         let a = ClockId::new();
         let b = ClockId::new();
         let link = LinkId::new(a, b).unwrap();
-        let delay: UncertainValue = (1.5, 0.1).into();
+        let delay = 1.5;
+        let delay_uncertainty = 0.1;
 
         let state = LinkNoiseEstimator::new(link)
-            .measurement(Direction::Forward, delay.value, Timestamp::UNIX_EPOCH)
-            .measurement(Direction::Reverse, delay.value, Timestamp::UNIX_EPOCH)
+            .measurement(Direction::Forward, delay, Timestamp::UNIX_EPOCH)
+            .measurement(Direction::Reverse, delay, Timestamp::UNIX_EPOCH)
             .measurement(
                 Direction::Forward,
-                delay.value + delay.uncertainty / 2.0f64.sqrt(),
+                delay + delay_uncertainty / 2.0f64.sqrt(),
                 Timestamp::UNIX_EPOCH,
             )
             .measurement(
                 Direction::Reverse,
-                delay.value + delay.uncertainty / 2.0f64.sqrt(),
+                delay + delay_uncertainty / 2.0f64.sqrt(),
                 Timestamp::UNIX_EPOCH,
             )
             .measurement(
                 Direction::Forward,
-                delay.value + delay.uncertainty / 2.0f64.sqrt(),
+                delay + delay_uncertainty / 2.0f64.sqrt(),
                 Timestamp::UNIX_EPOCH,
             )
             .measurement(
                 Direction::Reverse,
-                delay.value + delay.uncertainty / 2.0f64.sqrt(),
+                delay + delay_uncertainty / 2.0f64.sqrt(),
                 Timestamp::UNIX_EPOCH,
             )
             .measurement(
                 Direction::Forward,
-                delay.value - delay.uncertainty / 2.0f64.sqrt(),
+                delay - delay_uncertainty / 2.0f64.sqrt(),
                 Timestamp::UNIX_EPOCH,
             )
             .measurement(
                 Direction::Reverse,
-                delay.value - delay.uncertainty / 2.0f64.sqrt(),
+                delay - delay_uncertainty / 2.0f64.sqrt(),
                 Timestamp::UNIX_EPOCH,
             )
             .measurement(
                 Direction::Forward,
-                delay.value - delay.uncertainty / 2.0f64.sqrt(),
+                delay - delay_uncertainty / 2.0f64.sqrt(),
                 Timestamp::UNIX_EPOCH,
             )
             .measurement(
                 Direction::Reverse,
-                delay.value - delay.uncertainty / 2.0f64.sqrt(),
+                delay - delay_uncertainty / 2.0f64.sqrt(),
                 Timestamp::UNIX_EPOCH,
             );
 
-        assert_almost_eq!(state.delay_estimate().unwrap(), delay.value);
-        assert_almost_eq!(state.noise_estimate().unwrap(), delay.uncertainty);
+        assert_almost_eq!(state.delay_estimate().unwrap(), delay);
+        assert_almost_eq!(state.noise_estimate().unwrap(), delay_uncertainty);
     }
 
     #[test]

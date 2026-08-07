@@ -40,6 +40,9 @@ use crate::{
     storage::{KalmanStorageInternal, StateMutex, SteeredClockStorage},
 };
 
+#[cfg(not(feature = "std"))]
+use crate::float_polyfill::FloatPolyfill;
+
 #[cfg(feature = "std")]
 pub use storage::StdKalmanStorage;
 pub use {storage::KalmanStorage, storage::NoAllocKalmanStorage};
@@ -134,11 +137,11 @@ impl<Storage: KalmanStorage<C>, C: Clock> KalmanController<Storage, C> {
         let (filter, id) = LinkFilter::empty(start_time).add_clock(
             UncertainValue {
                 value: 0.0,
-                uncertainty: 1e18,
+                variance: 1e18,
             },
             UncertainValue {
                 value: 0.0,
-                uncertainty: system_clock.max_frequency()?,
+                variance: system_clock.max_frequency()?.powi(2),
             },
             initial_wander,
         )?;
@@ -192,11 +195,11 @@ impl<Storage: KalmanStorage<C>, C: Clock> KalmanController<Storage, C> {
             let (filter, id) = state.filter.clone().add_clock(
                 UncertainValue {
                     value: 0.0,
-                    uncertainty: 1e18,
+                    variance: 1e18,
                 },
                 UncertainValue {
                     value: 0.0,
-                    uncertainty: clock.max_frequency()?,
+                    variance: clock.max_frequency()?.powi(2),
                 },
                 initial_wander,
             )?;
@@ -331,10 +334,9 @@ impl<Storage: KalmanStorageInternal<C>, C: Clock> KalmanControllerState<Storage,
         for (index, clock_info) in self.clocks.iter_mut().enumerate() {
             // FIXME: Make constants configurable.
 
-            let UncertainValue {
-                value: offset,
-                uncertainty: offset_uncertainty,
-            } = self.filter.clock_offset(clock_info.id)?;
+            let offset_estimate = self.filter.clock_offset(clock_info.id)?;
+            let offset = offset_estimate.value;
+            let offset_uncertainty = offset_estimate.uncertainty();
 
             if offset < 10.0 && offset > 5.0 * offset_uncertainty {
                 let frequency = self.filter.clock_frequency(clock_info.id)?.value;
@@ -440,7 +442,7 @@ impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<
                 DirectedLinkId::new(self.link_id, direction),
                 UncertainValue {
                     value: (measurement.recv_timestamp - measurement.send_timestamp).as_seconds(),
-                    uncertainty: measurement.uncertainty.as_seconds(),
+                    variance: measurement.uncertainty.as_seconds().powi(2),
                 },
             )?;
             state.steer_clocks()?;
