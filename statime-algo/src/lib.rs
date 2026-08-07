@@ -92,10 +92,40 @@ impl From<ClockError> for AlgoError {
     }
 }
 
+/// Configuration for an internal, steered clock
+#[derive(Debug, Clone)]
+pub struct ClockConfig {
+    /// How large does the offset need to be before we do a jump?
+    pub jump_threshold: Duration,
+    /// How large does a jump need to be to happen, relative to the uncertainty
+    /// of currently observed offset.
+    pub jump_certainty_threshold: f64,
+    /// Amount of time to spread slewing over. This gives a typical time scale
+    /// to reduce the offset error by about two thirds using slews.
+    pub slew_time_constant: Duration,
+    /// Offset and offset uncertainty below which we consider the clock synchronized.
+    pub synchronized_threshold: Duration,
+    /// Initial estimate of the wander of the clock, as fractions of a second per second.
+    pub initial_wander: f64,
+}
+
+impl Default for ClockConfig {
+    fn default() -> Self {
+        Self {
+            jump_threshold: Duration::from_seconds_nanos(10, 0),
+            jump_certainty_threshold: 5.0,
+            slew_time_constant: Duration::from_seconds_nanos(8, 0),
+            synchronized_threshold: Duration::from_seconds_nanos(1, 0),
+            initial_wander: 1e-8,
+        }
+    }
+}
+
 mod hidden {
     use statime_base::{Clock, ClockId, Duration};
 
     use crate::{
+        ClockConfig,
         filter::{LinkFilter, LinkFilterConfig},
         storage::KalmanStorageInternal,
     };
@@ -103,6 +133,7 @@ mod hidden {
     pub struct ClockInfo<C> {
         pub(crate) id: ClockId,
         pub(crate) clock: C,
+        pub(crate) config: ClockConfig,
     }
 
     /// The main controller struct.
@@ -127,7 +158,7 @@ impl<Storage: KalmanStorage<C>, C: Clock> KalmanController<Storage, C> {
     /// Fails if the provided system clock is not readable.
     pub fn new(
         system_clock: C,
-        initial_wander: f64,
+        system_clock_config: ClockConfig,
         filter_config: LinkFilterConfig,
     ) -> Result<(Self, ClockId), AlgoError> {
         let start_time = system_clock.now()?;
@@ -140,12 +171,13 @@ impl<Storage: KalmanStorage<C>, C: Clock> KalmanController<Storage, C> {
                 value: 0.0,
                 uncertainty: system_clock.max_frequency()?,
             },
-            initial_wander,
+            system_clock_config.initial_wander,
         )?;
         let mut clocks = Storage::SteeredClockStorage::new();
         clocks.push(ClockInfo {
             id,
             clock: system_clock,
+            config: system_clock_config,
         });
         Ok((
             Self {
@@ -187,7 +219,7 @@ impl<Storage: KalmanStorage<C>, C: Clock> KalmanController<Storage, C> {
     ///
     /// # Errors
     /// Fails if there is insufficient storage available for the new clock.
-    pub fn add_clock(&self, clock: C, initial_wander: f64) -> Result<ClockId, AlgoError> {
+    pub fn add_clock(&self, clock: C, config: ClockConfig) -> Result<ClockId, AlgoError> {
         self.state.with_mut(|state| {
             let (filter, id) = state.filter.clone().add_clock(
                 UncertainValue {
@@ -198,10 +230,10 @@ impl<Storage: KalmanStorage<C>, C: Clock> KalmanController<Storage, C> {
                     value: 0.0,
                     uncertainty: clock.max_frequency()?,
                 },
-                initial_wander,
+                config.initial_wander,
             )?;
             state.filter = filter;
-            state.clocks.push(ClockInfo { id, clock });
+            state.clocks.push(ClockInfo { id, clock, config });
             Ok(id)
         })
     }
@@ -329,31 +361,14 @@ impl<Storage: KalmanStorageInternal<C>, C: Clock> KalmanControllerState<Storage,
         }
 
         for (index, clock_info) in self.clocks.iter_mut().enumerate() {
-            // FIXME: Make constants configurable.
-
             let UncertainValue {
                 value: offset,
                 uncertainty: offset_uncertainty,
             } = self.filter.clock_offset(clock_info.id)?;
 
-            if offset < 10.0 && offset > 5.0 * offset_uncertainty {
-                let frequency = self.filter.clock_frequency(clock_info.id)?.value;
-
-                let cur_frequency_steer = clock_info.clock.get_frequency()?;
-                let max_frequency_steer = clock_info.clock.max_frequency()?;
-
-                let wanted_frequency_steer = cur_frequency_steer - frequency - offset / 8.0;
-
-                let actual_frequency_steer =
-                    wanted_frequency_steer.clamp(-max_frequency_steer, max_frequency_steer);
-                // FIXME: Warn here on repeated clamping.
-
-                clock_info.clock.set_frequency(actual_frequency_steer)?;
-                filter = filter.absorb_frequency_steer(
-                    clock_info.id,
-                    actual_frequency_steer - cur_frequency_steer,
-                )?;
-            } else {
+            if offset > clock_info.config.jump_threshold.as_seconds()
+                && offset > clock_info.config.jump_certainty_threshold * offset_uncertainty
+            {
                 clock_info
                     .clock
                     .step_clock(Duration::from_f64_seconds(-offset))?;
@@ -365,14 +380,34 @@ impl<Storage: KalmanStorageInternal<C>, C: Clock> KalmanControllerState<Storage,
                 } else {
                     filter = filter.absorb_offset_change(clock_info.id, -offset)?;
                 }
+            } else {
+                let frequency = self.filter.clock_frequency(clock_info.id)?.value;
+
+                let cur_frequency_steer = clock_info.clock.get_frequency()?;
+                let max_frequency_steer = clock_info.clock.max_frequency()?;
+
+                let wanted_frequency_steer = cur_frequency_steer
+                    - frequency
+                    - offset / clock_info.config.slew_time_constant.as_seconds();
+
+                let actual_frequency_steer =
+                    wanted_frequency_steer.clamp(-max_frequency_steer, max_frequency_steer);
+                // FIXME: Warn here on repeated clamping.
+
+                clock_info.clock.set_frequency(actual_frequency_steer)?;
+                filter = filter.absorb_frequency_steer(
+                    clock_info.id,
+                    actual_frequency_steer - cur_frequency_steer,
+                )?;
             }
 
             if let Some(leap_status) = leap_status {
                 clock_info.clock.leap_update(leap_status)?;
             }
-            clock_info
-                .clock
-                .synchronization_update(offset_uncertainty < 1.0)?;
+            clock_info.clock.synchronization_update(
+                offset < clock_info.config.synchronized_threshold.as_seconds()
+                    && offset_uncertainty < clock_info.config.synchronized_threshold.as_seconds(),
+            )?;
             clock_info.clock.error_estimate_update(
                 Duration::from_f64_seconds(offset_uncertainty),
                 self.root_delay,
