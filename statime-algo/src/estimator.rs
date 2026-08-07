@@ -631,6 +631,55 @@ impl<Storage: KalmanStorageBase> EstimatorState<Storage> {
         })
     }
 
+    /// Get an estimated duration until the error on this clock hits a given bound
+    pub fn time_to_error_bound_exceedance(
+        &self,
+        id: ClockId,
+        bound: Duration,
+    ) -> Result<Duration, AlgoError> {
+        // 2^16 seconds, which is the largest power of 2 number of seconds smaller
+        // than a single day.
+        const ABSOLUTE_MAX_EXCEEDANCE_TIME: f64 = 65_536.0;
+        // How precise we want to calculate the duration.
+        const PRECISION: f64 = 1e-3;
+
+        let clock_info = self.get_clock_info(id)?;
+        let target = bound.as_seconds().powi(2);
+        // We do a binary search on an approximation of the error of the clock after progressing time.
+        // For this we use the expansion of the progress time function, which combines the wander, frequency,
+        // and offset uncertainties, together with their correlations.
+        let c1 = self.uncertainty[(clock_info.offset_index(), clock_info.offset_index())];
+        // We force this component up to ensure all components are positive, and therefore the
+        // estimate is always increasing. This will allow us to do binary searching later.
+        let c2 =
+            self.uncertainty[(clock_info.offset_index(), clock_info.frequency_index())].max(0.0);
+        let c3 = self.uncertainty[(clock_info.frequency_index(), clock_info.frequency_index())];
+        let c4 = clock_info.wander.powi(2);
+        let eval = |t: f64| c1 + c2 * t + c3 * t.powi(2) + c4 * t.powi(3);
+        let mut low = 0.0;
+        let mut high = 1.0;
+        // Find a sufficiently high upper bound
+        while eval(high) < target {
+            if high >= ABSOLUTE_MAX_EXCEEDANCE_TIME {
+                return Ok(Duration::from_f64_seconds(ABSOLUTE_MAX_EXCEEDANCE_TIME));
+            }
+
+            low = high;
+            high *= 2.0;
+        }
+
+        while high - low > PRECISION * low {
+            let mid = high.midpoint(low);
+            if eval(mid) < target {
+                low = mid;
+            } else {
+                high = mid;
+            }
+        }
+
+        Ok(Duration::from_f64_seconds(low))
+    }
+
     /// Get the current delay of a link in the state, along with the uncertainty of that delay.
     ///
     /// # Errors
@@ -1163,6 +1212,52 @@ mod tests {
                 .measurement(link_1.forward(), (0.0, 0.1).into(), true)
                 .unwrap_err(),
             AlgoError::UnknownLink(link_1)
+        );
+    }
+
+    #[test]
+    fn test_exceedance_bound() {
+        let clock_1 = ClockId::new();
+        let clock_2 = ClockId::new();
+
+        let state = EstimatorState::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH)
+            .add_clock(clock_1, (0.0, 5e-4).into(), (0.0, 1e-6).into(), 0.0)
+            .unwrap()
+            .add_clock(clock_2, (0.0, 0.0).into(), (0.0, 0.0).into(), 1e-9)
+            .unwrap();
+        // Approximately sqrt(750000) to within precision choice
+        assert_almost_eq!(
+            state
+                .time_to_error_bound_exceedance(clock_1, Duration::from_seconds_nanos(0, 1_000_000))
+                .unwrap()
+                .as_seconds(),
+            866.0
+        );
+        // Approximately 10000 to within precision choice
+        assert_almost_eq!(
+            state
+                .time_to_error_bound_exceedance(clock_2, Duration::from_seconds_nanos(0, 1_000_000))
+                .unwrap()
+                .as_seconds(),
+            9992.0
+        );
+        let state = state
+            .progress_time(Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(433, 0))
+            .unwrap();
+        // at least the remainder
+        assert!(
+            state
+                .time_to_error_bound_exceedance(clock_1, Duration::from_seconds_nanos(0, 1_000_000))
+                .unwrap()
+                .as_seconds()
+                > 433.0
+        );
+        assert!(
+            state
+                .time_to_error_bound_exceedance(clock_2, Duration::from_seconds_nanos(0, 1_000_000))
+                .unwrap()
+                .as_seconds()
+                > 9992.0 - 433.0
         );
     }
 }

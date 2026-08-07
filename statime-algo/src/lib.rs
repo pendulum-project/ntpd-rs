@@ -296,6 +296,7 @@ impl<Storage: KalmanStorage<C>, C: Clock> KalmanController<Storage, C> {
         this: ControllerRef,
         clock_a: ClockId,
         clock_b: ClockId,
+        desired_error_bound: Duration,
         decay_rate: f64,
         period: Option<Duration>,
     ) -> Result<KalmanLink<ControllerRef, Storage, C>, AlgoError> {
@@ -303,6 +304,7 @@ impl<Storage: KalmanStorage<C>, C: Clock> KalmanController<Storage, C> {
             let (filter, id) = state.filter.clone().add_tracked_link(
                 clock_a,
                 clock_b,
+                desired_error_bound,
                 decay_rate,
                 period.map(Duration::as_seconds),
             )?;
@@ -334,12 +336,14 @@ impl<Storage: KalmanStorage<C>, C: Clock> KalmanController<Storage, C> {
         this: ControllerRef,
         clock_a: ClockId,
         clock_b: ClockId,
+        desired_error_bound: Duration,
         period: Option<Duration>,
     ) -> Result<KalmanLink<ControllerRef, Storage, C>, AlgoError> {
         let link_id = this.as_ref().state.with_mut(|state| {
             let (filter, id) = state.filter.clone().add_untracked_link(
                 clock_a,
                 clock_b,
+                desired_error_bound,
                 period.map(Duration::as_seconds),
             )?;
             state.filter = filter;
@@ -538,6 +542,17 @@ impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<
             .as_ref()
             .state
             .with_ref(|state| state.filter.link_active(self.link_id))
+    }
+
+    /// Returns the poll rate needed to get the desired accuracy from this link.
+    ///
+    /// # Errors
+    /// Fails only when something is bugged in the library.
+    pub fn desired_poll_interval(&self) -> Result<Duration, AlgoError> {
+        self.controller
+            .as_ref()
+            .state
+            .with_ref(|state| state.filter.link_desired_poll_interval(self.link_id))
     }
 }
 
