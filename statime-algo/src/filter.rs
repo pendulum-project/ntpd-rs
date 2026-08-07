@@ -92,6 +92,8 @@ pub struct LinkInfo {
     id: LinkId,
     active: bool,
     link_state: LinkState,
+    desired_poll_interval: Duration,
+    desired_error_bound: Duration,
     external_link_state: Option<ExternalLinkState>,
 }
 
@@ -386,6 +388,11 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
                 // discarding links. This ensures that short-term disagreement doesn't
                 // immediately reset synchronization, but that we still don't steer without
                 // consensus.
+                //
+                // We do reset the poll interval to speed up recovery.
+                self.links
+                    .find_by_id_mut(direction.link_id())?
+                    .desired_poll_interval = Duration::ZERO;
                 return Ok(self);
             };
 
@@ -408,6 +415,7 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
             } else {
                 if link.active {
                     link.active = false;
+                    link.desired_poll_interval = Duration::ZERO;
                     if is_tracked_link {
                         self.estimation_state =
                             self.estimation_state.remove_link(direction.link_id())?;
@@ -431,6 +439,50 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
             offset.add_uncertainty(estimates.noise),
             is_tracked_link,
         )?;
+
+        self.update_desired_poll(direction.link_id())
+    }
+
+    fn update_desired_poll(mut self, link_id: LinkId) -> Result<Self, AlgoError> {
+        let link = self.links.find_by_id_mut(link_id)?;
+
+        let desire_first_clock =
+            if self
+                .estimation_state
+                .is_internal_clock(link_id.first_clock())
+            {
+                Some(self.estimation_state.time_to_error_bound_exceedance(
+                    link_id.first_clock(),
+                    link.desired_error_bound,
+                )?)
+            } else {
+                None
+            };
+
+        let desire_second_clock =
+            if self
+                .estimation_state
+                .is_internal_clock(link_id.second_clock())
+            {
+                Some(self.estimation_state.time_to_error_bound_exceedance(
+                    link_id.second_clock(),
+                    link.desired_error_bound,
+                )?)
+            } else {
+                None
+            };
+
+        link.desired_poll_interval = match (desire_first_clock, desire_second_clock) {
+            (Some(first), None) => first,
+            (None, Some(second)) => second,
+            (Some(first), Some(second)) => first.min(second),
+            _ => {
+                return Err(AlgoError::BothClocksExternal(
+                    link_id.first_clock(),
+                    link_id.second_clock(),
+                ));
+            }
+        };
 
         Ok(self)
     }
@@ -570,6 +622,7 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
         mut self,
         first_clock: ClockId,
         second_clock: ClockId,
+        desired_error_bound: Duration,
         decay_rate: f64,
     ) -> Result<(Self, LinkId), AlgoError> {
         let first_internal = self.estimation_state.is_internal_clock(first_clock);
@@ -599,6 +652,8 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
                 link_noise_estimator: LinkNoiseEstimator::new(id),
                 decay_rate,
             },
+            desired_error_bound,
+            desired_poll_interval: Duration::ZERO,
             external_link_state: if is_internal {
                 None
             } else {
@@ -623,6 +678,7 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
         mut self,
         first_clock: ClockId,
         second_clock: ClockId,
+        desired_error_bound: Duration,
     ) -> Result<(Self, LinkId), AlgoError> {
         let first_internal = self.estimation_state.is_internal_clock(first_clock);
         let first_external = self.estimation_state.is_external_clock(first_clock);
@@ -648,6 +704,8 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
             id,
             active: is_internal,
             link_state: LinkState::Untracked,
+            desired_error_bound,
+            desired_poll_interval: Duration::ZERO,
             external_link_state: if is_internal {
                 None
             } else {
@@ -686,6 +744,11 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
     pub fn link_active(&self, id: LinkId) -> Result<bool, AlgoError> {
         let link = self.links.find_by_id(id)?;
         Ok(link.active)
+    }
+
+    pub fn link_desired_poll_interval(&self, id: LinkId) -> Result<Duration, AlgoError> {
+        let link = self.links.find_by_id(id)?;
+        Ok(link.desired_poll_interval)
     }
 
     fn find_external_consensus_window(&self, config: &LinkFilterConfig) -> Option<OffsetWindow> {
@@ -784,6 +847,14 @@ mod tests {
 
     #[test]
     fn untracked_internal_link_is_always_active() {
+        let config = LinkFilterConfig {
+            select_offset_uncertainty_window: 2.0,
+            select_link_uncertainty_window: 2.0,
+            select_delay_uncertainty_window: 0.7,
+            select_max_window_size: 1.0,
+            minimum_agreeing_sources: 3,
+        };
+
         let filter = LinkFilter::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH);
         let (filter, clock_a) = filter
             .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
@@ -791,8 +862,21 @@ mod tests {
         let (filter, clock_b) = filter
             .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
             .unwrap();
-        let (filter, link_id) = filter.add_untracked_link(clock_a, clock_b).unwrap();
+        let (filter, link_id) = filter
+            .add_untracked_link(clock_a, clock_b, Duration::from_seconds_nanos(1, 0))
+            .unwrap();
         assert!(filter.link_active(link_id).unwrap());
+        assert_eq!(
+            filter.link_desired_poll_interval(link_id).unwrap(),
+            Duration::ZERO
+        );
+        let filter = filter
+            .measurement(&config, link_id.forward(), (0.0, 0.01).into())
+            .unwrap();
+        assert_ne!(
+            filter.link_desired_poll_interval(link_id).unwrap(),
+            Duration::ZERO
+        );
     }
 
     #[test]
@@ -812,29 +896,39 @@ mod tests {
         let (filter, clock_b) = filter
             .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
             .unwrap();
-        let (filter, link_id) = filter.add_tracked_link(clock_a, clock_b, 0.01).unwrap();
+        let (filter, link_id) = filter
+            .add_tracked_link(clock_a, clock_b, Duration::from_seconds_nanos(1, 0), 0.01)
+            .unwrap();
 
         assert!(!filter.link_active(link_id).unwrap());
+        assert_eq!(
+            filter.link_desired_poll_interval(link_id).unwrap(),
+            Duration::ZERO
+        );
 
         let filter = filter
-            .measurement(&config, link_id.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_id.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_id.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_id.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_id.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_id.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_id.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_id.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_id.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_id.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_id.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_id.reverse(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_id.forward(), (0.0, 0.0).into())
+            .measurement(&config, link_id.forward(), (0.0, 0.001).into())
             .unwrap()
-            .measurement(&config, link_id.reverse(), (0.0, 0.0).into())
+            .measurement(&config, link_id.reverse(), (0.0, 0.001).into())
             .unwrap();
 
         assert!(filter.link_active(link_id).unwrap());
+        assert_ne!(
+            filter.link_desired_poll_interval(link_id).unwrap(),
+            Duration::ZERO
+        );
     }
 
     #[test]
@@ -855,13 +949,28 @@ mod tests {
         let (filter, clock_ext_2) = filter.add_external_clock().unwrap();
         let (filter, clock_ext_3) = filter.add_external_clock().unwrap();
         let (filter, link_1) = filter
-            .add_tracked_link(clock_int, clock_ext_1, 0.01)
+            .add_tracked_link(
+                clock_int,
+                clock_ext_1,
+                Duration::from_seconds_nanos(1, 0),
+                0.01,
+            )
             .unwrap();
         let (filter, link_2) = filter
-            .add_tracked_link(clock_int, clock_ext_2, 0.01)
+            .add_tracked_link(
+                clock_int,
+                clock_ext_2,
+                Duration::from_seconds_nanos(1, 0),
+                0.01,
+            )
             .unwrap();
         let (filter, link_3) = filter
-            .add_tracked_link(clock_int, clock_ext_3, 0.01)
+            .add_tracked_link(
+                clock_int,
+                clock_ext_3,
+                Duration::from_seconds_nanos(1, 0),
+                0.01,
+            )
             .unwrap();
 
         let filter = filter
@@ -935,13 +1044,28 @@ mod tests {
         let (filter, clock_ext_2) = filter.add_external_clock().unwrap();
         let (filter, clock_ext_3) = filter.add_external_clock().unwrap();
         let (filter, link_1) = filter
-            .add_tracked_link(clock_int, clock_ext_1, 0.01)
+            .add_tracked_link(
+                clock_int,
+                clock_ext_1,
+                Duration::from_seconds_nanos(1, 0),
+                0.01,
+            )
             .unwrap();
         let (filter, link_2) = filter
-            .add_tracked_link(clock_int, clock_ext_2, 0.01)
+            .add_tracked_link(
+                clock_int,
+                clock_ext_2,
+                Duration::from_seconds_nanos(1, 0),
+                0.01,
+            )
             .unwrap();
         let (filter, link_3) = filter
-            .add_tracked_link(clock_int, clock_ext_3, 0.01)
+            .add_tracked_link(
+                clock_int,
+                clock_ext_3,
+                Duration::from_seconds_nanos(1, 0),
+                0.01,
+            )
             .unwrap();
 
         let filter = filter
@@ -1015,13 +1139,28 @@ mod tests {
         let (filter, clock_ext_2) = filter.add_external_clock().unwrap();
         let (filter, clock_ext_3) = filter.add_external_clock().unwrap();
         let (filter, link_1) = filter
-            .add_tracked_link(clock_int, clock_ext_1, 0.01)
+            .add_tracked_link(
+                clock_int,
+                clock_ext_1,
+                Duration::from_seconds_nanos(1, 0),
+                0.01,
+            )
             .unwrap();
         let (filter, link_2) = filter
-            .add_tracked_link(clock_int, clock_ext_2, 0.01)
+            .add_tracked_link(
+                clock_int,
+                clock_ext_2,
+                Duration::from_seconds_nanos(1, 0),
+                0.01,
+            )
             .unwrap();
         let (filter, link_3) = filter
-            .add_tracked_link(clock_int, clock_ext_3, 0.01)
+            .add_tracked_link(
+                clock_int,
+                clock_ext_3,
+                Duration::from_seconds_nanos(1, 0),
+                0.01,
+            )
             .unwrap();
 
         let filter = filter
@@ -1116,7 +1255,9 @@ mod tests {
             .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
             .unwrap();
         let (filter, clock_ext_1) = filter.add_external_clock().unwrap();
-        let (filter, link_1) = filter.add_untracked_link(clock_int, clock_ext_1).unwrap();
+        let (filter, link_1) = filter
+            .add_untracked_link(clock_int, clock_ext_1, Duration::from_seconds_nanos(1, 0))
+            .unwrap();
         let filter = filter
             .external_data_update(link_1, 0.1, None, true)
             .unwrap()
@@ -1130,7 +1271,9 @@ mod tests {
             .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
             .unwrap();
         let (filter, clock_ext_1) = filter.add_external_clock().unwrap();
-        let (filter, link_1) = filter.add_untracked_link(clock_int, clock_ext_1).unwrap();
+        let (filter, link_1) = filter
+            .add_untracked_link(clock_int, clock_ext_1, Duration::from_seconds_nanos(1, 0))
+            .unwrap();
         let filter = filter
             .external_data_update(link_1, 0.1, None, false)
             .unwrap()
@@ -1157,7 +1300,9 @@ mod tests {
         let (filter, clock_b) = filter
             .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
             .unwrap();
-        let (filter, link_id) = filter.add_tracked_link(clock_a, clock_b, 0.01).unwrap();
+        let (filter, link_id) = filter
+            .add_tracked_link(clock_a, clock_b, Duration::from_seconds_nanos(1, 0), 0.01)
+            .unwrap();
 
         assert!(!filter.link_active(link_id).unwrap());
 
@@ -1216,9 +1361,15 @@ mod tests {
         let (filter, clock_ext_1) = filter.add_external_clock().unwrap();
         let (filter, clock_ext_2) = filter.add_external_clock().unwrap();
         let (filter, clock_ext_3) = filter.add_external_clock().unwrap();
-        let (filter, link_1) = filter.add_untracked_link(clock_int_1, clock_ext_1).unwrap();
-        let (filter, link_2) = filter.add_untracked_link(clock_int_1, clock_ext_2).unwrap();
-        let (filter, link_3) = filter.add_untracked_link(clock_int_2, clock_ext_3).unwrap();
+        let (filter, link_1) = filter
+            .add_untracked_link(clock_int_1, clock_ext_1, Duration::from_seconds_nanos(1, 0))
+            .unwrap();
+        let (filter, link_2) = filter
+            .add_untracked_link(clock_int_1, clock_ext_2, Duration::from_seconds_nanos(1, 0))
+            .unwrap();
+        let (filter, link_3) = filter
+            .add_untracked_link(clock_int_2, clock_ext_3, Duration::from_seconds_nanos(1, 0))
+            .unwrap();
 
         let filter = filter
             .external_data_update(link_1, 0.1, None, true)
@@ -1258,9 +1409,15 @@ mod tests {
         let (filter, clock_ext_1) = filter.add_external_clock().unwrap();
         let (filter, clock_ext_2) = filter.add_external_clock().unwrap();
         let (filter, clock_ext_3) = filter.add_external_clock().unwrap();
-        let (filter, link_1) = filter.add_untracked_link(clock_int_1, clock_ext_1).unwrap();
-        let (filter, link_2) = filter.add_untracked_link(clock_int_1, clock_ext_2).unwrap();
-        let (filter, link_3) = filter.add_untracked_link(clock_ext_3, clock_int_2).unwrap();
+        let (filter, link_1) = filter
+            .add_untracked_link(clock_int_1, clock_ext_1, Duration::from_seconds_nanos(1, 0))
+            .unwrap();
+        let (filter, link_2) = filter
+            .add_untracked_link(clock_int_1, clock_ext_2, Duration::from_seconds_nanos(1, 0))
+            .unwrap();
+        let (filter, link_3) = filter
+            .add_untracked_link(clock_ext_3, clock_int_2, Duration::from_seconds_nanos(1, 0))
+            .unwrap();
 
         let filter = filter
             .external_data_update(link_1, 0.1, None, true)
@@ -1304,7 +1461,9 @@ mod tests {
             .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
             .unwrap();
         let (filter, clock_ext_1) = filter.add_external_clock().unwrap();
-        let (filter, link_1) = filter.add_untracked_link(clock_int, clock_ext_1).unwrap();
+        let (filter, link_1) = filter
+            .add_untracked_link(clock_int, clock_ext_1, Duration::from_seconds_nanos(1, 0))
+            .unwrap();
         let filter = filter
             .external_data_update(link_1, 10.0, None, true)
             .unwrap()
@@ -1318,7 +1477,9 @@ mod tests {
             .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
             .unwrap();
         let (filter, clock_ext_1) = filter.add_external_clock().unwrap();
-        let (filter, link_1) = filter.add_untracked_link(clock_int, clock_ext_1).unwrap();
+        let (filter, link_1) = filter
+            .add_untracked_link(clock_int, clock_ext_1, Duration::from_seconds_nanos(1, 0))
+            .unwrap();
         let filter = filter
             .external_data_update(link_1, 0.0, None, true)
             .unwrap()
@@ -1333,7 +1494,12 @@ mod tests {
             .unwrap();
         let (filter, clock_ext_1) = filter.add_external_clock().unwrap();
         let (filter, link_1) = filter
-            .add_tracked_link(clock_int, clock_ext_1, 0.0)
+            .add_tracked_link(
+                clock_int,
+                clock_ext_1,
+                Duration::from_seconds_nanos(1, 0),
+                0.0,
+            )
             .unwrap();
         let filter = filter
             .external_data_update(link_1, 10.0, None, true)
@@ -1380,13 +1546,28 @@ mod tests {
         let (filter, clock_ext_2) = filter.add_external_clock().unwrap();
         let (filter, clock_ext_3) = filter.add_external_clock().unwrap();
         let (filter, link_1) = filter
-            .add_tracked_link(clock_int, clock_ext_1, 0.01)
+            .add_tracked_link(
+                clock_int,
+                clock_ext_1,
+                Duration::from_seconds_nanos(1, 0),
+                0.01,
+            )
             .unwrap();
         let (filter, link_2) = filter
-            .add_tracked_link(clock_int, clock_ext_2, 0.01)
+            .add_tracked_link(
+                clock_int,
+                clock_ext_2,
+                Duration::from_seconds_nanos(1, 0),
+                0.01,
+            )
             .unwrap();
         let (filter, link_3) = filter
-            .add_tracked_link(clock_int, clock_ext_3, 0.01)
+            .add_tracked_link(
+                clock_int,
+                clock_ext_3,
+                Duration::from_seconds_nanos(1, 0),
+                0.01,
+            )
             .unwrap();
 
         let base_filter = filter
@@ -1529,9 +1710,15 @@ mod tests {
         let (filter, clock_ext_1) = filter.add_external_clock().unwrap();
         let (filter, clock_ext_2) = filter.add_external_clock().unwrap();
         let (filter, clock_ext_3) = filter.add_external_clock().unwrap();
-        let (filter, link_1) = filter.add_untracked_link(clock_int_1, clock_ext_1).unwrap();
-        let (filter, link_2) = filter.add_untracked_link(clock_int_1, clock_ext_2).unwrap();
-        let (filter, link_3) = filter.add_untracked_link(clock_int_2, clock_ext_3).unwrap();
+        let (filter, link_1) = filter
+            .add_untracked_link(clock_int_1, clock_ext_1, Duration::from_seconds_nanos(1, 0))
+            .unwrap();
+        let (filter, link_2) = filter
+            .add_untracked_link(clock_int_1, clock_ext_2, Duration::from_seconds_nanos(1, 0))
+            .unwrap();
+        let (filter, link_3) = filter
+            .add_untracked_link(clock_int_2, clock_ext_3, Duration::from_seconds_nanos(1, 0))
+            .unwrap();
 
         let filter = filter
             .external_data_update(link_1, 0.3, None, true)
@@ -1567,21 +1754,21 @@ mod tests {
         assert_eq!(
             filter
                 .clone()
-                .add_untracked_link(clock_4, clock_1)
+                .add_untracked_link(clock_4, clock_1, Duration::from_seconds_nanos(1, 0))
                 .unwrap_err(),
             AlgoError::UnknownClock(clock_4)
         );
         assert_eq!(
             filter
                 .clone()
-                .add_untracked_link(clock_2, clock_4)
+                .add_untracked_link(clock_2, clock_4, Duration::from_seconds_nanos(1, 0))
                 .unwrap_err(),
             AlgoError::UnknownClock(clock_4)
         );
         assert_eq!(
             filter
                 .clone()
-                .add_untracked_link(clock_2, clock_3)
+                .add_untracked_link(clock_2, clock_3, Duration::from_seconds_nanos(1, 0))
                 .unwrap_err(),
             AlgoError::BothClocksExternal(clock_2, clock_3)
         );
@@ -1589,21 +1776,21 @@ mod tests {
         assert_eq!(
             filter
                 .clone()
-                .add_tracked_link(clock_4, clock_1, 0.01)
+                .add_tracked_link(clock_4, clock_1, Duration::from_seconds_nanos(1, 0), 0.01)
                 .unwrap_err(),
             AlgoError::UnknownClock(clock_4)
         );
         assert_eq!(
             filter
                 .clone()
-                .add_tracked_link(clock_2, clock_4, 0.01)
+                .add_tracked_link(clock_2, clock_4, Duration::from_seconds_nanos(1, 0), 0.01)
                 .unwrap_err(),
             AlgoError::UnknownClock(clock_4)
         );
         assert_eq!(
             filter
                 .clone()
-                .add_tracked_link(clock_2, clock_3, 0.01)
+                .add_tracked_link(clock_2, clock_3, Duration::from_seconds_nanos(1, 0), 0.01)
                 .unwrap_err(),
             AlgoError::BothClocksExternal(clock_2, clock_3)
         );
