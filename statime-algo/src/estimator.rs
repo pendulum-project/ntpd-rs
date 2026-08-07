@@ -215,9 +215,8 @@ pub struct EstimatorState<Storage: KalmanStorageBase> {
 pub struct UncertainValue {
     /// Best estimate of the value
     pub value: f64,
-    /// Square root of the variance of the value. Corresponds
-    /// to 1 standard deviation.
-    pub uncertainty: f64,
+    /// The variance of the value.
+    pub variance: f64,
 }
 
 impl UncertainValue {
@@ -226,8 +225,12 @@ impl UncertainValue {
         UncertainValue {
             value: self.value,
             // Addition formula for uncertainty...
-            uncertainty: (self.uncertainty.powi(2) + extra_uncertainty.powi(2)).sqrt(),
+            variance: (self.variance + extra_uncertainty.powi(2)),
         }
+    }
+
+    pub(crate) fn uncertainty(&self) -> f64 {
+        self.variance.sqrt()
     }
 }
 
@@ -236,7 +239,7 @@ impl From<(f64, f64)> for UncertainValue {
     fn from(value: (f64, f64)) -> Self {
         UncertainValue {
             value: value.0,
-            uncertainty: value.1,
+            variance: value.1.powi(2),
         }
     }
 }
@@ -415,7 +418,7 @@ impl<Storage: KalmanStorageBase> EstimatorState<Storage> {
         // uncertainty is sort of a square of the state.
         let difference_covariance =
             &measurement_projection * &self.uncertainty * measurement_projection.transpose()
-                + Matrix::from(offset.uncertainty.powi(2));
+                + Matrix::from(offset.variance);
 
         // Intuitively, the multiplication with the measurement gives the contribution
         // for each part of the state to the uncertainty of the measurement prediction.
@@ -436,7 +439,7 @@ impl<Storage: KalmanStorageBase> EstimatorState<Storage> {
         self.uncertainty = (&prev_step_proportionality
             * &self.uncertainty
             * prev_step_proportionality.transpose()
-            + &update_strength * offset.uncertainty.powi(2) * update_strength.transpose())
+            + &update_strength * offset.variance * update_strength.transpose())
         .symmetrize()?;
 
         Ok(self)
@@ -497,8 +500,8 @@ impl<Storage: KalmanStorageBase> EstimatorState<Storage> {
             .state
             .extend_vec([initial_offset.value, initial_frequency.value])?;
         self.uncertainty = self.uncertainty.extend([
-            [initial_offset.uncertainty.powi(2), 0.0],
-            [0.0, initial_frequency.uncertainty.powi(2)],
+            [initial_offset.variance, 0.0],
+            [0.0, initial_frequency.variance],
         ]);
 
         Ok(self)
@@ -550,9 +553,7 @@ impl<Storage: KalmanStorageBase> EstimatorState<Storage> {
 
         self.link_info.add(new_link_info)?;
         self.state = self.state.extend_vec([initial_delay.value])?;
-        self.uncertainty = self
-            .uncertainty
-            .extend([[initial_delay.uncertainty.powi(2)]]);
+        self.uncertainty = self.uncertainty.extend([[initial_delay.variance]]);
 
         Ok(self)
     }
@@ -579,8 +580,7 @@ impl<Storage: KalmanStorageBase> EstimatorState<Storage> {
         let clock_info = self.get_clock_info(id)?;
         Ok(UncertainValue {
             value: self.state[(clock_info.offset_index(), 0)],
-            uncertainty: self.uncertainty[(clock_info.offset_index(), clock_info.offset_index())]
-                .sqrt(),
+            variance: self.uncertainty[(clock_info.offset_index(), clock_info.offset_index())],
         })
     }
 
@@ -592,9 +592,8 @@ impl<Storage: KalmanStorageBase> EstimatorState<Storage> {
         let clock_info = self.get_clock_info(id)?;
         Ok(UncertainValue {
             value: self.state[(clock_info.frequency_index(), 0)],
-            uncertainty: self.uncertainty
-                [(clock_info.frequency_index(), clock_info.frequency_index())]
-                .sqrt(),
+            variance: self.uncertainty
+                [(clock_info.frequency_index(), clock_info.frequency_index())],
         })
     }
 
@@ -607,7 +606,7 @@ impl<Storage: KalmanStorageBase> EstimatorState<Storage> {
         let link_info = self.get_link_info(id)?;
         Ok(UncertainValue {
             value: self.state[(link_info.index, 0)],
-            uncertainty: self.uncertainty[(link_info.index, link_info.index)].sqrt(),
+            variance: self.uncertainty[(link_info.index, link_info.index)],
         })
     }
 
@@ -672,7 +671,7 @@ mod tests {
                 (left_val, right_val) => {
                     assert!((left_val.value - right_val.value).abs() <= 1e-6*right_val.value.abs(),
                         "Floating point values not almost equal.\nLeft={left_val:?}\nRight={right_val:?}");
-                    assert!((left_val.uncertainty - right_val.uncertainty).abs() <= 1e-6*right_val.uncertainty.abs(),
+                    assert!((left_val.variance - right_val.variance).abs() <= 1e-6*right_val.variance.abs(),
                         "Floating point uncertainty not almost equal.\nLeft={left_val:?}\nRight={right_val:?}");
                 }
             }
@@ -688,9 +687,9 @@ mod tests {
             .add_clock(clock_1, (0.0, 1.0).into(), (2.0, 3.0).into(), 1e-8)
             .unwrap();
         assert_eq!(state.clock_offset(clock_1).unwrap().value, 0.0);
-        assert_eq!(state.clock_offset(clock_1).unwrap().uncertainty, 1.0);
+        assert_eq!(state.clock_offset(clock_1).unwrap().variance, 1.0);
         assert_eq!(state.clock_frequency(clock_1).unwrap().value, 2.0);
-        assert_eq!(state.clock_frequency(clock_1).unwrap().uncertainty, 3.0);
+        assert_eq!(state.clock_frequency(clock_1).unwrap().variance, 9.0);
 
         assert_eq!(
             state.clone().add_external_clock(clock_1).unwrap_err(),
@@ -765,31 +764,25 @@ mod tests {
             .unwrap();
         assert_eq!(state.clock_frequency(clock_1).unwrap().value, 1e-6);
         // Random walk noise, so frequency deviation is sqrt(time_interval)*wander.
-        assert_almost_eq!(state.clock_frequency(clock_1).unwrap().uncertainty, 1e-7);
+        assert_almost_eq!(state.clock_frequency(clock_1).unwrap().variance, 1e-14);
         // Pre-existing frequency offset should cause phase offset.
         assert_almost_eq!(state.clock_offset(clock_1).unwrap().value, 1e-4);
         // Random walk noise in the derivative, so the integral gives an
         // additional factor of time compared to the frequency deviation.
         // The factor sqrt(3) follows from the structure of how updates work.
-        assert_almost_eq!(
-            state.clock_offset(clock_1).unwrap().uncertainty,
-            1e-5 / (3.0f64.sqrt())
-        );
+        assert_almost_eq!(state.clock_offset(clock_1).unwrap().variance, 1e-10 / 3.0);
 
         let state = state.remove_clock(clock_1).unwrap();
 
         assert_eq!(state.link_delay(link_1).unwrap().value, 0.5);
-        assert_eq!(state.link_delay(link_1).unwrap().uncertainty, 0.2);
+        assert_almost_eq!(state.link_delay(link_1).unwrap().variance, 0.04);
 
         let state = state.remove_link(link_1).unwrap();
 
         assert_eq!(state.clock_frequency(clock_2).unwrap().value, -1e-6);
-        assert_eq!(state.clock_frequency(clock_2).unwrap().uncertainty, 1e-7);
+        assert_almost_eq!(state.clock_frequency(clock_2).unwrap().variance, 1e-14);
         assert_almost_eq!(state.clock_offset(clock_2).unwrap().value, -1e-4);
-        assert_almost_eq!(
-            state.clock_offset(clock_2).unwrap().uncertainty,
-            1e-5 * (2.0f64.sqrt())
-        );
+        assert_almost_eq!(state.clock_offset(clock_2).unwrap().variance, 2e-10);
 
         assert_uv_almost_eq!(
             state.link_delay(link_2).unwrap(),
@@ -892,7 +885,7 @@ mod tests {
             .add_link(link_1, (1.0, 2.0).into(), 0.0)
             .expect("Failed to add link");
         assert_eq!(state.link_delay(link_1).unwrap().value, 1.0);
-        assert_eq!(state.link_delay(link_1).unwrap().uncertainty, 2.0);
+        assert_eq!(state.link_delay(link_1).unwrap().variance, 4.0);
     }
 
     #[test]

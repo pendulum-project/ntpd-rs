@@ -389,7 +389,7 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
             };
 
             external_link_state.last_offsets.insert(offset_to_external);
-            external_link_state.last_offset_uncertainty = offset.uncertainty;
+            external_link_state.last_offset_uncertainty = offset.uncertainty();
 
             let our_window = link.offset_window(config, &self.estimation_state);
 
