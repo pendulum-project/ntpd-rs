@@ -43,8 +43,8 @@ mod storage;
 
 use core::marker::PhantomData;
 use statime_base::{
-    Clock, ClockError, ClockId, DirectedLinkId, Direction, Duration, LeapStatus, LinkId, TAI,
-    Timestamp,
+    Clock, ClockError, ClockId, Controller, DirectedLinkId, Direction, Duration, LeapStatus, Link,
+    LinkId, Measurement, TAI, Timestamp,
 };
 
 use crate::{
@@ -171,6 +171,158 @@ pub struct KalmanController<Storage: KalmanStorage<C>, C: Clock> {
     state: Storage::StateMutex,
 }
 
+impl<Storage: KalmanStorage<C>, C: Clock> Controller for KalmanController<Storage, C> {
+    type Clock = C;
+    type Link<ControllerRef: AsRef<Self>> = KalmanLink<ControllerRef, Storage, C>;
+    type Error = AlgoError;
+    type ClockConfig = ClockConfig;
+    type LinkConfig = LinkConfig;
+    type TrackedLinkConfig = TrackedLinkConfig;
+
+    /// Add an external clock to the controller.
+    ///
+    /// # Errors
+    /// Returns an error if the clock is already known to the filter.
+    fn add_external_clock(&self) -> Result<ClockId, AlgoError> {
+        self.state.with_mut(|state| {
+            let (filter, id) = state.filter.clone().add_external_clock()?;
+            state.filter = filter;
+            Ok(id)
+        })
+    }
+
+    /// Remove an external clock from the controller.
+    ///
+    /// # Errors
+    /// Returns an error if the clock is unknown, or not an external clock.
+    fn remove_external_clock(&self, id: ClockId) -> Result<(), AlgoError> {
+        self.state.with_mut(|state| {
+            state.filter = state.filter.clone().remove_external_clock(id)?;
+            Ok(())
+        })
+    }
+
+    /// Add an internal clock to the controller.
+    ///
+    /// # Errors
+    /// Fails if there is insufficient storage available for the new clock.
+    fn add_clock(&self, clock: C, config: ClockConfig) -> Result<ClockId, AlgoError> {
+        self.state.with_mut(|state| {
+            let (filter, id) = state.filter.clone().add_clock(
+                UncertainValue {
+                    value: 0.0,
+                    variance: 1e18,
+                },
+                UncertainValue {
+                    value: 0.0,
+                    variance: clock.max_frequency()?.powi(2),
+                },
+                config.initial_wander,
+            )?;
+            state.filter = filter;
+            state.clocks.push(ClockInfo { id, clock, config });
+            Ok(id)
+        })
+    }
+
+    /// Remove a clock from the controller
+    ///
+    /// # Errors
+    /// Fails if the clock is not known to the controller, if the clock is the
+    /// system clock or if the clock is in use in a link.
+    fn remove_clock(&self, clock_id: ClockId) -> Result<(), AlgoError> {
+        self.state.with_mut(|state| {
+            if state.clocks[0].id == clock_id {
+                return Err(AlgoError::CannotRemoveSystemClock(clock_id));
+            }
+
+            let Some(index) = state.clocks.iter().position(|info| info.id == clock_id) else {
+                return Err(AlgoError::UnknownClock(clock_id));
+            };
+            state.filter = state.filter.clone().remove_clock(clock_id)?;
+            state.clocks.remove(index);
+
+            Ok(())
+        })
+    }
+
+    /// Create a measurement link between clocks where the delay and noise from
+    /// the link itself are automatically determined.
+    ///
+    /// The resulting link will need measurements in both directions to succesfully
+    /// work.
+    ///
+    /// This is an associated function instead of a method to allow links to store
+    /// references to the controller in a manner most convenient for the user.
+    ///
+    /// # Errors
+    /// Fails if the clocks are not known to the controller, both external, or
+    /// when they are the same.
+    fn create_tracked_link<ControllerRef: AsRef<KalmanController<Storage, C>>>(
+        // We can't have a normal self parameter here as we want a generic
+        // reference-like thing for the link to store, and we can't use other
+        // types as self. See the comments on KalmanLink for the motivation for
+        // generic reference-like things.
+        this: ControllerRef,
+        clock_a: ClockId,
+        clock_b: ClockId,
+        config: LinkConfig,
+        tracked_config: TrackedLinkConfig,
+    ) -> Result<KalmanLink<ControllerRef, Storage, C>, AlgoError> {
+        let link_id = this.as_ref().state.with_mut(|state| {
+            let (filter, id) =
+                state
+                    .filter
+                    .clone()
+                    .add_tracked_link(clock_a, clock_b, config, tracked_config)?;
+            state.filter = filter;
+
+            Ok::<_, AlgoError>(id)
+        })?;
+
+        Ok(KalmanLink {
+            link_id,
+            controller: this,
+            phantomdata: PhantomData,
+        })
+    }
+
+    /// Create a measurement link between clocks without delay estimation.
+    ///
+    /// This is an associated function instead of a method to allow links to store
+    /// references to the controller in a manner most convenient for the user.
+    ///
+    /// # Errors
+    /// Fails if the clocks are not known to the controller, both external, or
+    /// when they are the same.
+    fn create_untracked_link<ControllerRef: AsRef<KalmanController<Storage, C>>>(
+        // We can't have a normal self parameter here as we want a generic
+        // reference-like thing for the link to store, and we can't use other
+        // types as self. See the comments on KalmanLink for the motivation for
+        // generic reference-like things.
+        this: ControllerRef,
+        clock_a: ClockId,
+        clock_b: ClockId,
+        config: LinkConfig,
+    ) -> Result<KalmanLink<ControllerRef, Storage, C>, AlgoError> {
+        let link_id = this.as_ref().state.with_mut(|state| {
+            let (filter, id) = state
+                .filter
+                .clone()
+                .add_untracked_link(clock_a, clock_b, config)?;
+            state.filter = filter;
+
+            Ok::<_, AlgoError>(id)
+        })?;
+
+        Ok(KalmanLink {
+            link_id,
+            controller: this,
+            phantomdata: PhantomData,
+        })
+    }
+}
+
 impl<Storage: KalmanStorage<C>, C: Clock> KalmanController<Storage, C> {
     /// Create a new clock controller
     ///
@@ -210,149 +362,6 @@ impl<Storage: KalmanStorage<C>, C: Clock> KalmanController<Storage, C> {
             },
             id,
         ))
-    }
-
-    /// Add an external clock to the controller.
-    ///
-    /// # Errors
-    /// Returns an error if the clock is already known to the filter.
-    pub fn add_external_clock(&self) -> Result<ClockId, AlgoError> {
-        self.state.with_mut(|state| {
-            let (filter, id) = state.filter.clone().add_external_clock()?;
-            state.filter = filter;
-            Ok(id)
-        })
-    }
-
-    /// Remove an external clock from the controller.
-    ///
-    /// # Errors
-    /// Returns an error if the clock is unknown, or not an external clock.
-    pub fn remove_external_clock(&self, id: ClockId) -> Result<(), AlgoError> {
-        self.state.with_mut(|state| {
-            state.filter = state.filter.clone().remove_external_clock(id)?;
-            Ok(())
-        })
-    }
-
-    /// Add an internal clock to the controller.
-    ///
-    /// # Errors
-    /// Fails if there is insufficient storage available for the new clock.
-    pub fn add_clock(&self, clock: C, config: ClockConfig) -> Result<ClockId, AlgoError> {
-        self.state.with_mut(|state| {
-            let (filter, id) = state.filter.clone().add_clock(
-                UncertainValue {
-                    value: 0.0,
-                    variance: 1e18,
-                },
-                UncertainValue {
-                    value: 0.0,
-                    variance: clock.max_frequency()?.powi(2),
-                },
-                config.initial_wander,
-            )?;
-            state.filter = filter;
-            state.clocks.push(ClockInfo { id, clock, config });
-            Ok(id)
-        })
-    }
-
-    /// Remove a clock from the controller
-    ///
-    /// # Errors
-    /// Fails if the clock is not known to the controller, if the clock is the
-    /// system clock or if the clock is in use in a link.
-    pub fn remove_clock(&self, clock_id: ClockId) -> Result<(), AlgoError> {
-        self.state.with_mut(|state| {
-            if state.clocks[0].id == clock_id {
-                return Err(AlgoError::CannotRemoveSystemClock(clock_id));
-            }
-
-            let Some(index) = state.clocks.iter().position(|info| info.id == clock_id) else {
-                return Err(AlgoError::UnknownClock(clock_id));
-            };
-            state.filter = state.filter.clone().remove_clock(clock_id)?;
-            state.clocks.remove(index);
-
-            Ok(())
-        })
-    }
-
-    /// Create a measurement link between clocks where the delay and noise from
-    /// the link itself are automatically determined.
-    ///
-    /// The resulting link will need measurements in both directions to succesfully
-    /// work.
-    ///
-    /// This is an associated function instead of a method to allow links to store
-    /// references to the controller in a manner most convenient for the user.
-    ///
-    /// # Errors
-    /// Fails if the clocks are not known to the controller, both external, or
-    /// when they are the same.
-    pub fn create_tracked_link<ControllerRef: AsRef<KalmanController<Storage, C>>>(
-        // We can't have a normal self parameter here as we want a generic
-        // reference-like thing for the link to store, and we can't use other
-        // types as self. See the comments on KalmanLink for the motivation for
-        // generic reference-like things.
-        this: ControllerRef,
-        clock_a: ClockId,
-        clock_b: ClockId,
-        config: LinkConfig,
-        tracked_config: TrackedLinkConfig,
-    ) -> Result<KalmanLink<ControllerRef, Storage, C>, AlgoError> {
-        let link_id = this.as_ref().state.with_mut(|state| {
-            let (filter, id) =
-                state
-                    .filter
-                    .clone()
-                    .add_tracked_link(clock_a, clock_b, config, tracked_config)?;
-            state.filter = filter;
-
-            Ok::<_, AlgoError>(id)
-        })?;
-
-        Ok(KalmanLink {
-            link_id,
-            controller: this,
-            phantomdata: PhantomData,
-        })
-    }
-
-    /// Create a measurement link between clocks without delay estimation.
-    ///
-    /// This is an associated function instead of a method to allow links to store
-    /// references to the controller in a manner most convenient for the user.
-    ///
-    /// # Errors
-    /// Fails if the clocks are not known to the controller, both external, or
-    /// when they are the same.
-    pub fn create_untracked_link<ControllerRef: AsRef<KalmanController<Storage, C>>>(
-        // We can't have a normal self parameter here as we want a generic
-        // reference-like thing for the link to store, and we can't use other
-        // types as self. See the comments on KalmanLink for the motivation for
-        // generic reference-like things.
-        this: ControllerRef,
-        clock_a: ClockId,
-        clock_b: ClockId,
-        config: LinkConfig,
-    ) -> Result<KalmanLink<ControllerRef, Storage, C>, AlgoError> {
-        let link_id = this.as_ref().state.with_mut(|state| {
-            let (filter, id) = state
-                .filter
-                .clone()
-                .add_untracked_link(clock_a, clock_b, config)?;
-            state.filter = filter;
-
-            Ok::<_, AlgoError>(id)
-        })?;
-
-        Ok(KalmanLink {
-            link_id,
-            controller: this,
-            phantomdata: PhantomData,
-        })
     }
 
     /// Get the current offset of a clock.
@@ -476,19 +485,17 @@ impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<
     }
 }
 
-impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<C>, C: Clock>
-    KalmanLink<ControllerRef, Storage, C>
+impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<C>, C: Clock> Link
+    for KalmanLink<ControllerRef, Storage, C>
 {
+    type Error = AlgoError;
+
     /// Process a measurement on a connection.
     ///
     /// # Errors
     /// Fails if there are any issues processing the measurement, mostly resulting
     /// from unexpected behavior of the underlying clock.
-    pub fn measurement(
-        &self,
-        measurement: Measurement,
-        direction: Direction,
-    ) -> Result<(), AlgoError> {
+    fn measurement(&self, measurement: Measurement, direction: Direction) -> Result<(), AlgoError> {
         self.controller.as_ref().state.with_mut(|state| {
             state.filter = state
                 .filter
@@ -512,7 +519,7 @@ impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<
     ///
     /// # Errors
     /// Fails if the link does not contain an external clock.
-    pub fn external_data_update(
+    fn external_data_update(
         &self,
         root_delay: Duration,
         leap_status: Option<LeapStatus>,
@@ -534,7 +541,7 @@ impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<
     ///
     /// # Errors
     /// Fails only when something is bugged in the library.
-    pub fn active(&self) -> Result<bool, AlgoError> {
+    fn active(&self) -> Result<bool, AlgoError> {
         self.controller
             .as_ref()
             .state
@@ -545,21 +552,10 @@ impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<
     ///
     /// # Errors
     /// Fails only when something is bugged in the library.
-    pub fn desired_poll_interval(&self) -> Result<Duration, AlgoError> {
+    fn desired_poll_interval(&self) -> Result<Duration, AlgoError> {
         self.controller
             .as_ref()
             .state
             .with_ref(|state| state.filter.link_desired_poll_interval(self.link_id))
     }
-}
-
-/// A measurement done on a link.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct Measurement {
-    /// The timestamp at which the synchronization signal was sent.
-    pub send_timestamp: Timestamp<TAI>,
-    /// The timestamp at which the synchronization signal was received.
-    pub recv_timestamp: Timestamp<TAI>,
-    /// The uncertainty of the timestamps.
-    pub uncertainty: Duration,
 }
