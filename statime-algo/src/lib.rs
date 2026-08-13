@@ -59,7 +59,7 @@ use crate::float_polyfill::FloatPolyfill;
 
 #[cfg(feature = "std")]
 pub use storage::StdKalmanStorage;
-pub use {storage::KalmanStorage, storage::NoAllocKalmanStorage};
+pub use {filter::LinkConfig, storage::KalmanStorage, storage::NoAllocKalmanStorage};
 
 /// An error that occured in the kalman controller.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -296,18 +296,14 @@ impl<Storage: KalmanStorage<C>, C: Clock> KalmanController<Storage, C> {
         this: ControllerRef,
         clock_a: ClockId,
         clock_b: ClockId,
-        desired_error_bound: Duration,
+        config: LinkConfig,
         decay_rate: f64,
-        period: Option<Duration>,
     ) -> Result<KalmanLink<ControllerRef, Storage, C>, AlgoError> {
         let link_id = this.as_ref().state.with_mut(|state| {
-            let (filter, id) = state.filter.clone().add_tracked_link(
-                clock_a,
-                clock_b,
-                desired_error_bound,
-                decay_rate,
-                period.map(Duration::as_seconds),
-            )?;
+            let (filter, id) = state
+                .filter
+                .clone()
+                .add_tracked_link(clock_a, clock_b, config, decay_rate)?;
             state.filter = filter;
 
             Ok::<_, AlgoError>(id)
@@ -336,16 +332,13 @@ impl<Storage: KalmanStorage<C>, C: Clock> KalmanController<Storage, C> {
         this: ControllerRef,
         clock_a: ClockId,
         clock_b: ClockId,
-        desired_error_bound: Duration,
-        period: Option<Duration>,
+        config: LinkConfig,
     ) -> Result<KalmanLink<ControllerRef, Storage, C>, AlgoError> {
         let link_id = this.as_ref().state.with_mut(|state| {
-            let (filter, id) = state.filter.clone().add_untracked_link(
-                clock_a,
-                clock_b,
-                desired_error_bound,
-                period.map(Duration::as_seconds),
-            )?;
+            let (filter, id) = state
+                .filter
+                .clone()
+                .add_untracked_link(clock_a, clock_b, config)?;
             state.filter = filter;
 
             Ok::<_, AlgoError>(id)
