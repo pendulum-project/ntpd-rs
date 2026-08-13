@@ -49,7 +49,7 @@ use statime_base::{
 
 use crate::{
     estimator::UncertainValue,
-    filter::{LinkFilter, LinkFilterConfig},
+    filter::{LinkFilter, LinkFilterConfig, TrackedLinkConfig},
     matrix::MatrixError,
     storage::{KalmanStorageInternal, StateMutex, SteeredClockStorage},
 };
@@ -297,13 +297,14 @@ impl<Storage: KalmanStorage<C>, C: Clock> KalmanController<Storage, C> {
         clock_a: ClockId,
         clock_b: ClockId,
         config: LinkConfig,
-        decay_rate: f64,
+        tracked_config: TrackedLinkConfig,
     ) -> Result<KalmanLink<ControllerRef, Storage, C>, AlgoError> {
         let link_id = this.as_ref().state.with_mut(|state| {
-            let (filter, id) = state
-                .filter
-                .clone()
-                .add_tracked_link(clock_a, clock_b, config, decay_rate)?;
+            let (filter, id) =
+                state
+                    .filter
+                    .clone()
+                    .add_tracked_link(clock_a, clock_b, config, tracked_config)?;
             state.filter = filter;
 
             Ok::<_, AlgoError>(id)

@@ -14,7 +14,7 @@ use crate::{
 use crate::float_polyfill::FloatPolyfill;
 
 /// Configuration for a measurement link between clocks.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LinkConfig {
     /// Error bound used to calculate the desired poll rate for the link.
     pub desired_error_bound: Duration,
@@ -34,11 +34,31 @@ impl Default for LinkConfig {
     }
 }
 
+/// Additional configuration specific for tracked links.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TrackedLinkConfig {
+    /// Rate at which we become uncertain of link delay, as fraction of the
+    /// delay per second.
+    pub decay_rate: f64,
+    /// The longest interval allowed between 2 measurements when using them for
+    /// estimating the link delay.
+    pub longest_interval_for_delay_estimation: Duration,
+}
+
+impl Default for TrackedLinkConfig {
+    fn default() -> Self {
+        Self {
+            decay_rate: 0.01,
+            longest_interval_for_delay_estimation: Duration::from_seconds_nanos(0, 500_000_000),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 enum LinkState {
     Tracked {
         link_noise_estimator: LinkNoiseEstimator,
-        decay_rate: f64,
+        tracked_config: TrackedLinkConfig,
     },
     Untracked,
 }
@@ -64,7 +84,7 @@ impl LinkState {
     /// Get the decay rate for the link.
     fn decay_rate(&self) -> f64 {
         match self {
-            LinkState::Tracked { decay_rate, .. } => *decay_rate,
+            LinkState::Tracked { tracked_config, .. } => tracked_config.decay_rate,
             LinkState::Untracked => 0.0,
         }
     }
@@ -73,13 +93,15 @@ impl LinkState {
     fn measurement(&mut self, direction: Direction, offset: UncertainValue, time: Timestamp<TAI>) {
         if let LinkState::Tracked {
             link_noise_estimator,
-            ..
+            tracked_config,
         } = self
         {
-            *link_noise_estimator =
-                link_noise_estimator
-                    .clone()
-                    .measurement(direction, offset.value, time);
+            *link_noise_estimator = link_noise_estimator.clone().measurement(
+                direction,
+                offset.value,
+                time,
+                tracked_config.longest_interval_for_delay_estimation,
+            );
         }
     }
 
@@ -703,7 +725,7 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
         first_clock: ClockId,
         second_clock: ClockId,
         config: LinkConfig,
-        decay_rate: f64,
+        tracked_config: TrackedLinkConfig,
     ) -> Result<(Self, LinkId), AlgoError> {
         let first_internal = self.estimation_state.is_internal_clock(first_clock);
         let first_external = self.estimation_state.is_external_clock(first_clock);
@@ -730,7 +752,7 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
             active: false,
             link_state: LinkState::Tracked {
                 link_noise_estimator: LinkNoiseEstimator::new(id),
-                decay_rate,
+                tracked_config,
             },
             desired_poll_interval: Duration::ZERO,
             external_link_state: if is_internal {
@@ -924,7 +946,7 @@ mod tests {
     use crate::{
         AlgoError, LinkConfig, StdKalmanStorage,
         estimator::UncertainValue,
-        filter::{LinkFilter, LinkFilterConfig},
+        filter::{LinkFilter, LinkFilterConfig, TrackedLinkConfig},
     };
 
     #[test]
@@ -979,7 +1001,12 @@ mod tests {
             .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
             .unwrap();
         let (filter, link_id) = filter
-            .add_tracked_link(clock_a, clock_b, LinkConfig::default(), 0.01)
+            .add_tracked_link(
+                clock_a,
+                clock_b,
+                LinkConfig::default(),
+                TrackedLinkConfig::default(),
+            )
             .unwrap();
 
         assert!(!filter.link_active(link_id).unwrap());
@@ -1031,13 +1058,28 @@ mod tests {
         let (filter, clock_ext_2) = filter.add_external_clock().unwrap();
         let (filter, clock_ext_3) = filter.add_external_clock().unwrap();
         let (filter, link_1) = filter
-            .add_tracked_link(clock_int, clock_ext_1, LinkConfig::default(), 0.01)
+            .add_tracked_link(
+                clock_int,
+                clock_ext_1,
+                LinkConfig::default(),
+                TrackedLinkConfig::default(),
+            )
             .unwrap();
         let (filter, link_2) = filter
-            .add_tracked_link(clock_int, clock_ext_2, LinkConfig::default(), 0.01)
+            .add_tracked_link(
+                clock_int,
+                clock_ext_2,
+                LinkConfig::default(),
+                TrackedLinkConfig::default(),
+            )
             .unwrap();
         let (filter, link_3) = filter
-            .add_tracked_link(clock_int, clock_ext_3, LinkConfig::default(), 0.01)
+            .add_tracked_link(
+                clock_int,
+                clock_ext_3,
+                LinkConfig::default(),
+                TrackedLinkConfig::default(),
+            )
             .unwrap();
 
         let filter = filter
@@ -1111,13 +1153,28 @@ mod tests {
         let (filter, clock_ext_2) = filter.add_external_clock().unwrap();
         let (filter, clock_ext_3) = filter.add_external_clock().unwrap();
         let (filter, link_1) = filter
-            .add_tracked_link(clock_int, clock_ext_1, LinkConfig::default(), 0.01)
+            .add_tracked_link(
+                clock_int,
+                clock_ext_1,
+                LinkConfig::default(),
+                TrackedLinkConfig::default(),
+            )
             .unwrap();
         let (filter, link_2) = filter
-            .add_tracked_link(clock_int, clock_ext_2, LinkConfig::default(), 0.01)
+            .add_tracked_link(
+                clock_int,
+                clock_ext_2,
+                LinkConfig::default(),
+                TrackedLinkConfig::default(),
+            )
             .unwrap();
         let (filter, link_3) = filter
-            .add_tracked_link(clock_int, clock_ext_3, LinkConfig::default(), 0.01)
+            .add_tracked_link(
+                clock_int,
+                clock_ext_3,
+                LinkConfig::default(),
+                TrackedLinkConfig::default(),
+            )
             .unwrap();
 
         let filter = filter
@@ -1191,13 +1248,28 @@ mod tests {
         let (filter, clock_ext_2) = filter.add_external_clock().unwrap();
         let (filter, clock_ext_3) = filter.add_external_clock().unwrap();
         let (filter, link_1) = filter
-            .add_tracked_link(clock_int, clock_ext_1, LinkConfig::default(), 0.01)
+            .add_tracked_link(
+                clock_int,
+                clock_ext_1,
+                LinkConfig::default(),
+                TrackedLinkConfig::default(),
+            )
             .unwrap();
         let (filter, link_2) = filter
-            .add_tracked_link(clock_int, clock_ext_2, LinkConfig::default(), 0.01)
+            .add_tracked_link(
+                clock_int,
+                clock_ext_2,
+                LinkConfig::default(),
+                TrackedLinkConfig::default(),
+            )
             .unwrap();
         let (filter, link_3) = filter
-            .add_tracked_link(clock_int, clock_ext_3, LinkConfig::default(), 0.01)
+            .add_tracked_link(
+                clock_int,
+                clock_ext_3,
+                LinkConfig::default(),
+                TrackedLinkConfig::default(),
+            )
             .unwrap();
 
         let filter = filter
@@ -1338,7 +1410,12 @@ mod tests {
             .add_clock((0.0, 0.0).into(), (0.0, 0.0).into(), 1e-8)
             .unwrap();
         let (filter, link_id) = filter
-            .add_tracked_link(clock_a, clock_b, LinkConfig::default(), 0.01)
+            .add_tracked_link(
+                clock_a,
+                clock_b,
+                LinkConfig::default(),
+                TrackedLinkConfig::default(),
+            )
             .unwrap();
 
         assert!(!filter.link_active(link_id).unwrap());
@@ -1531,7 +1608,15 @@ mod tests {
             .unwrap();
         let (filter, clock_ext_1) = filter.add_external_clock().unwrap();
         let (filter, link_1) = filter
-            .add_tracked_link(clock_int, clock_ext_1, LinkConfig::default(), 0.0)
+            .add_tracked_link(
+                clock_int,
+                clock_ext_1,
+                LinkConfig::default(),
+                TrackedLinkConfig {
+                    decay_rate: 0.0,
+                    ..TrackedLinkConfig::default()
+                },
+            )
             .unwrap();
         let filter = filter
             .external_data_update(link_1, 10.0, None, true)
@@ -1742,13 +1827,28 @@ mod tests {
         let (filter, clock_ext_2) = filter.add_external_clock().unwrap();
         let (filter, clock_ext_3) = filter.add_external_clock().unwrap();
         let (filter, link_1) = filter
-            .add_tracked_link(clock_int, clock_ext_1, LinkConfig::default(), 0.01)
+            .add_tracked_link(
+                clock_int,
+                clock_ext_1,
+                LinkConfig::default(),
+                TrackedLinkConfig::default(),
+            )
             .unwrap();
         let (filter, link_2) = filter
-            .add_tracked_link(clock_int, clock_ext_2, LinkConfig::default(), 0.01)
+            .add_tracked_link(
+                clock_int,
+                clock_ext_2,
+                LinkConfig::default(),
+                TrackedLinkConfig::default(),
+            )
             .unwrap();
         let (filter, link_3) = filter
-            .add_tracked_link(clock_int, clock_ext_3, LinkConfig::default(), 0.01)
+            .add_tracked_link(
+                clock_int,
+                clock_ext_3,
+                LinkConfig::default(),
+                TrackedLinkConfig::default(),
+            )
             .unwrap();
 
         let base_filter = filter
@@ -1957,21 +2057,36 @@ mod tests {
         assert_eq!(
             filter
                 .clone()
-                .add_tracked_link(clock_4, clock_1, LinkConfig::default(), 0.01,)
+                .add_tracked_link(
+                    clock_4,
+                    clock_1,
+                    LinkConfig::default(),
+                    TrackedLinkConfig::default()
+                )
                 .unwrap_err(),
             AlgoError::UnknownClock(clock_4)
         );
         assert_eq!(
             filter
                 .clone()
-                .add_tracked_link(clock_2, clock_4, LinkConfig::default(), 0.01,)
+                .add_tracked_link(
+                    clock_2,
+                    clock_4,
+                    LinkConfig::default(),
+                    TrackedLinkConfig::default()
+                )
                 .unwrap_err(),
             AlgoError::UnknownClock(clock_4)
         );
         assert_eq!(
             filter
                 .clone()
-                .add_tracked_link(clock_2, clock_3, LinkConfig::default(), 0.01,)
+                .add_tracked_link(
+                    clock_2,
+                    clock_3,
+                    LinkConfig::default(),
+                    TrackedLinkConfig::default()
+                )
                 .unwrap_err(),
             AlgoError::BothClocksExternal(clock_2, clock_3)
         );
@@ -2003,7 +2118,12 @@ mod tests {
             .unwrap();
         let (filter, clock_2) = filter.add_external_clock().unwrap();
         let (filter, link_1) = filter
-            .add_tracked_link(clock_1, clock_2, LinkConfig::default(), 0.1)
+            .add_tracked_link(
+                clock_1,
+                clock_2,
+                LinkConfig::default(),
+                TrackedLinkConfig::default(),
+            )
             .unwrap();
 
         assert_eq!(
