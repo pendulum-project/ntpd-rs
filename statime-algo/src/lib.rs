@@ -49,7 +49,7 @@ use statime_base::{
 
 use crate::{
     estimator::UncertainValue,
-    filter::{LinkFilter, LinkFilterConfig, TrackedLinkConfig},
+    filter::LinkFilter,
     matrix::MatrixError,
     storage::{KalmanStorageInternal, StateMutex, SteeredClockStorage},
 };
@@ -59,7 +59,10 @@ use crate::float_polyfill::FloatPolyfill;
 
 #[cfg(feature = "std")]
 pub use storage::StdKalmanStorage;
-pub use {filter::LinkConfig, storage::KalmanStorage, storage::NoAllocKalmanStorage};
+pub use {
+    filter::ControllerConfig, filter::LinkConfig, filter::TrackedLinkConfig,
+    storage::KalmanStorage, storage::NoAllocKalmanStorage,
+};
 
 /// An error that occured in the kalman controller.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,7 +146,7 @@ mod hidden {
 
     use crate::{
         ClockConfig,
-        filter::{LinkFilter, LinkFilterConfig},
+        filter::{ControllerConfig, LinkFilter},
         storage::KalmanStorageInternal,
     };
 
@@ -157,7 +160,7 @@ mod hidden {
     pub struct KalmanControllerState<Storage: KalmanStorageInternal<C>, C: Clock> {
         pub(crate) clocks: Storage::SteeredClockStorage,
         pub(crate) filter: LinkFilter<Storage>,
-        pub(crate) filter_config: LinkFilterConfig,
+        pub(crate) filter_config: ControllerConfig,
         pub(crate) root_delay: Duration,
     }
 }
@@ -176,7 +179,7 @@ impl<Storage: KalmanStorage<C>, C: Clock> KalmanController<Storage, C> {
     pub fn new(
         system_clock: C,
         system_clock_config: ClockConfig,
-        filter_config: LinkFilterConfig,
+        filter_config: ControllerConfig,
     ) -> Result<(Self, ClockId), AlgoError> {
         let start_time = system_clock.now()?;
         let (filter, id) = LinkFilter::empty(start_time).add_clock(
