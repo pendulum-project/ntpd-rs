@@ -149,7 +149,7 @@ impl LinkInfo {
     /// Returns None if the link is not with an external clock, or if the link is not usable.
     fn offset_window<Storage: KalmanStorageBase>(
         &self,
-        config: &LinkFilterConfig,
+        config: &ControllerConfig,
         state: &EstimatorState<Storage>,
     ) -> Option<OffsetWindow> {
         let external_link_state = self.external_link_state.as_ref()?;
@@ -283,8 +283,11 @@ pub struct LinkFilter<Storage: KalmanStorageBase> {
     estimation_state: EstimatorState<Storage>,
 }
 
+/// Configuration global to the [`KalmanController`](crate::KalmanController).
+///
+/// This contains parameters controlling how individual sources are selected.
 #[derive(Debug, Clone)]
-pub struct LinkFilterConfig {
+pub struct ControllerConfig {
     /// Size of the window of uncertainty to assume around source offset for
     /// judging whether it is a truechimer, based on the observed noise in the
     /// offset.
@@ -406,7 +409,7 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
     /// Returns an error if the provided link is unknown.
     pub fn measurement(
         mut self,
-        config: &LinkFilterConfig,
+        config: &ControllerConfig,
         direction: DirectedLinkId,
         mut offset: UncertainValue,
     ) -> Result<Self, AlgoError> {
@@ -606,7 +609,7 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
     }
 
     #[must_use]
-    pub fn leap_vote(&self, config: &LinkFilterConfig) -> Option<LeapStatus> {
+    pub fn leap_vote(&self, config: &ControllerConfig) -> Option<LeapStatus> {
         let consensus_window = self.find_external_consensus_window(config)?;
 
         let mut count_none = 0;
@@ -641,7 +644,7 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
     }
 
     #[must_use]
-    pub fn local_root_delay(&self, config: &LinkFilterConfig) -> Option<f64> {
+    pub fn local_root_delay(&self, config: &ControllerConfig) -> Option<f64> {
         let consensus_window = self.find_external_consensus_window(config)?;
 
         let mut best_delay = f64::MAX;
@@ -853,7 +856,7 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
         Ok(link.desired_poll_interval)
     }
 
-    fn find_external_consensus_window(&self, config: &LinkFilterConfig) -> Option<OffsetWindow> {
+    fn find_external_consensus_window(&self, config: &ControllerConfig) -> Option<OffsetWindow> {
         let mut bounds: Storage::BoundStorage = self
             .links
             .iter()
@@ -944,14 +947,14 @@ mod tests {
     use statime_base::{ClockId, Duration, LeapStatus, Timestamp};
 
     use crate::{
-        AlgoError, LinkConfig, StdKalmanStorage,
+        AlgoError, LinkConfig, StdKalmanStorage, TrackedLinkConfig,
         estimator::UncertainValue,
-        filter::{LinkFilter, LinkFilterConfig, TrackedLinkConfig},
+        filter::{ControllerConfig, LinkFilter},
     };
 
     #[test]
     fn untracked_internal_link_is_always_active() {
-        let config = LinkFilterConfig {
+        let config = ControllerConfig {
             select_offset_uncertainty_window: 2.0,
             select_link_uncertainty_window: 2.0,
             select_delay_uncertainty_window: 0.7,
@@ -985,7 +988,7 @@ mod tests {
 
     #[test]
     fn tracked_internal_link_becomes_active() {
-        let config = LinkFilterConfig {
+        let config = ControllerConfig {
             select_offset_uncertainty_window: 2.0,
             select_link_uncertainty_window: 2.0,
             select_delay_uncertainty_window: 0.7,
@@ -1042,7 +1045,7 @@ mod tests {
 
     #[test]
     fn external_links_need_consensus() {
-        let config = LinkFilterConfig {
+        let config = ControllerConfig {
             select_offset_uncertainty_window: 2.0,
             select_link_uncertainty_window: 2.0,
             select_delay_uncertainty_window: 0.7,
@@ -1351,7 +1354,7 @@ mod tests {
 
     #[test]
     fn external_links_inactive_when_unusable() {
-        let config = LinkFilterConfig {
+        let config = ControllerConfig {
             select_offset_uncertainty_window: 2.0,
             select_link_uncertainty_window: 2.0,
             select_delay_uncertainty_window: 0.7,
@@ -1394,7 +1397,7 @@ mod tests {
 
     #[test]
     fn internal_link_inactive_on_unusable_measurements() {
-        let config = LinkFilterConfig {
+        let config = ControllerConfig {
             select_offset_uncertainty_window: 2.0,
             select_link_uncertainty_window: 2.0,
             select_delay_uncertainty_window: 0.7,
@@ -1457,7 +1460,7 @@ mod tests {
 
     #[test]
     fn external_links_activity_and_steering_works() {
-        let config = LinkFilterConfig {
+        let config = ControllerConfig {
             select_offset_uncertainty_window: 2.0,
             select_link_uncertainty_window: 2.0,
             select_delay_uncertainty_window: 0.7,
@@ -1562,7 +1565,7 @@ mod tests {
 
     #[test]
     fn too_uncertain_external_links_inactive() {
-        let config = LinkFilterConfig {
+        let config = ControllerConfig {
             select_offset_uncertainty_window: 2.0,
             select_link_uncertainty_window: 2.0,
             select_delay_uncertainty_window: 0.7,
@@ -1647,7 +1650,7 @@ mod tests {
 
     #[test]
     fn periodic_internal_link() {
-        let config = LinkFilterConfig {
+        let config = ControllerConfig {
             select_offset_uncertainty_window: 2.0,
             select_link_uncertainty_window: 2.0,
             select_delay_uncertainty_window: 0.7,
@@ -1701,7 +1704,7 @@ mod tests {
 
     #[test]
     fn periodic_external_link() {
-        let config = LinkFilterConfig {
+        let config = ControllerConfig {
             select_offset_uncertainty_window: 2.0,
             select_link_uncertainty_window: 2.0,
             select_delay_uncertainty_window: 0.7,
@@ -1757,7 +1760,7 @@ mod tests {
 
     #[test]
     fn periodic_link_too_uncertain() {
-        let config = LinkFilterConfig {
+        let config = ControllerConfig {
             select_offset_uncertainty_window: 2.0,
             select_link_uncertainty_window: 2.0,
             select_delay_uncertainty_window: 0.7,
@@ -1811,7 +1814,7 @@ mod tests {
 
     #[test]
     fn leap_vote() {
-        let config = LinkFilterConfig {
+        let config = ControllerConfig {
             select_offset_uncertainty_window: 2.0,
             select_link_uncertainty_window: 2.0,
             select_delay_uncertainty_window: 0.7,
@@ -1973,7 +1976,7 @@ mod tests {
 
     #[test]
     fn local_root_delay() {
-        let config = LinkFilterConfig {
+        let config = ControllerConfig {
             select_offset_uncertainty_window: 2.0,
             select_link_uncertainty_window: 2.0,
             select_delay_uncertainty_window: 0.7,
