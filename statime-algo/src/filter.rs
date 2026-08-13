@@ -379,7 +379,6 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
             // Delay and noise not known yet, so link not yet usable, not even for basic offset estimation.
             return Ok(self);
         };
-        let decay_rate = link.link_state.decay_rate();
         let is_tracked_link = link.link_state.is_tracked();
 
         // We deal with periodic links by waiting for our underlying estimate to become sufficiently precise
@@ -403,14 +402,7 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
                     offset.value = delta + prediction.value;
                 }
             } else {
-                // Deactivate the link if it was active before
-                if link.active {
-                    link.active = false;
-                    if is_tracked_link {
-                        self.estimation_state =
-                            self.estimation_state.remove_link(direction.link_id())?;
-                    }
-                }
+                self.estimation_state = Self::deactivate_link(link, self.estimation_state)?;
                 // Clear the offset estimate because it is now unreliable
                 if let Some(external_link_state) = &mut link.external_link_state {
                     external_link_state.last_offsets = UnorderedRingBuffer::default();
@@ -455,36 +447,14 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
             if let Some(our_window) = our_window
                 && our_window.overlaps(consensus_window)
             {
-                if !link.active {
-                    link.active = true;
-                    if is_tracked_link {
-                        self.estimation_state = self.estimation_state.add_link(
-                            direction.link_id(),
-                            (estimates.delay, estimates.noise).into(),
-                            decay_rate,
-                        )?;
-                    }
-                }
+                self.estimation_state =
+                    Self::activate_link(link, self.estimation_state, estimates)?;
             } else {
-                if link.active {
-                    link.active = false;
-                    link.desired_poll_interval = Duration::ZERO;
-                    if is_tracked_link {
-                        self.estimation_state =
-                            self.estimation_state.remove_link(direction.link_id())?;
-                    }
-                }
+                self.estimation_state = Self::deactivate_link(link, self.estimation_state)?;
                 return Ok(self);
             }
-        } else if !link.active {
-            link.active = true;
-            if is_tracked_link {
-                self.estimation_state = self.estimation_state.add_link(
-                    direction.link_id(),
-                    (estimates.delay, estimates.noise).into(),
-                    decay_rate,
-                )?;
-            }
+        } else {
+            self.estimation_state = Self::activate_link(link, self.estimation_state, estimates)?;
         }
 
         self.estimation_state = self.estimation_state.measurement(
@@ -494,6 +464,42 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
         )?;
 
         self.update_desired_poll(direction.link_id())
+    }
+
+    // This is an associated function instead of a method to better deal with lifetimes
+    // in the measurement function
+    fn activate_link(
+        link: &mut LinkInfo,
+        mut estimation_state: EstimatorState<Storage>,
+        estimates: LinkDelayNoiseEstimate,
+    ) -> Result<EstimatorState<Storage>, AlgoError> {
+        if !link.active {
+            link.active = true;
+            if link.link_state.is_tracked() {
+                estimation_state = estimation_state.add_link(
+                    link.id,
+                    (estimates.delay, estimates.noise).into(),
+                    link.link_state.decay_rate(),
+                )?;
+            }
+        }
+        Ok(estimation_state)
+    }
+
+    // This is an associated function instead of a method to better deal with lifetimes
+    // in the measurement function
+    fn deactivate_link(
+        link: &mut LinkInfo,
+        mut estimation_state: EstimatorState<Storage>,
+    ) -> Result<EstimatorState<Storage>, AlgoError> {
+        if link.active {
+            link.active = false;
+            link.desired_poll_interval = Duration::ZERO;
+            if link.link_state.is_tracked() {
+                estimation_state = estimation_state.remove_link(link.id)?;
+            }
+        }
+        Ok(estimation_state)
     }
 
     fn update_desired_poll(mut self, link_id: LinkId) -> Result<Self, AlgoError> {
