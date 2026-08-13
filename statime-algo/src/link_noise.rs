@@ -5,8 +5,6 @@ use crate::float_polyfill::FloatPolyfill;
 use crate::{AlgoError, ringbuffer::UnorderedRingBuffer};
 
 const MIN_DELAYS_FOR_ESTIMATES: usize = 4;
-/// FIXME: Consider whether we want this configurable.
-const MAX_TIME_BETWEEN_HALVES: Duration = Duration::from_seconds_nanos(0, 500_000_000);
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct PreviousMeasurement {
@@ -46,10 +44,11 @@ impl LinkNoiseEstimator {
         direction: Direction,
         offset: f64,
         time: Timestamp<TAI>,
+        max_time_between_halves: Duration,
     ) -> LinkNoiseEstimator {
         if let Some(prev_measurement) = self.prev_measurement.take()
             && prev_measurement.direction.is_reverse_of(direction)
-            && time - prev_measurement.time < MAX_TIME_BETWEEN_HALVES
+            && time - prev_measurement.time < max_time_between_halves
         {
             self.roundtrip_delays
                 .insert(prev_measurement.offset + offset);
@@ -172,14 +171,54 @@ mod tests {
         let link = LinkId::new(clock_1, clock_2).unwrap();
 
         let state = LinkNoiseEstimator::new(link)
-            .measurement(Direction::Forward, 1.0, Timestamp::UNIX_EPOCH)
-            .measurement(Direction::Reverse, 1.0, Timestamp::UNIX_EPOCH)
-            .measurement(Direction::Forward, 1.0, Timestamp::UNIX_EPOCH)
-            .measurement(Direction::Reverse, 1.0, Timestamp::UNIX_EPOCH)
-            .measurement(Direction::Forward, 1.0, Timestamp::UNIX_EPOCH)
-            .measurement(Direction::Reverse, 1.0, Timestamp::UNIX_EPOCH)
-            .measurement(Direction::Forward, 1.0, Timestamp::UNIX_EPOCH)
-            .measurement(Direction::Reverse, 1.0, Timestamp::UNIX_EPOCH);
+            .measurement(
+                Direction::Forward,
+                1.0,
+                Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
+            )
+            .measurement(
+                Direction::Reverse,
+                1.0,
+                Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
+            )
+            .measurement(
+                Direction::Forward,
+                1.0,
+                Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
+            )
+            .measurement(
+                Direction::Reverse,
+                1.0,
+                Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
+            )
+            .measurement(
+                Direction::Forward,
+                1.0,
+                Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
+            )
+            .measurement(
+                Direction::Reverse,
+                1.0,
+                Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
+            )
+            .measurement(
+                Direction::Forward,
+                1.0,
+                Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
+            )
+            .measurement(
+                Direction::Reverse,
+                1.0,
+                Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
+            );
 
         assert_eq!(state.noise_estimate().unwrap(), 0.0);
         assert_eq!(state.delay_estimate().unwrap(), 1.0);
@@ -192,14 +231,54 @@ mod tests {
         let link = LinkId::new(clock_1, clock_2).unwrap();
 
         let state = LinkNoiseEstimator::new(link)
-            .measurement(Direction::Forward, 1.0, Timestamp::UNIX_EPOCH)
-            .measurement(Direction::Reverse, 1.0, Timestamp::UNIX_EPOCH)
-            .measurement(Direction::Forward, 1.0, Timestamp::UNIX_EPOCH)
-            .measurement(Direction::Reverse, 1.0, Timestamp::UNIX_EPOCH)
-            .measurement(Direction::Forward, 0.5, Timestamp::UNIX_EPOCH)
-            .measurement(Direction::Reverse, 0.5, Timestamp::UNIX_EPOCH)
-            .measurement(Direction::Forward, 0.5, Timestamp::UNIX_EPOCH)
-            .measurement(Direction::Reverse, 0.5, Timestamp::UNIX_EPOCH);
+            .measurement(
+                Direction::Forward,
+                1.0,
+                Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
+            )
+            .measurement(
+                Direction::Reverse,
+                1.0,
+                Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
+            )
+            .measurement(
+                Direction::Forward,
+                1.0,
+                Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
+            )
+            .measurement(
+                Direction::Reverse,
+                1.0,
+                Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
+            )
+            .measurement(
+                Direction::Forward,
+                0.5,
+                Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
+            )
+            .measurement(
+                Direction::Reverse,
+                0.5,
+                Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
+            )
+            .measurement(
+                Direction::Forward,
+                0.5,
+                Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
+            )
+            .measurement(
+                Direction::Reverse,
+                0.5,
+                Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
+            );
 
         assert_almost_eq!(state.noise_estimate().unwrap(), 1.0 / (6.0f64.sqrt()));
         assert_eq!(state.delay_estimate().unwrap(), 0.75);
@@ -215,47 +294,65 @@ mod tests {
         let delay_uncertainty = 0.1;
 
         let state = LinkNoiseEstimator::new(link)
-            .measurement(Direction::Forward, delay, Timestamp::UNIX_EPOCH)
-            .measurement(Direction::Reverse, delay, Timestamp::UNIX_EPOCH)
+            .measurement(
+                Direction::Forward,
+                delay,
+                Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
+            )
+            .measurement(
+                Direction::Reverse,
+                delay,
+                Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
+            )
             .measurement(
                 Direction::Forward,
                 delay + delay_uncertainty / 2.0f64.sqrt(),
                 Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Reverse,
                 delay + delay_uncertainty / 2.0f64.sqrt(),
                 Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Forward,
                 delay + delay_uncertainty / 2.0f64.sqrt(),
                 Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Reverse,
                 delay + delay_uncertainty / 2.0f64.sqrt(),
                 Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Forward,
                 delay - delay_uncertainty / 2.0f64.sqrt(),
                 Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Reverse,
                 delay - delay_uncertainty / 2.0f64.sqrt(),
                 Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Forward,
                 delay - delay_uncertainty / 2.0f64.sqrt(),
                 Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Reverse,
                 delay - delay_uncertainty / 2.0f64.sqrt(),
                 Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
             );
 
         assert_almost_eq!(state.delay_estimate().unwrap(), delay);
@@ -269,41 +366,53 @@ mod tests {
         let link = LinkId::new(clock_1, clock_2).unwrap();
 
         let state = LinkNoiseEstimator::new(link)
-            .measurement(Direction::Forward, 1.0, Timestamp::UNIX_EPOCH)
+            .measurement(
+                Direction::Forward,
+                1.0,
+                Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
+            )
             .measurement(
                 Direction::Reverse,
                 1.0,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(0, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Forward,
                 1.0,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(10, 0),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Reverse,
                 1.0,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(10, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Forward,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(20, 0),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Reverse,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(20, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Forward,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(30, 0),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Reverse,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(30, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             );
 
         assert_almost_eq!(state.noise_estimate().unwrap(), 1.0 / (6.0f64.sqrt()));
@@ -317,41 +426,53 @@ mod tests {
         let link = LinkId::new(clock_1, clock_2).unwrap();
 
         let state = LinkNoiseEstimator::new(link)
-            .measurement(Direction::Forward, 1.0, Timestamp::UNIX_EPOCH)
+            .measurement(
+                Direction::Forward,
+                1.0,
+                Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
+            )
             .measurement(
                 Direction::Reverse,
                 1.0,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(0, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Forward,
                 1.0,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(10, 0),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Reverse,
                 1.0,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(10, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Forward,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(20, 0),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Reverse,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(20, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Forward,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(30, 0),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Reverse,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(30, 600_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             );
 
         assert_eq!(
@@ -372,42 +493,54 @@ mod tests {
         let link = LinkId::new(clock_1, clock_2).unwrap();
 
         let state = LinkNoiseEstimator::new(link)
-            .measurement(Direction::Forward, 1.0, Timestamp::UNIX_EPOCH)
+            .measurement(
+                Direction::Forward,
+                1.0,
+                Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
+            )
             .measurement(
                 Direction::Reverse,
                 1.0,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(0, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Forward,
                 1.0,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(10, 0),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Reverse,
                 1.0,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(10, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Forward,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(20, 0),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Reverse,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(20, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Forward,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(30, 0),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .absorb_offset_change(clock_1)
             .measurement(
                 Direction::Reverse,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(30, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             );
 
         assert_eq!(
@@ -420,42 +553,54 @@ mod tests {
         );
 
         let state = LinkNoiseEstimator::new(link)
-            .measurement(Direction::Forward, 1.0, Timestamp::UNIX_EPOCH)
+            .measurement(
+                Direction::Forward,
+                1.0,
+                Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
+            )
             .measurement(
                 Direction::Reverse,
                 1.0,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(0, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Forward,
                 1.0,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(10, 0),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Reverse,
                 1.0,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(10, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Forward,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(20, 0),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Reverse,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(20, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Forward,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(30, 0),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .absorb_offset_change(clock_2)
             .measurement(
                 Direction::Reverse,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(30, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             );
 
         assert_eq!(
@@ -468,42 +613,54 @@ mod tests {
         );
 
         let state = LinkNoiseEstimator::new(link)
-            .measurement(Direction::Forward, 1.0, Timestamp::UNIX_EPOCH)
+            .measurement(
+                Direction::Forward,
+                1.0,
+                Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
+            )
             .measurement(
                 Direction::Reverse,
                 1.0,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(0, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Forward,
                 1.0,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(10, 0),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Reverse,
                 1.0,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(10, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Forward,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(20, 0),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Reverse,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(20, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Forward,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(30, 0),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .absorb_offset_change(clock_3)
             .measurement(
                 Direction::Reverse,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(30, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             );
 
         assert_almost_eq!(state.noise_estimate().unwrap(), 1.0 / (6.0f64.sqrt()));
@@ -518,42 +675,54 @@ mod tests {
         let link = LinkId::new(clock_1, clock_2).unwrap();
 
         let state = LinkNoiseEstimator::new(link)
-            .measurement(Direction::Forward, 1.0, Timestamp::UNIX_EPOCH)
+            .measurement(
+                Direction::Forward,
+                1.0,
+                Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
+            )
             .measurement(
                 Direction::Reverse,
                 1.0,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(0, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Forward,
                 1.0,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(10, 0),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Reverse,
                 1.0,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(10, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Forward,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(20, 0),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Reverse,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(20, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Forward,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(30, 0),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .absorb_system_clock_offset_change(clock_1, Duration::from_seconds_nanos(1, 0))
             .measurement(
                 Direction::Reverse,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(31, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             );
 
         assert_eq!(
@@ -566,42 +735,54 @@ mod tests {
         );
 
         let state = LinkNoiseEstimator::new(link)
-            .measurement(Direction::Forward, 1.0, Timestamp::UNIX_EPOCH)
+            .measurement(
+                Direction::Forward,
+                1.0,
+                Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
+            )
             .measurement(
                 Direction::Reverse,
                 1.0,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(0, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Forward,
                 1.0,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(10, 0),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Reverse,
                 1.0,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(10, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Forward,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(20, 0),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Reverse,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(20, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Forward,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(30, 0),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .absorb_system_clock_offset_change(clock_2, Duration::from_seconds_nanos(1, 0))
             .measurement(
                 Direction::Reverse,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(31, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             );
 
         assert_eq!(
@@ -614,42 +795,54 @@ mod tests {
         );
 
         let state = LinkNoiseEstimator::new(link)
-            .measurement(Direction::Forward, 1.0, Timestamp::UNIX_EPOCH)
+            .measurement(
+                Direction::Forward,
+                1.0,
+                Timestamp::UNIX_EPOCH,
+                Duration::from_seconds_nanos(0, 500_000_000),
+            )
             .measurement(
                 Direction::Reverse,
                 1.0,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(0, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Forward,
                 1.0,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(10, 0),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Reverse,
                 1.0,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(10, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Forward,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(20, 0),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Reverse,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(20, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .measurement(
                 Direction::Forward,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(30, 0),
+                Duration::from_seconds_nanos(0, 500_000_000),
             )
             .absorb_system_clock_offset_change(clock_3, Duration::from_seconds_nanos(1, 0))
             .measurement(
                 Direction::Reverse,
                 0.5,
                 Timestamp::UNIX_EPOCH + Duration::from_seconds_nanos(31, 400_000_000),
+                Duration::from_seconds_nanos(0, 500_000_000),
             );
 
         assert_almost_eq!(state.noise_estimate().unwrap(), 1.0 / (6.0f64.sqrt()));
