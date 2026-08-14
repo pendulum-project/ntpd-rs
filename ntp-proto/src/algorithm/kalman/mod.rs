@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt::Debug, time::Duration};
 
 pub(crate) use source::AveragingBuffer;
 use source::OneWayKalmanSourceController;
-use statime_base::LeapStatus;
+use statime_base::{LeapStatus, TimeSnapshot};
 use tracing::{debug, error, info, warn};
 
 use crate::{
@@ -11,7 +11,6 @@ use crate::{
     clock::NtpClock,
     config::{SourceConfig, SynchronizationConfig},
     packet::NtpLeapIndicator,
-    system::TimeSnapshot,
     time_types::{NtpDuration, NtpTimestamp},
 };
 

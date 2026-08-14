@@ -14,9 +14,10 @@ use ntp_proto::{
     test_cookie, v5::BloomFilter, EncryptResult, ExtensionField, ExtensionHeaderVersion,
     FilterAction, FilterList, HandleInnerData, KeySetProvider, NtpClock, NtpDuration,
     NtpLeapIndicator, NtpServerInfo, NtpSnapshot, NtpTimestamp, NtpVersion, ReferenceId, Server,
-    ServerConfig, ServerReason, ServerResponse, ServerStatHandler, TimeSnapshot,
+    ServerConfig, ServerReason, ServerResponse, ServerStatHandler,
 };
 use rand::{rngs::StdRng, set_thread_rng, SeedableRng};
+use statime_base::TimeSnapshot;
 
 const fn next_multiple_of(lhs: u16, rhs: u16) -> u16 {
     match lhs % rhs {

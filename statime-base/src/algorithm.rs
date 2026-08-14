@@ -1,5 +1,8 @@
 use crate::{Clock, ClockId, Direction, Duration, LeapStatus, TAI, Timestamp};
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 /// A controller for clocks in a system.
 pub trait Controller {
     /// Type of clocks which are managed by this controller
@@ -119,4 +122,63 @@ pub struct Measurement {
     pub recv_timestamp: Timestamp<TAI>,
     /// The uncertainty of the timestamps.
     pub uncertainty: Duration,
+}
+
+/// Snapshot of the synchronization state of a clock.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct TimeSnapshot {
+    /// Precision of the local clock
+    pub precision: Duration,
+    /// Current root delay
+    pub root_delay: Duration,
+    /// t=0 for root variance calculation
+    pub root_variance_base_time: Timestamp<TAI>,
+    /// Constant contribution for root variance
+    pub root_variance_base: f64,
+    /// Linear (*t) contribution for root variance
+    pub root_variance_linear: f64,
+    /// Quadratic (*t*t) contribution for root variance
+    pub root_variance_quadratic: f64,
+    /// Cubic (*t*t*t) contribution for root variance
+    pub root_variance_cubic: f64,
+    /// Current leap indicator state
+    pub leap_indicator: Option<LeapStatus>,
+    /// Total amount that the clock has stepped
+    pub accumulated_steps: Duration,
+    /// Crossing this amount of stepping will cause a Panic
+    pub accumulated_steps_threshold: Option<Duration>,
+}
+
+impl TimeSnapshot {
+    /// Root dispersion at the current time.
+    #[must_use]
+    pub fn root_dispersion(&self, now: Timestamp<TAI>) -> Duration {
+        let t = (now - self.root_variance_base_time).as_seconds();
+        // Note: dispersion is the standard deviation, so we need a sqrt here.
+        Duration::from_f64_seconds(
+            (self.root_variance_base
+                + t * self.root_variance_linear
+                + t.powi(2) * self.root_variance_quadratic
+                + t.powi(3) * self.root_variance_cubic)
+                .sqrt(),
+        )
+    }
+}
+
+impl Default for TimeSnapshot {
+    fn default() -> Self {
+        Self {
+            precision: Duration::from_seconds_nanos(0, 1),
+            root_delay: Duration::ZERO,
+            root_variance_base_time: Timestamp::UNIX_EPOCH,
+            root_variance_base: 0.0,
+            root_variance_linear: 0.0,
+            root_variance_quadratic: 0.0,
+            root_variance_cubic: 0.0,
+            leap_indicator: None,
+            accumulated_steps: Duration::ZERO,
+            accumulated_steps_threshold: None,
+        }
+    }
 }

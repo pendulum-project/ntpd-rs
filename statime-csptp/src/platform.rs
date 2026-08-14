@@ -1,6 +1,7 @@
 use core::cell::RefCell;
 
-use ntp_proto::{ClockId, TimeSnapshot};
+use ntp_proto::ClockId;
+use statime_base::TimeSnapshot;
 
 use crate::CsptpState;
 

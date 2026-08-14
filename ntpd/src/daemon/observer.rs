@@ -198,9 +198,9 @@ mod tests {
     use ntp_proto::v5::BloomFilter;
     use ntp_proto::{
         NtpDuration, NtpLeapIndicator, NtpSnapshot, NtpTimestamp, ObservableSourceTimedata,
-        PollIntervalLimits, Reach, ReferenceId, TimeSnapshot,
+        PollIntervalLimits, Reach, ReferenceId,
     };
-    use statime_base::{LeapStatus, Timestamp};
+    use statime_base::{LeapStatus, TimeSnapshot, Timestamp};
     use tokio::{io::AsyncReadExt, net::UnixStream};
 
     use crate::test::alloc_port;
