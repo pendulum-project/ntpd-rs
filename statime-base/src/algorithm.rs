@@ -16,18 +16,6 @@ pub trait Controller {
     /// Configuration for tracked links (links on which delay is automatically estimated)
     type TrackedLinkConfig;
 
-    /// Add an external clock to the controller.
-    ///
-    /// # Errors
-    /// May error if the controller is unable to handle more external clocks.
-    fn add_external_clock(&self) -> Result<ClockId, Self::Error>;
-
-    /// Remove an external clock from the controller.
-    ///
-    /// # Errors
-    /// May error if the external clock in question is not known to the controller.
-    fn remove_external_clock(&self, id: ClockId) -> Result<(), Self::Error>;
-
     /// Add an internal, steered clock to the controller.
     ///
     /// # Errors
@@ -59,7 +47,7 @@ pub trait Controller {
     fn create_tracked_link<ControllerRef: AsRef<Self>>(
         this: ControllerRef,
         clock_a: ClockId,
-        clock_b: ClockId,
+        clock_b: Option<ClockId>,
         config: Self::LinkConfig,
         tracked_config: Self::TrackedLinkConfig,
     ) -> Result<Self::Link<ControllerRef>, Self::Error>;
@@ -75,7 +63,7 @@ pub trait Controller {
     fn create_untracked_link<ControllerRef: AsRef<Self>>(
         this: ControllerRef,
         clock_a: ClockId,
-        clock_b: ClockId,
+        clock_b: Option<ClockId>,
         config: Self::LinkConfig,
     ) -> Result<Self::Link<ControllerRef>, Self::Error>;
 }
