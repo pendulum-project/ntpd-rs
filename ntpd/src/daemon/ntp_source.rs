@@ -405,10 +405,10 @@ mod tests {
     use ntp_proto::{
         AlgorithmConfig, KalmanClockController, NoCipher, NtpDuration, NtpLeapIndicator,
         NtpManager, NtpPacket, NtpServerInfo, ProtocolVersion, SourceConfig, SynchronizationConfig,
-        TimeSnapshot, TimeSyncController, TimeSyncControllerWrapper, TwoWayKalmanSourceController,
+        TimeSyncController, TimeSyncControllerWrapper, TwoWayKalmanSourceController,
         TwoWaySourceControllerWrapper,
     };
-    use statime_base::LeapStatus;
+    use statime_base::{LeapStatus, TimeSnapshot};
     use timestamped_socket::socket::{GeneralTimestampMode, Open, open_ip};
     use tokio::sync::mpsc;
 

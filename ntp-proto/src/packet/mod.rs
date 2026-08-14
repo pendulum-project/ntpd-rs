@@ -1378,9 +1378,10 @@ impl Default for NtpPacket<'_> {
     reason = "Long tests are not really a big problem"
 )]
 mod tests {
+    use statime_base::TimeSnapshot;
+
     use crate::{
-        NtpSnapshot, keyset::KeySetProvider, nts::AeadAlgorithm, system::TimeSnapshot,
-        time_types::PollIntervalLimits,
+        NtpSnapshot, keyset::KeySetProvider, nts::AeadAlgorithm, time_types::PollIntervalLimits,
     };
 
     use super::*;

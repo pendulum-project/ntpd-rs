@@ -6,12 +6,12 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use statime_base::TimeSnapshot;
 
 use crate::{
     ClockId, NtpLeapIndicator, PollInterval,
     clock::NtpClock,
     config::{SourceConfig, SynchronizationConfig},
-    system::TimeSnapshot,
     time_types::{NtpDuration, NtpTimestamp},
 };
 

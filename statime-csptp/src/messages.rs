@@ -1,7 +1,6 @@
 use core::ops::Deref;
 
-use ntp_proto::TimeSnapshot;
-use statime_base::LeapStatus;
+use statime_base::{LeapStatus, TimeSnapshot};
 use statime_wire::{
     ClockIdentity, FollowUpMessage, Header, Message, MessageBody, PortIdentity, PtpVersion, SdoId,
     SyncMessage, TimeInterval, Timestamp, TlvSetBuilder, TlvType,
