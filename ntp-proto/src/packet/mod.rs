@@ -2,6 +2,7 @@ use std::{borrow::Cow, io::Cursor};
 
 use rand::{Rng, thread_rng};
 use serde::{Deserialize, Serialize};
+use statime_base::LeapStatus;
 
 use crate::{
     MAX_COOKIES, NtpVersion,
@@ -39,6 +40,16 @@ pub enum NtpLeapIndicator {
     // this to encode both, but long term we might want a different approach here.
     Unknown,
     Unsynchronized,
+}
+
+impl From<LeapStatus> for NtpLeapIndicator {
+    fn from(value: LeapStatus) -> Self {
+        match value {
+            LeapStatus::None => NtpLeapIndicator::NoWarning,
+            LeapStatus::Leap59 => NtpLeapIndicator::Leap59,
+            LeapStatus::Leap61 => NtpLeapIndicator::Leap61,
+        }
+    }
 }
 
 impl NtpLeapIndicator {
@@ -241,17 +252,31 @@ impl NtpHeaderV3V4 {
     ) -> Self {
         Self {
             mode: NtpAssociationMode::Server,
-            stratum: server_info.ntp_snapshot.stratum,
+            stratum: if server_info.ntp_snapshot.stratum < 16 {
+                server_info.ntp_snapshot.stratum
+            } else {
+                0
+            },
             origin_timestamp: input.transmit_timestamp,
             receive_timestamp: recv_timestamp,
             reference_id: server_info.ntp_snapshot.reference_id,
             poll: input.poll,
             precision: server_info.time_snapshot.precision.log2(),
-            root_delay: server_info.time_snapshot.root_delay,
-            root_dispersion: server_info.time_snapshot.root_dispersion(recv_timestamp),
+            root_delay: server_info.time_snapshot.root_delay.into(),
+            root_dispersion: server_info
+                .time_snapshot
+                .root_dispersion(recv_timestamp.into())
+                .into(),
             // Timestamp must be last to make it as accurate as possible.
             transmit_timestamp: clock.now().expect("Failed to read time"),
-            leap: server_info.time_snapshot.leap_indicator,
+            leap: if server_info.ntp_snapshot.stratum < 16 {
+                server_info
+                    .time_snapshot
+                    .leap_indicator
+                    .map_or(NtpLeapIndicator::NoWarning, NtpLeapIndicator::from)
+            } else {
+                NtpLeapIndicator::Unsynchronized
+            },
             reference_timestamp: recv_timestamp.truncated_second_bits(7),
         }
     }
@@ -1354,7 +1379,7 @@ impl Default for NtpPacket<'_> {
 )]
 mod tests {
     use crate::{
-        keyset::KeySetProvider, nts::AeadAlgorithm, system::TimeSnapshot,
+        NtpSnapshot, keyset::KeySetProvider, nts::AeadAlgorithm, system::TimeSnapshot,
         time_types::PollIntervalLimits,
     };
 
@@ -1782,10 +1807,13 @@ mod tests {
         let response = NtpPacket::timestamp_response(
             NtpServerInfo {
                 time_snapshot: TimeSnapshot {
-                    leap_indicator: NtpLeapIndicator::Leap59,
+                    leap_indicator: Some(LeapStatus::Leap59),
                     ..Default::default()
                 },
-                ..Default::default()
+                ntp_snapshot: NtpSnapshot {
+                    stratum: 2,
+                    ..Default::default()
+                },
             },
             packet,
             NtpTimestamp::from_fixed_int(0),

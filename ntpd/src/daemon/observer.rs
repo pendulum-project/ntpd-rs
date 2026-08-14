@@ -192,13 +192,15 @@ async fn handle_connection(
 
 #[cfg(test)]
 mod tests {
-    use std::{borrow::BorrowMut, time::Duration};
+    use std::borrow::BorrowMut;
+    use std::time::Duration;
 
     use ntp_proto::v5::BloomFilter;
     use ntp_proto::{
         NtpDuration, NtpLeapIndicator, NtpSnapshot, NtpTimestamp, ObservableSourceTimedata,
         PollIntervalLimits, Reach, ReferenceId, TimeSnapshot,
     };
+    use statime_base::{LeapStatus, Timestamp};
     use tokio::{io::AsyncReadExt, net::UnixStream};
 
     use crate::test::alloc_port;
@@ -281,15 +283,15 @@ mod tests {
                 bloom_filter: BloomFilter::new(),
             },
             time_snapshot: TimeSnapshot {
-                precision: NtpDuration::from_seconds(1e-3),
-                root_delay: NtpDuration::ZERO,
-                root_variance_base_time: NtpTimestamp::default(),
+                precision: statime_base::Duration::from_f64_seconds(1e-3),
+                root_delay: statime_base::Duration::ZERO,
+                root_variance_base_time: Timestamp::UNIX_EPOCH,
                 root_variance_base: 0.0,
                 root_variance_linear: 0.0,
                 root_variance_quadratic: 0.0,
                 root_variance_cubic: 0.0,
-                leap_indicator: NtpLeapIndicator::Leap59,
-                accumulated_steps: NtpDuration::ZERO,
+                leap_indicator: Some(LeapStatus::Leap59),
+                accumulated_steps: statime_base::Duration::ZERO,
                 accumulated_steps_threshold: None,
             },
         });
@@ -358,15 +360,15 @@ mod tests {
                 bloom_filter: BloomFilter::new(),
             },
             time_snapshot: TimeSnapshot {
-                precision: NtpDuration::from_seconds(1e-3),
-                root_delay: NtpDuration::ZERO,
-                root_variance_base_time: NtpTimestamp::default(),
+                precision: statime_base::Duration::from_f64_seconds(1e-3),
+                root_delay: statime_base::Duration::ZERO,
+                root_variance_base_time: statime_base::Timestamp::UNIX_EPOCH,
                 root_variance_base: 0.0,
                 root_variance_linear: 0.0,
                 root_variance_quadratic: 0.0,
                 root_variance_cubic: 0.0,
-                leap_indicator: NtpLeapIndicator::Leap59,
-                accumulated_steps: NtpDuration::ZERO,
+                leap_indicator: Some(LeapStatus::Leap59),
+                accumulated_steps: statime_base::Duration::ZERO,
                 accumulated_steps_threshold: None,
             },
         });

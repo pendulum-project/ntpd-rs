@@ -10,8 +10,8 @@ use std::{
 use serde::{Deserialize, Deserializer, de};
 
 use crate::{
-    Cipher, KeySet, NtpClock, NtpPacket, NtpTimestamp, NtpVersion, PacketParsingError,
-    ipfilter::IpFilter, system::NtpServerInfo,
+    Cipher, KeySet, NtpClock, NtpPacket, NtpVersion, PacketParsingError, ipfilter::IpFilter,
+    system::NtpServerInfo, time_types::NtpTimestamp,
 };
 
 pub enum ServerAction<'a> {
@@ -496,8 +496,8 @@ mod tests {
     use std::net::{Ipv4Addr, Ipv6Addr};
 
     use crate::{
-        Cipher, DecodedServerCookie, KeySetProvider, NoCipher, NtpDuration, NtpLeapIndicator,
-        PollIntervalLimits, nts::AeadAlgorithm, packet::AesSivCmac256,
+        Cipher, DecodedServerCookie, KeySetProvider, NoCipher, NtpLeapIndicator, NtpSnapshot,
+        PollIntervalLimits, nts::AeadAlgorithm, packet::AesSivCmac256, time_types::NtpDuration,
     };
 
     use super::*;
@@ -602,8 +602,18 @@ mod tests {
         };
         let mut stats = TestStatHandler::default();
 
-        let mut server =
-            Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());
+        let mut server = Server::new_internal(
+            config,
+            clock,
+            Arc::new(RwLock::new(NtpServerInfo {
+                ntp_snapshot: NtpSnapshot {
+                    stratum: 2,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })),
+            KeySetProvider::new(1).get(),
+        );
 
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
         let serialized = serialize_packet_unencrypted(&packet);
@@ -712,8 +722,18 @@ mod tests {
         };
         let mut stats = TestStatHandler::default();
 
-        let mut server =
-            Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());
+        let mut server = Server::new_internal(
+            config,
+            clock,
+            Arc::new(RwLock::new(NtpServerInfo {
+                ntp_snapshot: NtpSnapshot {
+                    stratum: 2,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })),
+            KeySetProvider::new(1).get(),
+        );
 
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
         let serialized = serialize_packet_unencrypted(&packet);
@@ -822,8 +842,18 @@ mod tests {
         };
         let mut stats = TestStatHandler::default();
 
-        let mut server =
-            Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());
+        let mut server = Server::new_internal(
+            config,
+            clock,
+            Arc::new(RwLock::new(NtpServerInfo {
+                ntp_snapshot: NtpSnapshot {
+                    stratum: 2,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })),
+            KeySetProvider::new(1).get(),
+        );
 
         let (packet, id) = NtpPacket::poll_message(PollIntervalLimits::default().min);
         let serialized = serialize_packet_unencrypted(&packet);
@@ -918,8 +948,18 @@ mod tests {
         let clock = TestClock {
             cur: NtpTimestamp::from_fixed_int(200),
         };
-        let mut server =
-            Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());
+        let mut server = Server::new_internal(
+            config,
+            clock,
+            Arc::new(RwLock::new(NtpServerInfo {
+                ntp_snapshot: NtpSnapshot {
+                    stratum: 2,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })),
+            KeySetProvider::new(1).get(),
+        );
 
         let mut buf = [0; 48];
         let response = server.handle(
@@ -1250,7 +1290,18 @@ mod tests {
         let mut stats = TestStatHandler::default();
         let keyset = KeySetProvider::new(1).get();
 
-        let mut server = Server::new_internal(config, clock, Arc::default(), keyset.clone());
+        let mut server = Server::new_internal(
+            config,
+            clock,
+            Arc::new(RwLock::new(NtpServerInfo {
+                ntp_snapshot: NtpSnapshot {
+                    stratum: 2,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })),
+            keyset.clone(),
+        );
 
         let decodedcookie = DecodedServerCookie {
             algorithm: AeadAlgorithm::AeadAesSivCmac256,
@@ -1443,8 +1494,18 @@ mod tests {
         };
         let mut stats = TestStatHandler::default();
 
-        let mut server =
-            Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());
+        let mut server = Server::new_internal(
+            config,
+            clock,
+            Arc::new(RwLock::new(NtpServerInfo {
+                ntp_snapshot: NtpSnapshot {
+                    stratum: 2,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })),
+            KeySetProvider::new(1).get(),
+        );
 
         let (packet, id) = NtpPacket::poll_message_v5(PollIntervalLimits::default().min);
         let serialized = serialize_packet_unencrypted(&packet);

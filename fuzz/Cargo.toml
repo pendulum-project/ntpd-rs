@@ -22,6 +22,9 @@ features = ["__internal-fuzz"]
 [dependencies.statime-wire]
 path = "../statime-wire"
 
+[dependencies.statime-base]
+path = "../statime-base"
+
 # Prevent this from interfering with workspaces
 [workspace]
 members = ["."]

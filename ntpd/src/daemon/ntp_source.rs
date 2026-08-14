@@ -408,6 +408,7 @@ mod tests {
         TimeSnapshot, TimeSyncController, TimeSyncControllerWrapper, TwoWayKalmanSourceController,
         TwoWaySourceControllerWrapper,
     };
+    use statime_base::LeapStatus;
     use timestamped_socket::socket::{GeneralTimestampMode, Open, open_ip};
     use tokio::sync::mpsc;
 
@@ -627,7 +628,7 @@ mod tests {
 
         let server_info = NtpServerInfo {
             time_snapshot: TimeSnapshot {
-                leap_indicator: NtpLeapIndicator::NoWarning,
+                leap_indicator: Some(LeapStatus::None),
                 ..Default::default()
             },
             ..Default::default()

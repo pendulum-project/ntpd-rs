@@ -3,6 +3,7 @@ use rand::{
     distributions::{Distribution, Standard},
 };
 use serde::{Deserialize, Serialize, de::Unexpected};
+use statime_base::{TAI, Timestamp};
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::time::Duration;
 
@@ -17,6 +18,30 @@ impl std::fmt::Debug for NtpTimestamp {
         f.debug_tuple("NtpTimestamp")
             .field(&self.timestamp)
             .finish()
+    }
+}
+
+// Epoch offset between NTP and UNIX TAI timescales
+// FIXME: More properly deal with TAI vs UTC
+const EPOCH_OFFSET: statime_base::Duration =
+    statime_base::Duration::from_seconds_nanos((70 * 365 + 17) * 86400 + 37, 0);
+
+impl From<Timestamp<TAI>> for NtpTimestamp {
+    fn from(value: Timestamp<TAI>) -> Self {
+        let steps = (value - Timestamp::UNIX_EPOCH + EPOCH_OFFSET).as_raw_steps();
+        // We want wrapping here, so cast is fine
+        NtpTimestamp {
+            timestamp: (steps >> 32) as u64,
+        }
+    }
+}
+
+// FIXME: Remove the need for this as it is problematic for the ntp rollover
+impl From<NtpTimestamp> for Timestamp<TAI> {
+    fn from(value: NtpTimestamp) -> Self {
+        Timestamp::UNIX_EPOCH
+            + statime_base::Duration::from_raw_steps((value.timestamp as i128) << 32)
+            - EPOCH_OFFSET
     }
 }
 
@@ -161,6 +186,26 @@ pub struct NtpDuration {
 impl std::fmt::Debug for NtpDuration {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "NtpDuration({} ms)", self.to_seconds() * 1e3)
+    }
+}
+
+impl From<statime_base::Duration> for NtpDuration {
+    fn from(value: statime_base::Duration) -> Self {
+        NtpDuration {
+            duration: (value.as_raw_steps() >> 32).try_into().unwrap_or_else(|_| {
+                if value.as_raw_steps() > 0 {
+                    i64::MAX
+                } else {
+                    i64::MIN
+                }
+            }),
+        }
+    }
+}
+
+impl From<NtpDuration> for statime_base::Duration {
+    fn from(value: NtpDuration) -> Self {
+        statime_base::Duration::from_raw_steps((value.duration as i128) << 32)
     }
 }
 

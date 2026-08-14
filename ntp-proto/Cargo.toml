@@ -26,19 +26,20 @@ __internal-test = ["__internal-api"]
 __internal-api = []
 
 [dependencies]
-# Note: md5 is needed to calculate ReferenceIDs for IPv6 addresses per RFC5905
+arbitrary = { workspace = true, optional = true }
 rand = { workspace = true, features = ["std", "std_rng"] }
-tracing.workspace = true
-tokio = { workspace = true, features = ["io-util", "time"] }
-tokio-rustls.workspace = true
-serde.workspace = true
 rustls23.workspace = true
 rustls-openssl = { workspace = true, optional = true }
 rustls-platform-verifier.workspace = true
-arbitrary = { workspace = true, optional = true }
+serde.workspace = true
+statime-base = { workspace = true, features = ["serde"] }
+tokio = { workspace = true, features = ["io-util", "time"] }
+tokio-rustls.workspace = true
+tracing.workspace = true
 zeroize.workspace = true
 
 # crypto
+# Note: md5 is needed to calculate ReferenceIDs for IPv6 addresses per RFC5905
 md-5 = { workspace = true, optional = true }
 aead = { workspace = true, optional = true }
 aes-siv = { workspace = true, optional = true }

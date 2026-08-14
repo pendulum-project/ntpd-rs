@@ -266,12 +266,12 @@ fn print_state_plain(output: &ObservableState) {
         output
             .system
             .time_snapshot
-            .root_dispersion(output.program.now)
-            .to_seconds(),
+            .root_dispersion(output.program.now.into())
+            .as_seconds(),
     );
     println!(
         "\tDelay:\t\t{:.6}s",
-        output.system.time_snapshot.root_delay.to_seconds()
+        output.system.time_snapshot.root_delay.as_seconds()
     );
     println!("\tStratum:\t{}", output.system.ntp_snapshot.stratum);
     println!();
