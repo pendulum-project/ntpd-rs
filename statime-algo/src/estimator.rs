@@ -1,4 +1,4 @@
-use statime_base::{ClockId, DirectedLinkId, Duration, LinkId, TAI, Timestamp};
+use statime_base::{ClockId, DirectedLinkId, Duration, LinkId, TAI, TimeSnapshot, Timestamp};
 
 use crate::{
     AlgoError,
@@ -628,6 +628,25 @@ impl<Storage: KalmanStorageBase> EstimatorState<Storage> {
             value: self.state[(clock_info.frequency_index(), 0)],
             variance: self.uncertainty
                 [(clock_info.frequency_index(), clock_info.frequency_index())],
+        })
+    }
+
+    pub fn clock_snapshot(&self, id: ClockId) -> Result<TimeSnapshot, AlgoError> {
+        let clock_info = self.get_clock_info(id)?;
+        Ok(TimeSnapshot {
+            precision: Duration::from_seconds_nanos(0, 1),
+            root_delay: Duration::ZERO,
+            root_variance_base_time: self.time,
+            root_variance_base: self.uncertainty
+                [(clock_info.offset_index(), clock_info.offset_index())],
+            root_variance_linear: 2.0
+                * self.uncertainty[(clock_info.offset_index(), clock_info.frequency_index())],
+            root_variance_quadratic: self.uncertainty
+                [(clock_info.frequency_index(), clock_info.frequency_index())],
+            root_variance_cubic: clock_info.wander.powi(2),
+            leap_indicator: None,
+            accumulated_steps: Duration::ZERO,
+            accumulated_steps_threshold: None,
         })
     }
 

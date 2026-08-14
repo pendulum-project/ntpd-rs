@@ -44,7 +44,7 @@ mod storage;
 use core::marker::PhantomData;
 use statime_base::{
     Clock, ClockError, ClockId, Controller, DirectedLinkId, Direction, Duration, LeapStatus, Link,
-    LinkId, Measurement, TAI, Timestamp,
+    LinkId, Measurement, TAI, TimeSnapshot, Timestamp,
 };
 
 use crate::{
@@ -144,7 +144,7 @@ impl Default for ClockConfig {
 }
 
 mod hidden {
-    use statime_base::{Clock, ClockId, Duration};
+    use statime_base::{Clock, ClockId, Duration, LeapStatus};
 
     use crate::{
         ClockConfig,
@@ -164,6 +164,7 @@ mod hidden {
         pub(crate) filter: LinkFilter<Storage>,
         pub(crate) filter_config: ControllerConfig,
         pub(crate) root_delay: Duration,
+        pub(crate) leap_status: Option<LeapStatus>,
     }
 }
 pub(crate) use hidden::{ClockInfo, KalmanControllerState};
@@ -300,6 +301,17 @@ impl<Storage: KalmanStorage<C>, C: Clock> Controller for KalmanController<Storag
             phantomdata: PhantomData,
         })
     }
+
+    fn clock_snapshot(&self, clock: ClockId) -> Result<statime_base::TimeSnapshot, Self::Error> {
+        self.state.with_ref(|state| {
+            Ok(TimeSnapshot {
+                // FIXME: Augment with jump status once that is available.
+                root_delay: state.root_delay,
+                leap_indicator: state.leap_status,
+                ..state.filter.clock_snapshot(clock)?
+            })
+        })
+    }
 }
 
 impl<Storage: KalmanStorage<C>, C: Clock> KalmanController<Storage, C> {
@@ -337,6 +349,7 @@ impl<Storage: KalmanStorage<C>, C: Clock> KalmanController<Storage, C> {
                     filter,
                     filter_config,
                     root_delay: Duration::ZERO,
+                    leap_status: None,
                 }),
             },
             id,
@@ -369,7 +382,7 @@ impl<Storage: KalmanStorageInternal<C>, C: Clock> KalmanControllerState<Storage,
             .clone()
             .progress_time(self.clocks[0].clock.now()?)?;
 
-        let leap_status = self.filter.leap_vote(&self.filter_config);
+        self.leap_status = self.filter.leap_vote(&self.filter_config);
         if let Some(root_delay) = self.filter.local_root_delay(&self.filter_config) {
             self.root_delay = Duration::from_f64_seconds(root_delay);
         }
@@ -414,7 +427,7 @@ impl<Storage: KalmanStorageInternal<C>, C: Clock> KalmanControllerState<Storage,
                 )?;
             }
 
-            if let Some(leap_status) = leap_status {
+            if let Some(leap_status) = self.leap_status {
                 clock_info.clock.leap_update(leap_status)?;
             }
             clock_info.clock.synchronization_update(

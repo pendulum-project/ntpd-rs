@@ -1,5 +1,5 @@
 use statime_base::{
-    ClockId, DirectedLinkId, Direction, Duration, LeapStatus, LinkId, TAI, Timestamp,
+    ClockId, DirectedLinkId, Direction, Duration, LeapStatus, LinkId, TAI, TimeSnapshot, Timestamp,
 };
 
 use crate::{
@@ -922,6 +922,10 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
     /// Fails when the clock is not known to the filter.
     pub fn clock_frequency(&self, clock_id: ClockId) -> Result<UncertainValue, AlgoError> {
         self.estimation_state.clock_frequency(clock_id)
+    }
+
+    pub fn clock_snapshot(&self, id: ClockId) -> Result<TimeSnapshot, AlgoError> {
+        self.estimation_state.clock_snapshot(id)
     }
 }
 
