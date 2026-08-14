@@ -69,6 +69,12 @@ pub trait Controller {
         clock_b: Option<ClockId>,
         config: Self::LinkConfig,
     ) -> Result<Self::Link<ControllerRef>, Self::Error>;
+
+    /// Get a time snapshot of the synchronization status of a clock.
+    ///
+    /// # Errors
+    /// May fail if the clock is unknown to the controller.
+    fn clock_snapshot(&self, clock: ClockId) -> Result<TimeSnapshot, Self::Error>;
 }
 
 /// A measurement link between clocks.
