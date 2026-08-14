@@ -2,6 +2,7 @@ use std::{collections::HashMap, fmt::Debug, time::Duration};
 
 pub(crate) use source::AveragingBuffer;
 use source::OneWayKalmanSourceController;
+use statime_base::LeapStatus;
 use tracing::{debug, error, info, warn};
 
 use crate::{
@@ -188,8 +189,8 @@ impl<C: NtpClock> KalmanClockController<C> {
                 InternalStateUpdate::default()
             };
 
-            self.timedata.root_delay = combined.delay;
-            self.timedata.root_variance_base_time = time;
+            self.timedata.root_delay = combined.delay.into();
+            self.timedata.root_variance_base_time = time.into();
             self.timedata.root_variance_base = combined.estimate.uncertainty.entry(0, 0);
             self.timedata.root_variance_linear = combined.estimate.uncertainty.entry(0, 1);
             self.timedata.root_variance_quadratic = combined.estimate.uncertainty.entry(1, 1);
@@ -202,14 +203,19 @@ impl<C: NtpClock> KalmanClockController<C> {
                 .unwrap_or(self.algo_config.initial_wander);
             self.clock
                 .error_estimate_update(
-                    self.timedata.root_dispersion(time),
-                    self.timedata.root_delay,
+                    self.timedata.root_dispersion(time.into()).into(),
+                    self.timedata.root_delay.into(),
                 )
                 .expect("Cannot update clock");
 
             if let Some(leap) = combined.leap_indicator {
                 self.clock.status_update(leap).expect("Cannot update clock");
-                self.timedata.leap_indicator = leap;
+                self.timedata.leap_indicator = match leap {
+                    NtpLeapIndicator::NoWarning => Some(LeapStatus::None),
+                    NtpLeapIndicator::Leap61 => Some(LeapStatus::Leap61),
+                    NtpLeapIndicator::Leap59 => Some(LeapStatus::Leap59),
+                    NtpLeapIndicator::Unknown | NtpLeapIndicator::Unsynchronized => None,
+                };
             }
 
             // After a successful measurement we are out of startup.
@@ -246,7 +252,7 @@ impl<C: NtpClock> KalmanClockController<C> {
                 panic!("Threshold exceeded");
             }
         } else {
-            self.timedata.accumulated_steps += change.abs();
+            self.timedata.accumulated_steps += change.abs().into();
             if !self
                 .synchronization_config
                 .single_step_panic_threshold
@@ -254,7 +260,7 @@ impl<C: NtpClock> KalmanClockController<C> {
                 || self
                     .synchronization_config
                     .accumulated_step_panic_threshold
-                    .is_some_and(|v| self.timedata.accumulated_steps > v)
+                    .is_some_and(|v| self.timedata.accumulated_steps > v.into())
             {
                 error!(
                     "Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate. If the clock is significantly wrong, you can use `ntp-ctl force-sync` to correct it."
@@ -390,7 +396,8 @@ impl<C: NtpClock> InternalTimeSyncController for KalmanClockController<C> {
             desired_freq: 0.0,
             timedata: TimeSnapshot {
                 accumulated_steps_threshold: synchronization_config
-                    .accumulated_step_panic_threshold,
+                    .accumulated_step_panic_threshold
+                    .map(statime_base::Duration::from),
                 ..TimeSnapshot::default()
             },
             in_startup: true,
@@ -575,8 +582,8 @@ mod tests {
         }
 
         assert!(!algo.in_startup);
-        assert_eq!(algo.timedata.leap_indicator, NtpLeapIndicator::NoWarning);
-        assert_ne!(algo.timedata.root_delay, NtpDuration::ZERO);
+        assert_eq!(algo.timedata.leap_indicator, Some(LeapStatus::None));
+        assert_ne!(algo.timedata.root_delay, statime_base::Duration::ZERO);
         assert_ne!(algo.timedata.root_variance_base, 0.0);
     }
 
@@ -606,7 +613,10 @@ mod tests {
 
         algo.in_startup = false;
         algo.steer_offset(1000.0, 0.0);
-        assert_eq!(algo.timedata.accumulated_steps, NtpDuration::ZERO);
+        assert_eq!(
+            algo.timedata.accumulated_steps,
+            statime_base::Duration::ZERO
+        );
     }
 
     #[test]

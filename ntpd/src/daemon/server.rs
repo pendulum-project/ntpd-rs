@@ -230,8 +230,8 @@ mod tests {
     use std::{convert::Infallible, io::Cursor, net::SocketAddr};
 
     use ntp_proto::{
-        KeySetProvider, NoCipher, NtpDuration, NtpLeapIndicator, NtpPacket, NtpTimestamp,
-        PollIntervalLimits,
+        KeySetProvider, NoCipher, NtpDuration, NtpLeapIndicator, NtpPacket, NtpServerInfo,
+        NtpSnapshot, NtpTimestamp, PollIntervalLimits,
     };
     use timestamped_socket::socket::GeneralTimestampMode;
 
@@ -299,7 +299,13 @@ mod tests {
             time: NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 1000),
         };
 
-        let server_info = Arc::default();
+        let server_info = Arc::new(std::sync::RwLock::new(NtpServerInfo {
+            ntp_snapshot: NtpSnapshot {
+                stratum: 2,
+                ..Default::default()
+            },
+            ..Default::default()
+        }));
         let (_, keyset) = tokio::sync::watch::channel(KeySetProvider::new(1).get());
 
         let server = Server::new_internal(

@@ -1,6 +1,7 @@
 pub mod exporter;
 
-use ntp_proto::{NtpDuration, PollIntervalLimits};
+use ntp_proto::PollIntervalLimits;
+use statime_base::{Duration, LeapStatus};
 
 use crate::daemon::ObservableState;
 
@@ -183,7 +184,7 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
         "Accumulated amount of seconds that the system needed to jump the time",
         &MetricType::Gauge,
         Some(Unit::Seconds),
-        Measurement::simple(state.system.time_snapshot.accumulated_steps.to_seconds()),
+        Measurement::simple(state.system.time_snapshot.accumulated_steps.as_seconds()),
     )?;
 
     format_metric(
@@ -197,7 +198,7 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
                 .system
                 .time_snapshot
                 .accumulated_steps_threshold
-                .map_or(-1.0, NtpDuration::to_seconds),
+                .map_or(-1.0, Duration::as_seconds),
         ),
     )?;
 
@@ -207,7 +208,12 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
         "Indicates that a leap second will take place",
         &MetricType::Gauge,
         None,
-        Measurement::simple(state.system.time_snapshot.leap_indicator as i64),
+        Measurement::simple(match state.system.time_snapshot.leap_indicator {
+            Some(LeapStatus::None) => 0,
+            Some(LeapStatus::Leap61) => 1,
+            Some(LeapStatus::Leap59) => 2,
+            None => 3,
+        }),
     )?;
 
     format_metric(
@@ -216,7 +222,7 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
         "Distance to the closest root time source",
         &MetricType::Gauge,
         Some(Unit::Seconds),
-        Measurement::simple(state.system.time_snapshot.root_delay.to_seconds()),
+        Measurement::simple(state.system.time_snapshot.root_delay.as_seconds()),
     )?;
 
     format_metric(
@@ -229,8 +235,8 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
             state
                 .system
                 .time_snapshot
-                .root_dispersion(state.program.now)
-                .to_seconds(),
+                .root_dispersion(state.program.now.into())
+                .as_seconds(),
         ),
     )?;
 

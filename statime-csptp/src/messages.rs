@@ -1,6 +1,7 @@
 use core::ops::Deref;
 
-use ntp_proto::{NtpLeapIndicator, TimeSnapshot};
+use ntp_proto::TimeSnapshot;
+use statime_base::LeapStatus;
 use statime_wire::{
     ClockIdentity, FollowUpMessage, Header, Message, MessageBody, PortIdentity, PtpVersion, SdoId,
     SyncMessage, TimeInterval, Timestamp, TlvSetBuilder, TlvType,
@@ -182,8 +183,8 @@ impl<'a> CsptpMessage<'a> {
         Ok(CsptpMessage {
             message: Message {
                 header: Header {
-                    leap61: time_snapshot.leap_indicator == NtpLeapIndicator::Leap61,
-                    leap59: time_snapshot.leap_indicator == NtpLeapIndicator::Leap59,
+                    leap61: time_snapshot.leap_indicator == Some(LeapStatus::Leap61),
+                    leap59: time_snapshot.leap_indicator == Some(LeapStatus::Leap59),
                     current_utc_offset_valid: false,
                     ptp_timescale: csptp_state.ptp_timescale,
                     time_tracable: csptp_state.time_traceable,

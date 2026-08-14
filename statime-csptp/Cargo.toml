@@ -19,5 +19,6 @@ std = ["statime-wire/std"]
 
 [dependencies]
 statime-wire = { workspace = true }
+statime-base = { workspace = true }
 ntp-proto = { workspace = true }
 rand = { workspace = true, default-features = false }

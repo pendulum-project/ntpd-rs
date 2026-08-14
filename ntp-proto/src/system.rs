@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use statime_base::{Duration, LeapStatus, TAI, Timestamp};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::net::{IpAddr, SocketAddr};
@@ -6,25 +7,21 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
 use crate::source::SourceSnapshot;
-use crate::{
-    ClockId, KeySet, NtpSourceSnapshot, NtpTimestamp, Server, ServerConfig, SourceController,
-};
+use crate::{ClockId, KeySet, NtpSourceSnapshot, Server, ServerConfig, SourceController};
 use crate::{
     config::{SourceConfig, SynchronizationConfig},
     identifiers::ReferenceId,
-    packet::NtpLeapIndicator,
     source::{NtpSource, NtpSourceActionIterator, ProtocolVersion, SourceNtsData},
-    time_types::NtpDuration,
 };
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct TimeSnapshot {
     /// Precision of the local clock
-    pub precision: NtpDuration,
+    pub precision: Duration,
     /// Current root delay
-    pub root_delay: NtpDuration,
+    pub root_delay: Duration,
     /// t=0 for root variance calculation
-    pub root_variance_base_time: NtpTimestamp,
+    pub root_variance_base_time: Timestamp<TAI>,
     /// Constant contribution for root variance
     pub root_variance_base: f64,
     /// Linear (*t) contribution for root variance
@@ -34,18 +31,18 @@ pub struct TimeSnapshot {
     /// Cubic (*t*t*t) contribution for root variance
     pub root_variance_cubic: f64,
     /// Current leap indicator state
-    pub leap_indicator: NtpLeapIndicator,
+    pub leap_indicator: Option<LeapStatus>,
     /// Total amount that the clock has stepped
-    pub accumulated_steps: NtpDuration,
+    pub accumulated_steps: Duration,
     /// Crossing this amount of stepping will cause a Panic
-    pub accumulated_steps_threshold: Option<NtpDuration>,
+    pub accumulated_steps_threshold: Option<Duration>,
 }
 
 impl TimeSnapshot {
-    pub fn root_dispersion(&self, now: NtpTimestamp) -> NtpDuration {
-        let t = (now - self.root_variance_base_time).to_seconds();
+    pub fn root_dispersion(&self, now: Timestamp<TAI>) -> Duration {
+        let t = (now - self.root_variance_base_time).as_seconds();
         // Note: dispersion is the standard deviation, so we need a sqrt here.
-        NtpDuration::from_seconds(
+        Duration::from_f64_seconds(
             (self.root_variance_base
                 + t * self.root_variance_linear
                 + t.powi(2) * self.root_variance_quadratic
@@ -58,15 +55,15 @@ impl TimeSnapshot {
 impl Default for TimeSnapshot {
     fn default() -> Self {
         Self {
-            precision: NtpDuration::from_exponent(-18),
-            root_delay: NtpDuration::ZERO,
-            root_variance_base_time: NtpTimestamp::default(),
+            precision: Duration::from_seconds_nanos(0, 1),
+            root_delay: Duration::ZERO,
+            root_variance_base_time: Timestamp::UNIX_EPOCH,
             root_variance_base: 0.0,
             root_variance_linear: 0.0,
             root_variance_quadratic: 0.0,
             root_variance_cubic: 0.0,
-            leap_indicator: NtpLeapIndicator::Unknown,
-            accumulated_steps: NtpDuration::ZERO,
+            leap_indicator: None,
+            accumulated_steps: Duration::ZERO,
             accumulated_steps_threshold: None,
         }
     }
@@ -187,7 +184,9 @@ impl NtpManager {
         };
         if synchronization_config.local_stratum == 1 {
             // We are a stratum 1 server so mark our selves synchronized.
-            server_info.time_snapshot.leap_indicator = NtpLeapIndicator::NoWarning;
+            // FIXME: Reconside rwhether we should do this as it signals knowledge
+            // of the leap status.
+            server_info.time_snapshot.leap_indicator = Some(LeapStatus::None);
             // Set the reference id for the system
             server_info.ntp_snapshot.reference_id =
                 synchronization_config.reference_id.to_reference_id();

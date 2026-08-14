@@ -1,5 +1,8 @@
 use crate::{Duration, TAI, Timestamp};
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 /// Errors than can occur when interacting with a clock
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClockError {
@@ -79,6 +82,7 @@ pub trait Clock: Clone + Send + 'static {
 
 /// Information on what the next leap second is going to be.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum LeapStatus {
     /// There is no leap second at the end of the month.
     #[default]

@@ -10,6 +10,9 @@ use core::{
     ops::{Add, AddAssign, Div, Mul, MulAssign, Sub, SubAssign},
 };
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 /// A timestamp in the scale `Timescale`.
 ///
 /// Arithmetic on timestamps is implemented as wrapping.
@@ -25,6 +28,42 @@ use core::{
 // The internal value is in units of 2^-64ths of a second, with the UNIX EPOCH as 0
 pub struct Timestamp<Timescale>(u128, PhantomData<Timescale>);
 
+#[cfg(feature = "serde")]
+#[derive(Deserialize, Serialize)]
+struct SerializationTimestamp {
+    upper: u64,
+    lower: u64,
+}
+
+#[cfg(feature = "serde")]
+impl<T> Serialize for Timestamp<T> {
+    #[expect(clippy::cast_possible_truncation, reason = "Cast will never truncate")]
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        SerializationTimestamp {
+            upper: (self.0 >> 64) as u64,
+            lower: (self.0 & u128::from(u64::MAX)) as u64,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de, T> Deserialize<'de> for Timestamp<T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let st = SerializationTimestamp::deserialize(deserializer)?;
+        Ok(Self(
+            (u128::from(st.upper) << 64) | u128::from(st.lower),
+            PhantomData,
+        ))
+    }
+}
+
 /// Marker for the UTC timescale
 pub struct UTC;
 /// Marker for the TAI timescale
@@ -36,6 +75,42 @@ pub struct TAI;
 // The internal value is in units of 2^-64ths of a second.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Duration(i128);
+
+#[cfg(feature = "serde")]
+#[derive(Serialize, Deserialize)]
+struct SerializationDuration {
+    upper: i64,
+    lower: u64,
+}
+
+#[cfg(feature = "serde")]
+impl Serialize for Duration {
+    #[expect(clippy::cast_possible_truncation, reason = "Cast will never truncate")]
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let raw = self.0.cast_unsigned();
+        SerializationDuration {
+            upper: ((raw >> 64) as u64).cast_signed(),
+            lower: (raw & u128::from(u64::MAX)) as u64,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> Deserialize<'de> for Duration {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let sd = SerializationDuration::deserialize(deserializer)?;
+        Ok(Self(
+            ((u128::from(sd.upper.cast_unsigned()) << 64) | u128::from(sd.lower)).cast_signed(),
+        ))
+    }
+}
 
 impl<A> Timestamp<A> {
     /// Representation of the UNIX EPOCH in this timescale.
@@ -104,6 +179,32 @@ impl Duration {
     )]
     pub fn as_seconds(self) -> f64 {
         (self.0 as f64) / ((1u128 << 64) as f64)
+    }
+
+    /// The length of the duration in steps (2^-64ths of a second)
+    #[must_use]
+    pub fn as_raw_steps(self) -> i128 {
+        self.0
+    }
+
+    /// Create a duration from a length in steps (2^-64ths of a second)
+    #[must_use]
+    pub fn from_raw_steps(steps: i128) -> Self {
+        Self(steps)
+    }
+
+    /// Log2 length of the duration
+    #[must_use]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "The casts to i32 and i8 always fit"
+    )]
+    pub fn log2(self) -> i8 {
+        if self == Duration::ZERO {
+            return i8::MIN;
+        }
+
+        ((self.0.ilog2().cast_signed()) - 64) as i8
     }
 
     /// Create a duration from a floating point number of seconds.

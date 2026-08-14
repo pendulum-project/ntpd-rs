@@ -16,5 +16,7 @@ workspace = true
 [features]
 default = ["std"]
 std = []
+serde = ["std", "dep:serde"]
 
 [dependencies]
+serde = { workspace = true, optional = true }

@@ -841,10 +841,10 @@ fn measurements_from_packet(
 )]
 mod test {
     use crate::{
-        NtpClock, NtpDuration, NtpLeapIndicator, NtpSnapshot,
+        NtpClock, NtpLeapIndicator, NtpSnapshot,
         packet::{AesSivCmac256, NoCipher},
         system::NtpServerInfo,
-        time_types::PollIntervalLimits,
+        time_types::{NtpDuration, PollIntervalLimits},
     };
 
     use super::*;
@@ -1389,7 +1389,13 @@ mod test {
             assert!(poll.is_upgrade());
 
             let response = NtpPacket::timestamp_response(
-                NtpServerInfo::default(),
+                NtpServerInfo {
+                    ntp_snapshot: NtpSnapshot {
+                        stratum: 2,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
                 poll,
                 NtpTimestamp::default(),
                 &clock,
@@ -1457,7 +1463,13 @@ mod test {
         assert!(poll.is_upgrade());
 
         let response = NtpPacket::timestamp_response(
-            NtpServerInfo::default(),
+            NtpServerInfo {
+                ntp_snapshot: NtpSnapshot {
+                    stratum: 2,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
             poll,
             NtpTimestamp::default(),
             &clock,
@@ -1548,7 +1560,13 @@ mod test {
         assert!(poll.is_upgrade());
 
         let response = NtpPacket::timestamp_response(
-            NtpServerInfo::default(),
+            NtpServerInfo {
+                ntp_snapshot: NtpSnapshot {
+                    stratum: 2,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
             poll,
             NtpTimestamp::default(),
             &clock,
@@ -1618,6 +1636,7 @@ mod test {
 
         let server_info = NtpServerInfo {
             ntp_snapshot: NtpSnapshot {
+                stratum: 2,
                 bloom_filter: server_filter,
                 ..Default::default()
             },

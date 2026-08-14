@@ -425,6 +425,7 @@ dependencies = [
  "rustls",
  "rustls-platform-verifier",
  "serde",
+ "statime-base",
  "tokio",
  "tokio-rustls",
  "tracing",
@@ -438,6 +439,7 @@ dependencies = [
  "libfuzzer-sys",
  "ntp-proto",
  "rand 0.8.5",
+ "statime-base",
  "statime-wire",
  "tokio",
 ]
@@ -761,6 +763,13 @@ checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "statime-base"
+version = "2.0.0-alpha.20260715"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

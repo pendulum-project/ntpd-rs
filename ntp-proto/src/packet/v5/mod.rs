@@ -1,7 +1,9 @@
 #![warn(clippy::missing_const_for_fn)]
 use crate::{
-    NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, PollInterval, io::NonBlockingWrite,
+    NtpClock, NtpLeapIndicator, PollInterval,
+    io::NonBlockingWrite,
     system::NtpServerInfo,
+    time_types::{NtpDuration, NtpTimestamp},
 };
 use rand::random;
 
@@ -192,9 +194,16 @@ impl NtpHeaderV5 {
         clock: &C,
     ) -> Self {
         Self {
-            leap: server_info.time_snapshot.leap_indicator,
+            leap: server_info
+                .time_snapshot
+                .leap_indicator
+                .map_or(NtpLeapIndicator::Unknown, NtpLeapIndicator::from),
             mode: NtpMode::Response,
-            stratum: server_info.ntp_snapshot.stratum,
+            stratum: if server_info.ntp_snapshot.stratum < 16 {
+                server_info.ntp_snapshot.stratum
+            } else {
+                0
+            },
             poll: input.poll,
             precision: server_info.time_snapshot.precision.log2(),
             timescale: NtpTimescale::Utc,
@@ -204,8 +213,11 @@ impl NtpHeaderV5 {
                 interleaved_mode: false,
                 authnak: false,
             },
-            root_delay: server_info.time_snapshot.root_delay,
-            root_dispersion: server_info.time_snapshot.root_dispersion(recv_timestamp),
+            root_delay: server_info.time_snapshot.root_delay.into(),
+            root_dispersion: server_info
+                .time_snapshot
+                .root_dispersion(recv_timestamp.into())
+                .into(),
             server_cookie: NtpServerCookie::new_random(),
             client_cookie: input.client_cookie,
             receive_timestamp: recv_timestamp,
