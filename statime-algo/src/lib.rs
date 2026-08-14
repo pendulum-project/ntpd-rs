@@ -79,6 +79,8 @@ pub enum AlgoError {
     LinkNotExternal(LinkId),
     /// Measurements or links cannot be between two external clocks
     BothClocksExternal(ClockId, ClockId),
+    /// Got an external clock id in a place where we didn't expect that
+    UnexpectedExternalClock(ClockId),
     /// Measurements or links between a clock and itself are not allowed
     ClocksEqual(ClockId),
     /// Time moved backwards, which is not allowed
@@ -179,29 +181,6 @@ impl<Storage: KalmanStorage<C>, C: Clock> Controller for KalmanController<Storag
     type LinkConfig = LinkConfig;
     type TrackedLinkConfig = TrackedLinkConfig;
 
-    /// Add an external clock to the controller.
-    ///
-    /// # Errors
-    /// Returns an error if the clock is already known to the filter.
-    fn add_external_clock(&self) -> Result<ClockId, AlgoError> {
-        self.state.with_mut(|state| {
-            let (filter, id) = state.filter.clone().add_external_clock()?;
-            state.filter = filter;
-            Ok(id)
-        })
-    }
-
-    /// Remove an external clock from the controller.
-    ///
-    /// # Errors
-    /// Returns an error if the clock is unknown, or not an external clock.
-    fn remove_external_clock(&self, id: ClockId) -> Result<(), AlgoError> {
-        self.state.with_mut(|state| {
-            state.filter = state.filter.clone().remove_external_clock(id)?;
-            Ok(())
-        })
-    }
-
     /// Add an internal clock to the controller.
     ///
     /// # Errors
@@ -265,7 +244,7 @@ impl<Storage: KalmanStorage<C>, C: Clock> Controller for KalmanController<Storag
         // generic reference-like things.
         this: ControllerRef,
         clock_a: ClockId,
-        clock_b: ClockId,
+        clock_b: Option<ClockId>,
         config: LinkConfig,
         tracked_config: TrackedLinkConfig,
     ) -> Result<KalmanLink<ControllerRef, Storage, C>, AlgoError> {
@@ -302,7 +281,7 @@ impl<Storage: KalmanStorage<C>, C: Clock> Controller for KalmanController<Storag
         // generic reference-like things.
         this: ControllerRef,
         clock_a: ClockId,
-        clock_b: ClockId,
+        clock_b: Option<ClockId>,
         config: LinkConfig,
     ) -> Result<KalmanLink<ControllerRef, Storage, C>, AlgoError> {
         let link_id = this.as_ref().state.with_mut(|state| {
