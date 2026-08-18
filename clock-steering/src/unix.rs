@@ -1,3 +1,5 @@
+use statime_base::ClockError;
+
 #[cfg(target_os = "linux")]
 use crate::linux_ioctls::{ptp_clock_getcaps, PtpClockCaps};
 use crate::{Clock, ClockCapabilities, LeapIndicator, TimeOffset, Timestamp};
@@ -24,13 +26,11 @@ impl UnixClock {
     /// ```no_run
     /// use clock_steering::{Clock, unix::UnixClock};
     ///
-    /// fn main() -> std::io::Result<()> {
+    /// fn main() {
     ///     let clock = UnixClock::CLOCK_REALTIME;
-    ///     let now = clock.now()?;
+    ///     let now = clock.now().unwrap();
     ///
     ///     println!("{now:?}");
-    ///
-    ///     Ok(())
     /// }
     /// ```
     pub const CLOCK_REALTIME: Self = UnixClock {
@@ -44,13 +44,11 @@ impl UnixClock {
     /// ```no_run
     /// use clock_steering::{Clock, unix::UnixClock};
     ///
-    /// fn main() -> std::io::Result<()> {
+    /// fn main() {
     ///     let clock = UnixClock::CLOCK_TAI;
-    ///     let now = clock.now()?;
+    ///     let now = clock.now().unwrap();
     ///
     ///     println!("{now:?}");
-    ///
-    ///     Ok(())
     /// }
     /// ```
     #[cfg(target_os = "linux")]
@@ -64,13 +62,11 @@ impl UnixClock {
     /// ```no_run
     /// use clock_steering::{Clock, unix::UnixClock};
     ///
-    /// fn main() -> std::io::Result<()> {
-    ///     let clock = UnixClock::open("/dev/ptp0")?;
-    ///     let now = clock.now()?;
+    /// fn main() {
+    ///     let clock = UnixClock::open("/dev/ptp0").unwrap();
+    ///     let now = clock.now().unwrap();
     ///
     ///     println!("{now:?}");
-    ///
-    ///     Ok(())
     /// }
     /// ```
     ///
@@ -113,11 +109,11 @@ impl UnixClock {
         clippy::cast_possible_truncation,
         reason = "Casts for timestamp conversion aren't lossless on all platforms"
     )]
-    pub fn system_offset(&self) -> Result<(Timestamp, Timestamp, Timestamp), Error> {
+    pub fn system_offset(&self) -> Result<(Timestamp, Timestamp, Timestamp), ClockError> {
         use libc::{ptp_clock_time, ptp_sys_offset, PTP_SYS_OFFSET};
 
         let Some(fd) = self.fd else {
-            return Err(Error::Invalid);
+            return Err(ClockError::InvalidValue);
         };
 
         let default_ptp_clock_time = ptp_clock_time {
@@ -165,7 +161,7 @@ impl UnixClock {
         clippy::trivially_copy_pass_by_ref,
         reason = "Allows a consistent interface between platforms."
     )]
-    fn clock_adjtime(&self, timex: &mut libc::timex) -> Result<(), Error> {
+    fn clock_adjtime(&self, timex: &mut libc::timex) -> Result<(), ClockError> {
         // We don't care about the time status, so the non-error
         // information in the return value of clock_adjtime can be ignored.
         //
@@ -197,7 +193,7 @@ impl UnixClock {
         }
     }
 
-    fn ntp_adjtime(timex: &mut libc::timex) -> Result<(), Error> {
+    fn ntp_adjtime(timex: &mut libc::timex) -> Result<(), ClockError> {
         #[cfg(any(target_os = "freebsd", target_os = "macos", target_env = "gnu"))]
         use libc::ntp_adjtime as adjtime;
 
@@ -229,7 +225,7 @@ impl UnixClock {
         clippy::trivially_copy_pass_by_ref,
         reason = "Allows a consistent interface between platforms."
     )]
-    fn adjtime(&self, timex: &mut libc::timex) -> Result<(), Error> {
+    fn adjtime(&self, timex: &mut libc::timex) -> Result<(), ClockError> {
         if self.clock == libc::CLOCK_REALTIME {
             Self::ntp_adjtime(timex)
         } else {
@@ -238,7 +234,7 @@ impl UnixClock {
     }
 
     #[cfg_attr(target_os = "linux", allow(unused))]
-    fn clock_gettime(&self) -> Result<libc::timespec, Error> {
+    fn clock_gettime(&self) -> Result<libc::timespec, ClockError> {
         let mut timespec = libc::timespec::default();
 
         // # Safety
@@ -253,7 +249,7 @@ impl UnixClock {
     }
 
     #[cfg_attr(target_os = "linux", allow(unused))]
-    fn clock_settime(&self, mut timespec: libc::timespec) -> Result<(), Error> {
+    fn clock_settime(&self, mut timespec: libc::timespec) -> Result<(), ClockError> {
         while timespec.tv_nsec > 1_000_000_000 {
             timespec.tv_sec += 1;
             timespec.tv_nsec -= 1_000_000_000;
@@ -275,7 +271,7 @@ impl UnixClock {
         clippy::trivially_copy_pass_by_ref,
         reason = "Allows a consistent interface between platforms."
     )]
-    fn step_clock_by_timespec(&self, offset: TimeOffset) -> Result<Timestamp, Error> {
+    fn step_clock_by_timespec(&self, offset: TimeOffset) -> Result<Timestamp, ClockError> {
         let mut timespec = self.clock_gettime()?;
 
         // see https://github.com/rust-lang/libc/issues/1848
@@ -341,7 +337,7 @@ impl UnixClock {
     }
 
     #[cfg(target_os = "linux")]
-    fn step_clock_by_timex(&self, offset: TimeOffset) -> Result<Timestamp, Error> {
+    fn step_clock_by_timex(&self, offset: TimeOffset) -> Result<Timestamp, ClockError> {
         let mut timex = Self::step_clock_timex(offset);
         self.adjtime(&mut timex)?;
         self.extract_current_time(&timex)
@@ -354,7 +350,7 @@ impl UnixClock {
     fn extract_current_time(
         &self,
         #[cfg_attr(target_os = "macos", allow(unused))] timex: &libc::timex,
-    ) -> Result<Timestamp, Error> {
+    ) -> Result<Timestamp, ClockError> {
         #[cfg(target_os = "linux")]
         // hardware clocks may not report the timestamp
         if timex.time.tv_sec != 0 && timex.time.tv_usec != 0 {
@@ -376,7 +372,7 @@ impl UnixClock {
         clippy::trivially_copy_pass_by_ref,
         reason = "Allows a consistent interface between platforms."
     )]
-    fn update_timex<F>(&self, f: F) -> Result<(), Error>
+    fn update_timex<F>(&self, f: F) -> Result<(), ClockError>
     where
         F: FnOnce(libc::timex) -> libc::timex,
     {
@@ -392,7 +388,7 @@ impl UnixClock {
         clippy::trivially_copy_pass_by_ref,
         reason = "Allows a consistent interface between platforms."
     )]
-    fn update_status<F>(&self, f: F) -> Result<(), Error>
+    fn update_status<F>(&self, f: F) -> Result<(), ClockError>
     where
         F: FnOnce(libc::c_int) -> libc::c_int,
     {
@@ -433,7 +429,7 @@ impl UnixClock {
 
 impl UnixClock {
     #[cfg(target_os = "linux")]
-    fn detect_ptp_capabilities(&self) -> Result<ClockCapabilities, Error> {
+    fn detect_ptp_capabilities(&self) -> Result<ClockCapabilities, ClockError> {
         if let Some(fd) = self.fd {
             let mut caps = MaybeUninit::<PtpClockCaps>::zeroed();
 
@@ -458,7 +454,7 @@ impl UnixClock {
 }
 
 impl Clock for UnixClock {
-    type Error = Error;
+    type Error = ClockError;
 
     fn now(&self) -> Result<Timestamp, Self::Error> {
         let mut ntp_kapi_timex = EMPTY_TIMEX;
@@ -534,7 +530,7 @@ impl Clock for UnixClock {
         max_error: Duration,
     ) -> Result<(), Self::Error> {
         let mut timex = Self::error_estimate_timex(est_error, max_error);
-        Error::ignore_not_supported(self.adjtime(&mut timex))
+        ignore_not_supported(self.adjtime(&mut timex))
     }
 
     fn disable_kernel_ntp_algorithm(&self) -> Result<(), Self::Error> {
@@ -548,11 +544,11 @@ impl Clock for UnixClock {
         timex.status &= !(libc::STA_PLL | libc::STA_FLL | libc::STA_PPSTIME | libc::STA_PPSFREQ);
 
         // ignore if we cannot disable the kernel time control loops (e.g. external clocks)
-        Error::ignore_not_supported(self.adjtime(&mut timex))
+        ignore_not_supported(self.adjtime(&mut timex))
     }
 
     #[cfg(target_os = "linux")]
-    fn set_tai(&self, tai_offset: i32) -> Result<(), Error> {
+    fn set_tai(&self, tai_offset: i32) -> Result<(), ClockError> {
         #[allow(
             clippy::useless_conversion,
             reason = "This conversion is not useless on all platforms."
@@ -567,12 +563,12 @@ impl Clock for UnixClock {
     }
 
     #[cfg(not(target_os = "linux"))]
-    fn set_tai(&self, _tai_offset: i32) -> Result<(), Error> {
-        Err(Error::NotSupported)
+    fn set_tai(&self, _tai_offset: i32) -> Result<(), ClockError> {
+        Err(ClockError::NotSupported)
     }
 
     #[cfg(target_os = "linux")]
-    fn get_tai(&self) -> Result<i32, Error> {
+    fn get_tai(&self) -> Result<i32, ClockError> {
         let mut timex = EMPTY_TIMEX;
         if self.clock_adjtime(&mut timex).is_ok() {
             Ok(timex.tai)
@@ -583,77 +579,15 @@ impl Clock for UnixClock {
     }
 
     #[cfg(not(target_os = "linux"))]
-    fn get_tai(&self) -> Result<i32, Error> {
-        Err(Error::NotSupported)
+    fn get_tai(&self) -> Result<i32, ClockError> {
+        Err(ClockError::NotSupported)
     }
 }
 
-/// Errors that can be thrown by modifying a unix clock
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum Error {
-    /// Insufficient permissions to interact with the clock.
-    NoPermission,
-    /// No access to the clock.
-    NoAccess,
-    /// Invalid operation requested
-    Invalid,
-    /// Clock device has gone away
-    NoDevice,
-    /// Clock operation requested is not supported by operating system.
-    NotSupported,
-    /// Clock adjustment failed because the provided value was out of range
-    OutOfRange,
-}
-
-impl core::fmt::Display for Error {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let msg = match self {
-            Error::NoPermission => "Insufficient permissions to interact with the clock.",
-            Error::NoAccess => "No access to the clock.",
-            Error::Invalid => "Invalid operation requested",
-            Error::NoDevice => "Clock device has gone away",
-            Error::NotSupported => {
-                "Clock operation requested is not supported by operating system."
-            }
-            Error::OutOfRange => "Value out of range",
-        };
-
-        f.write_str(msg)
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl Error {
-    /// Turn the `Error::NotSupported` error variant into `Ok(())`, to silently
-    /// ignore operations that are not supported by the current clock. All
-    /// other input values are untouched.
-    ///
-    /// # Errors
-    /// Returns an error on any error other than `Error::NotSupported`.
-    pub fn ignore_not_supported(res: Result<(), Error>) -> Result<(), Error> {
-        match res {
-            Err(Error::NotSupported) => Ok(()),
-            other => other,
-        }
-    }
-
-    // TODO: use https://doc.rust-lang.org/std/io/type.RawOsError.html when stable
-    fn into_raw_os_error(self) -> i32 {
-        match self {
-            Self::NoPermission => libc::EPERM,
-            Self::NoAccess => libc::EACCES,
-            Self::Invalid => libc::EINVAL,
-            Self::NoDevice => libc::ENODEV,
-            Self::NotSupported => libc::EOPNOTSUPP,
-            Self::OutOfRange => libc::ERANGE,
-        }
-    }
-}
-
-impl From<Error> for std::io::Error {
-    fn from(value: Error) -> Self {
-        std::io::Error::from_raw_os_error(value.into_raw_os_error())
+fn ignore_not_supported(result: Result<(), ClockError>) -> Result<(), ClockError> {
+    match result {
+        Err(ClockError::InvalidValue) => Ok(()),
+        result => result,
     }
 }
 
@@ -673,26 +607,19 @@ fn error_number() -> libc::c_int {
 // functions
 // - ntp_adjtimex https://man7.org/linux/man-pages/man3/ntp_adjtime.3.html
 // - clock_gettime & clock_settime https://man7.org/linux/man-pages/man3/clock_gettime.3.html
-fn convert_errno() -> Error {
+fn convert_errno() -> ClockError {
     match error_number() {
-        libc::EINVAL => Error::Invalid,
+        libc::EINVAL | libc::ERANGE => ClockError::InvalidValue,
         // The documentation is a bit unclear if this can happen with
         // non-dynamic clocks like the ntp kapi clock, however deal with it just in case.
-        libc::ENODEV => Error::NoDevice,
-        libc::EOPNOTSUPP => Error::NotSupported,
-        libc::EPERM => Error::NoPermission,
-        libc::EACCES => Error::NoAccess,
-        libc::ERANGE => Error::OutOfRange,
-        libc::EFAULT => unreachable!("we always pass in valid (accessible) buffers"),
-        // No other errors should occur
-        other => {
-            let error = std::io::Error::from_raw_os_error(other);
-            unreachable!("error code `{other}` ({error:?}) should not occur")
-        }
+        libc::ENODEV => ClockError::NoDevice,
+        libc::EOPNOTSUPP => ClockError::NotSupported,
+        libc::EPERM | libc::EACCES => ClockError::PermissionDenied,
+        _ => ClockError::Unknown,
     }
 }
 
-fn cerr(c_int: libc::c_int) -> Result<(), Error> {
+fn cerr(c_int: libc::c_int) -> Result<(), ClockError> {
     if c_int == -1 {
         Err(convert_errno())
     } else {

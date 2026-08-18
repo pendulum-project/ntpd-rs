@@ -177,7 +177,7 @@ zero_sized_map_values = "warn"
 arbitrary = { version = "1.0" }
 arrayvec = { version = "0.7.8", default-features = false }
 hickory-resolver = { version = "0.26.0", features = ["dnssec-aws-lc-rs"] }
-libc = "0.2.154"
+libc = "0.2.183"
 libm = "0.2.16"
 pps-time = "0.2.3"
 rand = { version = "0.8.0", default-features = false }
