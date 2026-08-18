@@ -19,4 +19,5 @@ name = "basic"
 required-features = []
 
 [dependencies]
-libc = "0.2.183"
+libc.workspace = true
+statime-base.workspace = true

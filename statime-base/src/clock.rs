@@ -18,6 +18,28 @@ pub enum ClockError {
     Unknown,
 }
 
+impl core::fmt::Display for ClockError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            ClockError::PermissionDenied => {
+                f.write_str("Insufficient permissions to perform the requested operation.")
+            }
+            ClockError::NoDevice => {
+                f.write_str("The underlying clock device is no longer available")
+            }
+            ClockError::NotSupported => {
+                f.write_str("The requested operation is not supported by the clock or OS.")
+            }
+            ClockError::InvalidValue => f.write_str("One of the provided values is invalid."),
+            ClockError::Unknown => {
+                f.write_str("An unknown error occured when interacting with the clock.")
+            }
+        }
+    }
+}
+
+impl core::error::Error for ClockError {}
+
 /// Interface for a controllable clock
 /// This needs to be a trait as a single system can have multiple clocks
 /// which need different implementation for steering and/or now.
