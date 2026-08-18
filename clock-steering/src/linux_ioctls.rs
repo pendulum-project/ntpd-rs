@@ -1,6 +1,6 @@
 //! Linux ioctl definitions for PTP clock devices.
 //!
-//! These definitions are derived from <linux/ptp_clock.h>.
+//! These definitions are derived from `<linux/ptp_clock.h>`.
 
 use std::os::unix::io::RawFd;
 
@@ -23,6 +23,10 @@ pub struct PtpClockCaps {
 //
 // Linux _IOR encoding: (IOC_READ << 30) | (size << 16) | (type << 8) | nr
 //   IOC_READ = 2, type = b'=' = 0x3D, nr = 1
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "PtpClockCaps is always small enough that th esize can be expressed as an u32."
+)]
 const PTP_CLOCK_GETCAPS: u32 =
     (2u32 << 30) | ((std::mem::size_of::<PtpClockCaps>() as u32) << 16) | ((b'=' as u32) << 8) | 1;
 
@@ -32,6 +36,14 @@ const PTP_CLOCK_GETCAPS: u32 =
 ///
 /// # Safety
 /// `caps` must be a valid, writable pointer to a `PtpClockCaps`.
+#[allow(
+    clippy::cast_possible_wrap,
+    reason = "This cast can wrap on some but not all platforms, but is always ok."
+)]
+#[allow(
+    clippy::cast_lossless,
+    reason = "This cast is not lossless on all platforms."
+)]
 pub unsafe fn ptp_clock_getcaps(fd: RawFd, caps: *mut PtpClockCaps) -> libc::c_int {
     libc::ioctl(fd, PTP_CLOCK_GETCAPS as _, caps)
 }

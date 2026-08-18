@@ -73,6 +73,9 @@ impl UnixClock {
     ///     Ok(())
     /// }
     /// ```
+    ///
+    /// # Errors
+    /// Returns an error if the given path cannot be opened.
     #[cfg(target_os = "linux")]
     pub fn open(path: impl AsRef<Path>) -> std::io::Result<Self> {
         let file = std::fs::OpenOptions::new()
@@ -102,7 +105,14 @@ impl UnixClock {
     /// Determine offset between file clock and TAI clock (if any)
     /// Returns two system timestamps sandwhiching a timestamp from the
     /// hardware clock.
+    ///
+    /// # Errors
+    /// Returns an error fi the system offset could not be provided.
     #[cfg(target_os = "linux")]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "Casts for timestamp conversion aren't lossless on all platforms"
+    )]
     pub fn system_offset(&self) -> Result<(Timestamp, Timestamp, Timestamp), Error> {
         use libc::{ptp_clock_time, ptp_sys_offset, PTP_SYS_OFFSET};
 
@@ -136,7 +146,7 @@ impl UnixClock {
 
             Ok((
                 Timestamp {
-                    seconds: (offset.ts[0].sec + tai_offset as i64) as _,
+                    seconds: (offset.ts[0].sec + i64::from(tai_offset)) as _,
                     nanos: offset.ts[0].nsec as _,
                 },
                 Timestamp {
@@ -144,13 +154,17 @@ impl UnixClock {
                     nanos: offset.ts[1].nsec as _,
                 },
                 Timestamp {
-                    seconds: (offset.ts[2].sec + tai_offset as i64) as _,
+                    seconds: (offset.ts[2].sec + i64::from(tai_offset)) as _,
                     nanos: offset.ts[2].nsec as _,
                 },
             ))
         }
     }
 
+    #[allow(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "Allows a consistent interface between platforms."
+    )]
     fn clock_adjtime(&self, timex: &mut libc::timex) -> Result<(), Error> {
         // We don't care about the time status, so the non-error
         // information in the return value of clock_adjtime can be ignored.
@@ -211,6 +225,10 @@ impl UnixClock {
     /// Note that [`libc::timex`] has a different layout between different operating systems, and
     /// not all fields are available on all operating systems. Keep this in mind when writing
     /// platform-independent code.
+    #[allow(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "Allows a consistent interface between platforms."
+    )]
     fn adjtime(&self, timex: &mut libc::timex) -> Result<(), Error> {
         if self.clock == libc::CLOCK_REALTIME {
             Self::ntp_adjtime(timex)
@@ -229,7 +247,7 @@ impl UnixClock {
         // error https://linux.die.net/man/3/clock_gettime
         //
         // The timespec pointer is valid.
-        cerr(unsafe { libc::clock_gettime(self.clock, &mut timespec) })?;
+        cerr(unsafe { libc::clock_gettime(self.clock, &raw mut timespec) })?;
 
         Ok(timespec)
     }
@@ -247,17 +265,29 @@ impl UnixClock {
         // error https://linux.die.net/man/3/clock_settime
         //
         // The timespec pointer is valid.
-        unsafe { cerr(libc::clock_settime(self.clock, &timespec))? };
+        unsafe { cerr(libc::clock_settime(self.clock, &raw const timespec))? };
 
         Ok(())
     }
 
     #[cfg_attr(target_os = "linux", allow(unused))]
+    #[allow(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "Allows a consistent interface between platforms."
+    )]
     fn step_clock_by_timespec(&self, offset: TimeOffset) -> Result<Timestamp, Error> {
         let mut timespec = self.clock_gettime()?;
 
         // see https://github.com/rust-lang/libc/issues/1848
         #[cfg_attr(target_env = "musl", allow(deprecated))]
+        #[allow(
+            clippy::cast_possible_wrap,
+            reason = "The actual value is always possible, but not unsigned on all platforms."
+        )]
+        #[allow(
+            clippy::cast_lossless,
+            reason = "The cast can be done lossless on some, but not all, platforms."
+        )]
         {
             timespec.tv_sec += offset.seconds as libc::time_t;
             timespec.tv_nsec += offset.nanos as libc::c_long;
@@ -268,12 +298,14 @@ impl UnixClock {
         Ok(current_time_timespec(timespec, Precision::Nano))
     }
 
-    fn error_estimate_timex(est_error: Duration, max_error: Duration) -> libc::timex {
+    fn error_estimate_timex(esterror: Duration, maxerror: Duration) -> libc::timex {
         let modes = libc::MOD_ESTERROR | libc::MOD_MAXERROR;
 
         // these fields are always in microseconds
-        let esterror = est_error.as_nanos() as libc::c_long / 1000;
-        let maxerror = max_error.as_nanos() as libc::c_long / 1000;
+        let esterror =
+            libc::c_long::try_from(esterror.as_nanos() / 1000).unwrap_or(libc::c_long::MAX);
+        let maxerror =
+            libc::c_long::try_from(maxerror.as_nanos() / 1000).unwrap_or(libc::c_long::MAX);
 
         libc::timex {
             modes,
@@ -288,9 +320,17 @@ impl UnixClock {
         // we provide the offset in nanoseconds
         let modes = libc::ADJ_SETOFFSET | libc::ADJ_NANO;
 
+        #[allow(
+            clippy::cast_possible_wrap,
+            reason = "The actual value is always possible, but not unsigned on all platforms."
+        )]
+        #[allow(
+            clippy::cast_lossless,
+            reason = "The cast can be done lossless on some, but not all, platforms."
+        )]
         let time = libc::timeval {
             tv_sec: offset.seconds,
-            tv_usec: offset.nanos as libc::suseconds_t,
+            tv_usec: offset.nanos as _,
         };
 
         libc::timex {
@@ -307,17 +347,24 @@ impl UnixClock {
         self.extract_current_time(&timex)
     }
 
-    fn extract_current_time(&self, _timex: &libc::timex) -> Result<Timestamp, Error> {
+    #[allow(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "Allows a consistent interface between platforms."
+    )]
+    fn extract_current_time(
+        &self,
+        #[cfg_attr(target_os = "macos", allow(unused))] timex: &libc::timex,
+    ) -> Result<Timestamp, Error> {
         #[cfg(target_os = "linux")]
         // hardware clocks may not report the timestamp
-        if _timex.time.tv_sec != 0 && _timex.time.tv_usec != 0 {
+        if timex.time.tv_sec != 0 && timex.time.tv_usec != 0 {
             // in a timex, the status flag determines precision
-            let precision = match _timex.status & libc::STA_NANO {
+            let precision = match timex.status & libc::STA_NANO {
                 0 => Precision::Micro,
                 _ => Precision::Nano,
             };
 
-            return Ok(current_time_timeval(_timex.time, precision));
+            return Ok(current_time_timeval(timex.time, precision));
         }
 
         // clock_gettime always gives nanoseconds
@@ -325,7 +372,10 @@ impl UnixClock {
         Ok(current_time_timespec(timespec, Precision::Nano))
     }
 
-    #[inline(always)]
+    #[allow(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "Allows a consistent interface between platforms."
+    )]
     fn update_timex<F>(&self, f: F) -> Result<(), Error>
     where
         F: FnOnce(libc::timex) -> libc::timex,
@@ -338,7 +388,10 @@ impl UnixClock {
         self.adjtime(&mut timex)
     }
 
-    #[inline(always)]
+    #[allow(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "Allows a consistent interface between platforms."
+    )]
     fn update_status<F>(&self, f: F) -> Result<(), Error>
     where
         F: FnOnce(libc::c_int) -> libc::c_int,
@@ -354,6 +407,10 @@ impl UnixClock {
         })
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Truncating the frequency is acceptable here."
+    )]
     fn set_frequency_timex(ppm: f64) -> libc::timex {
         // We do an offset with precision
         let mut timex = EMPTY_TIMEX;
@@ -384,8 +441,8 @@ impl UnixClock {
                 let caps = unsafe { caps.assume_init() };
 
                 Ok(ClockCapabilities {
-                    max_frequency_adjustment_ppm: caps.max_adj as f64 / 1000.0,
-                    max_offset_adjustment_ns: caps.max_phase_adj as u32,
+                    max_frequency_adjustment_ppm: f64::from(caps.max_adj) / 1000.0,
+                    max_offset_adjustment_ns: caps.max_phase_adj.cast_unsigned(),
                 })
             } else if error_number() == libc::ENOTTY {
                 // Not a PTP device, use system clock defaults
@@ -417,7 +474,7 @@ impl Clock for UnixClock {
     fn resolution(&self) -> Result<Timestamp, Self::Error> {
         let mut timespec = libc::timespec::default();
 
-        cerr(unsafe { libc::clock_getres(self.clock, &mut timespec) })?;
+        cerr(unsafe { libc::clock_getres(self.clock, &raw mut timespec) })?;
 
         Ok(current_time_timespec(timespec, Precision::Nano))
     }
@@ -433,6 +490,14 @@ impl Clock for UnixClock {
         Ok(ClockCapabilities::default())
     }
 
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "Precision loss is acceptable here."
+    )]
+    #[allow(
+        clippy::cast_lossless,
+        reason = "Cast is needed and not always lossless on all platforms."
+    )]
     fn get_frequency(&self) -> Result<f64, Self::Error> {
         let mut timex = EMPTY_TIMEX;
         self.adjtime(&mut timex)?;
@@ -488,9 +553,13 @@ impl Clock for UnixClock {
 
     #[cfg(target_os = "linux")]
     fn set_tai(&self, tai_offset: i32) -> Result<(), Error> {
+        #[allow(
+            clippy::useless_conversion,
+            reason = "This conversion is not useless on all platforms."
+        )]
         let mut timex = libc::timex {
             modes: libc::ADJ_TAI,
-            constant: tai_offset as _,
+            constant: tai_offset.into(),
             ..EMPTY_TIMEX
         };
 
@@ -538,15 +607,15 @@ pub enum Error {
 
 impl core::fmt::Display for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        use Error::*;
-
         let msg = match self {
-            NoPermission => "Insufficient permissions to interact with the clock.",
-            NoAccess => "No access to the clock.",
-            Invalid => "Invalid operation requested",
-            NoDevice => "Clock device has gone away",
-            NotSupported => "Clock operation requested is not supported by operating system.",
-            OutOfRange => "Value out of range",
+            Error::NoPermission => "Insufficient permissions to interact with the clock.",
+            Error::NoAccess => "No access to the clock.",
+            Error::Invalid => "Invalid operation requested",
+            Error::NoDevice => "Clock device has gone away",
+            Error::NotSupported => {
+                "Clock operation requested is not supported by operating system."
+            }
+            Error::OutOfRange => "Value out of range",
         };
 
         f.write_str(msg)
@@ -559,6 +628,9 @@ impl Error {
     /// Turn the `Error::NotSupported` error variant into `Ok(())`, to silently
     /// ignore operations that are not supported by the current clock. All
     /// other input values are untouched.
+    ///
+    /// # Errors
+    /// Returns an error on any error other than `Error::NotSupported`.
     pub fn ignore_not_supported(res: Result<(), Error>) -> Result<(), Error> {
         match res {
             Err(Error::NotSupported) => Ok(()),
@@ -628,6 +700,7 @@ fn cerr(c_int: libc::c_int) -> Result<(), Error> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Precision {
     Nano,
     #[cfg_attr(any(target_os = "freebsd", target_os = "macos"), allow(unused))]
@@ -635,6 +708,11 @@ pub(crate) enum Precision {
 }
 
 #[cfg_attr(target_os = "linux", allow(unused))]
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "tv_nsec is always less than 1_000_000_000, which fits in an i32"
+)]
+#[expect(clippy::cast_sign_loss, reason = "nanos is guaranteed to be >=0")]
 fn current_time_timespec(timespec: libc::timespec, precision: Precision) -> Timestamp {
     let mut seconds = timespec.tv_sec;
 
@@ -664,6 +742,11 @@ fn current_time_timespec(timespec: libc::timespec, precision: Precision) -> Time
 }
 
 #[cfg_attr(not(target_os = "linux"), allow(unused))]
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "tv_usec is always less than 1_000_000_000, which fits in an i32"
+)]
+#[expect(clippy::cast_sign_loss, reason = "tv_usec is guaranteed to be >=0")]
 fn current_time_timeval(timespec: libc::timeval, precision: Precision) -> Timestamp {
     let seconds = timespec.tv_sec;
     let nanos = match precision {
@@ -676,6 +759,7 @@ fn current_time_timeval(timespec: libc::timeval, precision: Precision) -> Timest
     Timestamp { seconds, nanos }
 }
 
+/// Convenient way of getting an empty [`libc::timex`] struct.
 // Libc has no good other way of obtaining this, so let's at least make our
 // functions more readable.
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
@@ -716,6 +800,7 @@ pub const EMPTY_TIMEX: libc::timex = libc::timex {
     __unused11: 0,
 };
 
+/// Convenient way of getting an empty [`libc::timex`] struct.
 #[cfg(all(target_os = "linux", target_env = "musl"))]
 pub const EMPTY_TIMEX: libc::timex = libc::timex {
     modes: 0,
@@ -744,6 +829,7 @@ pub const EMPTY_TIMEX: libc::timex = libc::timex {
     __padding: [0; 11],
 };
 
+/// Convenient way of getting an empty [`libc::timex`] struct.
 #[cfg(any(target_os = "freebsd", target_os = "macos"))]
 pub const EMPTY_TIMEX: libc::timex = libc::timex {
     modes: 0,
@@ -791,7 +877,7 @@ mod tests {
         let clock = UnixClock::CLOCK_REALTIME;
         let time = clock.clock_gettime().unwrap();
 
-        assert_ne!((time.tv_sec, time.tv_nsec), (0, 0))
+        assert_ne!((time.tv_sec, time.tv_nsec), (0, 0));
     }
 
     #[test]
@@ -800,7 +886,7 @@ mod tests {
         let clock = UnixClock::CLOCK_REALTIME;
         let time = clock.clock_gettime().unwrap();
 
-        assert_ne!((time.tv_sec, time.tv_nsec), (0, 0))
+        assert_ne!((time.tv_sec, time.tv_nsec), (0, 0));
     }
 
     #[test]
@@ -819,7 +905,7 @@ mod tests {
     fn test_step_clock() {
         let offset = TimeOffset {
             seconds: 1,
-            nanos: 200000000,
+            nanos: 200_000_000,
         };
         let timex = UnixClock::step_clock_timex(offset);
 

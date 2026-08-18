@@ -6,6 +6,7 @@ use core::time::Duration;
 #[cfg(target_os = "linux")]
 mod linux_ioctls;
 
+/// Low-level access to unix clocks.
 #[cfg(unix)]
 pub mod unix;
 
@@ -14,7 +15,15 @@ pub mod unix;
 /// The format makes it easy to convert into libc data structures, and supports subnanoseconds that
 /// certain hardware can provide for additional precision. The value is an offset from the [unix epoch](https://en.wikipedia.org/wiki/Unix_time).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[cfg_attr(
+    target_env = "musl",
+    allow(
+        deprecated,
+        reason = "see https://github.com/rust-lang/libc/issues/1848"
+    )
+)]
 pub struct Timestamp {
+    /// Number of whole seconds since the unix epoch.
     pub seconds: libc::time_t,
     /// Nanos must be between 0 and 999999999 inclusive
     pub nanos: u32,
@@ -44,8 +53,17 @@ impl Default for ClockCapabilities {
     }
 }
 
+/// An offset to apply to time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[cfg_attr(
+    target_env = "musl",
+    allow(
+        deprecated,
+        reason = "see https://github.com/rust-lang/libc/issues/1848"
+    )
+)]
 pub struct TimeOffset {
+    /// Number of whole seconds in the offset.
     pub seconds: libc::time_t,
     /// Nanos must be between 0 and 999999999 inclusive
     pub nanos: u32,
@@ -67,23 +85,33 @@ pub enum LeapIndicator {
 
 /// Trait for reading information from and modifying an OS clock
 pub trait Clock {
+    /// Type of errors returned by the clock.
     type Error: std::error::Error;
 
     // feature(error_in_core) https://github.com/rust-lang/rust/issues/103765
     // type Error: core::error::Error;
 
     /// Get the current time.
+    ///
+    /// # Errors
+    /// May error if there is a problem with the underlying clock.
     fn now(&self) -> Result<Timestamp, Self::Error>;
 
     /// Get the clock's resolution.
     ///
     /// The output [`Timestamp`] will be all zeros when the resolution is
     /// unavailable.
+    ///
+    /// # Errors
+    /// May error if there is a problem with the underlying clock.
     fn resolution(&self) -> Result<Timestamp, Self::Error>;
 
     /// Get the clock's adjustment capabilities.
     ///
     /// This returns information about the clock's capabilities.
+    ///
+    /// # Errors
+    /// May error if there is a problem with the underlying clock.
     fn capabilities(&self) -> Result<ClockCapabilities, Self::Error>;
 
     /// Change the frequency of the clock.
@@ -91,18 +119,30 @@ pub trait Clock {
     ///
     /// The unit of the input is milliseconds (of drift) per second,
     /// compared to the "natural" frequency of the clock.
+    ///
+    /// # Errors
+    /// May error if there is a problem with the underlying clock.
     fn set_frequency(&self, frequency: f64) -> Result<Timestamp, Self::Error>;
 
     /// Get the frequency of the clock
     /// The unit of the output is milliseconds (of drift) per second,
     /// compared to the "natural" frequency of the clock.
+    ///
+    /// # Errors
+    /// May error if there is a problem with the underlying clock.
     fn get_frequency(&self) -> Result<f64, Self::Error>;
 
     /// Change the current time of the clock by an offset.
     /// Returns the time at which the change was applied.
+    ///
+    /// # Errors
+    /// May error if there is a problem with the underlying clock.
     fn step_clock(&self, offset: TimeOffset) -> Result<Timestamp, Self::Error>;
 
     /// Change the indicators for upcoming leap seconds.
+    ///
+    /// # Errors
+    /// May error if there is a problem with the underlying clock.
     fn set_leap_seconds(&self, leap_status: LeapIndicator) -> Result<(), Self::Error>;
 
     /// Disable all standard NTP kernel clock discipline. It is all your responsibility now.
@@ -113,17 +153,29 @@ pub trait Clock {
     /// - [`libc::STA_FLL`]: kernel frequency-locked loop
     /// - [`libc::STA_PPSTIME`]: pulse-per-second time
     /// - [`libc::STA_PPSFREQ`]: pulse-per-second frequency discipline
+    ///
+    /// # Errors
+    /// May error if there is a problem with the underlying clock.
     fn disable_kernel_ntp_algorithm(&self) -> Result<(), Self::Error>;
 
     /// Set the offset between TAI and UTC.
+    ///
+    /// # Errors
+    /// May error if there is a problem with the underlying clock.
     fn set_tai(&self, tai_offset: i32) -> Result<(), Self::Error>;
 
     /// Get the offset between TAI and UTC.
+    ///
+    /// # Errors
+    /// May error if there is a problem with the underlying clock.
     fn get_tai(&self) -> Result<i32, Self::Error>;
 
     /// Provide the system with the current best estimates for the statistical
     /// error of the clock, and the maximum deviation due to frequency error and
-    /// distance to the root clock.
+    /// distance to the root lock.
+    ///
+    /// # Errors
+    /// May error if there is a problem with the underlying clock.
     fn error_estimate_update(
         &self,
         estimated_error: Duration,
