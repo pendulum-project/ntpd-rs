@@ -167,8 +167,6 @@ dependencies = [
 [[package]]
 name = "clock-steering"
 version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2410abf030f2eb46cba840d343455078538e7c8755507b37ffd4074064f08f62"
 dependencies = [
  "libc",
 ]

@@ -1,0 +1,19 @@
+[package]
+name = "clock-steering"
+description = "Functionality for manual clock steering"
+version = "0.2.1"
+edition = "2021"
+license = "Apache-2.0 OR MIT"
+repository = "https://github.com/pendulum-project/clock-steering"
+homepage = "https://github.com/pendulum-project/clock-steering"
+publish = true
+rust-version = "1.66"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[example]]
+name = "basic"
+required-features = []
+
+[dependencies]
+libc = "0.2.183"
