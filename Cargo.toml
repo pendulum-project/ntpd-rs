@@ -8,6 +8,7 @@ members = [
     "statime-csptp",
     "statime-netptp",
     "statime-wire",
+    "timestamped-socket",
 ]
 exclude = [ ]
 
