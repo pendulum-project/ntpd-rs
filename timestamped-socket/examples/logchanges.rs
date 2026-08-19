@@ -1,3 +1,5 @@
+//! Example showing how a network change detector can be used.
+
 use timestamped_socket::interface::ChangeDetector;
 
 #[tokio::main]

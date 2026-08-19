@@ -15,6 +15,10 @@ struct SoTimestamping {
 }
 
 impl RawSocket {
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "a c_int is always short enough that its size fits in an i32."
+    )]
     pub(crate) fn enable_destination_ipv4(&self) -> std::io::Result<()> {
         // SAFETY:
         //
@@ -27,13 +31,21 @@ impl RawSocket {
                 self.fd,
                 libc::IPPROTO_IP,
                 libc::IP_PKTINFO,
-                &(1 as libc::c_int) as *const _ as *const libc::c_void,
+                std::ptr::from_ref(&(1 as libc::c_int)).cast::<libc::c_void>(),
                 std::mem::size_of::<libc::c_int>() as libc::socklen_t,
             ))?;
         }
         Ok(())
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "SoTimestamping is always short enough that its size fits in an i32."
+    )]
+    #[expect(
+        clippy::cast_possible_wrap,
+        reason = "options and bind_phc will always fit in signed integers as well."
+    )]
     pub(crate) fn so_timestamping(&self, options: u32, bind_phc: u32) -> std::io::Result<()> {
         // Documentation on the timestamping calls:
         //
@@ -61,13 +73,17 @@ impl RawSocket {
                 self.fd,
                 libc::SOL_SOCKET,
                 libc::SO_TIMESTAMPING,
-                &tstamp_config as *const _ as *const libc::c_void,
+                (&raw const tstamp_config).cast::<libc::c_void>(),
                 std::mem::size_of_val(&tstamp_config) as libc::socklen_t,
             ))
         }?;
         Ok(())
     }
 
+    #[expect(
+        clippy::cast_possible_wrap,
+        reason = "libc constants can have inconsistent types"
+    )]
     pub(crate) fn driver_enable_hardware_timestamping(
         &self,
         interface: InterfaceName,
@@ -82,7 +98,7 @@ impl RawSocket {
         let mut ifreq = libc::ifreq {
             ifr_name: interface.to_ifr_name(),
             ifr_ifru: libc::__c_anonymous_ifr_ifru {
-                ifru_data: (&mut tstamp_config as *mut _) as *mut libc::c_char,
+                ifru_data: (&raw mut tstamp_config).cast::<libc::c_char>(),
             },
         };
 
@@ -92,6 +108,10 @@ impl RawSocket {
         Ok(())
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "An interface name is always short enough that its size fits in an i32."
+    )]
     pub(crate) fn bind_to_device(&self, interface_name: InterfaceName) -> std::io::Result<()> {
         let value = interface_name.as_str().as_bytes();
         let len = value.len();
@@ -112,6 +132,14 @@ impl RawSocket {
         Ok(())
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "request is always short enough that its size fits in an i32."
+    )]
+    #[expect(
+        clippy::cast_possible_wrap,
+        reason = "Interface indices will always fit in an i32"
+    )]
     pub(crate) fn ip_multicast_if(&self, interface_name: InterfaceName) -> std::io::Result<()> {
         let request = libc::ip_mreqn {
             imr_multiaddr: libc::in_addr {
@@ -133,13 +161,17 @@ impl RawSocket {
                 self.fd,
                 libc::IPPROTO_IP,
                 libc::IP_MULTICAST_IF,
-                &request as *const _ as *const _,
+                (&raw const request).cast(),
                 std::mem::size_of_val(&request) as _,
             )
         })?;
         Ok(())
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "index is always short enough that its size fits in an i32."
+    )]
     pub(crate) fn ipv6_multicast_if(&self, interface_name: InterfaceName) -> std::io::Result<()> {
         let index = interface_name
             .get_index()
@@ -153,15 +185,19 @@ impl RawSocket {
                 self.fd,
                 libc::IPPROTO_IPV6,
                 libc::IPV6_MULTICAST_IF,
-                &index as *const _ as *const _,
+                (&raw const index).cast(),
                 std::mem::size_of_val(&index) as _,
             )
         })?;
         Ok(())
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "state is always short enough that its size fits in an i32."
+    )]
     pub(crate) fn ip_multicast_loop(&self, enabled: bool) -> std::io::Result<()> {
-        let state: i32 = if enabled { 1 } else { 0 };
+        let state: i32 = i32::from(enabled);
 
         // Safety:
         // state lives for the duration of the call, and we pass its size
@@ -171,15 +207,19 @@ impl RawSocket {
                 self.fd,
                 libc::IPPROTO_IP,
                 libc::IP_MULTICAST_LOOP,
-                &state as *const _ as *const _,
+                (&raw const state).cast(),
                 std::mem::size_of_val(&state) as _,
             )
         })?;
         Ok(())
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "state is always short enough that its size fits in an i32."
+    )]
     pub(crate) fn ipv6_multicast_loop(&self, enabled: bool) -> std::io::Result<()> {
-        let state: i32 = if enabled { 1 } else { 0 };
+        let state: i32 = i32::from(enabled);
 
         // Safety:
         // state lives for the duration of the call, and we pass its size
@@ -189,15 +229,19 @@ impl RawSocket {
                 self.fd,
                 libc::IPPROTO_IPV6,
                 libc::IPV6_MULTICAST_LOOP,
-                &state as *const _ as *const _,
+                (&raw const state).cast(),
                 std::mem::size_of_val(&state) as _,
             )
         })?;
         Ok(())
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "state is always short enough that its size fits in an i32."
+    )]
     pub(crate) fn ipv6_v6only(&self, enabled: bool) -> std::io::Result<()> {
-        let state: i32 = if enabled { 1 } else { 0 };
+        let state: i32 = i32::from(enabled);
 
         // Safety:
         // state lives for the duration of the call, and we pass its size
@@ -207,13 +251,17 @@ impl RawSocket {
                 self.fd,
                 libc::IPPROTO_IPV6,
                 libc::IPV6_V6ONLY,
-                &state as *const _ as *const _,
+                (&raw const state).cast(),
                 std::mem::size_of_val(&state) as _,
             )
         })?;
         Ok(())
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Message is always short enough that its size fits in an i32."
+    )]
     pub(crate) fn send_from_v4(&self, msg: &[u8], addr: in_addr) -> std::io::Result<()> {
         let control_message = control_message(
             libc::IPPROTO_IP,
@@ -241,6 +289,10 @@ impl RawSocket {
         cerr(unsafe { libc::sendmsg(self.fd, &raw const msghdr, 0) } as _).map(|_| {})
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Message is always short enough that its size fits in an i32."
+    )]
     pub(crate) fn send_from_to_v4(
         &self,
         msg: &[u8],

@@ -962,7 +962,7 @@ dependencies = [
  "statime-csptp",
  "statime-netptp",
  "statime-wire",
- "timestamped-socket 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "timestamped-socket",
  "tokio",
  "tokio-rustls",
  "toml",
@@ -1565,7 +1565,7 @@ dependencies = [
 name = "statime-netptp"
 version = "2.0.0-alpha.20260715"
 dependencies = [
- "timestamped-socket 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "timestamped-socket",
  "tokio",
  "tracing",
 ]
@@ -1715,18 +1715,6 @@ checksum = "9e1c906769ad99c88eaa54e728060edef082f8e358ff32030cb7c7d315e81109"
 [[package]]
 name = "timestamped-socket"
 version = "0.3.0"
-dependencies = [
- "libc",
- "serde",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "timestamped-socket"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72ed4c1aa229f1b2b469b9ae0d4eecd921e2d7430653a4f6d49b166c84a96d25"
 dependencies = [
  "libc",
  "serde",
