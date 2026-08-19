@@ -191,7 +191,7 @@ impl Duration {
     #[must_use]
     pub fn as_nanos(self) -> i128 {
         // We split and do the subsecond and second parts separately to avoid overflows.
-        let subseconds = self.0.cast_unsigned() & u128::from(u64::MAX);
+        let subseconds = (self.0.cast_unsigned() & u128::from(u64::MAX)) * 1_000_000_000;
         let seconds = self.0 >> 64;
         let nanos_subseconds = (subseconds >> 64)
             + u128::from((subseconds & 0xFFFF_FFFF_FFFF_FFFF) >= 0x8000_0000_0000_0000);
