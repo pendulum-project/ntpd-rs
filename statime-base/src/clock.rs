@@ -51,19 +51,20 @@ pub trait Clock: Clone + Send + 'static {
     fn now(&self) -> Result<Timestamp<TAI>, ClockError>;
 
     /// Change the frequency of the clock, returning the time
-    /// at which the change was applied.
+    /// at which the change was applied. The frequency is
+    /// in seconds per second deviation.
     ///
     /// # Errors
     /// Should return an error if the clock is unable to be steered by the requested amount.
     fn set_frequency(&self, freq: f64) -> Result<Timestamp<TAI>, ClockError>;
 
-    /// Get the frequency of the clock
+    /// Get the frequency of the clock, in seconds per second deviation
     ///
     /// # Errors
     /// Should return an error if the clock is unable to provide its current steering frequency.
     fn get_frequency(&self) -> Result<f64, ClockError>;
 
-    /// Maximum frequency offset the clock is capable of.
+    /// Maximum frequency offset the clock is capable of, in seconds per second deviation.
     ///
     /// # Errors
     /// Should return an error if the maximum frequency offset could not be determined.
