@@ -22,6 +22,16 @@ struct EthtoolTsInfo {
 
 const ETHTOOL_GET_TS_INFO: u32 = 0x41;
 
+/// Get the hardware clock index associated with the given interface.
+#[allow(
+    clippy::cast_possible_wrap,
+    reason = "Interface indices are always positive."
+)]
+#[expect(
+    clippy::cast_sign_loss,
+    reason = "Interface indices are always positive."
+)]
+#[must_use]
 pub fn lookup_phc(interface: InterfaceName) -> Option<u32> {
     // Safety: socket is safe to call with these constants as
     // arguments
@@ -44,7 +54,7 @@ pub fn lookup_phc(interface: InterfaceName) -> Option<u32> {
     let mut request = ifreq {
         ifr_name: array::from_fn(|i| interface.bytes[i] as _),
         ifr_ifru: __c_anonymous_ifr_ifru {
-            ifru_data: &mut ethtool_ts_info as *mut _ as *mut _,
+            ifru_data: (&raw mut ethtool_ts_info).cast(),
         },
     };
 
@@ -53,7 +63,7 @@ pub fn lookup_phc(interface: InterfaceName) -> Option<u32> {
         ioctl(
             fd,
             SIOCETHTOOL as _,
-            &mut request as *mut _ as *mut libc::c_void,
+            (&raw mut request).cast::<libc::c_void>(),
         )
     };
 
@@ -72,11 +82,20 @@ pub fn lookup_phc(interface: InterfaceName) -> Option<u32> {
     }
 }
 
+/// A detector for changes to which network interfaces are available on the system.
 pub struct ChangeDetector {
     fd: AsyncFd<RawFd>,
 }
 
 impl ChangeDetector {
+    /// Create a new detector for changes to which network interfaces are available on the system.
+    ///
+    /// # Errors
+    /// May fail if the system does not allow a new change detector to be created.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Network addresses are small enought that their size fits in an integer."
+    )]
     pub fn new() -> std::io::Result<Self> {
         const _: () = assert!(
             std::mem::size_of::<libc::sockaddr_storage>()
@@ -91,9 +110,7 @@ impl ChangeDetector {
         // Safety: the above assertions guarantee that alignment and size are correct.
         // the resulting reference won't outlast the function, and result lives the entire
         // duration of the function
-        let address = unsafe {
-            &mut *(&mut address_buf as *mut libc::sockaddr_storage as *mut libc::sockaddr_nl)
-        };
+        let address = unsafe { &mut *(&raw mut address_buf).cast::<libc::sockaddr_nl>() };
 
         address.nl_family = libc::AF_NETLINK as _;
         address.nl_groups =
@@ -106,7 +123,7 @@ impl ChangeDetector {
         cerr(unsafe {
             libc::bind(
                 fd,
-                address as *mut _ as *mut _,
+                std::ptr::from_mut(address).cast(),
                 std::mem::size_of_val(address) as _,
             )
         })?;
@@ -120,6 +137,10 @@ impl ChangeDetector {
         })
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "The message buffer is small enought that its size fits in an integer."
+    )]
     fn empty(fd: i32) {
         loop {
             // Safety: buf is valid for the duration of the call, and it's length is passed as the len argument
@@ -127,12 +148,12 @@ impl ChangeDetector {
             match cerr(unsafe {
                 recv(
                     fd,
-                    &mut buf as *mut _ as *mut _,
+                    (&raw mut buf).cast(),
                     std::mem::size_of_val(&buf) as _,
                     0,
                 ) as _
             }) {
-                Ok(_) => continue,
+                Ok(_) => {}
                 Err(e) if e.kind() == ErrorKind::WouldBlock => break,
                 Err(e) => {
                     tracing::error!("Could not receive on change socket: {}", e);
@@ -142,6 +163,11 @@ impl ChangeDetector {
         }
     }
 
+    /// Wait for a change to which network interfaces are present.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "The message buffer is small enought that its size fits in an integer."
+    )]
     pub async fn wait_for_change(&mut self) {
         if let Err(e) = self
             .fd
@@ -151,7 +177,7 @@ impl ChangeDetector {
                 cerr(unsafe {
                     recv(
                         *fd,
-                        &mut buf as *mut _ as *mut _,
+                        (&raw mut buf).cast(),
                         std::mem::size_of_val(&buf) as _,
                         0,
                     ) as _

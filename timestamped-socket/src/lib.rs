@@ -1,7 +1,12 @@
+//! A library for networking with timestamping support.
+
 mod control_message;
+/// Types and operations for finding and manipulating network interfaces.
 pub mod interface;
+/// Traits and types related to network addresses.
 pub mod networkaddress;
 mod raw_socket;
+/// Types and operations related to sockets.
 pub mod socket;
 
 /// Turn a C failure (-1 is returned) into a rust Result

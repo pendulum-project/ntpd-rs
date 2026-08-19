@@ -24,6 +24,7 @@ pub(crate) mod sealed {
     pub struct PrivateToken;
 }
 
+/// A type of network address.
 pub trait NetworkAddress: Copy + Sized + SealedNA {
     #[doc(hidden)]
     fn to_sockaddr(&self, _token: PrivateToken) -> libc::sockaddr_storage;
@@ -35,6 +36,7 @@ pub trait NetworkAddress: Copy + Sized + SealedNA {
     fn port(&self) -> u16;
 }
 
+/// A network address type which has joinable multicast addresses.
 pub trait MulticastJoinable: NetworkAddress + SealedMC {
     #[doc(hidden)]
     fn join_multicast(
@@ -55,6 +57,10 @@ pub trait MulticastJoinable: NetworkAddress + SealedMC {
 impl SealedNA for SocketAddrV4 {}
 
 impl NetworkAddress for SocketAddrV4 {
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "libc constants have inconsistent sizes."
+    )]
     fn to_sockaddr(&self, _token: PrivateToken) -> libc::sockaddr_storage {
         const _: () = assert!(
             std::mem::size_of::<libc::sockaddr_storage>()
@@ -69,7 +75,7 @@ impl NetworkAddress for SocketAddrV4 {
         // Safety: the above assertions guarantee that alignment and size are correct.
         // the resulting reference won't outlast the function, and result lives the entire
         // duration of the function
-        let out = unsafe { &mut (*(&mut result as *mut _ as *mut libc::sockaddr_in)) };
+        let out = unsafe { &mut (*(&raw mut result).cast::<libc::sockaddr_in>()) };
         out.sin_family = libc::AF_INET as _;
         out.sin_port = u16::from_ne_bytes(self.port().to_be_bytes());
         out.sin_addr = libc::in_addr {
@@ -79,6 +85,10 @@ impl NetworkAddress for SocketAddrV4 {
         result
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "libc constants have inconsistent sizes."
+    )]
     fn from_sockaddr(addr: libc::sockaddr_storage, _token: PrivateToken) -> Option<Self> {
         const _: () = assert!(
             std::mem::size_of::<libc::sockaddr_storage>()
@@ -96,7 +106,7 @@ impl NetworkAddress for SocketAddrV4 {
         // Safety: the above assertions guarantee that alignment and size are correct
         // the resulting reference won't outlast the function, and addr lives the entire
         // duration of the function
-        let input = unsafe { &(*(&addr as *const _ as *const libc::sockaddr_in)) };
+        let input = unsafe { &(*(&raw const addr).cast::<libc::sockaddr_in>()) };
         Some(SocketAddrV4::new(
             Ipv4Addr::from(input.sin_addr.s_addr.to_ne_bytes()),
             u16::from_be_bytes(input.sin_port.to_ne_bytes()),
@@ -118,6 +128,10 @@ impl NetworkAddress for SocketAddrV4 {
 impl SealedNA for SocketAddrV6 {}
 
 impl NetworkAddress for SocketAddrV6 {
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "libc constants have inconsistent sizes."
+    )]
     fn to_sockaddr(&self, _token: PrivateToken) -> libc::sockaddr_storage {
         const _: () = assert!(
             std::mem::size_of::<libc::sockaddr_storage>()
@@ -132,7 +146,7 @@ impl NetworkAddress for SocketAddrV6 {
         // Safety: the above assertions guarantee that alignment and size are correct.
         // the resulting reference won't outlast the function, and result lives the entire
         // duration of the function
-        let out = unsafe { &mut (*(&mut result as *mut _ as *mut libc::sockaddr_in6)) };
+        let out = unsafe { &mut (*(&raw mut result).cast::<libc::sockaddr_in6>()) };
         out.sin6_family = libc::AF_INET6 as _;
         out.sin6_port = u16::from_ne_bytes(self.port().to_be_bytes());
         out.sin6_addr = libc::in6_addr {
@@ -144,6 +158,10 @@ impl NetworkAddress for SocketAddrV6 {
         result
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "libc constants have inconsistent sizes."
+    )]
     fn from_sockaddr(addr: libc::sockaddr_storage, _token: PrivateToken) -> Option<Self> {
         const _: () = assert!(
             std::mem::size_of::<libc::sockaddr_storage>()
@@ -161,7 +179,7 @@ impl NetworkAddress for SocketAddrV6 {
         // Safety: the above assertions guarantee that alignment and size are correct
         // the resulting reference won't outlast the function, and addr lives the entire
         // duration of the function
-        let input = unsafe { &(*(&addr as *const _ as *const libc::sockaddr_in6)) };
+        let input = unsafe { &(*(&raw const addr).cast::<libc::sockaddr_in6>()) };
         Some(SocketAddrV6::new(
             Ipv6Addr::from(input.sin6_addr.s6_addr),
             u16::from_be_bytes(input.sin6_port.to_ne_bytes()),
@@ -193,7 +211,7 @@ impl NetworkAddress for SocketAddr {
     }
 
     fn from_sockaddr(addr: libc::sockaddr_storage, _token: PrivateToken) -> Option<Self> {
-        match addr.ss_family as _ {
+        match addr.ss_family.into() {
             libc::AF_INET => Some(SocketAddr::V4(SocketAddrV4::from_sockaddr(
                 addr,
                 PrivateToken,

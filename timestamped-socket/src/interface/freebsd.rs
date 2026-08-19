@@ -7,12 +7,17 @@ use crate::{cerr, control_message::zeroed_sockaddr_storage};
 
 use super::InterfaceName;
 
+/// A detector for changes to which network interfaces are available on the system.
 pub struct ChangeDetector {
     fd: AsyncFd<RawFd>,
 }
 
 impl ChangeDetector {
     const SOCKET_PATH: &'static [u8] = b"/var/run/devd.seqpacket.pipe";
+    /// Create a new detector for changes to which network interfaces are available on the system.
+    ///
+    /// # Errors
+    /// May fail if the system does not allow a new change detector to be created.
     pub fn new() -> std::io::Result<Self> {
         const _: () = assert!(
             std::mem::size_of::<libc::sockaddr_storage>()
@@ -78,6 +83,7 @@ impl ChangeDetector {
         }
     }
 
+    /// Wait for a change to which network interfaces are present.
     pub async fn wait_for_change(&mut self) {
         if let Err(e) = self
             .fd
@@ -102,6 +108,8 @@ impl ChangeDetector {
     }
 }
 
+/// Get the hardware clock index associated with the given interface.
+#[must_use]
 pub fn lookup_phc(_interface: InterfaceName) -> Option<u32> {
     None
 }

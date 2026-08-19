@@ -26,9 +26,10 @@ impl<A: NetworkAddress, S> Socket<A, S> {
 
         loop {
             // the timestamp being available triggers the error interest
-            match socket.async_io(Interest::ERROR, try_read).await? {
-                Some((counter, timestamp_data)) => break Ok((counter, timestamp_data)),
-                None => continue,
+            if let Some((counter, timestamp_data)) =
+                socket.async_io(Interest::ERROR, try_read).await?
+            {
+                break Ok((counter, timestamp_data));
             }
         }
     }
@@ -76,6 +77,10 @@ fn fetch_send_timestamp_try_read(
             ControlMessage::ReceiveError(error) => {
                 // the timestamping does not set a message; if there is a message, that means
                 // something else is wrong, and we want to know about it.
+                #[expect(
+                    clippy::cast_possible_wrap,
+                    reason = "The error constants can have a different type from the ee_errno field."
+                )]
                 if error.ee_errno as libc::c_int != libc::ENOMSG {
                     tracing::debug!(error.ee_data, "error message on the MSG_ERRQUEUE");
                 }
@@ -109,7 +114,7 @@ pub(super) fn configure_timestamping(
     // Check if the phc is not the interface-native phc.
     if let Some(interface) = interface {
         if lookup_phc(interface) == bind_phc {
-            bind_phc = None
+            bind_phc = None;
         }
     }
 
@@ -150,6 +155,10 @@ pub(super) fn configure_timestamping(
     socket.so_timestamping(options, bind_phc.unwrap_or_default())
 }
 
+/// Open a network interface for udp traffic over both ipv4 and ipv6
+///
+/// # Errors
+/// May fail if the interface is unknown or cannot be opened.
 pub fn open_interface_udp(
     interface: InterfaceName,
     port: u16,
@@ -169,12 +178,15 @@ pub fn open_interface_udp(
     configure_timestamping(&socket, Some(interface), timestamping, bind_phc)?;
     match timestamping {
         InterfaceTimestampMode::HardwareAll | InterfaceTimestampMode::HardwareRecv => {
-            socket.driver_enable_hardware_timestamping(interface, libc::HWTSTAMP_FILTER_ALL as _)?
+            socket.driver_enable_hardware_timestamping(
+                interface,
+                libc::HWTSTAMP_FILTER_ALL.cast_signed(),
+            )?;
         }
         InterfaceTimestampMode::HardwarePTPAll | InterfaceTimestampMode::HardwarePTPRecv => socket
             .driver_enable_hardware_timestamping(
                 interface,
-                libc::HWTSTAMP_FILTER_PTP_V2_L4_EVENT as _,
+                libc::HWTSTAMP_FILTER_PTP_V2_L4_EVENT.cast_signed(),
             )?,
         InterfaceTimestampMode::None
         | InterfaceTimestampMode::SoftwareAll
@@ -187,13 +199,17 @@ pub fn open_interface_udp(
 
     Ok(Socket {
         timestamp_mode: timestamping,
-        socket: Arc::new(AsyncFd::new(socket)?),
+        raw: Arc::new(AsyncFd::new(socket)?),
         send_counter: std::sync::Mutex::new(0),
         local_addr,
         _state: PhantomData,
     })
 }
 
+/// Open a network interface for udp traffic over ipv4
+///
+/// # Errors
+/// May fail if the interface is unknown or cannot be opened.
 pub fn open_interface_udp4(
     interface: InterfaceName,
     port: u16,
@@ -211,12 +227,15 @@ pub fn open_interface_udp4(
     configure_timestamping(&socket, Some(interface), timestamping, bind_phc)?;
     match timestamping {
         InterfaceTimestampMode::HardwareAll | InterfaceTimestampMode::HardwareRecv => {
-            socket.driver_enable_hardware_timestamping(interface, libc::HWTSTAMP_FILTER_ALL as _)?
+            socket.driver_enable_hardware_timestamping(
+                interface,
+                libc::HWTSTAMP_FILTER_ALL.cast_signed(),
+            )?;
         }
         InterfaceTimestampMode::HardwarePTPAll | InterfaceTimestampMode::HardwarePTPRecv => socket
             .driver_enable_hardware_timestamping(
                 interface,
-                libc::HWTSTAMP_FILTER_PTP_V2_L4_EVENT as _,
+                libc::HWTSTAMP_FILTER_PTP_V2_L4_EVENT.cast_signed(),
             )?,
         InterfaceTimestampMode::None
         | InterfaceTimestampMode::SoftwareAll
@@ -229,13 +248,17 @@ pub fn open_interface_udp4(
 
     Ok(Socket {
         timestamp_mode: timestamping,
-        socket: Arc::new(AsyncFd::new(socket)?),
+        raw: Arc::new(AsyncFd::new(socket)?),
         send_counter: std::sync::Mutex::new(0),
         local_addr,
         _state: PhantomData,
     })
 }
 
+/// Open a network interface for udp traffic over ipv6
+///
+/// # Errors
+/// May fail if the interface is unknown or cannot be opened.
 pub fn open_interface_udp6(
     interface: InterfaceName,
     port: u16,
@@ -254,12 +277,15 @@ pub fn open_interface_udp6(
     configure_timestamping(&socket, Some(interface), timestamping, bind_phc)?;
     match timestamping {
         InterfaceTimestampMode::HardwareAll | InterfaceTimestampMode::HardwareRecv => {
-            socket.driver_enable_hardware_timestamping(interface, libc::HWTSTAMP_FILTER_ALL as _)?
+            socket.driver_enable_hardware_timestamping(
+                interface,
+                libc::HWTSTAMP_FILTER_ALL.cast_signed(),
+            )?;
         }
         InterfaceTimestampMode::HardwarePTPAll | InterfaceTimestampMode::HardwarePTPRecv => socket
             .driver_enable_hardware_timestamping(
                 interface,
-                libc::HWTSTAMP_FILTER_PTP_V2_L4_EVENT as _,
+                libc::HWTSTAMP_FILTER_PTP_V2_L4_EVENT.cast_signed(),
             )?,
         InterfaceTimestampMode::None
         | InterfaceTimestampMode::SoftwareAll
@@ -272,13 +298,17 @@ pub fn open_interface_udp6(
 
     Ok(Socket {
         timestamp_mode: timestamping,
-        socket: Arc::new(AsyncFd::new(socket)?),
+        raw: Arc::new(AsyncFd::new(socket)?),
         send_counter: std::sync::Mutex::new(0),
         local_addr,
         _state: PhantomData,
     })
 }
 
+/// Open a network interface for ethernet traffic.
+///
+/// # Errors
+/// May error if the interface is not known, or cannot be opened.
 pub fn open_interface_ethernet(
     interface: InterfaceName,
     protocol: u16,
@@ -288,7 +318,7 @@ pub fn open_interface_ethernet(
     let socket = RawSocket::open(
         libc::AF_PACKET,
         libc::SOCK_DGRAM,
-        u16::from_ne_bytes(protocol.to_be_bytes()) as _,
+        u16::from_ne_bytes(protocol.to_be_bytes()).into(),
     )?;
     socket.bind(
         EthernetAddress::new(
@@ -296,19 +326,23 @@ pub fn open_interface_ethernet(
             MacAddress::new([0; 6]),
             interface
                 .get_index()
-                .ok_or(std::io::ErrorKind::InvalidInput)? as _,
+                .ok_or(std::io::ErrorKind::InvalidInput)?
+                .cast_signed(),
         )
         .to_sockaddr(PrivateToken),
     )?;
     configure_timestamping(&socket, Some(interface), timestamping, bind_phc)?;
     match timestamping {
         InterfaceTimestampMode::HardwareAll | InterfaceTimestampMode::HardwareRecv => {
-            socket.driver_enable_hardware_timestamping(interface, libc::HWTSTAMP_FILTER_ALL as _)?
+            socket.driver_enable_hardware_timestamping(
+                interface,
+                libc::HWTSTAMP_FILTER_ALL.cast_signed(),
+            )?;
         }
         InterfaceTimestampMode::HardwarePTPAll | InterfaceTimestampMode::HardwarePTPRecv => socket
             .driver_enable_hardware_timestamping(
                 interface,
-                libc::HWTSTAMP_FILTER_PTP_V2_L2_EVENT as _,
+                libc::HWTSTAMP_FILTER_PTP_V2_L2_EVENT.cast_signed(),
             )?,
         InterfaceTimestampMode::None
         | InterfaceTimestampMode::SoftwareAll
@@ -321,7 +355,7 @@ pub fn open_interface_ethernet(
 
     Ok(Socket {
         timestamp_mode: timestamping,
-        socket: Arc::new(AsyncFd::new(socket)?),
+        raw: Arc::new(AsyncFd::new(socket)?),
         send_counter: std::sync::Mutex::new(0),
         local_addr,
         _state: PhantomData,
@@ -511,11 +545,11 @@ mod tests {
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        assert!((send_ts.seconds - (before as i64)).abs() < 2);
-        assert!((send_ts.seconds - (after as i64)).abs() < 2);
+        assert!((send_ts.seconds - before.cast_signed()).abs() < 2);
+        assert!((send_ts.seconds - after.cast_signed()).abs() < 2);
 
-        let send_nanos = send_ts.seconds * 1_000_000_000 + (send_ts.nanos as i64);
-        let recv_nanos = recv_ts.seconds * 1_000_000_000 + (recv_ts.nanos as i64);
+        let send_nanos = send_ts.seconds * 1_000_000_000 + i64::from(send_ts.nanos);
+        let recv_nanos = recv_ts.seconds * 1_000_000_000 + i64::from(recv_ts.nanos);
         assert!((send_nanos - recv_nanos) < 1_000_000 * 10);
     }
 }

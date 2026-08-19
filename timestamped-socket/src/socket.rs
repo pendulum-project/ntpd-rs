@@ -24,14 +24,15 @@ mod linux;
 mod macos;
 
 #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_os = "macos")))]
-use self::fallback::*;
+use self::fallback::configure_timestamping;
 #[cfg(target_os = "freebsd")]
-use self::freebsd::*;
+use self::freebsd::configure_timestamping;
 #[cfg(target_os = "linux")]
 pub use self::linux::*;
 #[cfg(target_os = "macos")]
-use self::macos::*;
+use self::macos::configure_timestamping;
 
+/// Timestamps on a message returned by a socket.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
 pub struct TimestampData {
     /// The timestamping mode requested by the user when creating the socket.
@@ -54,13 +55,17 @@ impl TimestampData {
     ///
     /// If the requested timestamping mode is `None` or if the requested timestamp
     /// is not available, this function will return `None`.
+    #[must_use]
     pub fn selected_timestamp(self) -> Option<Timestamp> {
-        use InterfaceTimestampMode::*;
-
         match self.timestamp_mode {
-            SoftwareAll | SoftwareRecv => self.software,
-            HardwareAll | HardwareRecv | HardwarePTPAll | HardwarePTPRecv => self.hardware,
-            None => Option::None,
+            InterfaceTimestampMode::SoftwareAll | InterfaceTimestampMode::SoftwareRecv => {
+                self.software
+            }
+            InterfaceTimestampMode::HardwareAll
+            | InterfaceTimestampMode::HardwareRecv
+            | InterfaceTimestampMode::HardwarePTPAll
+            | InterfaceTimestampMode::HardwarePTPRecv => self.hardware,
+            InterfaceTimestampMode::None => Option::None,
         }
     }
 
@@ -73,13 +78,28 @@ impl TimestampData {
     }
 }
 
+/// A timestamp of a message on a socket.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, Default)]
 pub struct Timestamp {
+    /// Number of seconds since the epoch.
     pub seconds: i64,
+    /// Number of nanoseconds.
     pub nanos: u32,
 }
 
 impl Timestamp {
+    #[expect(
+        clippy::cast_sign_loss,
+        reason = "tv_usec is always in range for the nanos field."
+    )]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "tv_usec is always in range for the conversion."
+    )]
+    #[allow(
+        clippy::cast_lossless,
+        reason = "cast is not lossless on all platforms."
+    )]
     #[cfg_attr(target_os = "macos", allow(unused))] // macos does not do nanoseconds
     pub(crate) fn from_timespec(timespec: libc::timespec) -> Self {
         Self {
@@ -88,6 +108,18 @@ impl Timestamp {
         }
     }
 
+    #[expect(
+        clippy::cast_sign_loss,
+        reason = "tv_usec is always in range for the nanos field."
+    )]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "tv_usec is always in range for the conversion."
+    )]
+    #[allow(
+        clippy::cast_lossless,
+        reason = "cast is not lossless on all platforms."
+    )]
     pub(crate) fn from_timeval(timeval: libc::timeval) -> Self {
         Self {
             seconds: timeval.tv_sec as _,
@@ -96,22 +128,34 @@ impl Timestamp {
     }
 }
 
+/// A timestamp mode usable on all sockets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum GeneralTimestampMode {
+    /// Get kernel timestamps for both sending and receiving.
     SoftwareAll,
+    /// Get kernel timestamps only for receiving.
     SoftwareRecv,
+    /// Don't request any timestamps.
     #[default]
     None,
 }
 
+/// A timestamp mode for a specific hardware interface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum InterfaceTimestampMode {
+    /// Hardware timestamps for both sending and receiving of all messages.
     HardwareAll,
+    /// Hardware timestamps for receiving of all messages.
     HardwareRecv,
+    /// Hardware timestamps for both sending and receiving PTP messages.
     HardwarePTPAll,
+    /// Hardware timestamps for receiving PTP Messages.
     HardwarePTPRecv,
+    /// Kernel timestamps for sending and receiving.
     SoftwareAll,
+    /// Kernel timestamps for receving.
     SoftwareRecv,
+    /// Don't request any timestamps.
     #[default]
     None,
 }
@@ -126,34 +170,44 @@ impl From<GeneralTimestampMode> for InterfaceTimestampMode {
     }
 }
 
+/// Results from a receive operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RecvResult<A> {
+    /// Number of bytes written to the provided buffer.
     pub bytes_read: usize,
+    /// Address of the sender of the message.
     pub remote_addr: A,
+    /// Address at which the message was received.
     pub local_addr: A,
+    /// Timestamps for the message.
     pub timestamp_data: TimestampData,
 }
 
+/// A UDP network socket.
 #[derive(Debug)]
 pub struct Socket<A, S> {
     timestamp_mode: InterfaceTimestampMode,
     // FIXME: Remove the arc once tokio also allows polling asyncfds for the Error interest
-    socket: Arc<AsyncFd<RawSocket>>,
+    raw: Arc<AsyncFd<RawSocket>>,
     #[cfg(target_os = "linux")]
     send_counter: std::sync::Mutex<u32>,
     local_addr: A,
     _state: PhantomData<S>,
 }
 
+/// Marker type for sockets not bound to a specific remote.
 #[non_exhaustive]
 pub struct Open;
+/// Marker type for sockets bound to a specific remote.
 #[non_exhaustive]
 pub struct Connected;
 
+/// Token used to recognize the corresponding send timestamp for a split send operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SendTimestampToken(u32);
 
 impl<A: NetworkAddress, S> Socket<A, S> {
+    /// The local address at which the socket is listening.
     pub fn local_addr(&self) -> A {
         self.local_addr
     }
@@ -225,7 +279,7 @@ impl<A: NetworkAddress, S> Socket<A, S> {
         buf: &mut [u8],
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<std::io::Result<RecvResult<A>>> {
-        match self.socket.poll_read_ready(cx) {
+        match self.raw.poll_read_ready(cx) {
             std::task::Poll::Ready(Ok(mut guard)) => {
                 match guard.try_io(|inner| self.inner_recv(buf, inner.get_ref())) {
                     Ok(result) => std::task::Poll::Ready(result),
@@ -237,8 +291,13 @@ impl<A: NetworkAddress, S> Socket<A, S> {
         }
     }
 
+    /// Receive a datagram.
+    ///
+    /// # Errors
+    /// May return errors for previous send operations, or if it is no longer
+    /// possible to receive on the given socket.
     pub async fn recv(&self, buf: &mut [u8]) -> std::io::Result<RecvResult<A>> {
-        self.socket
+        self.raw
             .async_io(Interest::READABLE, |socket| self.inner_recv(buf, socket))
             .await
     }
@@ -276,6 +335,10 @@ impl<A: NetworkAddress, S> Socket<A, S> {
     /// impossible to implement with the tools tokio provides. To compensate,
     /// the future returned here is independent of the self reference and can
     /// be stored to simulate the existence of a poll function.
+    ///
+    /// # Errors
+    /// May fail if the timestamp is not available, or if the network had
+    /// issues sending the message.
     pub fn get_send_timestamp(
         &self,
     ) -> impl std::future::Future<Output = std::io::Result<(SendTimestampToken, TimestampData)>>
@@ -283,7 +346,7 @@ impl<A: NetworkAddress, S> Socket<A, S> {
            + Sync
            + 'static {
         let timestamp_mode = self.timestamp_mode;
-        let socket = self.socket.clone();
+        let socket = self.raw.clone();
         async move {
             if matches!(
                 timestamp_mode,
@@ -309,7 +372,7 @@ impl<A: NetworkAddress, S> Socket<A, S> {
         }
     }
 
-    /// Retrieves the timestamp for a given SendTimestampToken.
+    /// Retrieves the timestamp for a given [`SendTimestampToken`].
     ///
     /// If multiple tokens are still pending for a send timestamp, this function may
     /// drop the timestamps for those tokens . Therefore, this should not be used in
@@ -350,7 +413,7 @@ impl<A: NetworkAddress> Socket<A, Open> {
     ) -> std::task::Poll<std::io::Result<Option<SendTimestampToken>>> {
         let addr = addr.to_sockaddr(PrivateToken);
 
-        match self.socket.poll_write_ready(cx) {
+        match self.raw.poll_write_ready(cx) {
             std::task::Poll::Ready(Ok(mut guard)) => {
                 match guard.try_io(|inner| self.send_inner(|| inner.get_ref().send_to(buf, addr))) {
                     Ok(result) => std::task::Poll::Ready(result),
@@ -367,11 +430,14 @@ impl<A: NetworkAddress> Socket<A, Open> {
     /// When used in combination with the polling send functions, if there are timestamps
     /// pending for some `SendTimestampToken`, these may be skipped and become unavailable
     /// when calling this function.
+    ///
+    /// # Errors
+    /// May fail if the remote cannot be reached.
     pub async fn send_to(&mut self, buf: &[u8], addr: A) -> std::io::Result<TimestampData> {
         let addr = addr.to_sockaddr(PrivateToken);
 
         if let Some(token) = self
-            .socket
+            .raw
             .async_io(Interest::WRITABLE, |socket| {
                 self.send_inner(|| socket.send_to(buf, addr))
             })
@@ -398,7 +464,7 @@ impl<A: NetworkAddress> Socket<A, Open> {
         let from = from.to_sockaddr(PrivateToken);
         let to = to.to_sockaddr(PrivateToken);
 
-        match self.socket.poll_write_ready(cx) {
+        match self.raw.poll_write_ready(cx) {
             std::task::Poll::Ready(Ok(mut guard)) => match guard
                 .try_io(|inner| self.send_inner(|| inner.get_ref().send_from_to(buf, from, to)))
             {
@@ -415,6 +481,9 @@ impl<A: NetworkAddress> Socket<A, Open> {
     /// When used in combination with the polling send functions, if there are timestamps
     /// pending for some `SendTimestampToken`, these may be skipped and become unavailable
     /// when calling this function.
+    ///
+    /// # Errors
+    /// May fail if the from or to address is not available or reachable.
     pub async fn send_from_to(
         &mut self,
         buf: &[u8],
@@ -425,7 +494,7 @@ impl<A: NetworkAddress> Socket<A, Open> {
         let to = to.to_sockaddr(PrivateToken);
 
         if let Some(token) = self
-            .socket
+            .raw
             .async_io(Interest::WRITABLE, |socket| {
                 self.send_inner(|| socket.send_from_to(buf, from, to))
             })
@@ -437,12 +506,17 @@ impl<A: NetworkAddress> Socket<A, Open> {
         }
     }
 
+    /// Connect the socket to a specific remote.
+    ///
+    /// # Errors
+    /// May fail if the remote is not reachable, or the network the
+    /// socket is attached to is no longer available.
     pub fn connect(self, addr: A) -> std::io::Result<Socket<A, Connected>> {
         let addr = addr.to_sockaddr(PrivateToken);
-        self.socket.get_ref().connect(addr)?;
+        self.raw.get_ref().connect(addr)?;
         Ok(Socket {
             timestamp_mode: self.timestamp_mode,
-            socket: self.socket,
+            raw: self.raw,
             #[cfg(target_os = "linux")]
             send_counter: self.send_counter,
             local_addr: self.local_addr,
@@ -452,8 +526,13 @@ impl<A: NetworkAddress> Socket<A, Open> {
 }
 
 impl<A: NetworkAddress> Socket<A, Connected> {
+    /// Address of the remote to which this socket is connected.
+    ///
+    /// # Errors
+    /// May error if the operating system cannot provide the addres
+    /// of the peer.
     pub fn peer_addr(&self) -> std::io::Result<A> {
-        let addr = self.socket.get_ref().getpeername()?;
+        let addr = self.raw.get_ref().getpeername()?;
         A::from_sockaddr(addr, PrivateToken).ok_or_else(|| std::io::ErrorKind::Other.into())
     }
 
@@ -467,7 +546,7 @@ impl<A: NetworkAddress> Socket<A, Connected> {
         buf: &[u8],
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<std::io::Result<Option<SendTimestampToken>>> {
-        match self.socket.poll_write_ready(cx) {
+        match self.raw.poll_write_ready(cx) {
             std::task::Poll::Ready(Ok(mut guard)) => {
                 match guard.try_io(|inner| self.send_inner(|| inner.get_ref().send(buf))) {
                     Ok(result) => std::task::Poll::Ready(result),
@@ -484,9 +563,13 @@ impl<A: NetworkAddress> Socket<A, Connected> {
     /// When used in combination with the polling send functions, if there are timestamps
     /// pending for some `SendTimestampToken`, these may be skipped and become unavailable
     /// when calling this function.
+    ///
+    /// # Errors
+    /// May fail if the remote or network this socket is attached to is no longer available,
+    /// or if the timestamp for the operation cannot be obtained.
     pub async fn send(&mut self, buf: &[u8]) -> std::io::Result<TimestampData> {
         if let Some(token) = self
-            .socket
+            .raw
             .async_io(Interest::WRITABLE, |socket| {
                 self.send_inner(|| socket.send(buf))
             })
@@ -511,7 +594,7 @@ impl<A: NetworkAddress> Socket<A, Connected> {
     ) -> std::task::Poll<std::io::Result<Option<SendTimestampToken>>> {
         let from = from.to_sockaddr(PrivateToken);
 
-        match self.socket.poll_write_ready(cx) {
+        match self.raw.poll_write_ready(cx) {
             std::task::Poll::Ready(Ok(mut guard)) => match guard
                 .try_io(|inner| self.send_inner(|| inner.get_ref().send_from(buf, from)))
             {
@@ -528,11 +611,15 @@ impl<A: NetworkAddress> Socket<A, Connected> {
     /// When used in combination with the polling send functions, if there are timestamps
     /// pending for some `SendTimestampToken`, these may be skipped and become unavailable
     /// when calling this function.
+    ///
+    /// # Errors
+    /// May error if the remote cannot be reached, or if the network the socket is attached
+    /// to is no longer available.
     pub async fn send_from(&mut self, buf: &[u8], from: A) -> std::io::Result<TimestampData> {
         let from = from.to_sockaddr(PrivateToken);
 
         if let Some(token) = self
-            .socket
+            .raw
             .async_io(Interest::WRITABLE, |socket| {
                 self.send_inner(|| socket.send_from(buf, from))
             })
@@ -546,15 +633,27 @@ impl<A: NetworkAddress> Socket<A, Connected> {
 }
 
 impl<A: MulticastJoinable, S> Socket<A, S> {
+    /// Indicate that you want to receive messages for a specific multicast address on the socket.
+    ///
+    /// # Errors
+    /// May error if it is not possible to unsubscribe from the given address.
     pub fn join_multicast(&self, addr: A, interface: InterfaceName) -> std::io::Result<()> {
-        addr.join_multicast(self.socket.get_ref().as_raw_fd(), interface, PrivateToken)
+        addr.join_multicast(self.raw.get_ref().as_raw_fd(), interface, PrivateToken)
     }
 
+    /// Indicate that you no longer want to receive messages for a specific multicast address on the socket.
+    ///
+    /// # Errors
+    /// May error if it is not possible to unsubscribe from the given address.
     pub fn leave_multicast(&self, addr: A, interface: InterfaceName) -> std::io::Result<()> {
-        addr.leave_multicast(self.socket.get_ref().as_raw_fd(), interface, PrivateToken)
+        addr.leave_multicast(self.raw.get_ref().as_raw_fd(), interface, PrivateToken)
     }
 }
 
+/// Open a socket listening to a given ip address.
+///
+/// # Errors
+/// May error if the requested timestamp mode is not possible, or if the requested addres is unavailable.
 pub fn open_ip(
     addr: SocketAddr,
     timestamping: GeneralTimestampMode,
@@ -582,7 +681,7 @@ pub fn open_ip(
 
     Ok(Socket {
         timestamp_mode: timestamping.into(),
-        socket: Arc::new(AsyncFd::new(socket)?),
+        raw: Arc::new(AsyncFd::new(socket)?),
         #[cfg(target_os = "linux")]
         send_counter: std::sync::Mutex::new(0),
         local_addr,
@@ -590,6 +689,10 @@ pub fn open_ip(
     })
 }
 
+/// Open an ipv4 specific socket listening to a given ip address.
+///
+/// # Errors
+/// May error if the requested timestamp mode is not possible, or if the requested addres is unavailable.
 pub fn open_ipv4(
     addr: SocketAddrV4,
     timestamping: GeneralTimestampMode,
@@ -611,7 +714,7 @@ pub fn open_ipv4(
 
     Ok(Socket {
         timestamp_mode: timestamping.into(),
-        socket: Arc::new(AsyncFd::new(socket)?),
+        raw: Arc::new(AsyncFd::new(socket)?),
         #[cfg(target_os = "linux")]
         send_counter: std::sync::Mutex::new(0),
         local_addr,
@@ -619,6 +722,10 @@ pub fn open_ipv4(
     })
 }
 
+/// Open an ipv6 specific socket listening to a given ip address.
+///
+/// # Errors
+/// May error if the requested timestamp mode is not possible, or if the requested addres is unavailable.
 pub fn open_ipv6(
     addr: SocketAddrV6,
     timestamping: GeneralTimestampMode,
@@ -641,7 +748,7 @@ pub fn open_ipv6(
 
     Ok(Socket {
         timestamp_mode: timestamping.into(),
-        socket: Arc::new(AsyncFd::new(socket)?),
+        raw: Arc::new(AsyncFd::new(socket)?),
         #[cfg(target_os = "linux")]
         send_counter: std::sync::Mutex::new(0),
         local_addr,
@@ -649,6 +756,10 @@ pub fn open_ipv6(
     })
 }
 
+/// Open a socket connected to the given remote address.
+///
+/// # Errors
+/// Errors if it is not possible to setup the connection to the remote.
 pub fn connect_address(
     addr: SocketAddr,
     timestamping: GeneralTimestampMode,
@@ -671,7 +782,7 @@ pub fn connect_address(
 
     Ok(Socket {
         timestamp_mode: timestamping.into(),
-        socket: Arc::new(AsyncFd::new(socket)?),
+        raw: Arc::new(AsyncFd::new(socket)?),
         #[cfg(target_os = "linux")]
         send_counter: std::sync::Mutex::new(0),
         local_addr,

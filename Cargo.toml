@@ -154,7 +154,6 @@ string_add_assign = "warn"
 struct_excessive_bools = "warn"
 struct_field_names = "warn"
 too_many_lines = "warn"
-transmute_ptr_to_ptr = "warn"
 trivially_copy_pass_by_ref = "warn"
 unchecked_time_subtraction = "warn"
 unicode_not_nfc = "warn"
@@ -184,7 +183,6 @@ pps-time = "0.2.3"
 rand = { version = "0.8.0", default-features = false }
 serde = { version = "1.0.166", features = ["derive"] }
 serde_json = "1.0"
-timestamped-socket = "0.3.0"
 tokio = "1.37"
 toml = { version = ">=0.6.0,<0.9.0", default-features = false, features = ["parse"] }
 tracing = "0.1.37"
@@ -210,6 +208,7 @@ serde_test = { version = "1.0.176" }
 
 # Internal crates with their own version numbers
 clock-steering = { version = "0.2.1", path = "./clock-steering" }
+timestamped-socket = { version = "0.3.0", path = "./timestamped-socket" }
 
 # our own crates used as dependencies, same version as the workspace version
 # NOTE: keep this part at the bottom of the file, do not change this line

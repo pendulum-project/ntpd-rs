@@ -22,6 +22,13 @@ mod fallback;
 #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
 pub use fallback::{lookup_phc, ChangeDetector};
 
+/// Get a directory of interfaces available on the current machine.
+///
+/// # Errors
+/// May fail if the os is unable to provide a list of network interfaces.
+///
+/// # Panics
+/// Panics if the os provides invalid interfaces.
 pub fn interfaces() -> std::io::Result<HashMap<InterfaceName, InterfaceData>> {
     let mut elements = HashMap::default();
 
@@ -36,6 +43,7 @@ pub fn interfaces() -> std::io::Result<HashMap<InterfaceName, InterfaceData>> {
     Ok(elements)
 }
 
+/// Information on a network interface.
 #[derive(Default, Debug)]
 pub struct InterfaceData {
     socket_addrs: Vec<SocketAddr>,
@@ -43,16 +51,21 @@ pub struct InterfaceData {
 }
 
 impl InterfaceData {
+    /// The given interface has an ip address associated with it.
+    #[must_use]
     pub fn has_ip_addr(&self, address: IpAddr) -> bool {
         self.socket_addrs
             .iter()
             .any(|socket_addr| socket_addr.ip() == address)
     }
 
+    /// Iterator over all of the ip addresses associated with the interface.
     pub fn ips(&self) -> impl Iterator<Item = IpAddr> + '_ {
-        self.socket_addrs.iter().map(|a| a.ip())
+        self.socket_addrs.iter().map(std::net::SocketAddr::ip)
     }
 
+    /// The mac address of the interface, if present.
+    #[must_use]
     pub fn mac(&self) -> Option<[u8; 6]> {
         self.mac
     }
@@ -80,7 +93,7 @@ impl InterfaceIterator {
         // by the guarantees from getifaddrs points to a valid
         // ifaddr returned from getifaddrs
         unsafe {
-            cerr(libc::getifaddrs(&mut addrs))?;
+            cerr(libc::getifaddrs(&raw mut addrs))?;
 
             assert!(!addrs.is_null());
 
@@ -109,6 +122,10 @@ struct InterfaceDataInternal {
 impl Iterator for InterfaceIterator {
     type Item = InterfaceDataInternal;
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "libc constants are of inconsistent sizes."
+    )]
     fn next(&mut self) -> Option<<Self as Iterator>::Item> {
         // Safety:
         // By the invariants, self.next is guaranteed to be a valid pointer to an ifaddrs struct or null.
@@ -155,15 +172,19 @@ impl Iterator for InterfaceIterator {
         };
 
         #[cfg(any(target_os = "freebsd", target_os = "macos"))]
+        #[expect(
+            clippy::cast_sign_loss,
+            reason = "length is communicated as signed number, even though it is always positive."
+        )]
         let mac = if family == Some(libc::AF_LINK as _) {
+            // From sys/net/if_types.h in freebsd:
+            const IFT_ETHER: u8 = 0x6;
+
             // Safety: getifaddrs ensures that, if an address is present, it is valid. A valid address
             // of type AF_LINK is always reinterpret castable to sockaddr_ll, and we know an address
             // is present since family is not None
             let sockaddr_dl: libc::sockaddr_dl =
                 unsafe { std::ptr::read_unaligned(ifaddr.ifa_addr as *const _) };
-
-            // From sys/net/if_types.h in freebsd:
-            const IFT_ETHER: u8 = 0x6;
 
             if sockaddr_dl.sdl_type == IFT_ETHER
                 && sockaddr_dl.sdl_nlen.saturating_add(6) as usize <= sockaddr_dl.sdl_data.len()
@@ -196,33 +217,44 @@ impl Iterator for InterfaceIterator {
     }
 }
 
+/// The name of a network interface.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct InterfaceName {
     bytes: [u8; libc::IFNAMSIZ],
 }
 
 impl InterfaceName {
+    /// The loopback interface's name
     #[cfg(all(test, target_os = "linux"))]
     pub const LOOPBACK: Self = Self {
         bytes: *b"lo\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
     };
 
+    /// The loopback interface's name
     #[cfg(all(test, any(target_os = "freebsd", target_os = "macos")))]
     pub const LOOPBACK: Self = Self {
         bytes: *b"lo0\0\0\0\0\0\0\0\0\0\0\0\0\0",
     };
 
+    /// An invalid interface name for testing.
     #[cfg(test)]
     pub const INVALID: Self = Self {
         bytes: *b"123412341234123\0",
     };
 
+    /// The name of the interface interpreted as string.
+    #[must_use]
     pub fn as_str(&self) -> &str {
         std::str::from_utf8(self.bytes.as_slice())
             .unwrap_or_default()
             .trim_end_matches('\0')
     }
 
+    /// The name of the interface as a c string.
+    ///
+    /// # Panics
+    /// May panic if the interface name is invalid and not terminated with a null byte.
+    #[must_use]
     pub fn as_cstr(&self) -> &std::ffi::CStr {
         // TODO: in rust 1.69.0, use
         // std::ffi::CStr::from_bytes_until_nul(&self.bytes[..]).unwrap()
@@ -232,11 +264,21 @@ impl InterfaceName {
         std::ffi::CStr::from_bytes_with_nul(&self.bytes[..=first_null]).unwrap()
     }
 
+    /// Conversion to a type for the `ifr_name` field.
+    #[allow(
+        clippy::cast_possible_wrap,
+        reason = "libc::c_char can be either signed or unsigned"
+    )]
+    #[must_use]
     pub fn to_ifr_name(self) -> [libc::c_char; libc::IFNAMSIZ] {
         let mut it = self.bytes.iter().copied();
         [0; libc::IFNAMSIZ].map(|_| it.next().unwrap_or(0) as libc::c_char)
     }
 
+    /// Find the interface name for a given local address of a socket.
+    ///
+    /// # Errors
+    /// May fail if the address is not associated with any local interface.
     pub fn from_socket_addr(local_addr: SocketAddr) -> std::io::Result<Option<Self>> {
         let matches_inferface = |interface: &InterfaceDataInternal| match interface.socket_addr {
             None => false,
@@ -249,6 +291,8 @@ impl InterfaceName {
         }
     }
 
+    /// The index of the socket used by the operating system.
+    #[must_use]
     pub fn get_index(&self) -> Option<libc::c_uint> {
         // # SAFETY
         //
@@ -260,6 +304,7 @@ impl InterfaceName {
     }
 
     /// Do a lookup for the Physical Hardware Clock index for this interface.
+    #[must_use]
     pub fn lookup_phc(&self) -> Option<u32> {
         lookup_phc(*self)
     }
@@ -309,11 +354,11 @@ impl<'de> serde::Deserialize<'de> for InterfaceName {
         D: serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        FromStr::from_str(&s).map_err(|_| serde::de::Error::custom("invalid interface name"))
+        FromStr::from_str(&s).map_err(|()| serde::de::Error::custom("invalid interface name"))
     }
 }
 
-/// Convert a libc::sockaddr to a rust std::net::SocketAddr
+/// Convert a `libc::sockaddr` to a rust `std::net::SocketAddr`
 ///
 /// # Safety
 ///
@@ -330,14 +375,14 @@ unsafe fn sockaddr_to_socket_addr(sockaddr: *const libc::sockaddr) -> Option<Soc
     }
 
     // Safety: by the previous check, sockaddr is not NULL and hence points to a valid address
-    match unsafe { (*sockaddr).sa_family as libc::c_int } {
+    match unsafe { libc::c_int::from((*sockaddr).sa_family) } {
         libc::AF_INET => {
             // SAFETY: we cast from a libc::sockaddr (alignment 2) to a libc::sockaddr_in (alignment 4)
             // that means that the pointer is now potentially unaligned. We must used read_unaligned!
             // However, the rest of the cast is safe as a valid AF_INET address is always reinterpret castable
             // as a sockaddr_in
             let inaddr: libc::sockaddr_in =
-                unsafe { std::ptr::read_unaligned(sockaddr as *const libc::sockaddr_in) };
+                unsafe { std::ptr::read_unaligned(sockaddr.cast::<libc::sockaddr_in>()) };
 
             let socketaddr = std::net::SocketAddrV4::new(
                 std::net::Ipv4Addr::from(inaddr.sin_addr.s_addr.to_ne_bytes()),
@@ -351,13 +396,13 @@ unsafe fn sockaddr_to_socket_addr(sockaddr: *const libc::sockaddr) -> Option<Soc
             // that means that the pointer is now potentially unaligned. We must used read_unaligned!
             // However, the cast is safe as a valid AF_INET6 address is always reinterpret catable as a sockaddr_in6
             let inaddr: libc::sockaddr_in6 =
-                unsafe { std::ptr::read_unaligned(sockaddr as *const libc::sockaddr_in6) };
+                unsafe { std::ptr::read_unaligned(sockaddr.cast::<libc::sockaddr_in6>()) };
 
             // Safety:
             // sin_addr lives for the duration fo the call and matches type
             let sin_addr = inaddr.sin6_addr.s6_addr;
             let segment_bytes: [u8; 16] =
-                unsafe { std::ptr::read_unaligned(&sin_addr as *const _ as *const _) };
+                unsafe { std::ptr::read_unaligned((&raw const sin_addr).cast()) };
 
             let socketaddr = std::net::SocketAddrV6::new(
                 std::net::Ipv6Addr::from(segment_bytes),
@@ -386,6 +431,10 @@ mod tests {
         let input = "enp0s31f6";
         assert_eq!(InterfaceName::from_str(input).unwrap().as_str(), input);
 
+        #[allow(
+            clippy::cast_possible_wrap,
+            reason = "libc::c_char may be either signed or unsigned, and this is not specified"
+        )]
         let ifr_name = (*b"enp0s31f6\0\0\0\0\0\0\0").map(|b| b as libc::c_char);
         assert_eq!(
             InterfaceName::from_str(input).unwrap().to_ifr_name(),

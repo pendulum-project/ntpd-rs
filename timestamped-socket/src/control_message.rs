@@ -42,11 +42,16 @@ pub(crate) const EXPECTED_MAX_CMSG_SIZE: usize =
 #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_os = "macos")))]
 pub(crate) const EXPECTED_MAX_CMSG_SIZE: usize = SCM_TIMESTAMP_CMSG_SIZE + IP6_PKTINFO_CMSG_SIZE;
 
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "T is always small enough for its size to fit in an u32."
+)]
 const fn control_message_space<T>() -> usize {
     // Safety: CMSG_SPACE is safe to call
     (unsafe { libc::CMSG_SPACE((std::mem::size_of::<T>()) as _) }) as usize
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum MessageQueue {
     Normal,
     #[cfg(target_os = "linux")]
@@ -80,7 +85,7 @@ impl ControlMessageIterator<'_> {
         // mhdr's control and controllen fields are valid and point
         // to valid control messages.
         let current_msg = if mhdr.msg_flags & libc::MSG_CTRUNC == 0 {
-            unsafe { libc::CMSG_FIRSTHDR(&mhdr) }
+            unsafe { libc::CMSG_FIRSTHDR(&raw const mhdr) }
         } else {
             std::ptr::null()
         };
@@ -121,6 +126,10 @@ const PACKET_TX_TIMESTAMP: libc::c_int = 16;
 impl Iterator for ControlMessageIterator<'_> {
     type Item = ControlMessage;
 
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "We properly use an unaligned read afterwards."
+    )]
     fn next(&mut self) -> Option<Self::Item> {
         // Safety:
         // By the invariants, self.current_msg either points to a valid control message
@@ -136,7 +145,7 @@ impl Iterator for ControlMessageIterator<'_> {
         // Invariant preservation:
         // CMSG_NXTHDR returns either a pointer to the next valid control message in the
         // control message region described by self.mhdr, or NULL
-        self.next_msg = unsafe { libc::CMSG_NXTHDR(&self.mhdr, self.next_msg) };
+        self.next_msg = unsafe { libc::CMSG_NXTHDR(&raw const self.mhdr, self.next_msg) };
 
         Some(match (current_msg.cmsg_level, current_msg.cmsg_type) {
             #[cfg(target_os = "linux")]

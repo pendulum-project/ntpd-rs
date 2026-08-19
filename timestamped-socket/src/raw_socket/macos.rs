@@ -22,12 +22,16 @@ impl RawSocket {
         // perfectly safe
         //
         // > Setting other bit returns EINVAL and does not change the current state.
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "options is small enough that its size always fits."
+        )]
         unsafe {
             cerr(libc::setsockopt(
                 self.fd,
                 libc::SOL_SOCKET,
                 libc::SO_TIMESTAMP,
-                &options as *const _ as *const libc::c_void,
+                (&raw const options).cast::<libc::c_void>(),
                 std::mem::size_of_val(&options) as libc::socklen_t,
             ))
         }?;
@@ -35,7 +39,13 @@ impl RawSocket {
         Ok(())
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "enabled is small enough that its size always fits."
+    )]
     pub(crate) fn enable_destination_ipv4(&self) -> std::io::Result<()> {
+        let enabled: libc::c_int = 1;
+
         // SAFETY:
         //
         // - the socket is provided by (safe) rust, and will outlive the call
@@ -47,15 +57,19 @@ impl RawSocket {
                 self.fd,
                 libc::IPPROTO_IP,
                 libc::IP_RECVDSTADDR,
-                &(1 as libc::c_int) as *const _ as *const libc::c_void,
-                std::mem::size_of::<libc::c_int>() as libc::socklen_t,
+                (&raw const enabled).cast::<libc::c_void>(),
+                std::mem::size_of_val(&enabled) as libc::socklen_t,
             ))?;
         }
         Ok(())
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "control message length is small enough that its size always fits."
+    )]
     pub(crate) fn send_from_v4(&self, msg: &[u8], addr: in_addr) -> std::io::Result<()> {
-        let control_message = control_message(
+        let mut control_message = control_message(
             libc::IPPROTO_IP,
             libc::IP_PKTINFO,
             libc::in_pktinfo {
@@ -73,7 +87,7 @@ impl RawSocket {
         let mut msghdr = empty_msghdr();
         msghdr.msg_iov = &raw mut iov;
         msghdr.msg_iovlen = 1;
-        msghdr.msg_control = control_message.as_ptr() as *mut _;
+        msghdr.msg_control = control_message.as_mut_ptr().cast();
         msghdr.msg_controllen = control_message.len() as _;
 
         // Safety:
@@ -81,15 +95,19 @@ impl RawSocket {
         cerr(unsafe { libc::sendmsg(self.fd, &raw const msghdr, 0) } as _).map(|_| {})
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "control message length is small enough that its size always fits."
+    )]
     pub(crate) fn send_from_to_v4(
         &self,
         msg: &[u8],
         from: in_addr,
-        to: sockaddr_storage,
+        mut to: sockaddr_storage,
     ) -> std::io::Result<()> {
         let to_len = sockaddr_len(to);
 
-        let control_message = control_message(
+        let mut control_message = control_message(
             libc::IPPROTO_IP,
             libc::IP_PKTINFO,
             libc::in_pktinfo {
@@ -105,11 +123,11 @@ impl RawSocket {
         };
 
         let mut msghdr = empty_msghdr();
-        msghdr.msg_name = &raw const to as *mut _;
+        msghdr.msg_name = (&raw mut to).cast();
         msghdr.msg_namelen = to_len;
         msghdr.msg_iov = &raw mut iov;
         msghdr.msg_iovlen = 1;
-        msghdr.msg_control = control_message.as_ptr() as *mut _;
+        msghdr.msg_control = control_message.as_mut_ptr().cast();
         msghdr.msg_controllen = control_message.len() as _;
 
         // Safety:
