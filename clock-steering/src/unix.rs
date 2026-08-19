@@ -1,3 +1,4 @@
+use libc::CLOCK_REALTIME;
 use statime_base::ClockError;
 
 #[cfg(target_os = "linux")]
@@ -157,6 +158,24 @@ impl UnixClock {
         }
     }
 
+    /// Disable any kernel disciplining of this clock.
+    ///
+    /// # Errors
+    /// May error if the clock has gone away.
+    pub fn disable_kernel(&self) -> Result<(), ClockError> {
+        let mut timex = EMPTY_TIMEX;
+        self.adjtime(&mut timex)?;
+
+        // We are setting the status bits
+        timex.modes = libc::MOD_STATUS;
+
+        // Disable all kernel time control loops (phase lock, frequency lock, pps time and pps frequency).
+        timex.status &= !(libc::STA_PLL | libc::STA_FLL | libc::STA_PPSTIME | libc::STA_PPSFREQ);
+
+        // ignore if we cannot disable the kernel time control loops (e.g. external clocks)
+        ignore_not_supported(self.adjtime(&mut timex))
+    }
+
     #[allow(
         clippy::trivially_copy_pass_by_ref,
         reason = "Allows a consistent interface between platforms."
@@ -295,6 +314,26 @@ impl UnixClock {
     }
 
     fn error_estimate_timex(esterror: Duration, maxerror: Duration) -> libc::timex {
+        let modes = libc::MOD_ESTERROR | libc::MOD_MAXERROR;
+
+        // these fields are always in microseconds
+        let esterror =
+            libc::c_long::try_from(esterror.as_nanos() / 1000).unwrap_or(libc::c_long::MAX);
+        let maxerror =
+            libc::c_long::try_from(maxerror.as_nanos() / 1000).unwrap_or(libc::c_long::MAX);
+
+        libc::timex {
+            modes,
+            esterror,
+            maxerror,
+            ..EMPTY_TIMEX
+        }
+    }
+
+    fn error_estimate_timex_base(
+        esterror: statime_base::Duration,
+        maxerror: statime_base::Duration,
+    ) -> libc::timex {
         let modes = libc::MOD_ESTERROR | libc::MOD_MAXERROR;
 
         // these fields are always in microseconds
@@ -534,17 +573,7 @@ impl Clock for UnixClock {
     }
 
     fn disable_kernel_ntp_algorithm(&self) -> Result<(), Self::Error> {
-        let mut timex = EMPTY_TIMEX;
-        self.adjtime(&mut timex)?;
-
-        // We are setting the status bits
-        timex.modes = libc::MOD_STATUS;
-
-        // Disable all kernel time control loops (phase lock, frequency lock, pps time and pps frequency).
-        timex.status &= !(libc::STA_PLL | libc::STA_FLL | libc::STA_PPSTIME | libc::STA_PPSFREQ);
-
-        // ignore if we cannot disable the kernel time control loops (e.g. external clocks)
-        ignore_not_supported(self.adjtime(&mut timex))
+        self.disable_kernel()
     }
 
     #[cfg(target_os = "linux")]
@@ -581,6 +610,146 @@ impl Clock for UnixClock {
     #[cfg(not(target_os = "linux"))]
     fn get_tai(&self) -> Result<i32, ClockError> {
         Err(ClockError::NotSupported)
+    }
+}
+
+#[allow(
+    clippy::cast_sign_loss,
+    reason = "Wrapping is ok here, and may not occur on all platforms."
+)]
+fn internal_timestamp_to_base_timestamp(
+    internal: Timestamp,
+    is_utc: bool,
+) -> statime_base::Timestamp<statime_base::TAI> {
+    statime_base::Timestamp::from_seconds_nanos_since_unix_epoch(
+        (internal.seconds + if is_utc { 37 } else { 0 }) as _,
+        internal.nanos,
+    )
+}
+
+impl statime_base::Clock for UnixClock {
+    fn now(&self) -> Result<statime_base::Timestamp<statime_base::TAI>, ClockError> {
+        let mut ntp_kapi_timex = EMPTY_TIMEX;
+
+        if self.adjtime(&mut ntp_kapi_timex).is_ok() {
+            Ok(internal_timestamp_to_base_timestamp(
+                self.extract_current_time(&ntp_kapi_timex)?,
+                self.clock == CLOCK_REALTIME,
+            ))
+        } else {
+            Ok(internal_timestamp_to_base_timestamp(
+                self.clock_gettime()
+                    .map(|ts| current_time_timespec(ts, Precision::Nano))?,
+                self.clock == CLOCK_REALTIME,
+            ))
+        }
+    }
+
+    fn set_frequency(
+        &self,
+        freq: f64,
+    ) -> Result<statime_base::Timestamp<statime_base::TAI>, ClockError> {
+        let mut timex = Self::set_frequency_timex(freq * 1e6);
+        self.adjtime(&mut timex)?;
+        Ok(internal_timestamp_to_base_timestamp(
+            self.extract_current_time(&timex)?,
+            self.clock == CLOCK_REALTIME,
+        ))
+    }
+
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "Precision loss is acceptable here."
+    )]
+    #[allow(
+        clippy::cast_lossless,
+        reason = "Cast is not lossless on all platforms."
+    )]
+    fn get_frequency(&self) -> Result<f64, ClockError> {
+        let mut timex = EMPTY_TIMEX;
+        self.adjtime(&mut timex)?;
+
+        Ok((timex.freq as f64) / 65536.0e6)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn max_frequency(&self) -> Result<f64, ClockError> {
+        Ok(self.detect_ptp_capabilities()?.max_frequency_adjustment_ppm / 1e6)
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn max_frequency(&self) -> Result<f64, ClockError> {
+        Ok(500e-6)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn step_clock(
+        &self,
+        offset: statime_base::Duration,
+    ) -> Result<statime_base::Timestamp<statime_base::TAI>, ClockError> {
+        let steps = offset.as_raw_steps();
+        let seconds = (steps >> 64)
+            .try_into()
+            .map_err(|_| ClockError::InvalidValue)?;
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "the resulting value will always fit in an u32"
+        )]
+        let nanos = (((steps.cast_unsigned() & u128::from(u64::MAX)) * 1_000_000_000) >> 64) as u32;
+        Ok(internal_timestamp_to_base_timestamp(
+            self.step_clock_by_timex(TimeOffset { seconds, nanos })?,
+            self.clock == CLOCK_REALTIME,
+        ))
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn step_clock(
+        &self,
+        offset: statime_base::Duration,
+    ) -> Result<statime_base::Timestamp<statime_base::TAI>, ClockError> {
+        let steps = offset.as_raw_steps();
+        let seconds = (steps >> 64)
+            .try_into()
+            .map_err(|_| ClockError::InvalidValue)?;
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "the resulting value will always fit in an u32"
+        )]
+        let nanos = (((steps.cast_unsigned() & u128::from(u64::MAX)) * 1_000_000_000) >> 64) as u32;
+        Ok(internal_timestamp_to_base_timestamp(
+            self.step_clock_by_timespec(TimeOffset { seconds, nanos })?,
+            self.clock == CLOCK_REALTIME,
+        ))
+    }
+
+    fn error_estimate_update(
+        &self,
+        est_error: statime_base::Duration,
+        max_error: statime_base::Duration,
+    ) -> Result<(), ClockError> {
+        let mut timex = Self::error_estimate_timex_base(est_error, max_error);
+        ignore_not_supported(self.adjtime(&mut timex))
+    }
+
+    fn leap_update(&self, leap_status: statime_base::LeapStatus) -> Result<(), ClockError> {
+        self.update_status(|status| {
+            (status & !(libc::STA_INS | libc::STA_DEL))
+                | match leap_status {
+                    statime_base::LeapStatus::None => 0,
+                    statime_base::LeapStatus::Leap59 => libc::STA_DEL,
+                    statime_base::LeapStatus::Leap61 => libc::STA_INS,
+                }
+        })
+    }
+
+    fn synchronization_update(&self, synchronized: bool) -> Result<(), ClockError> {
+        self.update_status(|status| {
+            if synchronized {
+                status & !libc::STA_UNSYNC
+            } else {
+                status | libc::STA_UNSYNC
+            }
+        })
     }
 }
 
