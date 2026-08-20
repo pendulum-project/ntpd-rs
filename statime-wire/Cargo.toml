@@ -15,11 +15,12 @@ workspace = true
 
 [features]
 default = ["std", "serde"]
-std = []
+std = ["statime-base/std"]
 serde = ["dep:serde", "std"]
 
 [dependencies]
 serde = { workspace = true, optional = true }
+statime-base.workspace = true
 
 [dev-dependencies]
 serde_test.workspace = true

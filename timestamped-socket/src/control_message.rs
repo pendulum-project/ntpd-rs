@@ -1,6 +1,10 @@
 use std::{marker::PhantomData, net::IpAddr};
 
-use crate::socket::Timestamp;
+use statime_base::{Timestamp, TAI, UTC};
+
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+use crate::timestamp_from_timespec;
+use crate::timestamp_from_timeval;
 
 #[cfg(target_os = "linux")]
 const SCM_TIMESTAMPING_CMSG_SIZE: usize = control_message_space::<[libc::timespec; 3]>();
@@ -106,8 +110,8 @@ impl ControlMessageIterator<'_> {
 
 pub(crate) enum ControlMessage {
     Timestamping {
-        software: Option<Timestamp>,
-        hardware: Option<Timestamp>,
+        software: Option<Timestamp<UTC>>,
+        hardware: Option<Timestamp<TAI>>,
     },
     #[cfg(target_os = "linux")]
     ReceiveError(libc::sock_extended_err),
@@ -160,14 +164,14 @@ impl Iterator for ControlMessageIterator<'_> {
 
                 // Both 0 indicates it is not present
                 let hardware = if hardware.tv_sec != 0 || hardware.tv_nsec != 0 {
-                    Some(Timestamp::from_timespec(hardware))
+                    Some(timestamp_from_timespec(hardware))
                 } else {
                     None
                 };
 
                 // Both 0 indicates it is not present
                 let software = if software.tv_sec != 0 || software.tv_nsec != 0 {
-                    Some(Timestamp::from_timespec(software))
+                    Some(timestamp_from_timespec(software))
                 } else {
                     None
                 };
@@ -185,7 +189,7 @@ impl Iterator for ControlMessageIterator<'_> {
                 let timespec = unsafe { std::ptr::read_unaligned(cmsg_data) };
 
                 ControlMessage::Timestamping {
-                    software: Some(Timestamp::from_timespec(timespec)),
+                    software: Some(timestamp_from_timespec(timespec)),
                     hardware: None,
                 }
             }
@@ -197,7 +201,7 @@ impl Iterator for ControlMessageIterator<'_> {
                 let cmsg_data = unsafe { libc::CMSG_DATA(current_msg) } as *const libc::timeval;
                 let timeval = unsafe { std::ptr::read_unaligned(cmsg_data) };
                 ControlMessage::Timestamping {
-                    software: Some(Timestamp::from_timeval(timeval)),
+                    software: Some(timestamp_from_timeval(timeval)),
                     hardware: None,
                 }
             }

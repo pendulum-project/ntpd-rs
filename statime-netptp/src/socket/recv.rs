@@ -6,7 +6,8 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
-use timestamped_socket::{interface::InterfaceName, socket::Timestamp};
+use statime_base::UniversalTimestamp;
+use timestamped_socket::interface::InterfaceName;
 
 use crate::{
     BoundInterface, ConnectedSocket, MAX_PACKET_SIZE, NetworkManagerData, OpenSocket,
@@ -26,7 +27,7 @@ pub struct RecvResult<A> {
     /// The local address at which the message was targeted.
     pub local_addr: A,
     /// The moment at which the message was received, if available.
-    pub timestamp: Option<Timestamp>,
+    pub timestamp: Option<UniversalTimestamp>,
 }
 
 impl<A: PtpAddressFamily> NetworkManagerData<A> {
@@ -103,8 +104,14 @@ fn handle_recv_result<A: PtpAddressFamily>(
                         remote_addr: recv_result.remote_addr,
                         local_addr: recv_result.local_addr,
                         timestamp: match socket.timestamp_source {
-                            TimestampSource::System => recv_result.timestamp_data.software,
-                            TimestampSource::Hardware => recv_result.timestamp_data.hardware,
+                            TimestampSource::System => recv_result
+                                .timestamp_data
+                                .software
+                                .map(UniversalTimestamp::from),
+                            TimestampSource::Hardware => recv_result
+                                .timestamp_data
+                                .hardware
+                                .map(UniversalTimestamp::from),
                         },
                     });
                 }

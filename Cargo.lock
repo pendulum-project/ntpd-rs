@@ -1565,6 +1565,7 @@ dependencies = [
 name = "statime-netptp"
 version = "2.0.0-alpha.20260715"
 dependencies = [
+ "statime-base",
  "timestamped-socket",
  "tokio",
  "tracing",
@@ -1576,6 +1577,7 @@ version = "2.0.0-alpha.20260715"
 dependencies = [
  "serde",
  "serde_test",
+ "statime-base",
 ]
 
 [[package]]
@@ -1718,6 +1720,7 @@ version = "0.3.0"
 dependencies = [
  "libc",
  "serde",
+ "statime-base",
  "tokio",
  "tracing",
 ]

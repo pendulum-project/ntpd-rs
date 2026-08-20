@@ -19,6 +19,7 @@ libc.workspace = true
 tokio = { workspace = true, features = ["net", "time"] }
 tracing = { workspace = true, features = ["std", "log"] }
 serde = { workspace = true, features = ["derive"], optional = true }
+statime-base = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }

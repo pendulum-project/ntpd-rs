@@ -21,33 +21,16 @@ impl<A: PtpAddressFamily> ClientSocket for SocketWrapper<A> {
         // This unwrap will never fail as the conditions are guaranteed.
         Ok(ClientRecvResult {
             bytes_read,
-            // This unwrap will never fail as the conditions are guaranteed by the arithmatic on the ts fields.
-            timestamp: result.timestamp.map(|ts| {
-                Timestamp::new(
-                    (ts.seconds as u64)
-                        .wrapping_add((ts.nanos / 1_000_000_000).into())
-                        // Compensate for difference between UTC and TAI
-                        .wrapping_add(37)
-                        % (1 << 48),
-                    ts.nanos % 1_000_000_000,
-                )
-                .unwrap()
-            }),
+            timestamp: result
+                .timestamp
+                .map(|ts| ts.as_tai(37).try_into().map_err(std::io::Error::other))
+                .transpose()?,
         })
     }
 
     async fn send_event(&mut self, buf: &[u8]) -> Result<Timestamp, Self::Error> {
         if let Some(ts) = self.0.send_event(buf).await? {
-            // This unwrap will never fail as the conditions are guaranteed by the arithmatic on the ts fields.
-            Ok(Timestamp::new(
-                (ts.seconds as u64)
-                    .wrapping_add((ts.nanos / 1_000_000_000).into())
-                    // Compensate for difference between UTC and TAI
-                    .wrapping_add(37)
-                    % (1 << 48),
-                ts.nanos % 1_000_000_000,
-            )
-            .unwrap())
+            ts.as_tai(37).try_into().map_err(std::io::Error::other)
         } else {
             Err(std::io::Error::other("missing send timestamp"))
         }

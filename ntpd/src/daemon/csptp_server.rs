@@ -2,7 +2,6 @@ use std::{future::pending, sync::RwLock};
 
 use statime_csptp::{CsptpManager, InternalState, ServerRecvResult, ServerSocket, serve};
 use statime_netptp::{NetworkManager, OpenSocket, PtpAddressFamily};
-use statime_wire::Timestamp;
 use tokio::task::JoinHandle;
 
 use crate::daemon::config::CsptpServerConfig;
@@ -28,15 +27,7 @@ impl<A: PtpAddressFamily> ServerSocket for ServerSocketWrapper<A> {
                     bytes_read,
                     remote_addr: result.remote_addr,
                     local_addr: result.local_addr,
-                    timestamp: Timestamp::new(
-                        (ts.seconds as u64)
-                            .wrapping_add((ts.nanos / 1_000_000_000).into())
-                            // Compensate for difference between UTC and TAI
-                            .wrapping_add(37)
-                            % (1 << 48),
-                        ts.nanos % 1_000_000_000,
-                    )
-                    .unwrap(),
+                    timestamp: ts.as_tai(37).try_into().map_err(std::io::Error::other)?,
                 });
             }
         }
@@ -49,16 +40,7 @@ impl<A: PtpAddressFamily> ServerSocket for ServerSocketWrapper<A> {
         to: Self::Addr,
     ) -> Result<statime_wire::Timestamp, Self::Error> {
         if let Some(ts) = self.0.send_event(buf, Some(from), to).await? {
-            // This unwrap will never fail as the conditions are guaranteed by the arithmatic on the ts fields.
-            Ok(Timestamp::new(
-                (ts.seconds as u64)
-                    .wrapping_add((ts.nanos / 1_000_000_000).into())
-                    // Compensate for difference between UTC and TAI
-                    .wrapping_add(37)
-                    % (1 << 48),
-                ts.nanos % 1_000_000_000,
-            )
-            .unwrap())
+            ts.as_tai(37).try_into().map_err(std::io::Error::other)
         } else {
             Err(std::io::Error::other("missing send timestamp"))
         }
