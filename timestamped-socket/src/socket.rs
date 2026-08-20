@@ -5,6 +5,7 @@ use std::{
     sync::Arc,
 };
 
+use statime_base::{Timestamp, UniversalTimestamp, TAI, UTC};
 use tokio::io::{unix::AsyncFd, Interest};
 
 use crate::{
@@ -40,9 +41,9 @@ pub struct TimestampData {
     /// If this was not available, this is set to `None`.
     pub timestamp_mode: InterfaceTimestampMode,
     /// The hardware based timestamp returned by the OS
-    pub hardware: Option<Timestamp>,
+    pub hardware: Option<Timestamp<TAI>>,
     /// The software based timestamp returned by the OS
-    pub software: Option<Timestamp>,
+    pub software: Option<Timestamp<UTC>>,
 }
 
 impl TimestampData {
@@ -56,15 +57,17 @@ impl TimestampData {
     /// If the requested timestamping mode is `None` or if the requested timestamp
     /// is not available, this function will return `None`.
     #[must_use]
-    pub fn selected_timestamp(self) -> Option<Timestamp> {
+    pub fn selected_timestamp(self) -> Option<UniversalTimestamp> {
         match self.timestamp_mode {
             InterfaceTimestampMode::SoftwareAll | InterfaceTimestampMode::SoftwareRecv => {
-                self.software
+                self.software.map(UniversalTimestamp::from)
             }
             InterfaceTimestampMode::HardwareAll
             | InterfaceTimestampMode::HardwareRecv
             | InterfaceTimestampMode::HardwarePTPAll
-            | InterfaceTimestampMode::HardwarePTPRecv => self.hardware,
+            | InterfaceTimestampMode::HardwarePTPRecv => {
+                self.hardware.map(UniversalTimestamp::from)
+            }
             InterfaceTimestampMode::None => Option::None,
         }
     }
@@ -74,56 +77,6 @@ impl TimestampData {
         Self {
             timestamp_mode,
             ..self
-        }
-    }
-}
-
-/// A timestamp of a message on a socket.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, Default)]
-pub struct Timestamp {
-    /// Number of seconds since the epoch.
-    pub seconds: i64,
-    /// Number of nanoseconds.
-    pub nanos: u32,
-}
-
-impl Timestamp {
-    #[expect(
-        clippy::cast_sign_loss,
-        reason = "tv_usec is always in range for the nanos field."
-    )]
-    #[allow(
-        clippy::cast_possible_truncation,
-        reason = "tv_usec is always in range for the conversion."
-    )]
-    #[allow(
-        clippy::cast_lossless,
-        reason = "cast is not lossless on all platforms."
-    )]
-    #[cfg_attr(target_os = "macos", allow(unused))] // macos does not do nanoseconds
-    pub(crate) fn from_timespec(timespec: libc::timespec) -> Self {
-        Self {
-            seconds: timespec.tv_sec as _,
-            nanos: timespec.tv_nsec as _,
-        }
-    }
-
-    #[expect(
-        clippy::cast_sign_loss,
-        reason = "tv_usec is always in range for the nanos field."
-    )]
-    #[allow(
-        clippy::cast_possible_truncation,
-        reason = "tv_usec is always in range for the conversion."
-    )]
-    #[allow(
-        clippy::cast_lossless,
-        reason = "cast is not lossless on all platforms."
-    )]
-    pub(crate) fn from_timeval(timeval: libc::timeval) -> Self {
-        Self {
-            seconds: timeval.tv_sec as _,
-            nanos: (1000 * timeval.tv_usec) as _,
         }
     }
 }

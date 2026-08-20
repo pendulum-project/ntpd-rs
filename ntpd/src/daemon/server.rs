@@ -12,7 +12,7 @@ use timestamped_socket::socket::{RecvResult, open_ip};
 use tokio::task::JoinHandle;
 use tracing::{Instrument, Span, debug, instrument, warn};
 
-use super::{config::ServerConfig, util::convert_net_timestamp};
+use super::config::ServerConfig;
 
 // Maximum size of udp packet we handle
 const MAX_PACKET_SIZE: usize = 1024;
@@ -175,7 +175,7 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
                             let mut send_buf = [0u8; MAX_PACKET_SIZE];
                             match self.server.handle(
                                 source_addr.ip(),
-                                convert_net_timestamp(timestamp),
+                                timestamp.as_tai(37).into(),
                                 &buf[..length],
                                 &mut send_buf[..length],
                                 &mut self.stats,

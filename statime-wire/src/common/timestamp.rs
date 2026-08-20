@@ -1,3 +1,5 @@
+use statime_base::TAI;
+
 use crate::Error;
 
 /// A timestamp as they occur in PTP messages.
@@ -113,6 +115,26 @@ impl Timestamp {
             seconds: u64::from_be_bytes(seconds_buffer),
             nanos,
         })
+    }
+}
+
+impl From<Timestamp> for statime_base::Timestamp<TAI> {
+    fn from(value: Timestamp) -> Self {
+        statime_base::Timestamp::from_seconds_nanos_since_unix_epoch(value.seconds, value.nanos)
+    }
+}
+
+impl TryFrom<statime_base::Timestamp<TAI>> for Timestamp {
+    type Error = Error;
+
+    fn try_from(value: statime_base::Timestamp<TAI>) -> Result<Self, Self::Error> {
+        let nanos = (value - statime_base::Timestamp::UNIX_EPOCH).as_nanos();
+        let seconds = nanos.div_euclid(1_000_000_000);
+        let nanos = nanos.rem_euclid(1_000_000_000);
+        Timestamp::new(
+            seconds.try_into().map_err(|_| Error::Invalid)?,
+            nanos.try_into().map_err(|_| Error::Invalid)?,
+        )
     }
 }
 

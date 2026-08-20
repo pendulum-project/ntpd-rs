@@ -18,6 +18,7 @@ default = ["privileged_tests"]
 privileged_tests = []
 
 [dependencies]
+statime-base = { workspace = true, features = ["std"] }
 timestamped-socket.workspace = true
 tokio = { workspace = true, features = ["sync"] }
 tracing.workspace = true

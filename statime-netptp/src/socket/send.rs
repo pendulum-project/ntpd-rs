@@ -4,7 +4,8 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
-use timestamped_socket::{interface::InterfaceName, socket::Timestamp};
+use statime_base::UniversalTimestamp;
+use timestamped_socket::interface::InterfaceName;
 
 use crate::{
     BoundInterface, CACHED_TIMESTAMPS, ConnectedSocket, NetworkManagerData, OpenSocket,
@@ -19,7 +20,7 @@ impl<A: PtpAddressFamily> NetworkManagerData<A> {
         buf: &[u8],
         from: Option<A>,
         to: A,
-    ) -> std::prelude::v1::Result<Option<Timestamp>, std::io::Error> {
+    ) -> std::prelude::v1::Result<Option<UniversalTimestamp>, std::io::Error> {
         let (timestamp_id, last_seen) = poll_fn(|cx| {
             // The mutex can only be poisoned from an earlier panic. It is ok for
             // us to propagate that to all the threads.
@@ -49,13 +50,17 @@ impl<A: PtpAddressFamily> NetworkManagerData<A> {
             .await
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "FIXME: Figure out if we can split this function in a reasonable way."
+    )]
     async fn wait_for_send_timestamp(
         &self,
         interface_name: Option<InterfaceName>,
         timestamp_source: TimestampSource,
         timestamp_id: timestamped_socket::socket::SendTimestampToken,
         mut last_seen: usize,
-    ) -> std::prelude::v1::Result<Option<Timestamp>, std::io::Error> {
+    ) -> std::prelude::v1::Result<Option<UniversalTimestamp>, std::io::Error> {
         match tokio::time::timeout(
             TIMESTAMP_FETCH_TIMEOUT,
             poll_fn(|cx| {
@@ -81,8 +86,12 @@ impl<A: PtpAddressFamily> NetworkManagerData<A> {
                                 && cur_id == timestamp_id
                             {
                                 return Poll::Ready(match timestamp_source {
-                                    TimestampSource::System => ts_data.software,
-                                    TimestampSource::Hardware => ts_data.hardware,
+                                    TimestampSource::System => {
+                                        ts_data.software.map(UniversalTimestamp::from)
+                                    }
+                                    TimestampSource::Hardware => {
+                                        ts_data.hardware.map(UniversalTimestamp::from)
+                                    }
                                 });
                             }
                         }
@@ -101,8 +110,12 @@ impl<A: PtpAddressFamily> NetworkManagerData<A> {
                                 && cur_id == timestamp_id
                             {
                                 return Poll::Ready(match timestamp_source {
-                                    TimestampSource::System => ts_data.software,
-                                    TimestampSource::Hardware => ts_data.hardware,
+                                    TimestampSource::System => {
+                                        ts_data.software.map(UniversalTimestamp::from)
+                                    }
+                                    TimestampSource::Hardware => {
+                                        ts_data.hardware.map(UniversalTimestamp::from)
+                                    }
                                 });
                             }
                         }
@@ -115,8 +128,12 @@ impl<A: PtpAddressFamily> NetworkManagerData<A> {
                                 && cur_id == timestamp_id
                             {
                                 return Poll::Ready(match timestamp_source {
-                                    TimestampSource::System => ts_data.software,
-                                    TimestampSource::Hardware => ts_data.hardware,
+                                    TimestampSource::System => {
+                                        ts_data.software.map(UniversalTimestamp::from)
+                                    }
+                                    TimestampSource::Hardware => {
+                                        ts_data.hardware.map(UniversalTimestamp::from)
+                                    }
                                 });
                             }
                         }
@@ -142,8 +159,12 @@ impl<A: PtpAddressFamily> NetworkManagerData<A> {
                             *ts_counter = ts_counter.wrapping_add(1);
                             if ts_id == timestamp_id {
                                 return Poll::Ready(match timestamp_source {
-                                    TimestampSource::System => ts_data.software,
-                                    TimestampSource::Hardware => ts_data.hardware,
+                                    TimestampSource::System => {
+                                        ts_data.software.map(UniversalTimestamp::from)
+                                    }
+                                    TimestampSource::Hardware => {
+                                        ts_data.hardware.map(UniversalTimestamp::from)
+                                    }
                                 });
                             }
                         }
@@ -187,7 +208,7 @@ impl<A: PtpAddressFamily> OpenSocket<A> {
         buf: &[u8],
         from: Option<A>,
         to: A,
-    ) -> Result<Option<Timestamp>> {
+    ) -> Result<Option<UniversalTimestamp>> {
         let (interface_name, timestamp_source) = {
             // The mutex can only be poisoned from an earlier panic. It is ok for
             // us to propagate that to all the threads.
@@ -254,7 +275,7 @@ impl<A: PtpAddressFamily> ConnectedSocket<A> {
         clippy::missing_panics_doc,
         reason = "Function will only panic if there is an implementation bug in this crate."
     )]
-    pub async fn send_event(&self, buf: &[u8]) -> Result<Option<Timestamp>> {
+    pub async fn send_event(&self, buf: &[u8]) -> Result<Option<UniversalTimestamp>> {
         let (interface_name, timestamp_source, from, to) = {
             // The mutex can only be poisoned from an earlier panic. It is ok for
             // us to propagate that to all the threads.

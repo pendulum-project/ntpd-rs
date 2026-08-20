@@ -366,6 +366,8 @@ pub fn open_interface_ethernet(
 mod tests {
     use std::net::IpAddr;
 
+    use statime_base::Timestamp;
+
     use crate::socket::{connect_address, open_ip, GeneralTimestampMode};
 
     use super::*;
@@ -540,16 +542,14 @@ mod tests {
         let before = before
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
-            .as_secs();
+            .as_secs_f64();
         let after = after
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
-            .as_secs();
-        assert!((send_ts.seconds - before.cast_signed()).abs() < 2);
-        assert!((send_ts.seconds - after.cast_signed()).abs() < 2);
+            .as_secs_f64();
+        assert!(((send_ts.as_utc(37) - Timestamp::UNIX_EPOCH).as_seconds() - before).abs() < 2.0);
+        assert!(((send_ts.as_utc(37) - Timestamp::UNIX_EPOCH).as_seconds() - after).abs() < 2.0);
 
-        let send_nanos = send_ts.seconds * 1_000_000_000 + i64::from(send_ts.nanos);
-        let recv_nanos = recv_ts.seconds * 1_000_000_000 + i64::from(recv_ts.nanos);
-        assert!((send_nanos - recv_nanos) < 1_000_000 * 10);
+        assert!((send_ts.as_utc(37) - recv_ts.as_utc(37)).as_nanos().abs() < 10_000_000);
     }
 }

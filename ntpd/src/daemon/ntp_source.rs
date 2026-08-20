@@ -16,7 +16,7 @@ use tracing::{Instrument, Span, debug, error, instrument, warn};
 
 use tokio::time::{Instant, Sleep};
 
-use super::{config::TimestampMode, exitcode, util::convert_net_timestamp};
+use super::{config::TimestampMode, exitcode};
 
 /// Trait needed to allow injecting of futures other than `tokio::time::Sleep` for testing
 pub trait Wait: Future<Output = ()> {
@@ -234,7 +234,7 @@ where
                                 // update the last_send_timestamp with the one given by the kernel, if available
                                 self.last_send_timestamp = opt_send_timestamp
                                     .selected_timestamp()
-                                    .map(convert_net_timestamp)
+                                    .map(|ts| ts.as_tai(37).into())
                                     .or(self.last_send_timestamp);
                             }
                         }
@@ -365,7 +365,7 @@ fn accept_packet<'a, C: NtpClock>(
                         panic!("Received packet without timestamp and couldn't substitute");
                     }
                 },
-                convert_net_timestamp,
+                |ts| ts.as_tai(37).into(),
             );
 
             // Note: packets are allowed to be bigger when including extensions.
@@ -658,7 +658,7 @@ mod tests {
         let send_packet = NtpPacket::timestamp_response(
             server_info,
             rec_packet,
-            convert_net_timestamp(timestamp),
+            timestamp.as_tai(37).into(),
             &clock,
         );
 
