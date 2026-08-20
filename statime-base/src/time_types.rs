@@ -112,6 +112,54 @@ impl<'de> Deserialize<'de> for Duration {
     }
 }
 
+/// A timestamp that can be in either the UTC or TAI timescales.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum UniversalTimestamp {
+    /// A UTC timestamp
+    Utc(Timestamp<UTC>),
+    /// A TAI timestamp
+    Tai(Timestamp<TAI>),
+}
+
+impl From<Timestamp<UTC>> for UniversalTimestamp {
+    fn from(value: Timestamp<UTC>) -> Self {
+        Self::Utc(value)
+    }
+}
+
+impl From<Timestamp<TAI>> for UniversalTimestamp {
+    fn from(value: Timestamp<TAI>) -> Self {
+        Self::Tai(value)
+    }
+}
+
+impl UniversalTimestamp {
+    /// Get the timestamp converted to a UTC timestamp, given the difference TAI-UTC.
+    #[must_use]
+    pub fn as_utc(self, tai_offset: i64) -> Timestamp<UTC> {
+        match self {
+            UniversalTimestamp::Utc(timestamp) => timestamp,
+            UniversalTimestamp::Tai(timestamp) => {
+                Timestamp::UNIX_EPOCH - Duration::from_seconds_nanos(tai_offset, 0)
+                    + (timestamp - Timestamp::UNIX_EPOCH)
+            }
+        }
+    }
+
+    /// Get the timestamp converted to a TAI timestamp, given the difference TAI-UTC.
+    #[must_use]
+    pub fn as_tai(self, tai_offset: i64) -> Timestamp<TAI> {
+        match self {
+            UniversalTimestamp::Utc(timestamp) => {
+                Timestamp::UNIX_EPOCH
+                    + Duration::from_seconds_nanos(tai_offset, 0)
+                    + (timestamp - Timestamp::UNIX_EPOCH)
+            }
+            UniversalTimestamp::Tai(timestamp) => timestamp,
+        }
+    }
+}
+
 impl<A> Timestamp<A> {
     /// Representation of the UNIX EPOCH in this timescale.
     ///
@@ -386,6 +434,8 @@ duration_div!(i64);
 mod tests {
     use core::hash::Hasher;
     use std::hash::DefaultHasher;
+
+    use crate::{TAI, UniversalTimestamp};
 
     use super::{Duration, Timestamp, UTC};
 
@@ -669,6 +719,31 @@ mod tests {
         assert_eq!(
             Duration::from_seconds_nanos(1, 750_000_000) / 7i64,
             Duration::from_seconds_nanos(0, 250_000_000)
+        );
+    }
+
+    #[test]
+    fn test_universal_timestamp() {
+        let universal_utc: UniversalTimestamp =
+            Timestamp::<UTC>::from_seconds_nanos_since_unix_epoch(63, 0).into();
+        assert_eq!(
+            universal_utc.as_utc(37),
+            Timestamp::from_seconds_nanos_since_unix_epoch(63, 0)
+        );
+        assert_eq!(
+            universal_utc.as_tai(37),
+            Timestamp::from_seconds_nanos_since_unix_epoch(100, 0)
+        );
+
+        let universal_tai: UniversalTimestamp =
+            Timestamp::<TAI>::from_seconds_nanos_since_unix_epoch(100, 0).into();
+        assert_eq!(
+            universal_tai.as_utc(37),
+            Timestamp::from_seconds_nanos_since_unix_epoch(63, 0)
+        );
+        assert_eq!(
+            universal_tai.as_tai(37),
+            Timestamp::from_seconds_nanos_since_unix_epoch(100, 0)
         );
     }
 }
