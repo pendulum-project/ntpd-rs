@@ -4,7 +4,6 @@ updates:
   directory: "/"
   schedule:
     interval: weekly
-  open-pull-requests-limit: 10
   groups:
     github-actions:
       patterns: ["*"]
@@ -18,9 +17,17 @@ updates:
   schedule:
     interval: weekly
   versioning-strategy: lockfile-only
-  open-pull-requests-limit: 10
   groups:
     cargo:
       patterns: ["*"]
   cooldown:
     default-days: 7
+- package-ecosystem: "rust-toolchain"
+  directories: ["/.rust-toolchain/stable/", "/.rust-toolchain/beta/", "/.rust-toolchain/nightly/"]
+  schedule:
+    interval: "weekly"
+  cooldown:
+    default-days: 5
+  groups:
+    rust-toolchain:
+      patterns: ["*"]

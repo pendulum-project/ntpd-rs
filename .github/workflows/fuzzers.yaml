@@ -59,8 +59,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Determine used Rust toolchain versions
+        run: ./.rust-toolchain/set-rust-versions.sh
       - name: Install nightly toolchain
-        run: rustup toolchain install nightly --component llvm-tools-preview && rustup default nightly
+        run: rustup toolchain install "$NIGHTLY_RUST_VERSION" --component llvm-tools-preview && rustup override set "$NIGHTLY_RUST_VERSION"
       - name: Install cargo fuzz & rustfilt
         uses: taiki-e/install-action@cb33e69fad06166ca28a42b2575e4dadabf62ee8 # v2.85.8
         with:

@@ -100,21 +100,23 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set target rust version
-        run: echo "TARGET_RUST_VERSION=$(if [ "${{matrix.rust}}" = "msrv" ]; then grep rust-version Cargo.toml | grep MSRV | cut -d'"' -f2; else echo "${{matrix.rust}}"; fi)" >> $GITHUB_ENV
+      - name: Determine used Rust toolchain versions
+        run: ./.rust-toolchain/set-rust-versions.sh
+        env:
+          MATRIX_RUST: "${{ matrix.rust }}"
 
       - name: Install nightly toolchain for direct-minimal-versions
-        run: rustup toolchain install nightly
+        run: rustup toolchain install "$NIGHTLY_RUST_VERSION"
         if: ${{ matrix.rust == 'msrv' }}
 
       - name: Install toolchain
         run: >
           rustup toolchain install "${TARGET_RUST_VERSION}" &&
-          rustup default "${TARGET_RUST_VERSION}" &&
+          rustup override set "${TARGET_RUST_VERSION}" &&
           rustup target add "${{ matrix.target }}"
 
       - name: Downgrade direct dependencies to minimal versions
-        run: cargo +nightly update -Z direct-minimal-versions
+        run: cargo +"$NIGHTLY_RUST_VERSION" update -Z direct-minimal-versions
         if: ${{ matrix.rust == 'msrv' }}
 
       - name: Setup tools for cross compilation
@@ -173,8 +175,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install nightly toolchain for direct-minimal-versions
-        run: rustup toolchain install nightly && rustup default nightly
+      - name: Determine used Rust toolchain versions
+        run: ./.rust-toolchain/set-rust-versions.sh
+
+      - name: Install nightly toolchain
+        run: rustup toolchain install "$NIGHTLY_RUST_VERSION" && rustup override set "$NIGHTLY_RUST_VERSION"
 
       - name: Install udeps
         uses: taiki-e/install-action@cb33e69fad06166ca28a42b2575e4dadabf62ee8 # v2.85.8
@@ -184,7 +189,7 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          shared-key: "stable-x86_64-unknown-linux-gnu"
+          shared-key: "nightly-x86_64-unknown-linux-gnu"
 
       - name: cargo udeps
         run: cargo udeps --target x86_64-unknown-linux-gnu --workspace --all-targets
@@ -202,8 +207,11 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Determine used Rust toolchain versions
+        run: ./.rust-toolchain/set-rust-versions.sh
+
       - name: Install rust toolchain
-        run: rustup toolchain install stable && rustup default stable
+        run: rustup toolchain install "$STABLE_RUST_VERSION" && rustup override set "$STABLE_RUST_VERSION"
 
       - name: ./ntp.toml
         run: cargo run --bin ntp-ctl -- -c ./ntp.toml validate
@@ -247,8 +255,11 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Determine used Rust toolchain versions
+        run: ./.rust-toolchain/set-rust-versions.sh
+
       - name: Install rust toolchain
-        run: rustup toolchain install stable --component rustfmt && rustup default stable
+        run: rustup toolchain install "$STABLE_RUST_VERSION" --component rustfmt && rustup override set "$STABLE_RUST_VERSION"
 
       - name: Check formatting
         run: cargo fmt --all --check
@@ -280,8 +291,11 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Determine used Rust toolchain versions
+        run: ./.rust-toolchain/set-rust-versions.sh
+
       - name: Install rust toolchain
-        run: rustup toolchain install stable --component clippy && rustup default stable && rustup target add ${{matrix.target}}
+        run: rustup toolchain install "$STABLE_RUST_VERSION" --component clippy && rustup override set "$STABLE_RUST_VERSION" && rustup target add ${{matrix.target}}
 
       - name: Setup tools for cross compilation
         uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # v1.6.3
