@@ -23,7 +23,7 @@ updates:
   cooldown:
     default-days: 7
 - package-ecosystem: "rust-toolchain"
-  directories: ["/.rust-toolchain/stable/", "/.rust-toolchain/beta/", "/.rust-toolchain/nightly/"]
+  directories: ["/", "/.rust-toolchain/stable/", "/.rust-toolchain/beta/", "/.rust-toolchain/nightly/"]
   schedule:
     interval: "weekly"
   cooldown:
