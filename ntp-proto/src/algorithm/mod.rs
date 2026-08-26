@@ -158,23 +158,15 @@ pub struct Measurement {
 }
 
 pub trait TimeSyncController: Sized + Send + Sync + 'static {
-    type Clock: NtpClock;
-    type AlgorithmConfig: Debug + Copy + DeserializeOwned + Send;
+    type Error: std::error::Error + Send + Sync;
     type NtpSourceController: SourceController;
     type OneWaySourceController: SourceController;
-
-    /// Create a new clock controller controlling the given clock
-    fn new(
-        clock: Self::Clock,
-        synchronization_config: SynchronizationConfig,
-        algorithm_config: Self::AlgorithmConfig,
-    ) -> Result<Self, <Self::Clock as NtpClock>::Error>;
 
     /// Take control of the clock (should not be done in new!)
     ///
     /// Should be callable multiple times, with subsequent calls not
     /// doing anything.
-    fn take_control(&self) -> Result<(), <Self::Clock as NtpClock>::Error>;
+    fn take_control(&self) -> Result<(), Self::Error>;
 
     /// Create a new source with given identity
     fn add_source(&self, id: ClockId, source_config: SourceConfig) -> Self::NtpSourceController;
@@ -208,17 +200,12 @@ pub struct TimeSyncControllerWrapper<T: InternalTimeSyncController> {
     has_taken_control: Mutex<bool>,
 }
 
-impl<T: InternalTimeSyncController> TimeSyncController for TimeSyncControllerWrapper<T> {
-    type Clock = T::Clock;
-    type AlgorithmConfig = T::AlgorithmConfig;
-    type NtpSourceController = TwoWaySourceControllerWrapper<T::NtpSourceController>;
-    type OneWaySourceController = OneWaySourceControllerWrapper<T::OneWaySourceController>;
-
-    fn new(
-        clock: Self::Clock,
+impl<T: InternalTimeSyncController> TimeSyncControllerWrapper<T> {
+    pub fn new(
+        clock: T::Clock,
         synchronization_config: SynchronizationConfig,
-        algorithm_config: Self::AlgorithmConfig,
-    ) -> Result<Self, <Self::Clock as NtpClock>::Error> {
+        algorithm_config: T::AlgorithmConfig,
+    ) -> Result<Self, <T::Clock as NtpClock>::Error> {
         let inner = T::new(clock, synchronization_config, algorithm_config)?;
         let (messages_for_system_sender, messages_for_system) =
             tokio::sync::mpsc::unbounded_channel();
@@ -233,8 +220,14 @@ impl<T: InternalTimeSyncController> TimeSyncController for TimeSyncControllerWra
             has_taken_control: Mutex::new(false),
         })
     }
+}
 
-    fn take_control(&self) -> Result<(), <Self::Clock as NtpClock>::Error> {
+impl<T: InternalTimeSyncController> TimeSyncController for TimeSyncControllerWrapper<T> {
+    type Error = <T::Clock as NtpClock>::Error;
+    type NtpSourceController = TwoWaySourceControllerWrapper<T::NtpSourceController>;
+    type OneWaySourceController = OneWaySourceControllerWrapper<T::OneWaySourceController>;
+
+    fn take_control(&self) -> Result<(), Self::Error> {
         let mut has_taken_control = self.has_taken_control.lock().unwrap();
         if !*has_taken_control {
             self.inner.lock().unwrap().take_control()?;

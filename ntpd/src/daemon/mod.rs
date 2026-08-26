@@ -158,8 +158,14 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
         let clock = clock_config.clock;
         let (main_loop_handle, channels) =
             spawn::<TimeSyncControllerWrapper<KalmanClockController<_>>>(
+                |clock| {
+                    TimeSyncControllerWrapper::new(
+                        clock,
+                        config.synchronization.synchronization_base,
+                        config.synchronization.algorithm,
+                    )
+                },
                 config.synchronization.synchronization_base,
-                config.synchronization.algorithm,
                 config.source_defaults,
                 clock_config,
                 &config.sources,

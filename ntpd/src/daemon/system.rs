@@ -34,6 +34,7 @@ use ntp_proto::{
     ClockId, KeySet, NtpClock, NtpManager, ObservableSourceState, OneWaySource, SourceConfig,
     SourceType, SynchronizationConfig, SystemSnapshot, TimeSyncController,
 };
+use statime_base::ClockError;
 use timestamped_socket::interface::InterfaceName;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{debug, info};
@@ -56,9 +57,9 @@ pub struct DaemonChannels {
         reason = "FIXME: System needs a larger refactor to properly receive configuration"
     )
 )]
-pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper>>(
-    synchronization_config: SynchronizationConfig,
-    algorithm_config: Controller::AlgorithmConfig,
+pub async fn spawn<Controller: TimeSyncController<Error = ClockError>>(
+    create_controller: impl FnOnce(NtpClockWrapper) -> Result<Controller, ClockError>,
+    ntp_manager_config: SynchronizationConfig,
     source_defaults_config: SourceConfig,
     clock_config: ClockConfig,
     source_configs: &[NtpSourceConfig],
@@ -73,8 +74,8 @@ pub async fn spawn<Controller: TimeSyncController<Clock = NtpClockWrapper>>(
         clock_config.clock,
         clock_config.interface,
         clock_config.timestamp_mode,
-        synchronization_config,
-        algorithm_config,
+        create_controller,
+        ntp_manager_config,
         &keyset,
         ip_list,
         !source_configs.is_empty(),
@@ -152,7 +153,7 @@ struct SystemSpawnerData {
     notify_tx: mpsc::Sender<SystemEvent>,
 }
 
-struct SystemTask<C: NtpClock, Controller: TimeSyncController<Clock = C>> {
+struct SystemTask<C: NtpClock, Controller: TimeSyncController> {
     controller: Arc<Controller>,
     ntp_manager: Arc<NtpManager>,
 
@@ -190,26 +191,26 @@ struct SystemTask<C: NtpClock, Controller: TimeSyncController<Clock = C>> {
     interface: Option<InterfaceName>,
 }
 
-impl<C: NtpClock + Sync, Controller: TimeSyncController<Clock = C>> SystemTask<C, Controller> {
+impl<C: NtpClock + Sync, Controller: TimeSyncController<Error = C::Error>>
+    SystemTask<C, Controller>
+{
     #[expect(clippy::too_many_arguments)]
     fn new(
         clock: C,
         interface: Option<InterfaceName>,
         timestamp_mode: TimestampMode,
-        synchronization_config: SynchronizationConfig,
-        algorithm_config: Controller::AlgorithmConfig,
+        create_controller: impl FnOnce(C) -> Result<Controller, C::Error>,
+        ntp_manager_config: SynchronizationConfig,
         keyset: &tokio::sync::watch::Receiver<Arc<KeySet>>,
         ip_list: tokio::sync::watch::Receiver<Arc<[IpAddr]>>,
         have_sources: bool,
         #[cfg(target_os = "linux")] csptp_config: CsptpConfig,
     ) -> (Self, DaemonChannels) {
-        let Ok(controller) =
-            Controller::new(clock.clone(), synchronization_config, algorithm_config)
-        else {
+        let Ok(controller) = create_controller(clock.clone()) else {
             tracing::error!("Could not create clock controller");
             std::process::exit(70);
         };
-        let ntp_manager = NtpManager::new(synchronization_config, ip_list.borrow().clone());
+        let ntp_manager = NtpManager::new(ntp_manager_config, ip_list.borrow().clone());
 
         if have_sources && let Err(e) = controller.take_control() {
             tracing::error!("Could not control clock: {}", e);
