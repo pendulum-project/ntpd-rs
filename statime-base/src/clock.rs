@@ -1,4 +1,4 @@
-use crate::{Duration, TAI, Timestamp};
+use crate::{Duration, Timestamp};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -43,12 +43,12 @@ impl core::error::Error for ClockError {}
 /// Interface for a controllable clock
 /// This needs to be a trait as a single system can have multiple clocks
 /// which need different implementation for steering and/or now.
-pub trait Clock: Clone + Send + 'static {
+pub trait Clock<Timescale>: Clone + Send + 'static {
     /// Get current time
     ///
     /// # Errors
     /// Should return an error if the clock is unable to provide a timestamp.
-    fn now(&self) -> Result<Timestamp<TAI>, ClockError>;
+    fn now(&self) -> Result<Timestamp<Timescale>, ClockError>;
 
     /// Change the frequency of the clock, returning the time
     /// at which the change was applied. The frequency is
@@ -56,7 +56,7 @@ pub trait Clock: Clone + Send + 'static {
     ///
     /// # Errors
     /// Should return an error if the clock is unable to be steered by the requested amount.
-    fn set_frequency(&self, freq: f64) -> Result<Timestamp<TAI>, ClockError>;
+    fn set_frequency(&self, freq: f64) -> Result<Timestamp<Timescale>, ClockError>;
 
     /// Get the frequency of the clock, in seconds per second deviation
     ///
@@ -75,7 +75,7 @@ pub trait Clock: Clone + Send + 'static {
     ///
     /// # Errors
     /// Should return an error if the clock cannot be stepped by the amount requested.
-    fn step_clock(&self, offset: Duration) -> Result<Timestamp<TAI>, ClockError>;
+    fn step_clock(&self, offset: Duration) -> Result<Timestamp<Timescale>, ClockError>;
 
     /// Provide the system with our current best estimates for
     /// the statistical error of the clock (`est_error`), and

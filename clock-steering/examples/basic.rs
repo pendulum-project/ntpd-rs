@@ -12,20 +12,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let arg = std::env::args().nth(1);
 
     #[cfg(target_os = "linux")]
-    let clock: UnixClock = match arg.as_deref() {
-        None | Some("realtime") => UnixClock::CLOCK_REALTIME,
-        Some("tai") => UnixClock::CLOCK_TAI,
-        Some(path) if path.starts_with("/dev/") => UnixClock::open(path)?,
+    match arg.as_deref() {
+        None | Some("realtime") => exercise_clock(UnixClock::CLOCK_REALTIME),
+        Some("tai") => exercise_clock(UnixClock::CLOCK_TAI),
+        Some(path) if path.starts_with("/dev/") => exercise_clock(UnixClock::open(path)?),
         Some(other) => {
             eprintln!("unknown clock: {other}");
             eprintln!("usage: basic [realtime|tai|/dev/ptpN]");
             std::process::exit(1);
         }
-    };
+    }
 
     #[cfg(not(target_os = "linux"))]
-    let clock = UnixClock::CLOCK_REALTIME;
+    exercise_clock(UnixClock::CLOCK_REALTIME)
+}
 
+fn exercise_clock<Timescale: Send + 'static>(
+    clock: UnixClock<Timescale>,
+) -> Result<(), Box<dyn std::error::Error>> {
     // Read-only operations
 
     let now = clock.now()?;
