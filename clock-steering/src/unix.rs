@@ -1,8 +1,8 @@
-use libc::CLOCK_REALTIME;
-use statime_base::{Clock, ClockError, Duration, LeapStatus, Timestamp, TAI};
+use statime_base::{Clock, ClockError, Duration, LeapStatus, Timestamp, TAI, UTC};
 
 #[cfg(target_os = "linux")]
 use crate::linux_ioctls::{ptp_clock_getcaps, PtpClockCaps};
+use std::marker::PhantomData;
 #[cfg(target_os = "linux")]
 use std::mem::MaybeUninit;
 #[cfg(target_os = "linux")]
@@ -12,14 +12,43 @@ use std::{
 };
 
 /// A Unix OS clock
-#[derive(Debug, Clone, Copy)]
-pub struct UnixClock {
+pub struct UnixClock<Timescale> {
     clock: libc::clockid_t,
     #[cfg(target_os = "linux")]
     fd: Option<RawFd>,
+    _timescale: PhantomData<Timescale>,
 }
 
-impl UnixClock {
+impl<Timescale> std::fmt::Debug for UnixClock<Timescale> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        #[cfg(target_os = "linux")]
+        {
+            f.debug_struct("UnixClock")
+                .field("clock", &self.clock)
+                .field("fd", &self.fd)
+                .field("_timescale", &self._timescale)
+                .finish()
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            f.debug_struct("UnixClock")
+                .field("clock", &self.clock)
+                .field("_timescale", &self._timescale)
+                .finish()
+        }
+    }
+}
+
+impl<Timescale> Clone for UnixClock<Timescale> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<Timescale> Copy for UnixClock<Timescale> {}
+
+impl UnixClock<UTC> {
     /// The standard realtime clock on unix systems.
     ///
     /// ```no_run
@@ -37,8 +66,11 @@ impl UnixClock {
         clock: libc::CLOCK_REALTIME,
         #[cfg(target_os = "linux")]
         fd: None,
+        _timescale: PhantomData,
     };
+}
 
+impl UnixClock<TAI> {
     /// TAI time on linux systems.
     ///
     /// ```no_run
@@ -56,6 +88,7 @@ impl UnixClock {
     pub const CLOCK_TAI: Self = UnixClock {
         clock: libc::CLOCK_TAI,
         fd: None,
+        _timescale: PhantomData,
     };
 
     /// Open a clock device.
@@ -97,6 +130,7 @@ impl UnixClock {
         Self {
             clock,
             fd: Some(fd),
+            _timescale: PhantomData,
         }
     }
 
@@ -161,7 +195,9 @@ impl UnixClock {
             ))
         }
     }
+}
 
+impl<Timescale> UnixClock<Timescale> {
     /// Disable any kernel disciplining of this clock.
     ///
     /// # Errors
@@ -294,7 +330,7 @@ impl UnixClock {
         clippy::trivially_copy_pass_by_ref,
         reason = "Allows a consistent interface between platforms."
     )]
-    fn step_clock_by_timespec(&self, offset: Duration) -> Result<Timestamp<TAI>, ClockError> {
+    fn step_clock_by_timespec(&self, offset: Duration) -> Result<Timestamp<Timescale>, ClockError> {
         let steps = offset.as_raw_steps();
         #[cfg_attr(
             target_env = "musl",
@@ -332,11 +368,7 @@ impl UnixClock {
 
         self.clock_settime(timespec)?;
 
-        Ok(current_time_timespec(
-            timespec,
-            Precision::Nano,
-            self.clock == CLOCK_REALTIME,
-        ))
+        Ok(current_time_timespec(timespec, Precision::Nano))
     }
 
     fn error_estimate_timex(esterror: Duration, maxerror: Duration) -> libc::timex {
@@ -385,7 +417,7 @@ impl UnixClock {
     }
 
     #[cfg(target_os = "linux")]
-    fn step_clock_by_timex(&self, offset: Duration) -> Result<Timestamp<TAI>, ClockError> {
+    fn step_clock_by_timex(&self, offset: Duration) -> Result<Timestamp<Timescale>, ClockError> {
         let mut timex = Self::step_clock_timex(offset)?;
         self.adjtime(&mut timex)?;
         self.extract_current_time(&timex)
@@ -398,7 +430,7 @@ impl UnixClock {
     fn extract_current_time(
         &self,
         #[cfg_attr(target_os = "macos", allow(unused))] timex: &libc::timex,
-    ) -> Result<Timestamp<TAI>, ClockError> {
+    ) -> Result<Timestamp<Timescale>, ClockError> {
         #[cfg(target_os = "linux")]
         // hardware clocks may not report the timestamp
         if timex.time.tv_sec != 0 && timex.time.tv_usec != 0 {
@@ -408,20 +440,12 @@ impl UnixClock {
                 _ => Precision::Nano,
             };
 
-            return Ok(current_time_timeval(
-                timex.time,
-                precision,
-                self.clock == CLOCK_REALTIME,
-            ));
+            return Ok(current_time_timeval(timex.time, precision));
         }
 
         // clock_gettime always gives nanoseconds
         let timespec = self.clock_gettime()?;
-        Ok(current_time_timespec(
-            timespec,
-            Precision::Nano,
-            self.clock == CLOCK_REALTIME,
-        ))
+        Ok(current_time_timespec(timespec, Precision::Nano))
     }
 
     #[allow(
@@ -564,9 +588,7 @@ impl UnixClock {
             Duration::from_seconds_nanos(timespec.tv_sec.into(), timespec.tv_nsec as u32)
         })
     }
-}
 
-impl UnixClock {
     #[cfg(target_os = "linux")]
     fn fetch_max_frequency_adjustment(&self) -> Result<f64, ClockError> {
         if let Some(fd) = self.fd {
@@ -602,20 +624,20 @@ impl UnixClock {
     }
 }
 
-impl Clock for UnixClock {
-    fn now(&self) -> Result<Timestamp<TAI>, ClockError> {
+impl<Timescale: Send + 'static> Clock<Timescale> for UnixClock<Timescale> {
+    fn now(&self) -> Result<Timestamp<Timescale>, ClockError> {
         let mut ntp_kapi_timex = EMPTY_TIMEX;
 
         if self.adjtime(&mut ntp_kapi_timex).is_ok() {
             Ok(self.extract_current_time(&ntp_kapi_timex)?)
         } else {
-            Ok(self.clock_gettime().map(|ts| {
-                current_time_timespec(ts, Precision::Nano, self.clock == CLOCK_REALTIME)
-            })?)
+            Ok(self
+                .clock_gettime()
+                .map(|ts| current_time_timespec(ts, Precision::Nano))?)
         }
     }
 
-    fn set_frequency(&self, freq: f64) -> Result<Timestamp<TAI>, ClockError> {
+    fn set_frequency(&self, freq: f64) -> Result<Timestamp<Timescale>, ClockError> {
         let mut timex = Self::set_frequency_timex(freq * 1e6);
         self.adjtime(&mut timex)?;
         self.extract_current_time(&timex)
@@ -641,12 +663,12 @@ impl Clock for UnixClock {
     }
 
     #[cfg(target_os = "linux")]
-    fn step_clock(&self, offset: Duration) -> Result<Timestamp<TAI>, ClockError> {
+    fn step_clock(&self, offset: Duration) -> Result<Timestamp<Timescale>, ClockError> {
         self.step_clock_by_timex(offset)
     }
 
     #[cfg(not(target_os = "linux"))]
-    fn step_clock(&self, offset: Duration) -> Result<Timestamp<TAI>, ClockError> {
+    fn step_clock(&self, offset: Duration) -> Result<Timestamp<Timescale>, ClockError> {
         self.step_clock_by_timespec(offset)
     }
 
@@ -740,12 +762,11 @@ pub(crate) enum Precision {
     clippy::useless_conversion,
     reason = "Conversion is necessary on some platforms."
 )]
-fn current_time_timespec(
+fn current_time_timespec<Timescale>(
     timespec: libc::timespec,
     precision: Precision,
-    is_utc: bool,
-) -> Timestamp<TAI> {
-    let mut seconds = timespec.tv_sec.wrapping_add(if is_utc { 37 } else { 0 });
+) -> Timestamp<Timescale> {
+    let mut seconds = timespec.tv_sec;
 
     let nanos: i32 = timespec.tv_nsec as _;
 
@@ -778,12 +799,11 @@ fn current_time_timespec(
     reason = "tv_usec is always less than 1_000_000_000, which fits in an i32"
 )]
 #[expect(clippy::cast_sign_loss, reason = "tv_usec is guaranteed to be >=0")]
-fn current_time_timeval(
+fn current_time_timeval<Timescale>(
     timespec: libc::timeval,
     precision: Precision,
-    is_utc: bool,
-) -> Timestamp<TAI> {
-    let seconds = timespec.tv_sec.wrapping_add(if is_utc { 37 } else { 0 });
+) -> Timestamp<Timescale> {
+    let seconds = timespec.tv_sec;
     let nanos = match precision {
         Precision::Nano => timespec.tv_usec as u32,
         Precision::Micro => (timespec.tv_usec as u32)
@@ -888,7 +908,7 @@ pub const EMPTY_TIMEX: libc::timex = libc::timex {
 
 #[cfg(test)]
 mod tests {
-    use statime_base::{Clock, Duration, Timestamp};
+    use statime_base::{Clock, Duration, Timestamp, UTC};
 
     use super::UnixClock;
 
@@ -927,7 +947,7 @@ mod tests {
     #[test]
     fn test_step_clock() {
         let offset = Duration::from_seconds_nanos(1, 200_000_000);
-        let timex = UnixClock::step_clock_timex(offset).unwrap();
+        let timex = UnixClock::<UTC>::step_clock_timex(offset).unwrap();
 
         assert_eq!(timex.modes, libc::ADJ_SETOFFSET | libc::ADJ_NANO);
 
@@ -939,7 +959,7 @@ mod tests {
     fn test_error_estimate() {
         let est_error = Duration::from_seconds_nanos(0, 500_000_000);
         let max_error = Duration::from_seconds_nanos(1, 200_000_000);
-        let timex = UnixClock::error_estimate_timex(est_error, max_error);
+        let timex = UnixClock::<UTC>::error_estimate_timex(est_error, max_error);
 
         assert_eq!(timex.modes, libc::MOD_ESTERROR | libc::MOD_MAXERROR);
 

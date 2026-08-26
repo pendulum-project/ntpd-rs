@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 /// A controller for clocks in a system.
 pub trait Controller {
     /// Type of clocks which are managed by this controller
-    type Clock: Clock;
+    type Clock: Clock<TAI>;
     /// Measurement links between clocks belonging to the controller.
     type Link<ControllerRef: AsRef<Self>>: Link<Error = Self::Error>;
     /// Errors returned by the controller

@@ -221,12 +221,12 @@ where
         panic!("Custom clock paths not supported on this platform");
 
         #[cfg(target_os = "linux")]
-        Ok(NtpClockWrapper::new(
+        Ok(NtpClockWrapper::from(
             UnixClock::open(path).map_err(|e| serde::de::Error::custom(e.to_string()))?,
         ))
     } else {
         tracing::debug!("using REALTIME clock");
-        Ok(NtpClockWrapper::new(UnixClock::CLOCK_REALTIME))
+        Ok(NtpClockWrapper::from(UnixClock::CLOCK_REALTIME))
     }
 }
 

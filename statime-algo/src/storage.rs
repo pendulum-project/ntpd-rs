@@ -6,17 +6,17 @@ use core::{
 };
 
 use arrayvec::ArrayVec;
-use statime_base::{Clock, ClockId};
+use statime_base::{Clock, ClockId, TAI};
 
 use crate::KalmanControllerState;
 use crate::filter::BoundType;
 
 /// Storage provider for a [`KalmanController`](crate::KalmanController)
-pub trait KalmanStorage<C: Clock>: KalmanStorageInternal<C> {}
+pub trait KalmanStorage<C: Clock<TAI>>: KalmanStorageInternal<C> {}
 
 /// Internal variant of the storage trait, used to make sure [`KalmanStorage`] is not
 /// implementable externally.
-pub trait KalmanStorageInternal<C: Clock>: KalmanStorageBase {
+pub trait KalmanStorageInternal<C: Clock<TAI>>: KalmanStorageBase {
     type SteeredClockStorage: SteeredClockStorage<C>;
     type StateMutex: StateMutex<Self, C>;
 }
@@ -62,13 +62,13 @@ impl<C> KalmanStorageBase for StdKalmanStorage<C> {
 }
 
 #[cfg(feature = "std")]
-impl<C: Clock> KalmanStorageInternal<C> for StdKalmanStorage<C> {
+impl<C: Clock<TAI>> KalmanStorageInternal<C> for StdKalmanStorage<C> {
     type SteeredClockStorage = std::vec::Vec<crate::ClockInfo<C>>;
     type StateMutex = std::sync::RwLock<crate::KalmanControllerState<StdKalmanStorage<C>, C>>;
 }
 
 #[cfg(feature = "std")]
-impl<C: Clock> KalmanStorage<C> for StdKalmanStorage<C> {}
+impl<C: Clock<TAI>> KalmanStorage<C> for StdKalmanStorage<C> {}
 
 /// Storage for the [`KalmanController`](crate::KalmanController) backed by fixed buffers.
 ///
@@ -101,12 +101,12 @@ impl<C, const N: usize> KalmanStorageBase for NoAllocKalmanStorage<C, N> {
     type BoundStorage = ArrayVec<(f64, crate::filter::BoundType), N>;
 }
 
-impl<C: Clock, const N: usize> KalmanStorageInternal<C> for NoAllocKalmanStorage<C, N> {
+impl<C: Clock<TAI>, const N: usize> KalmanStorageInternal<C> for NoAllocKalmanStorage<C, N> {
     type SteeredClockStorage = ArrayVec<crate::ClockInfo<C>, N>;
     type StateMutex = RefCell<KalmanControllerState<NoAllocKalmanStorage<C, N>, C>>;
 }
 
-impl<C: Clock, const N: usize> KalmanStorage<C> for NoAllocKalmanStorage<C, N> {}
+impl<C: Clock<TAI>, const N: usize> KalmanStorage<C> for NoAllocKalmanStorage<C, N> {}
 
 /// A storage provider for a matrix. Abstracts a dynamically sized array of f64.
 ///
@@ -331,7 +331,7 @@ impl<C, const N: usize> SteeredClockStorage<C> for ArrayVec<crate::ClockInfo<C>,
 }
 
 /// Trait for state management
-pub trait StateMutex<Storage: KalmanStorageInternal<C>, C: Clock> {
+pub trait StateMutex<Storage: KalmanStorageInternal<C>, C: Clock<TAI>> {
     /// Creates a new instance of the mutex
     fn new(state: KalmanControllerState<Storage, C>) -> Self;
 
@@ -343,7 +343,7 @@ pub trait StateMutex<Storage: KalmanStorageInternal<C>, C: Clock> {
 }
 
 #[cfg(feature = "std")]
-impl<Storage: KalmanStorageInternal<C>, C: Clock> StateMutex<Storage, C>
+impl<Storage: KalmanStorageInternal<C>, C: Clock<TAI>> StateMutex<Storage, C>
     for std::sync::RwLock<KalmanControllerState<Storage, C>>
 {
     fn new(state: KalmanControllerState<Storage, C>) -> Self {
@@ -359,7 +359,7 @@ impl<Storage: KalmanStorageInternal<C>, C: Clock> StateMutex<Storage, C>
     }
 }
 
-impl<Storage: KalmanStorageInternal<C>, C: Clock> StateMutex<Storage, C>
+impl<Storage: KalmanStorageInternal<C>, C: Clock<TAI>> StateMutex<Storage, C>
     for RefCell<KalmanControllerState<Storage, C>>
 {
     fn new(state: KalmanControllerState<Storage, C>) -> Self {

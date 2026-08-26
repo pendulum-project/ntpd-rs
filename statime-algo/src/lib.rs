@@ -144,7 +144,7 @@ impl Default for ClockConfig {
 }
 
 mod hidden {
-    use statime_base::{Clock, ClockId, Duration, LeapStatus};
+    use statime_base::{Clock, ClockId, Duration, LeapStatus, TAI};
 
     use crate::{
         ClockConfig,
@@ -159,7 +159,7 @@ mod hidden {
     }
 
     /// The main controller struct.
-    pub struct KalmanControllerState<Storage: KalmanStorageInternal<C>, C: Clock> {
+    pub struct KalmanControllerState<Storage: KalmanStorageInternal<C>, C: Clock<TAI>> {
         pub(crate) clocks: Storage::SteeredClockStorage,
         pub(crate) filter: LinkFilter<Storage>,
         pub(crate) filter_config: ControllerConfig,
@@ -170,11 +170,11 @@ mod hidden {
 pub(crate) use hidden::{ClockInfo, KalmanControllerState};
 
 /// Controller for clocks using a kalman filter as its state estimation mechanism.
-pub struct KalmanController<Storage: KalmanStorage<C>, C: Clock> {
+pub struct KalmanController<Storage: KalmanStorage<C>, C: Clock<TAI>> {
     state: Storage::StateMutex,
 }
 
-impl<Storage: KalmanStorage<C>, C: Clock> Controller for KalmanController<Storage, C> {
+impl<Storage: KalmanStorage<C>, C: Clock<TAI>> Controller for KalmanController<Storage, C> {
     type Clock = C;
     type Link<ControllerRef: AsRef<Self>> = KalmanLink<ControllerRef, Storage, C>;
     type Error = AlgoError;
@@ -314,7 +314,7 @@ impl<Storage: KalmanStorage<C>, C: Clock> Controller for KalmanController<Storag
     }
 }
 
-impl<Storage: KalmanStorage<C>, C: Clock> KalmanController<Storage, C> {
+impl<Storage: KalmanStorage<C>, C: Clock<TAI>> KalmanController<Storage, C> {
     /// Create a new clock controller
     ///
     /// # Errors
@@ -375,7 +375,7 @@ impl<Storage: KalmanStorage<C>, C: Clock> KalmanController<Storage, C> {
     }
 }
 
-impl<Storage: KalmanStorageInternal<C>, C: Clock> KalmanControllerState<Storage, C> {
+impl<Storage: KalmanStorageInternal<C>, C: Clock<TAI>> KalmanControllerState<Storage, C> {
     fn steer_clocks(&mut self) -> Result<(), AlgoError> {
         let mut filter = self
             .filter
@@ -450,7 +450,7 @@ impl<Storage: KalmanStorageInternal<C>, C: Clock> KalmanControllerState<Storage,
 pub struct KalmanLink<
     ControllerRef: AsRef<KalmanController<Storage, C>>,
     Storage: KalmanStorage<C>,
-    C: Clock,
+    C: Clock<TAI>,
 > {
     link_id: LinkId,
     // We use a generic reference to the kalman controller here to avoid
@@ -462,8 +462,8 @@ pub struct KalmanLink<
     phantomdata: PhantomData<(Storage, C)>,
 }
 
-impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<C>, C: Clock> Drop
-    for KalmanLink<ControllerRef, Storage, C>
+impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<C>, C: Clock<TAI>>
+    Drop for KalmanLink<ControllerRef, Storage, C>
 {
     fn drop(&mut self) {
         self.controller.as_ref().state.with_mut(|state| {
@@ -477,8 +477,8 @@ impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<
     }
 }
 
-impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<C>, C: Clock> Link
-    for KalmanLink<ControllerRef, Storage, C>
+impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<C>, C: Clock<TAI>>
+    Link for KalmanLink<ControllerRef, Storage, C>
 {
     type Error = AlgoError;
 

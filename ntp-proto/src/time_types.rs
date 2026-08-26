@@ -3,7 +3,7 @@ use rand::{
     distributions::{Distribution, Standard},
 };
 use serde::{Deserialize, Serialize, de::Unexpected};
-use statime_base::{TAI, Timestamp};
+use statime_base::{TAI, Timestamp, UTC};
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::time::Duration;
 
@@ -24,10 +24,23 @@ impl std::fmt::Debug for NtpTimestamp {
 // Epoch offset between NTP and UNIX TAI timescales
 // FIXME: More properly deal with TAI vs UTC
 const EPOCH_OFFSET: statime_base::Duration =
-    statime_base::Duration::from_seconds_nanos((70 * 365 + 17) * 86400 + 37, 0);
+    statime_base::Duration::from_seconds_nanos((70 * 365 + 17) * 86400, 0);
 
 impl From<Timestamp<TAI>> for NtpTimestamp {
     fn from(value: Timestamp<TAI>) -> Self {
+        let steps = (value - Timestamp::UNIX_EPOCH
+            + EPOCH_OFFSET
+            + statime_base::Duration::from_seconds_nanos(37, 0))
+        .as_raw_steps();
+        // We want wrapping here, so cast is fine
+        NtpTimestamp {
+            timestamp: (steps >> 32) as u64,
+        }
+    }
+}
+
+impl From<Timestamp<UTC>> for NtpTimestamp {
+    fn from(value: Timestamp<UTC>) -> Self {
         let steps = (value - Timestamp::UNIX_EPOCH + EPOCH_OFFSET).as_raw_steps();
         // We want wrapping here, so cast is fine
         NtpTimestamp {
