@@ -5,6 +5,7 @@ members = [
     "ntpd",
     "statime-algo",
     "statime-base",
+    "statime-config",
     "statime-csptp",
     "statime-netptp",
     "statime-wire",
@@ -184,8 +185,8 @@ rand = { version = "0.8.0", default-features = false }
 serde = { version = "1.0.166", features = ["derive"] }
 serde_json = "1.0"
 tokio = "1.37"
-toml = { version = ">=0.6.0,<0.9.0", default-features = false, features = ["parse"] }
 log = "0.4.34"
+toml = { version = ">=0.6.0,<0.9.0", default-features = false, features = ["parse", "display"] }
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.0", default-features = false, features = ["std", "fmt", "ansi", "tracing-log"] }
 
