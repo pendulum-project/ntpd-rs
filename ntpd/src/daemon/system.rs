@@ -31,10 +31,10 @@ use std::{
 };
 
 use ntp_proto::{
-    ClockId, KeySet, NtpManager, ObservableSourceState, OneWaySource, SourceConfig, SourceType,
-    SynchronizationConfig, SystemSnapshot, TimeSyncController,
+    ClockId, KeySet, NtpClock, NtpManager, ObservableSourceState, OneWaySource, PollIntervalLimits,
+    SourceConfig, SourceType, StatimeBaseWrapper, SynchronizationConfig, SystemSnapshot,
 };
-use statime_base::ClockError;
+use statime_base::{ActiveLinkData, ClockError, Link, LinkId, StdController};
 use timestamped_socket::interface::InterfaceName;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{debug, info};
@@ -57,8 +57,10 @@ pub struct DaemonChannels {
         reason = "FIXME: System needs a larger refactor to properly receive configuration"
     )
 )]
-pub async fn spawn<Controller: TimeSyncController<Error = ClockError>>(
-    create_controller: impl FnOnce(NtpClockWrapper) -> Result<Controller, ClockError>,
+pub async fn spawn<Controller: StdController + Sync + Send + 'static>(
+    create_controller: impl FnOnce(
+        NtpClockWrapper,
+    ) -> Result<(Controller, statime_base::ClockId), ClockError>,
     ntp_manager_config: SynchronizationConfig,
     source_defaults_config: SourceConfig,
     clock_config: ClockConfig,
@@ -67,7 +69,10 @@ pub async fn spawn<Controller: TimeSyncController<Error = ClockError>>(
     #[cfg(target_os = "linux")] csptp_server_configs: &[crate::daemon::config::CsptpServerConfig],
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
     #[cfg(target_os = "linux")] csptp_config: CsptpConfig,
-) -> std::io::Result<(JoinHandle<std::io::Result<()>>, DaemonChannels)> {
+) -> std::io::Result<(JoinHandle<std::io::Result<()>>, DaemonChannels)>
+where
+    Controller::Link<Arc<Controller>>: Send,
+{
     let ip_list = super::local_ip_provider::spawn()?;
 
     let (mut system, channels) = SystemTask::<Controller>::new(
@@ -153,7 +158,7 @@ struct SystemSpawnerData {
     notify_tx: mpsc::Sender<SystemEvent>,
 }
 
-struct SystemTask<Controller: TimeSyncController> {
+struct SystemTask<Controller: StdController> {
     controller: Arc<Controller>,
     ntp_manager: Arc<NtpManager>,
 
@@ -177,11 +182,12 @@ struct SystemTask<Controller: TimeSyncController> {
     spawn_tx: mpsc::Sender<SpawnEvent>,
     spawn_rx: mpsc::Receiver<SpawnEvent>,
 
-    sources: Arc<Mutex<HashMap<ClockId, SourceState>>>,
+    sources: Arc<Mutex<HashMap<LinkId, SourceState>>>,
     servers: Vec<ServerData>,
     spawners: Vec<SystemSpawnerData>,
 
     clock: NtpClockWrapper,
+    clock_id: statime_base::ClockId,
 
     // which timestamps to use (this is a hint, OS or hardware may ignore)
     timestamp_mode: TimestampMode,
@@ -191,32 +197,40 @@ struct SystemTask<Controller: TimeSyncController> {
     interface: Option<InterfaceName>,
 }
 
-impl<Controller: TimeSyncController<Error = ClockError>> SystemTask<Controller> {
+impl<Controller: StdController + Send + Sync> SystemTask<Controller>
+where
+    Controller::Link<Arc<Controller>>: Send + 'static,
+{
     #[expect(clippy::too_many_arguments)]
     fn new(
         clock: NtpClockWrapper,
         interface: Option<InterfaceName>,
         timestamp_mode: TimestampMode,
-        create_controller: impl FnOnce(NtpClockWrapper) -> Result<Controller, ClockError>,
+        create_controller: impl FnOnce(
+            NtpClockWrapper,
+        )
+            -> Result<(Controller, statime_base::ClockId), ClockError>,
         ntp_manager_config: SynchronizationConfig,
         keyset: &tokio::sync::watch::Receiver<Arc<KeySet>>,
         ip_list: tokio::sync::watch::Receiver<Arc<[IpAddr]>>,
         have_sources: bool,
         #[cfg(target_os = "linux")] csptp_config: CsptpConfig,
     ) -> (Self, DaemonChannels) {
-        let Ok(controller) = create_controller(clock) else {
+        let Ok((controller, system_clock_id)) = create_controller(clock) else {
             tracing::error!("Could not create clock controller");
             std::process::exit(70);
         };
         let ntp_manager = NtpManager::new(ntp_manager_config, ip_list.borrow().clone());
 
-        if have_sources && let Err(e) = controller.take_control() {
+        if have_sources && let Err(e) = clock.disable_ntp_algorithm() {
             tracing::error!("Could not control clock: {}", e);
             std::process::exit(70);
         }
 
         let system_snapshot = SystemSnapshot {
-            time_snapshot: controller.synchronization_state().0,
+            time_snapshot: controller
+                .clock_snapshot(system_clock_id)
+                .expect("Unable to get system clock snapshot"),
             ntp_snapshot: ntp_manager.observe(),
         };
 
@@ -271,6 +285,7 @@ impl<Controller: TimeSyncController<Error = ClockError>> SystemTask<Controller> 
                 servers: vec![],
                 spawners: vec![],
                 clock,
+                clock_id: system_clock_id,
                 timestamp_mode,
                 interface,
             },
@@ -295,24 +310,32 @@ impl<Controller: TimeSyncController<Error = ClockError>> SystemTask<Controller> 
     }
 
     async fn run(&mut self) -> std::io::Result<()> {
-        let controller = self.controller.clone();
-        let controller_run = controller.run();
+        let controller_run = Controller::run(self.controller.clone(), |duration| {
+            tokio::time::sleep(duration)
+        });
 
         let sender = self.system_snapshot_sender.clone();
         let controller = self.controller.clone();
         let ntp_manager = self.ntp_manager.clone();
         let sources = self.sources.clone();
+        let clock_id = self.clock_id;
         let timer_loop = async move {
             loop {
                 // Scope is needed to keep the future send.
                 {
-                    let (time_snapshot, used_sources) = controller.synchronization_state();
+                    let time_snapshot = controller
+                        .clock_snapshot(clock_id)
+                        .expect("Unable to get system clock time snapshot");
+                    let mut used_sources = controller.active_links();
+                    used_sources.sort_by(|a, b| b.importance.total_cmp(&a.importance));
                     let sources = sources.lock().unwrap();
                     ntp_manager.update_time_snapshot(time_snapshot);
 
                     if let Some(used_sources) = used_sources
                         .into_iter()
-                        .map(|id| sources.get(&id).map(|state| (id, state.stype)))
+                        .map(|ActiveLinkData { id, .. }| {
+                            sources.get(&id).map(|state| (id, state.stype))
+                        })
                         .collect::<Option<Vec<_>>>()
                     {
                         let ntp_snapshot =
@@ -394,7 +417,7 @@ impl<Controller: TimeSyncController<Error = ClockError>> SystemTask<Controller> 
         Ok(())
     }
 
-    async fn handle_source_network_issue(&mut self, index: ClockId) -> std::io::Result<()> {
+    async fn handle_source_network_issue(&mut self, index: LinkId) -> std::io::Result<()> {
         // Restart the source reusing its configuration.
         let state = self.sources.lock().unwrap().remove(&index).unwrap();
         let spawner_id = state.spawner_id;
@@ -414,7 +437,7 @@ impl<Controller: TimeSyncController<Error = ClockError>> SystemTask<Controller> 
         Ok(())
     }
 
-    async fn handle_source_unreachable(&mut self, index: ClockId) -> std::io::Result<()> {
+    async fn handle_source_unreachable(&mut self, index: LinkId) -> std::io::Result<()> {
         // Restart the source reusing its configuration.
         let state = self.sources.lock().unwrap().remove(&index).unwrap();
         let spawner_id = state.spawner_id;
@@ -434,7 +457,7 @@ impl<Controller: TimeSyncController<Error = ClockError>> SystemTask<Controller> 
         Ok(())
     }
 
-    async fn handle_source_demobilize(&mut self, index: ClockId) -> Result<(), ClockError> {
+    async fn handle_source_demobilize(&mut self, index: LinkId) -> Result<(), ClockError> {
         // Restart the source reusing its configuration.
         let state = self.sources.lock().unwrap().remove(&index).unwrap();
         let spawner_id = state.spawner_id;
@@ -464,8 +487,41 @@ impl<Controller: TimeSyncController<Error = ClockError>> SystemTask<Controller> 
     ) -> Result<(), ClockError> {
         let source_id = params.get_id();
         info!(source_id=?source_id, addr=?params.get_addr(), spawner=?spawner_id, "new source");
+
+        let source_controller = match params {
+            SourceCreateParameters::Ntp(_) => Controller::create_tracked_link(
+                self.controller.clone(),
+                self.clock_id,
+                None,
+                Controller::LinkConfig::default(),
+                Controller::TrackedLinkConfig::default(),
+            ),
+            #[cfg(target_os = "linux")]
+            SourceCreateParameters::Csptp(_) => Controller::create_tracked_link(
+                self.controller.clone(),
+                self.clock_id,
+                None,
+                Controller::LinkConfig::default(),
+                Controller::TrackedLinkConfig::default(),
+            ),
+            SourceCreateParameters::Sock(_) => Controller::create_untracked_link(
+                self.controller.clone(),
+                self.clock_id,
+                None,
+                Controller::LinkConfig::default(),
+            ),
+            #[cfg(feature = "pps")]
+            SourceCreateParameters::Pps(_) => Controller::create_untracked_link(
+                self.controller.clone(),
+                self.clock_id,
+                None,
+                Controller::LinkConfig::default(),
+            ),
+        }
+        .expect("Unable to create controller for link");
+
         self.sources.lock().unwrap().insert(
-            source_id,
+            source_controller.id(),
             SourceState {
                 source_id,
                 spawner_id,
@@ -482,7 +538,10 @@ impl<Controller: TimeSyncController<Error = ClockError>> SystemTask<Controller> 
 
         match params {
             SourceCreateParameters::Ntp(ref mut params) => {
-                let source_controller = self.controller.add_source(source_id, params.config);
+                let link_id = source_controller.id();
+                let source_controller =
+                    StatimeBaseWrapper::new(source_controller, params.config.poll_interval_limits);
+
                 let (source, initial_actions) = self.ntp_manager.new_source(
                     params.addr,
                     params.config,
@@ -490,10 +549,12 @@ impl<Controller: TimeSyncController<Error = ClockError>> SystemTask<Controller> 
                     source_controller,
                     params.nts.take(),
                     source_id,
+                    link_id,
                 );
 
                 SourceTask::spawn(
                     source_id,
+                    link_id,
                     params.normalized_addr.to_string(),
                     params.addr,
                     self.interface,
@@ -508,13 +569,8 @@ impl<Controller: TimeSyncController<Error = ClockError>> SystemTask<Controller> 
                 );
             }
             SourceCreateParameters::Sock(ref params) => {
-                let source_controller = self.controller.add_one_way_source(
-                    source_id,
-                    params.config,
-                    params.precision,
-                    params.accuracy,
-                    None,
-                );
+                let source_controller =
+                    StatimeBaseWrapper::new(source_controller, PollIntervalLimits::default());
                 let source = OneWaySource::new(source_controller);
                 SockSourceTask::spawn(
                     source_id,
@@ -529,13 +585,8 @@ impl<Controller: TimeSyncController<Error = ClockError>> SystemTask<Controller> 
             }
             #[cfg(feature = "pps")]
             SourceCreateParameters::Pps(ref params) => {
-                let source_controller = self.controller.add_one_way_source(
-                    source_id,
-                    params.config,
-                    params.precision,
-                    params.accuracy,
-                    Some(params.period),
-                );
+                let source_controller =
+                    StatimeBaseWrapper::new(source_controller, PollIntervalLimits::default());
                 let source = OneWaySource::new(source_controller);
                 PpsSourceTask::spawn(
                     source_id,
@@ -563,9 +614,8 @@ impl<Controller: TimeSyncController<Error = ClockError>> SystemTask<Controller> 
                         self.ptp_networking_ipv4 = Some(manager.clone());
                         manager
                     };
-                    let controller = self
-                        .controller
-                        .add_source(params.id, SourceConfig::default());
+                    let controller =
+                        StatimeBaseWrapper::new(source_controller, PollIntervalLimits::default());
                     crate::daemon::csptp_source::CsptpSourceTask::spawn(
                         params.id,
                         addr,
@@ -589,9 +639,8 @@ impl<Controller: TimeSyncController<Error = ClockError>> SystemTask<Controller> 
                         self.ptp_networking_ipv6 = Some(manager.clone());
                         manager
                     };
-                    let controller = self
-                        .controller
-                        .add_source(params.id, SourceConfig::default());
+                    let controller =
+                        StatimeBaseWrapper::new(source_controller, PollIntervalLimits::default());
                     crate::daemon::csptp_source::CsptpSourceTask::spawn(
                         params.id,
                         addr,

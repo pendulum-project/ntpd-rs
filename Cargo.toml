@@ -214,6 +214,7 @@ timestamped-socket = { version = "0.3.0", path = "./timestamped-socket" }
 # NOTE: keep this part at the bottom of the file, do not change this line
 ntp-proto = { version = "2.0.0-alpha.20260715", path = "./ntp-proto", default-features = false, features = ["__internal-api"] }
 statime-base = { version = "2.0.0-alpha.20260715", path = "./statime-base", default-features = false }
+statime-algo = { version = "2.0.0-alpha.20260715", path = "./statime-algo", default-features = false }
 statime-csptp = { version = "2.0.0-alpha.20260715", path = "./statime-csptp" }
 statime-netptp = { version = "2.0.0-alpha.20260715", path = "./statime-netptp" }
 statime-wire = { version = "2.0.0-alpha.20260715", path = "./statime-wire", default-features = false }

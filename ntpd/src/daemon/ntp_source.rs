@@ -6,6 +6,7 @@ use ntp_proto::{
     ClockId, NtpClock, NtpSource, NtpSourceActionIterator, NtpTimestamp, ObservableSourceState,
     SourceController,
 };
+use statime_base::LinkId;
 #[cfg(target_os = "linux")]
 use timestamped_socket::socket::open_interface_udp;
 use timestamped_socket::{
@@ -32,11 +33,11 @@ impl Wait for Sleep {
 #[derive(Debug, Clone)]
 pub enum MsgForSystem {
     /// Received a Kiss-o'-Death and must demobilize
-    MustDemobilize(ClockId),
+    MustDemobilize(LinkId),
     /// Experienced a network issue and must be restarted
-    NetworkIssue(ClockId),
+    NetworkIssue(LinkId),
     /// Source is unreachable, and should be restarted with new resolved addr.
-    Unreachable(ClockId),
+    Unreachable(LinkId),
 }
 
 #[derive(Debug)]
@@ -48,6 +49,7 @@ pub struct SourceChannels {
 pub(crate) struct SourceTask<C: 'static + NtpClock + Send, Controller: SourceController, T: Wait> {
     _wait: PhantomData<T>,
     index: ClockId,
+    link_id: LinkId,
     clock: C,
     interface: Option<InterfaceName>,
     timestamp_mode: TimestampMode,
@@ -148,7 +150,7 @@ where
                         AcceptResult::NetworkGone => {
                             self.channels
                                 .msg_for_system_sender
-                                .send(MsgForSystem::NetworkIssue(self.index))
+                                .send(MsgForSystem::NetworkIssue(self.link_id))
                                 .await
                                 .ok();
                             self.channels
@@ -182,7 +184,7 @@ where
                         if matches!(self.setup_socket(), SocketResult::Abort) {
                             self.channels
                                 .msg_for_system_sender
-                                .send(MsgForSystem::NetworkIssue(self.index))
+                                .send(MsgForSystem::NetworkIssue(self.link_id))
                                 .await
                                 .ok();
                             self.channels
@@ -219,7 +221,7 @@ where
                                 {
                                     self.channels
                                         .msg_for_system_sender
-                                        .send(MsgForSystem::NetworkIssue(self.index))
+                                        .send(MsgForSystem::NetworkIssue(self.link_id))
                                         .await
                                         .ok();
                                     self.channels
@@ -248,7 +250,7 @@ where
                     ntp_proto::NtpSourceAction::Reset => {
                         self.channels
                             .msg_for_system_sender
-                            .send(MsgForSystem::Unreachable(self.index))
+                            .send(MsgForSystem::Unreachable(self.link_id))
                             .await
                             .ok();
                         self.channels
@@ -261,7 +263,7 @@ where
                     ntp_proto::NtpSourceAction::Demobilize => {
                         self.channels
                             .msg_for_system_sender
-                            .send(MsgForSystem::MustDemobilize(self.index))
+                            .send(MsgForSystem::MustDemobilize(self.link_id))
                             .await
                             .ok();
                         self.channels
@@ -285,6 +287,7 @@ where
     #[instrument(level = tracing::Level::ERROR, name = "Ntp Source", skip(timestamp_mode, clock, channels, source, initial_actions))]
     pub fn spawn(
         index: ClockId,
+        link_id: LinkId,
         name: String,
         source_addr: SocketAddr,
         interface: Option<InterfaceName>,
@@ -319,6 +322,7 @@ where
                 let mut process = SourceTask {
                     _wait: PhantomData,
                     index,
+                    link_id,
                     name,
                     clock,
                     channels,
@@ -561,6 +565,9 @@ mod tests {
         .unwrap();
         let ntp_manager = NtpManager::new(SynchronizationConfig::default(), Arc::new([]));
 
+        let link_id =
+            LinkId::new(statime_base::ClockId::new(), statime_base::ClockId::new()).unwrap();
+
         let (source, _) = ntp_manager.new_source(
             SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
             SourceConfig::default(),
@@ -568,11 +575,13 @@ mod tests {
             controller.add_source(index, SourceConfig::default()),
             None,
             index,
+            link_id,
         );
 
         let process = SourceTask {
             _wait: PhantomData,
             index,
+            link_id,
             name: "test".into(),
             clock: TestClock {},
             channels: SourceChannels {

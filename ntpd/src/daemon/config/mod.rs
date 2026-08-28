@@ -392,6 +392,13 @@ pub struct DaemonSynchronizationConfig {
     pub synchronization_base: SynchronizationConfig,
 
     #[serde(default)]
+    #[cfg_attr(
+        not(test),
+        expect(
+            unused,
+            reason = "FIXME: Rework configuration and sock source creation."
+        )
+    )]
     pub algorithm: AlgorithmConfig,
 }
 
