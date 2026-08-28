@@ -5,6 +5,12 @@ use statime_base::{Clock, ClockError, Duration, LeapStatus, TAI, UTC};
 #[derive(Debug, Clone, Copy)]
 pub struct NtpClockWrapper(NtpClockWrapperInner);
 
+pub(crate) fn utc_to_tai(ts: statime_base::Timestamp<UTC>) -> statime_base::Timestamp<TAI> {
+    statime_base::Timestamp::UNIX_EPOCH
+        + (ts - statime_base::Timestamp::UNIX_EPOCH)
+        + Duration::from_seconds_nanos(37, 0)
+}
+
 #[derive(Debug, Clone, Copy)]
 enum NtpClockWrapperInner {
     Utc(UnixClock<UTC>),
@@ -32,18 +38,14 @@ impl Default for NtpClockWrapper {
 impl Clock<TAI> for NtpClockWrapper {
     fn now(&self) -> Result<statime_base::Timestamp<TAI>, ClockError> {
         match self.0 {
-            NtpClockWrapperInner::Utc(unix_clock) => Ok(statime_base::Timestamp::UNIX_EPOCH
-                + Duration::from_seconds_nanos(37, 0)
-                + (unix_clock.now()? - statime_base::Timestamp::UNIX_EPOCH)),
+            NtpClockWrapperInner::Utc(unix_clock) => unix_clock.now().map(utc_to_tai),
             NtpClockWrapperInner::Tai(unix_clock) => unix_clock.now(),
         }
     }
 
     fn set_frequency(&self, freq: f64) -> Result<statime_base::Timestamp<TAI>, ClockError> {
         match self.0 {
-            NtpClockWrapperInner::Utc(unix_clock) => Ok(statime_base::Timestamp::UNIX_EPOCH
-                + Duration::from_seconds_nanos(37, 0)
-                + (unix_clock.set_frequency(freq)? - statime_base::Timestamp::UNIX_EPOCH)),
+            NtpClockWrapperInner::Utc(unix_clock) => unix_clock.set_frequency(freq).map(utc_to_tai),
             NtpClockWrapperInner::Tai(unix_clock) => unix_clock.set_frequency(freq),
         }
     }
@@ -64,9 +66,7 @@ impl Clock<TAI> for NtpClockWrapper {
 
     fn step_clock(&self, offset: Duration) -> Result<statime_base::Timestamp<TAI>, ClockError> {
         match self.0 {
-            NtpClockWrapperInner::Utc(unix_clock) => Ok(statime_base::Timestamp::UNIX_EPOCH
-                + Duration::from_seconds_nanos(37, 0)
-                + (unix_clock.step_clock(offset)? - statime_base::Timestamp::UNIX_EPOCH)),
+            NtpClockWrapperInner::Utc(unix_clock) => unix_clock.step_clock(offset).map(utc_to_tai),
             NtpClockWrapperInner::Tai(unix_clock) => unix_clock.step_clock(offset),
         }
     }

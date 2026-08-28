@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use statime_base::{LeapStatus, TimeSnapshot};
+use statime_base::{LeapStatus, LinkId, TimeSnapshot};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::net::{IpAddr, SocketAddr};
@@ -109,7 +109,7 @@ pub(crate) struct NtpSourceInfo {
 pub struct NtpManager {
     synchronization_config: SynchronizationConfig,
     server_id: ServerId,
-    source_snapshots: Arc<Mutex<HashMap<ClockId, NtpSourceSnapshot>>>,
+    source_snapshots: Arc<Mutex<HashMap<LinkId, NtpSourceSnapshot>>>,
 
     server_info: Arc<RwLock<NtpServerInfo>>,
     source_info: Arc<RwLock<NtpSourceInfo>>,
@@ -150,6 +150,10 @@ impl NtpManager {
         Server::new_internal(config, clock, self.server_info.clone(), keyset)
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "FIXME: rework ntp source and manager to use new algorithm."
+    )]
     pub fn new_source<Controller: SourceController>(
         &self,
         source_addr: SocketAddr,
@@ -158,6 +162,7 @@ impl NtpManager {
         controller: Controller,
         nts: Option<Box<SourceNtsData>>,
         id: ClockId,
+        link_id: LinkId,
     ) -> (NtpSource<Controller>, NtpSourceActionIterator) {
         NtpSource::new(
             source_addr,
@@ -166,6 +171,7 @@ impl NtpManager {
             controller,
             nts,
             id,
+            link_id,
             self.source_info.clone(),
             self.source_snapshots.clone(),
         )
@@ -177,7 +183,7 @@ impl NtpManager {
 
     pub fn update_used_sources(
         &self,
-        sources: impl Iterator<Item = (ClockId, SourceType)>,
+        sources: impl Iterator<Item = (LinkId, SourceType)>,
     ) -> NtpSnapshot {
         let source_snapshots = self.source_snapshots.lock().unwrap();
         let sources: Option<Vec<_>> = sources

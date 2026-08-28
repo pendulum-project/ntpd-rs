@@ -13,11 +13,11 @@ pub trait Controller {
     // FIXME: Change this to the error trait once we have that in statime-algo.
     type Error: core::fmt::Debug;
     /// Configuration for internal clocks
-    type ClockConfig;
+    type ClockConfig: Default;
     /// Configuration for links
-    type LinkConfig;
+    type LinkConfig: Default;
     /// Configuration for tracked links (links on which delay is automatically estimated)
-    type TrackedLinkConfig;
+    type TrackedLinkConfig: Default;
 
     /// Add an internal, steered clock to the controller.
     ///
@@ -75,6 +75,12 @@ pub trait Controller {
     /// # Errors
     /// May fail if the clock is unknown to the controller.
     fn clock_snapshot(&self, clock: ClockId) -> Result<TimeSnapshot, Self::Error>;
+
+    /// Get a future which runs all the background tasks needed for the controller.
+    fn run<Fut: Future<Output = ()> + Send, F: Send + Fn(core::time::Duration) -> Fut>(
+        this: impl AsRef<Self> + Send,
+        sleep: F,
+    ) -> impl Future<Output = ()> + Send;
 }
 
 /// Information on an active link provided by the controller.

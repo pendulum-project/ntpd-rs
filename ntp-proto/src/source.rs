@@ -18,6 +18,7 @@ use crate::{
 };
 use rand::{Rng, thread_rng};
 use serde::{Deserialize, Serialize};
+use statime_base::LinkId;
 use std::{
     collections::HashMap,
     fmt::Debug,
@@ -100,10 +101,11 @@ pub struct NtpSource<Controller: SourceController> {
     bloom_filter: RemoteBloomFilter,
 
     id: ClockId,
+    link_id: LinkId,
 
     source_info: Arc<RwLock<NtpSourceInfo>>,
 
-    source_snapshots: Arc<Mutex<HashMap<ClockId, NtpSourceSnapshot>>>,
+    source_snapshots: Arc<Mutex<HashMap<LinkId, NtpSourceSnapshot>>>,
 }
 
 pub struct OneWaySource<Controller: SourceController> {
@@ -393,8 +395,9 @@ impl<Controller: SourceController> NtpSource<Controller> {
         controller: Controller,
         nts: Option<Box<SourceNtsData>>,
         id: ClockId,
+        link_id: LinkId,
         source_info: Arc<RwLock<NtpSourceInfo>>,
-        source_snapshots: Arc<Mutex<HashMap<ClockId, NtpSourceSnapshot>>>,
+        source_snapshots: Arc<Mutex<HashMap<LinkId, NtpSourceSnapshot>>>,
     ) -> (Self, NtpSourceActionIterator) {
         (
             Self {
@@ -424,6 +427,7 @@ impl<Controller: SourceController> NtpSource<Controller> {
                 bloom_filter: RemoteBloomFilter::new(16).expect("16 is a valid chunk size"),
 
                 id,
+                link_id,
 
                 source_info,
 
@@ -551,7 +555,7 @@ impl<Controller: SourceController> NtpSource<Controller> {
         self.source_snapshots
             .lock()
             .unwrap()
-            .insert(self.id, snapshot);
+            .insert(self.link_id, snapshot);
         self.controller.set_usable(usable);
 
         actions!(
@@ -746,7 +750,7 @@ impl<Controller: SourceController> NtpSource<Controller> {
         self.source_snapshots
             .lock()
             .unwrap()
-            .insert(self.id, snapshot);
+            .insert(self.link_id, snapshot);
         self.controller.set_usable(usable);
 
         let (measurement_outgoing, measurement_incoming) =
@@ -796,6 +800,8 @@ impl<Controller: SourceController> NtpSource<Controller> {
             bloom_filter: RemoteBloomFilter::new(16).unwrap(),
 
             id: ClockId(1),
+            link_id: LinkId::new(statime_base::ClockId::new(), statime_base::ClockId::new())
+                .unwrap(),
 
             source_info: Arc::default(),
 

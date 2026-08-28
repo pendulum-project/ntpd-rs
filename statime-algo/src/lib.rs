@@ -312,6 +312,19 @@ impl<Storage: KalmanStorage<C>, C: Clock<TAI>> Controller for KalmanController<S
             })
         })
     }
+
+    async fn run<Fut: Future<Output = ()> + Send, F: Send + Fn(core::time::Duration) -> Fut>(
+        this: impl AsRef<Self> + Send,
+        sleep: F,
+    ) {
+        loop {
+            let _ = this
+                .as_ref()
+                .state
+                .with_mut(KalmanControllerState::steer_clocks);
+            sleep(core::time::Duration::from_secs(1)).await;
+        }
+    }
 }
 
 #[cfg(feature = "std")]

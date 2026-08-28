@@ -169,6 +169,10 @@ pub struct CsptpSourceCreateParameters {
 }
 
 #[derive(Debug)]
+#[expect(
+    unused,
+    reason = "FIXME: Rework configuration and sock source creation."
+)]
 pub struct SockSourceCreateParameters {
     pub id: ClockId,
     pub path: PathBuf,
@@ -179,6 +183,10 @@ pub struct SockSourceCreateParameters {
 
 #[cfg(feature = "pps")]
 #[derive(Debug)]
+#[expect(
+    unused,
+    reason = "FIXME: Rework configuration and sock source creation."
+)]
 pub struct PpsSourceCreateParameters {
     pub id: ClockId,
     pub path: PathBuf,

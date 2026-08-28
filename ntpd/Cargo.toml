@@ -16,7 +16,8 @@ workspace = true
 
 [dependencies]
 ntp-proto.workspace = true
-statime-base.workspace = true
+statime-base = { workspace = true, features = ["std"] }
+statime-algo = { workspace = true, features = ["std"] }
 
 hickory-resolver = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "io-util", "io-std", "fs", "sync", "net", "macros", "signal"] }

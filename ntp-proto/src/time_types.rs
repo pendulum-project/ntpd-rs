@@ -26,11 +26,11 @@ impl std::fmt::Debug for NtpTimestamp {
 const EPOCH_OFFSET: statime_base::Duration =
     statime_base::Duration::from_seconds_nanos((70 * 365 + 17) * 86400, 0);
 
+// FIXME: Remove the need for this as it is problematic with handling leap seconds.
 impl From<Timestamp<TAI>> for NtpTimestamp {
     fn from(value: Timestamp<TAI>) -> Self {
-        let steps = (value - Timestamp::UNIX_EPOCH
-            + EPOCH_OFFSET
-            + statime_base::Duration::from_seconds_nanos(37, 0))
+        let steps = (value - Timestamp::UNIX_EPOCH + EPOCH_OFFSET
+            - statime_base::Duration::from_seconds_nanos(37, 0))
         .as_raw_steps();
         // We want wrapping here, so cast is fine
         NtpTimestamp {
@@ -49,12 +49,13 @@ impl From<Timestamp<UTC>> for NtpTimestamp {
     }
 }
 
-// FIXME: Remove the need for this as it is problematic for the ntp rollover
+// FIXME: Remove the need for this as it is problematic for the ntp rollover and leap second handling.
 impl From<NtpTimestamp> for Timestamp<TAI> {
     fn from(value: NtpTimestamp) -> Self {
         Timestamp::UNIX_EPOCH
             + statime_base::Duration::from_raw_steps((value.timestamp as i128) << 32)
             - EPOCH_OFFSET
+            + statime_base::Duration::from_seconds_nanos(37, 0)
     }
 }
 

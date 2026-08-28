@@ -24,8 +24,8 @@ use std::{error::Error, io::IsTerminal, path::Path};
 
 use ::tracing::info;
 pub use config::Config;
-use ntp_proto::{KalmanClockController, TimeSyncControllerWrapper};
 pub use observer::ObservableState;
+use statime_algo::{ClockConfig, ControllerConfig, StdKalmanStorage};
 pub use system::spawn;
 use tokio::runtime::Builder;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -156,27 +156,38 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
 
         ::tracing::debug!("Configuration loaded, spawning daemon jobs");
         let clock = clock_config.clock;
-        let (main_loop_handle, channels) =
-            spawn::<TimeSyncControllerWrapper<KalmanClockController<_>>>(
-                |clock| {
-                    TimeSyncControllerWrapper::new(
+        let (main_loop_handle, channels) = spawn(
+            |clock| {
+                Ok(
+                    statime_algo::KalmanController::<StdKalmanStorage<_>, _>::new(
                         clock,
-                        config.synchronization.synchronization_base,
-                        config.synchronization.algorithm,
+                        ClockConfig::default(),
+                        ControllerConfig {
+                            minimum_agreeing_sources: config
+                                .synchronization
+                                .synchronization_base
+                                .minimum_agreeing_sources,
+                            select_offset_uncertainty_window: 1.0,
+                            select_link_uncertainty_window: 2.0,
+                            select_delay_uncertainty_window: 0.5,
+                            select_max_window_size: 0.5,
+                        },
                     )
-                },
-                config.synchronization.synchronization_base,
-                config.source_defaults,
-                clock_config,
-                &config.sources,
-                &config.servers,
-                #[cfg(target_os = "linux")]
-                &config.csptp_servers,
-                keyset.clone(),
-                #[cfg(target_os = "linux")]
-                config.csptp,
-            )
-            .await?;
+                    .expect("unable to create controller"),
+                )
+            },
+            config.synchronization.synchronization_base,
+            config.source_defaults,
+            clock_config,
+            &config.sources,
+            &config.servers,
+            #[cfg(target_os = "linux")]
+            &config.csptp_servers,
+            keyset.clone(),
+            #[cfg(target_os = "linux")]
+            config.csptp,
+        )
+        .await?;
 
         for nts_ke_config in config.nts_ke {
             let _join_handle = keyexchange::spawn(nts_ke_config, keyset.clone());
