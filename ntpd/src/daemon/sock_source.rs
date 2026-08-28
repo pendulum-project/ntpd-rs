@@ -1,14 +1,13 @@
-use std::path::PathBuf;
 use std::{fmt::Display, path::Path};
 
-use ntp_proto::{
-    ClockId, Measurement, NtpClock, NtpDuration, NtpLeapIndicator, OneWaySource, SourceController,
-};
+use ntp_proto::{ClockId, ObservableSourceState, ObservableSourceTimedata, PollInterval};
+use statime_base::{Clock, Direction, Duration, LeapStatus, Link, Measurement, TAI};
 use tracing::debug;
 use tracing::{Instrument, Span, error, instrument};
 
 use tokio::net::UnixDatagram;
 
+use crate::daemon::config::SockSourceConfig;
 use crate::daemon::exitcode;
 
 use super::ntp_source::SourceChannels;
@@ -78,13 +77,13 @@ fn deserialize_sample(
     Ok(sample)
 }
 
-pub(crate) struct SockSourceTask<C: 'static + NtpClock + Send, Controller: SourceController> {
+pub(crate) struct SockSourceTask<C: 'static + Clock<TAI> + Send, Controller: Link> {
     index: ClockId,
     socket: UnixDatagram,
     clock: C,
-    path: PathBuf,
     channels: SourceChannels,
-    source: OneWaySource<Controller>,
+    source: Controller,
+    config: SockSourceConfig,
 }
 
 fn create_socket<T: AsRef<Path>>(path: T) -> std::io::Result<UnixDatagram> {
@@ -98,9 +97,9 @@ fn create_socket<T: AsRef<Path>>(path: T) -> std::io::Result<UnixDatagram> {
     Ok(socket)
 }
 
-impl<C, Controller: SourceController> SockSourceTask<C, Controller>
+impl<C, Controller: Link + Send + 'static> SockSourceTask<C, Controller>
 where
-    C: 'static + NtpClock + Send + Sync,
+    C: 'static + Clock<TAI> + Send + Sync,
 {
     async fn run(&mut self) {
         loop {
@@ -121,10 +120,10 @@ where
                     Ok(sample) => {
                         debug!("received {:?}", sample);
                         let leap = match sample.leap {
-                            0 => NtpLeapIndicator::NoWarning,
-                            1 => NtpLeapIndicator::Leap61,
-                            2 => NtpLeapIndicator::Leap59,
-                            _ => NtpLeapIndicator::Unknown,
+                            0 => Some(LeapStatus::None),
+                            1 => Some(LeapStatus::Leap61),
+                            2 => Some(LeapStatus::Leap59),
+                            _ => None,
                         };
 
                         let time = match self.clock.now() {
@@ -136,18 +135,21 @@ where
                         };
 
                         let measurement = Measurement {
-                            sender_id: self.index,
-                            receiver_id: ClockId::SYSTEM,
-                            sender_ts: time - NtpDuration::from_seconds(sample.offset),
-                            receiver_ts: time,
-
-                            root_delay: NtpDuration::ZERO,
-                            root_dispersion: NtpDuration::ZERO,
-                            leap,
-                            precision: 0, // TODO: compute on startup?
+                            send_timestamp: time - Duration::from_f64_seconds(sample.offset),
+                            recv_timestamp: time,
+                            uncertainty: Duration::from_f64_seconds(self.config.precision),
                         };
 
-                        self.source.handle_measurement(measurement);
+                        self.source
+                            .external_data_update(
+                                Duration::from_f64_seconds(self.config.precision),
+                                leap,
+                                true,
+                            )
+                            .expect("Unable to update external source data.");
+                        self.source
+                            .measurement(measurement, Direction::Reverse)
+                            .expect("Unable to handle measurement.");
 
                         self.channels
                             .source_snapshots
@@ -155,11 +157,28 @@ where
                             .expect("Unexpected poisoned mutex")
                             .insert(
                                 self.index,
-                                self.source.observe(
-                                    "GPSd socket".to_string(),
-                                    self.path.display().to_string(),
-                                    self.index,
-                                ),
+                                ObservableSourceState {
+                                    timedata: ObservableSourceTimedata {
+                                        offset: Duration::ZERO.into(),
+                                        uncertainty: Duration::from_f64_seconds(
+                                            self.config.precision,
+                                        )
+                                        .into(),
+                                        delay: Duration::ZERO.into(),
+                                        remote_delay: Duration::from_f64_seconds(
+                                            self.config.accuracy,
+                                        )
+                                        .into(),
+                                        remote_uncertainty: Duration::ZERO.into(),
+                                        last_update: time.into(),
+                                    },
+                                    unanswered_polls: 0,
+                                    poll_interval: PollInterval::from_byte(0),
+                                    nts_cookies: None,
+                                    name: "GPSd socket".to_string(),
+                                    address: self.config.path.display().to_string(),
+                                    id: self.index,
+                                },
                             );
                     }
                     Err(e) => {
@@ -173,21 +192,21 @@ where
     #[instrument(level = tracing::Level::ERROR, name = "Sock Source", skip(clock, channels, source))]
     pub fn spawn(
         index: ClockId,
-        socket_path: PathBuf,
         clock: C,
         channels: SourceChannels,
-        source: OneWaySource<Controller>,
+        source: Controller,
+        config: SockSourceConfig,
     ) -> tokio::task::JoinHandle<()> {
-        let socket = create_socket(&socket_path).expect("Could not create socket");
+        let socket = create_socket(&config.path).expect("Could not create socket");
         tokio::spawn(
             (async move {
                 let mut process = SockSourceTask {
                     index,
                     socket,
                     clock,
-                    path: socket_path,
                     channels,
                     source,
+                    config,
                 };
 
                 process.run().await;
@@ -206,17 +225,15 @@ mod tests {
         sync::{Arc, RwLock},
     };
 
-    use ntp_proto::{
-        ClockId, NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, ObservableSourceTimedata,
-        OneWaySource, PollInterval, SourceController,
-    };
+    use ntp_proto::ClockId;
+    use statime_base::{Clock, Duration, Link, LinkId, TAI, Timestamp};
     use tokio::sync::mpsc;
 
     use crate::{
         daemon::{
+            config::SockSourceConfig,
             ntp_source::SourceChannels,
             sock_source::{SOCK_MAGIC, SampleError, SockSourceTask, create_socket},
-            util::EPOCH_OFFSET,
         },
         test::alloc_port,
     };
@@ -226,64 +243,96 @@ mod tests {
     #[derive(Debug, Clone, Default)]
     struct TestClock {}
 
-    impl NtpClock for TestClock {
-        type Error = std::time::SystemTimeError;
+    impl Clock<TAI> for TestClock {
+        fn now(&self) -> Result<statime_base::Timestamp<TAI>, statime_base::ClockError> {
+            let cur = std::time::SystemTime::now()
+                .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                .unwrap();
 
-        fn now(&self) -> std::result::Result<NtpTimestamp, Self::Error> {
-            let cur =
-                std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH)?;
-
-            Ok(NtpTimestamp::from_seconds_nanos_since_ntp_era(
-                EPOCH_OFFSET.wrapping_add(cur.as_secs() as u32),
-                cur.subsec_nanos(),
-            ))
+            Ok(Timestamp::UNIX_EPOCH + Duration::from_f64_seconds(cur.as_secs_f64()))
         }
 
-        fn set_frequency(&self, _freq: f64) -> Result<NtpTimestamp, Self::Error> {
-            self.now()
-            //ignore
+        fn set_frequency(
+            &self,
+            _freq: f64,
+        ) -> Result<statime_base::Timestamp<TAI>, statime_base::ClockError> {
+            unimplemented!("should not be called")
         }
 
-        fn get_frequency(&self) -> Result<f64, Self::Error> {
-            Ok(0.0)
+        fn get_frequency(&self) -> Result<f64, statime_base::ClockError> {
+            unimplemented!("should not be called")
         }
 
-        fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
-            panic!("Shouldn't be called by source");
+        fn max_frequency(&self) -> Result<f64, statime_base::ClockError> {
+            unimplemented!("should not be called")
         }
 
-        fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            Ok(())
-            //ignore
+        fn step_clock(
+            &self,
+            _offset: Duration,
+        ) -> Result<statime_base::Timestamp<TAI>, statime_base::ClockError> {
+            unimplemented!("should not be called")
         }
 
         fn error_estimate_update(
             &self,
-            _est_error: NtpDuration,
-            _max_error: NtpDuration,
-        ) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by source");
+            _est_error: Duration,
+            _max_error: Duration,
+        ) -> Result<(), statime_base::ClockError> {
+            unimplemented!("should not be called")
         }
 
-        fn status_update(&self, _leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
-            Ok(())
-            //ignore
+        fn leap_update(
+            &self,
+            _leap_status: statime_base::LeapStatus,
+        ) -> Result<(), statime_base::ClockError> {
+            unimplemented!("should not be called")
+        }
+
+        fn synchronization_update(
+            &self,
+            _synchronized: bool,
+        ) -> Result<(), statime_base::ClockError> {
+            unimplemented!("should not be called")
         }
     }
 
-    struct TestController;
+    struct TestController(LinkId);
 
-    impl SourceController for TestController {
-        fn handle_measurement(&mut self, _measurement: ntp_proto::Measurement) {}
+    impl Link for TestController {
+        type Error = std::convert::Infallible;
 
-        fn set_usable(&mut self, _usable: bool) {}
-
-        fn desired_poll_interval(&self) -> ntp_proto::PollInterval {
-            PollInterval::default()
+        fn measurement(
+            &self,
+            _measurement: statime_base::Measurement,
+            _direction: statime_base::Direction,
+        ) -> Result<(), Self::Error> {
+            Ok(())
         }
 
-        fn observe(&self) -> ntp_proto::ObservableSourceTimedata {
-            ObservableSourceTimedata::default()
+        fn external_data_update(
+            &self,
+            _root_delay: statime_base::Duration,
+            _leap_status: Option<statime_base::LeapStatus>,
+            _usable: bool,
+        ) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn active(&self) -> Result<bool, Self::Error> {
+            Ok(true)
+        }
+
+        fn importance(&self) -> Result<Option<f64>, Self::Error> {
+            Ok(Some(0.5))
+        }
+
+        fn desired_poll_interval(&self) -> Result<statime_base::Duration, Self::Error> {
+            Ok(Duration::ZERO)
+        }
+
+        fn id(&self) -> statime_base::LinkId {
+            self.0
         }
     }
 
@@ -299,13 +348,19 @@ mod tests {
 
         let handle = SockSourceTask::spawn(
             index,
-            socket_path.clone(),
             clock,
             SourceChannels {
                 msg_for_system_sender,
                 source_snapshots: Arc::new(RwLock::new(HashMap::new())),
             },
-            OneWaySource::new(TestController),
+            TestController(
+                LinkId::new(statime_base::ClockId::new(), statime_base::ClockId::new()).unwrap(),
+            ),
+            SockSourceConfig {
+                path: socket_path.clone(),
+                precision: 0.1,
+                accuracy: 0.1,
+            },
         );
 
         // Send example data to socket
