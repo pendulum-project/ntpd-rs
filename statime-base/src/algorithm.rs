@@ -1,4 +1,4 @@
-use crate::{Clock, ClockId, Direction, Duration, LeapStatus, TAI, Timestamp};
+use crate::{Clock, ClockId, Direction, Duration, LeapStatus, LinkId, TAI, Timestamp};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -77,6 +77,29 @@ pub trait Controller {
     fn clock_snapshot(&self, clock: ClockId) -> Result<TimeSnapshot, Self::Error>;
 }
 
+/// Information on an active link provided by the controller.
+#[cfg(feature = "std")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ActiveLinkData {
+    /// The identifier of the active link.
+    pub id: LinkId,
+    /// A number indicating the relative contribution of this link to the phase
+    /// of the system clock.
+    ///
+    /// The units of this are arbitrary, and no assumptions should be made on the
+    /// size of these numbers. A link with twice the importance will have roughly
+    /// twice as much impact on the phase of the system clock.
+    pub importance: f64,
+}
+
+/// Extensions to the controller trait which can only be implemented with the standard
+/// library available.
+#[cfg(feature = "std")]
+pub trait StdController: Controller {
+    /// Get the currently active links in the controller
+    fn active_links(&self) -> std::vec::Vec<ActiveLinkData>;
+}
+
 /// A measurement link between clocks.
 pub trait Link {
     /// Errors returned by the controller
@@ -112,11 +135,26 @@ pub trait Link {
     /// May fail only when something is bugged in the library.
     fn active(&self) -> Result<bool, Self::Error>;
 
+    /// Importance of the links contribution to the phase of the system clock, assuming it
+    /// is an external clock. This is the same number provided in
+    /// [`StdController::active_links`], which has arbitrary units and shouldn't be
+    /// assumed to be of a certain order of magnitude. A link with twice the importance will
+    /// have roughly twice as much impact on the phase of the system clock.
+    ///
+    /// The importance is only available if the link is active and external.
+    ///
+    /// # Errors
+    /// May fail when the link is not external
+    fn importance(&self) -> Result<Option<f64>, Self::Error>;
+
     /// Returns the poll rate needed to get the desired accuracy from this link.
     ///
     /// # Errors
     /// May fail only when something is bugged in the library.
     fn desired_poll_interval(&self) -> Result<Duration, Self::Error>;
+
+    /// Identifier of this link
+    fn id(&self) -> LinkId;
 }
 
 /// A measurement done on a link.
