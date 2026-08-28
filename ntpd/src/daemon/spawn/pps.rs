@@ -38,11 +38,8 @@ impl Spawner for PpsSpawner {
                 self.id,
                 SpawnAction::Create(SourceCreateParameters::Pps(PpsSourceCreateParameters {
                     id: ClockId::new(),
-                    path: self.config.path.clone(),
                     config: self.source_config,
-                    precision: self.config.precision.powi(2),
-                    accuracy: self.config.accuracy,
-                    period: self.config.period,
+                    pps_config: self.config.clone(),
                 })),
             ))
             .await?;
@@ -119,8 +116,7 @@ mod tests {
         let SourceCreateParameters::Pps(params) = create_params else {
             panic!("did not receive PPS source create parameters!");
         };
-        assert_eq!(params.path, socket_path);
-        assert!((params.precision - precision.powi(2)).abs() < 1e-9);
+        assert_eq!(params.pps_config.path, socket_path);
 
         // Should be complete after spawning
         assert!(spawner.is_complete());

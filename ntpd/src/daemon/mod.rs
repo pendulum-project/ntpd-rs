@@ -18,7 +18,6 @@ pub mod sockets;
 pub mod spawn;
 mod system;
 pub mod tracing;
-mod util;
 
 use std::{error::Error, io::IsTerminal, path::Path};
 
