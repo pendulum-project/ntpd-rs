@@ -31,8 +31,8 @@ use std::{
 };
 
 use ntp_proto::{
-    ClockId, KeySet, NtpClock, NtpManager, ObservableSourceState, OneWaySource, SourceConfig,
-    SourceType, SynchronizationConfig, SystemSnapshot, TimeSyncController,
+    ClockId, KeySet, NtpManager, ObservableSourceState, OneWaySource, SourceConfig, SourceType,
+    SynchronizationConfig, SystemSnapshot, TimeSyncController,
 };
 use statime_base::ClockError;
 use timestamped_socket::interface::InterfaceName;
@@ -70,7 +70,7 @@ pub async fn spawn<Controller: TimeSyncController<Error = ClockError>>(
 ) -> std::io::Result<(JoinHandle<std::io::Result<()>>, DaemonChannels)> {
     let ip_list = super::local_ip_provider::spawn()?;
 
-    let (mut system, channels) = SystemTask::<_, Controller>::new(
+    let (mut system, channels) = SystemTask::<Controller>::new(
         clock_config.clock,
         clock_config.interface,
         clock_config.timestamp_mode,
@@ -153,7 +153,7 @@ struct SystemSpawnerData {
     notify_tx: mpsc::Sender<SystemEvent>,
 }
 
-struct SystemTask<C: NtpClock, Controller: TimeSyncController> {
+struct SystemTask<Controller: TimeSyncController> {
     controller: Arc<Controller>,
     ntp_manager: Arc<NtpManager>,
 
@@ -181,7 +181,7 @@ struct SystemTask<C: NtpClock, Controller: TimeSyncController> {
     servers: Vec<ServerData>,
     spawners: Vec<SystemSpawnerData>,
 
-    clock: C,
+    clock: NtpClockWrapper,
 
     // which timestamps to use (this is a hint, OS or hardware may ignore)
     timestamp_mode: TimestampMode,
@@ -191,22 +191,20 @@ struct SystemTask<C: NtpClock, Controller: TimeSyncController> {
     interface: Option<InterfaceName>,
 }
 
-impl<C: NtpClock + Sync, Controller: TimeSyncController<Error = C::Error>>
-    SystemTask<C, Controller>
-{
+impl<Controller: TimeSyncController<Error = ClockError>> SystemTask<Controller> {
     #[expect(clippy::too_many_arguments)]
     fn new(
-        clock: C,
+        clock: NtpClockWrapper,
         interface: Option<InterfaceName>,
         timestamp_mode: TimestampMode,
-        create_controller: impl FnOnce(C) -> Result<Controller, C::Error>,
+        create_controller: impl FnOnce(NtpClockWrapper) -> Result<Controller, ClockError>,
         ntp_manager_config: SynchronizationConfig,
         keyset: &tokio::sync::watch::Receiver<Arc<KeySet>>,
         ip_list: tokio::sync::watch::Receiver<Arc<[IpAddr]>>,
         have_sources: bool,
         #[cfg(target_os = "linux")] csptp_config: CsptpConfig,
     ) -> (Self, DaemonChannels) {
-        let Ok(controller) = create_controller(clock.clone()) else {
+        let Ok(controller) = create_controller(clock) else {
             tracing::error!("Could not create clock controller");
             std::process::exit(70);
         };
@@ -436,7 +434,7 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Error = C::Error>>
         Ok(())
     }
 
-    async fn handle_source_demobilize(&mut self, index: ClockId) -> Result<(), C::Error> {
+    async fn handle_source_demobilize(&mut self, index: ClockId) -> Result<(), ClockError> {
         // Restart the source reusing its configuration.
         let state = self.sources.lock().unwrap().remove(&index).unwrap();
         let spawner_id = state.spawner_id;
@@ -463,7 +461,7 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Error = C::Error>>
         &mut self,
         spawner_id: SpawnerId,
         mut params: SourceCreateParameters,
-    ) -> Result<(), C::Error> {
+    ) -> Result<(), ClockError> {
         let source_id = params.get_id();
         info!(source_id=?source_id, addr=?params.get_addr(), spawner=?spawner_id, "new source");
         self.sources.lock().unwrap().insert(
@@ -499,7 +497,7 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Error = C::Error>>
                     params.normalized_addr.to_string(),
                     params.addr,
                     self.interface,
-                    self.clock.clone(),
+                    self.clock,
                     self.timestamp_mode,
                     SourceChannels {
                         msg_for_system_sender: self.msg_for_system_tx.clone(),
@@ -521,7 +519,7 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Error = C::Error>>
                 SockSourceTask::spawn(
                     source_id,
                     params.path.clone(),
-                    self.clock.clone(),
+                    self.clock,
                     SourceChannels {
                         msg_for_system_sender: self.msg_for_system_tx.clone(),
                         source_snapshots: self.source_snapshots.clone(),
@@ -619,7 +617,7 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Error = C::Error>>
         Ok(())
     }
 
-    async fn handle_spawn_event(&mut self, event: SpawnEvent) -> Result<(), C::Error> {
+    async fn handle_spawn_event(&mut self, event: SpawnEvent) -> Result<(), ClockError> {
         match event.action {
             SpawnAction::Create(params) => {
                 self.create_source(event.id, params).await?;
@@ -636,7 +634,7 @@ impl<C: NtpClock + Sync, Controller: TimeSyncController<Error = C::Error>>
         });
         let server = self.ntp_manager.new_server(
             config.clone().into(),
-            self.clock.clone(),
+            self.clock,
             self.keyset.borrow().clone(),
         );
         ServerTask::spawn(
