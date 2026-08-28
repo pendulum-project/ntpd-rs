@@ -31,8 +31,8 @@ use std::{
 };
 
 use ntp_proto::{
-    ClockId, KeySet, NtpClock, NtpManager, ObservableSourceState, PollIntervalLimits, SourceConfig,
-    SourceType, StatimeBaseWrapper, SynchronizationConfig, SystemSnapshot,
+    ClockId, KeySet, NtpClock, NtpManager, ObservableSourceState, SourceConfig, SourceType,
+    StatimeBaseWrapper, SynchronizationConfig, SystemSnapshot,
 };
 use statime_algo::LinkConfig;
 #[cfg(feature = "pps")]
@@ -601,6 +601,8 @@ where
             #[cfg(target_os = "linux")]
             SourceCreateParameters::Csptp(ref params) => match params.addr {
                 IpAddr::V4(addr) => {
+                    use ntp_proto::PollIntervalLimits;
+
                     let network = if let Some(network) = &self.ptp_networking_ipv4 {
                         network.clone()
                     } else {
@@ -626,6 +628,8 @@ where
                     );
                 }
                 IpAddr::V6(addr) => {
+                    use ntp_proto::PollIntervalLimits;
+
                     let network = if let Some(network) = self.ptp_networking_ipv6.as_ref() {
                         network.clone()
                     } else {
