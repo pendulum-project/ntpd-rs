@@ -406,7 +406,8 @@ impl<Storage: KalmanStorageBase> EstimatorState<Storage> {
         direction: DirectedLinkId,
         offset: UncertainValue,
         delay_link: bool,
-    ) -> Result<Self, AlgoError> {
+        system_clock: ClockId,
+    ) -> Result<(Self, f64), AlgoError> {
         let measurement_projection = self.measurement_projection(direction, delay_link)?;
 
         let expected = &measurement_projection * &self.state;
@@ -442,7 +443,10 @@ impl<Storage: KalmanStorageBase> EstimatorState<Storage> {
             + &update_strength * offset.variance * update_strength.transpose())
         .symmetrize()?;
 
-        Ok(self)
+        let clock_info = self.get_clock_info(system_clock)?;
+        let importance_contrib = update_strength[(clock_info.offset_index(), 0)].abs();
+
+        Ok((self, importance_contrib))
     }
 
     /// Provides the matrix that projects the state and uncertainty matrices to a
@@ -980,8 +984,10 @@ mod tests {
                 LinkId::new(clock_1, clock_2).unwrap().forward(),
                 (1.0, 2.0f64.sqrt() * 0.1).into(),
                 false,
+                clock_1,
             )
-            .unwrap();
+            .unwrap()
+            .0;
 
         assert_uv_almost_eq!(
             state.clock_offset(clock_1).unwrap(),
@@ -1011,8 +1017,10 @@ mod tests {
                 LinkId::new(clock_1, clock_2).unwrap().forward(),
                 (1.0, 2.0f64.sqrt() * 0.1).into(),
                 false,
+                clock_1,
             )
-            .unwrap();
+            .unwrap()
+            .0;
 
         assert_uv_almost_eq!(
             state.clock_offset(clock_1).unwrap(),
@@ -1045,8 +1053,14 @@ mod tests {
             .unwrap()
             .add_link(link_1, (1.0, 0.0).into(), 0.0)
             .unwrap()
-            .measurement(link_1.forward(), (2.0, 2.0f64.sqrt() * 0.1).into(), true)
-            .unwrap();
+            .measurement(
+                link_1.forward(),
+                (2.0, 2.0f64.sqrt() * 0.1).into(),
+                true,
+                clock_1,
+            )
+            .unwrap()
+            .0;
 
         assert_uv_almost_eq!(
             state.clock_offset(clock_1).unwrap(),
@@ -1076,8 +1090,9 @@ mod tests {
             .unwrap()
             .add_link(link_1, (0.0, 0.1).into(), 0.0)
             .unwrap()
-            .measurement(link_1.forward(), (1.0, 0.1).into(), true)
-            .unwrap();
+            .measurement(link_1.forward(), (1.0, 0.1).into(), true, clock_1)
+            .unwrap()
+            .0;
 
         assert_uv_almost_eq!(
             state.clock_offset(clock_1).unwrap(),
@@ -1115,8 +1130,10 @@ mod tests {
                 LinkId::new(clock_2, clock_1).unwrap().forward(),
                 (1.0, 0.1).into(),
                 false,
+                clock_1,
             )
-            .unwrap();
+            .unwrap()
+            .0;
 
         assert_uv_almost_eq!(
             state.clock_offset(clock_1).unwrap(),
@@ -1137,8 +1154,10 @@ mod tests {
                 LinkId::new(clock_1, clock_2).unwrap().forward(),
                 (1.0, 0.1).into(),
                 false,
+                clock_1,
             )
-            .unwrap();
+            .unwrap()
+            .0;
 
         assert_uv_almost_eq!(
             state.clock_offset(clock_1).unwrap(),
@@ -1195,7 +1214,8 @@ mod tests {
                 .measurement(
                     LinkId::new(clock_1, clock_2).unwrap().forward(),
                     (0.0, 0.1).into(),
-                    false
+                    false,
+                    clock_1,
                 )
                 .unwrap_err(),
             AlgoError::BothClocksExternal(clock_1, clock_2)
@@ -1207,7 +1227,8 @@ mod tests {
                 .measurement(
                     LinkId::new(clock_3, clock_5).unwrap().forward(),
                     (0.0, 0.1).into(),
-                    false
+                    false,
+                    clock_1,
                 )
                 .unwrap_err(),
             AlgoError::UnknownClock(clock_5)
@@ -1219,7 +1240,8 @@ mod tests {
                 .measurement(
                     LinkId::new(clock_5, clock_3).unwrap().forward(),
                     (0.0, 0.1).into(),
-                    false
+                    false,
+                    clock_1,
                 )
                 .unwrap_err(),
             AlgoError::UnknownClock(clock_5)
@@ -1228,7 +1250,7 @@ mod tests {
         assert_eq!(
             state
                 .clone()
-                .measurement(link_1.forward(), (0.0, 0.1).into(), true)
+                .measurement(link_1.forward(), (0.0, 0.1).into(), true, clock_1)
                 .unwrap_err(),
             AlgoError::UnknownLink(link_1)
         );
@@ -1278,5 +1300,58 @@ mod tests {
                 .as_seconds()
                 > 9992.0 - 433.0
         );
+    }
+
+    #[test]
+    fn test_importance_direct() {
+        let clock_1 = ClockId::new();
+        let clock_2 = ClockId::new();
+
+        let (_, importance) = EstimatorState::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH)
+            .add_clock(clock_1, (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
+            .unwrap()
+            .add_external_clock(clock_2)
+            .unwrap()
+            .measurement(
+                LinkId::new(clock_1, clock_2).unwrap().forward(),
+                (1.0, 0.1).into(),
+                false,
+                clock_1,
+            )
+            .unwrap();
+
+        assert_almost_eq!(importance, 0.5);
+    }
+
+    #[test]
+    fn test_importance_indirect() {
+        let clock_1 = ClockId::new();
+        let clock_2 = ClockId::new();
+        let clock_3 = ClockId::new();
+
+        let (_, importance) = EstimatorState::<StdKalmanStorage<()>>::empty(Timestamp::UNIX_EPOCH)
+            .add_clock(clock_1, (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
+            .unwrap()
+            .add_clock(clock_2, (0.0, 0.1).into(), (0.0, 1e-8).into(), 1e-8)
+            .unwrap()
+            .add_external_clock(clock_3)
+            .unwrap()
+            .measurement(
+                LinkId::new(clock_1, clock_2).unwrap().forward(),
+                (0.0, 0.0).into(),
+                false,
+                clock_1,
+            )
+            .unwrap()
+            .0
+            .measurement(
+                LinkId::new(clock_2, clock_3).unwrap().forward(),
+                (1.0, 0.1).into(),
+                false,
+                clock_1,
+            )
+            .unwrap();
+
+        assert_almost_eq!(importance, 1. / 3.);
     }
 }

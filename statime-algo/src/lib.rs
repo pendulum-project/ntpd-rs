@@ -314,6 +314,15 @@ impl<Storage: KalmanStorage<C>, C: Clock<TAI>> Controller for KalmanController<S
     }
 }
 
+#[cfg(feature = "std")]
+impl<Storage: KalmanStorage<C>, C: Clock<TAI>> statime_base::StdController
+    for KalmanController<Storage, C>
+{
+    fn active_links(&self) -> std::vec::Vec<statime_base::ActiveLinkData> {
+        self.state.with_ref(|state| state.filter.active_links())
+    }
+}
+
 impl<Storage: KalmanStorage<C>, C: Clock<TAI>> KalmanController<Storage, C> {
     /// Create a new clock controller
     ///
@@ -501,6 +510,7 @@ impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<
                     value: (measurement.recv_timestamp - measurement.send_timestamp).as_seconds(),
                     variance: measurement.uncertainty.as_seconds().powi(2),
                 },
+                state.clocks[0].id,
             )?;
             state.steer_clocks()?;
             Ok(())
@@ -549,5 +559,24 @@ impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<
             .as_ref()
             .state
             .with_ref(|state| state.filter.link_desired_poll_interval(self.link_id))
+    }
+
+    /// Importance of the links contribution to the phase of the system clock, assuming it
+    /// is an external clock. This is the same number provided in
+    /// [`StdController::active_links`], which has arbitrary units and shouldn't be
+    /// assumed to be of a certain order of magnitude. A link with twice the importance will
+    /// have roughly twice as much impact on the phase of the system clock.
+    ///
+    /// # Errors
+    /// May fail when the link is not external
+    fn importance(&self) -> Result<Option<f64>, Self::Error> {
+        self.controller
+            .as_ref()
+            .state
+            .with_ref(|state| state.filter.link_importance(self.link_id))
+    }
+
+    fn id(&self) -> LinkId {
+        self.link_id
     }
 }
