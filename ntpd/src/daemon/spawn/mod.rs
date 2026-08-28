@@ -1,4 +1,4 @@
-use std::{future::Future, net::SocketAddr, path::PathBuf, sync::atomic::AtomicU64};
+use std::{future::Future, net::SocketAddr, sync::atomic::AtomicU64};
 
 use ntp_proto::{ClockId, ProtocolVersion, SourceConfig, SourceNtsData};
 use tokio::{
@@ -9,6 +9,8 @@ use tracing::warn;
 
 #[cfg(target_os = "linux")]
 use crate::daemon::config::CsptpSourceConfig;
+#[cfg(feature = "pps")]
+use crate::daemon::config::PpsSourceConfig;
 use crate::daemon::config::{NtpAddress, SockSourceConfig};
 
 use super::{config::NormalizedAddress, system::NETWORK_WAIT_PERIOD};
@@ -143,7 +145,7 @@ impl SourceCreateParameters {
             Self::Ntp(params) => params.addr.to_string(),
             Self::Sock(params) => params.sock_config.path.display().to_string(),
             #[cfg(feature = "pps")]
-            Self::Pps(params) => params.path.display().to_string(),
+            Self::Pps(params) => params.pps_config.path.display().to_string(),
             #[cfg(target_os = "linux")]
             Self::Csptp(params) => params.addr.to_string(),
         }
@@ -187,11 +189,8 @@ pub struct SockSourceCreateParameters {
 )]
 pub struct PpsSourceCreateParameters {
     pub id: ClockId,
-    pub path: PathBuf,
     pub config: SourceConfig,
-    pub precision: f64,
-    pub accuracy: f64,
-    pub period: f64,
+    pub pps_config: PpsSourceConfig,
 }
 
 pub trait Spawner {
