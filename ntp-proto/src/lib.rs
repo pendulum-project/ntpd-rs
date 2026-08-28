@@ -144,7 +144,7 @@ mod exports {
     pub use super::algorithm::{
         AlgorithmConfig, KalmanClockController, KalmanControllerMessage, KalmanSourceController,
         KalmanSourceMessage, Measurement, ObservableSourceTimedata, OneWaySourceControllerWrapper,
-        SourceController, TimeSyncController, TimeSyncControllerWrapper,
+        SourceController, StatimeBaseWrapper, TimeSyncController, TimeSyncControllerWrapper,
         TwoWayKalmanSourceController, TwoWaySourceControllerWrapper,
     };
     pub use super::clock::NtpClock;
