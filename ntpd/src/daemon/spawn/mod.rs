@@ -9,7 +9,7 @@ use tracing::warn;
 
 #[cfg(target_os = "linux")]
 use crate::daemon::config::CsptpSourceConfig;
-use crate::daemon::config::NtpAddress;
+use crate::daemon::config::{NtpAddress, SockSourceConfig};
 
 use super::{config::NormalizedAddress, system::NETWORK_WAIT_PERIOD};
 
@@ -141,7 +141,7 @@ impl SourceCreateParameters {
     pub fn get_addr(&self) -> String {
         match self {
             Self::Ntp(params) => params.addr.to_string(),
-            Self::Sock(params) => params.path.display().to_string(),
+            Self::Sock(params) => params.sock_config.path.display().to_string(),
             #[cfg(feature = "pps")]
             Self::Pps(params) => params.path.display().to_string(),
             #[cfg(target_os = "linux")]
@@ -175,10 +175,8 @@ pub struct CsptpSourceCreateParameters {
 )]
 pub struct SockSourceCreateParameters {
     pub id: ClockId,
-    pub path: PathBuf,
     pub config: SourceConfig,
-    pub precision: f64,
-    pub accuracy: f64,
+    pub sock_config: SockSourceConfig,
 }
 
 #[cfg(feature = "pps")]
