@@ -51,14 +51,6 @@ mod time_types;
 
 pub mod tls_utils;
 
-pub(crate) mod exitcode {
-    /// An internal software error has been detected.  This
-    /// should be limited to non-operating system related
-    /// errors as possible.
-    #[cfg(not(test))]
-    pub const SOFTWARE: i32 = 70;
-}
-
 const NTP_DEFAULT_PORT: u16 = 123;
 
 // This is a mod so we can control visibility for the moment, but these really are intended to be the top-level things.
@@ -142,10 +134,7 @@ impl std::fmt::Display for ClockId {
 
 mod exports {
     pub use super::algorithm::{
-        AlgorithmConfig, KalmanClockController, KalmanControllerMessage, KalmanSourceController,
-        KalmanSourceMessage, Measurement, ObservableSourceTimedata, OneWaySourceControllerWrapper,
-        SourceController, StatimeBaseWrapper, TimeSyncController, TimeSyncControllerWrapper,
-        TwoWayKalmanSourceController, TwoWaySourceControllerWrapper,
+        Measurement, ObservableSourceTimedata, SourceController, StatimeBaseWrapper,
     };
     pub use super::clock::NtpClock;
     pub use super::config::{SourceConfig, StepThreshold, SynchronizationConfig};
