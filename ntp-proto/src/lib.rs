@@ -161,8 +161,7 @@ mod exports {
     pub use super::source::source_snapshot;
     pub use super::source::{
         AcceptSynchronizationError, NtpSource, NtpSourceAction, NtpSourceActionIterator,
-        NtpSourceSnapshot, ObservableSourceState, OneWaySource, ProtocolVersion, Reach,
-        SourceNtsData,
+        NtpSourceSnapshot, ObservableSourceState, ProtocolVersion, Reach, SourceNtsData,
     };
     pub use super::system::{NtpManager, NtpServerInfo, NtpSnapshot, SourceType, SystemSnapshot};
 
