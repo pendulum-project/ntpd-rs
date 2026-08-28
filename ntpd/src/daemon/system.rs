@@ -31,9 +31,12 @@ use std::{
 };
 
 use ntp_proto::{
-    ClockId, KeySet, NtpClock, NtpManager, ObservableSourceState, OneWaySource, PollIntervalLimits,
-    SourceConfig, SourceType, StatimeBaseWrapper, SynchronizationConfig, SystemSnapshot,
+    ClockId, KeySet, NtpClock, NtpManager, ObservableSourceState, PollIntervalLimits, SourceConfig,
+    SourceType, StatimeBaseWrapper, SynchronizationConfig, SystemSnapshot,
 };
+use statime_algo::LinkConfig;
+#[cfg(feature = "pps")]
+use statime_base::Duration;
 use statime_base::{ActiveLinkData, ClockError, Link, LinkId, StdController};
 use timestamped_socket::interface::InterfaceName;
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -57,7 +60,7 @@ pub struct DaemonChannels {
         reason = "FIXME: System needs a larger refactor to properly receive configuration"
     )
 )]
-pub async fn spawn<Controller: StdController + Sync + Send + 'static>(
+pub async fn spawn<Controller: StdController<LinkConfig = LinkConfig> + Sync + Send + 'static>(
     create_controller: impl FnOnce(
         NtpClockWrapper,
     ) -> Result<(Controller, statime_base::ClockId), ClockError>,
@@ -197,7 +200,7 @@ struct SystemTask<Controller: StdController> {
     interface: Option<InterfaceName>,
 }
 
-impl<Controller: StdController + Send + Sync> SystemTask<Controller>
+impl<Controller: StdController<LinkConfig = LinkConfig> + Send + Sync> SystemTask<Controller>
 where
     Controller::Link<Arc<Controller>>: Send + 'static,
 {
@@ -511,11 +514,14 @@ where
                 Controller::LinkConfig::default(),
             ),
             #[cfg(feature = "pps")]
-            SourceCreateParameters::Pps(_) => Controller::create_untracked_link(
+            SourceCreateParameters::Pps(ref params) => Controller::create_untracked_link(
                 self.controller.clone(),
                 self.clock_id,
                 None,
-                Controller::LinkConfig::default(),
+                LinkConfig {
+                    period: Some(Duration::from_f64_seconds(params.pps_config.period)),
+                    ..Default::default()
+                },
             ),
         }
         .expect("Unable to create controller for link");
@@ -582,17 +588,14 @@ where
             }
             #[cfg(feature = "pps")]
             SourceCreateParameters::Pps(ref params) => {
-                let source_controller =
-                    StatimeBaseWrapper::new(source_controller, PollIntervalLimits::default());
-                let source = OneWaySource::new(source_controller);
                 PpsSourceTask::spawn(
                     source_id,
-                    params.path.clone(),
                     SourceChannels {
                         msg_for_system_sender: self.msg_for_system_tx.clone(),
                         source_snapshots: self.source_snapshots.clone(),
                     },
-                    source,
+                    source_controller,
+                    params.pps_config.clone(),
                 );
             }
             #[cfg(target_os = "linux")]

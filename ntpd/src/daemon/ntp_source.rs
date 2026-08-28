@@ -415,7 +415,9 @@ mod tests {
     use timestamped_socket::socket::{GeneralTimestampMode, Open, open_ip};
     use tokio::sync::mpsc;
 
-    use crate::{daemon::util::EPOCH_OFFSET, test::alloc_port};
+    use crate::test::alloc_port;
+
+    const EPOCH_OFFSET: u32 = (70 * 365 + 17) * 86400;
 
     use super::*;
 

@@ -1,13 +1,10 @@
-use std::path::PathBuf;
-
-use ntp_proto::{
-    ClockId, Measurement, NtpDuration, NtpLeapIndicator, OneWaySource, SourceController,
-};
+use ntp_proto::{ClockId, ObservableSourceState, ObservableSourceTimedata, PollInterval};
 use pps_time::PpsDevice;
+use statime_base::{Direction, Duration, Link, Measurement, Timestamp};
 use tokio::sync::mpsc;
 use tracing::{Instrument, Span, debug, error, instrument, warn};
 
-use crate::daemon::util::convert_unix_timestamp;
+use crate::daemon::{clock::utc_to_tai, config::PpsSourceConfig};
 
 use super::ntp_source::SourceChannels;
 
@@ -27,15 +24,15 @@ impl PpsDeviceFetchTask {
     }
 }
 
-pub(crate) struct PpsSourceTask<Controller: SourceController> {
+pub(crate) struct PpsSourceTask<Controller: Link> {
     index: ClockId,
     channels: SourceChannels,
-    path: PathBuf,
-    source: OneWaySource<Controller>,
+    source: Controller,
     fetch_receiver: mpsc::Receiver<pps_time::pps::pps_fdata>,
+    config: PpsSourceConfig,
 }
 
-impl<Controller: SourceController> PpsSourceTask<Controller> {
+impl<Controller: Link + Send + 'static> PpsSourceTask<Controller> {
     async fn run(&mut self) {
         loop {
             enum SelectResult {
@@ -53,22 +50,33 @@ impl<Controller: SourceController> PpsSourceTask<Controller> {
                     Some(data) => {
                         debug!("received {:?}", data);
 
-                        let measurement = Measurement {
-                            sender_id: self.index,
-                            receiver_id: ClockId::SYSTEM,
-                            sender_ts: convert_unix_timestamp(data.info.assert_tu.sec as _, 0),
-                            receiver_ts: convert_unix_timestamp(
+                        let recv_timestamp =
+                            utc_to_tai(Timestamp::from_seconds_nanos_since_unix_epoch(
                                 data.info.assert_tu.sec as _,
                                 data.info.assert_tu.nsec as _,
-                            ),
+                            ));
 
-                            root_delay: NtpDuration::ZERO,
-                            root_dispersion: NtpDuration::ZERO,
-                            leap: NtpLeapIndicator::NoWarning,
-                            precision: 0,
+                        let measurement = Measurement {
+                            send_timestamp: utc_to_tai(
+                                Timestamp::from_seconds_nanos_since_unix_epoch(
+                                    data.info.assert_tu.sec as _,
+                                    0,
+                                ),
+                            ),
+                            recv_timestamp,
+                            uncertainty: Duration::from_f64_seconds(self.config.accuracy),
                         };
 
-                        self.source.handle_measurement(measurement);
+                        self.source
+                            .external_data_update(
+                                Duration::from_f64_seconds(self.config.precision),
+                                None,
+                                true,
+                            )
+                            .expect("Unable to update external source data.");
+                        self.source
+                            .measurement(measurement, Direction::Reverse)
+                            .expect("Unable to handle measurement.");
 
                         self.channels
                             .source_snapshots
@@ -76,11 +84,28 @@ impl<Controller: SourceController> PpsSourceTask<Controller> {
                             .expect("Unexpected poisoned mutex")
                             .insert(
                                 self.index,
-                                self.source.observe(
-                                    "PPS device".to_string(),
-                                    self.path.display().to_string(),
-                                    self.index,
-                                ),
+                                ObservableSourceState {
+                                    timedata: ObservableSourceTimedata {
+                                        offset: Duration::ZERO.into(),
+                                        uncertainty: Duration::from_f64_seconds(
+                                            self.config.precision,
+                                        )
+                                        .into(),
+                                        delay: Duration::ZERO.into(),
+                                        remote_delay: Duration::from_f64_seconds(
+                                            self.config.accuracy,
+                                        )
+                                        .into(),
+                                        remote_uncertainty: Duration::ZERO.into(),
+                                        last_update: recv_timestamp.into(),
+                                    },
+                                    unanswered_polls: 0,
+                                    poll_interval: PollInterval::from_byte(0),
+                                    nts_cookies: None,
+                                    name: "PPS device".to_string(),
+                                    address: self.config.path.display().to_string(),
+                                    id: self.index,
+                                },
                             );
                     }
                     None => {
@@ -94,11 +119,11 @@ impl<Controller: SourceController> PpsSourceTask<Controller> {
     #[instrument(level = tracing::Level::ERROR, name = "Pps Source", skip(channels, source))]
     pub fn spawn(
         index: ClockId,
-        device_path: PathBuf,
         channels: SourceChannels,
-        source: OneWaySource<Controller>,
+        source: Controller,
+        config: PpsSourceConfig,
     ) -> tokio::task::JoinHandle<()> {
-        let pps = PpsDevice::new(device_path.clone()).expect("Could not open PPS device");
+        let pps = PpsDevice::new(config.path.clone()).expect("Could not open PPS device");
         let cap = pps.get_cap().expect("Could not get PPS capabilities");
         assert!(
             cap & pps_time::pps::PPS_CANWAIT != 0,
@@ -118,9 +143,9 @@ impl<Controller: SourceController> PpsSourceTask<Controller> {
                 let mut process = PpsSourceTask {
                     index,
                     channels,
-                    path: device_path,
                     source,
                     fetch_receiver,
+                    config,
                 };
 
                 process.run().await;
