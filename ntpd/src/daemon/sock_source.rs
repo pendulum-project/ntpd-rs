@@ -207,9 +207,8 @@ mod tests {
     };
 
     use ntp_proto::{
-        AlgorithmConfig, ClockId, KalmanClockController, NtpClock, NtpDuration, NtpLeapIndicator,
-        NtpTimestamp, OneWaySource, SourceConfig, SynchronizationConfig, TimeSyncController,
-        TimeSyncControllerWrapper,
+        ClockId, NtpClock, NtpDuration, NtpLeapIndicator, NtpTimestamp, ObservableSourceTimedata,
+        OneWaySource, PollInterval, SourceController,
     };
     use tokio::sync::mpsc;
 
@@ -272,18 +271,28 @@ mod tests {
         }
     }
 
+    struct TestController;
+
+    impl SourceController for TestController {
+        fn handle_measurement(&mut self, _measurement: ntp_proto::Measurement) {}
+
+        fn set_usable(&mut self, _usable: bool) {}
+
+        fn desired_poll_interval(&self) -> ntp_proto::PollInterval {
+            PollInterval::default()
+        }
+
+        fn observe(&self) -> ntp_proto::ObservableSourceTimedata {
+            ObservableSourceTimedata::default()
+        }
+    }
+
     #[tokio::test]
     async fn test_read_sock() {
         let (msg_for_system_sender, _) = mpsc::channel(1);
 
         let index = ClockId::new();
         let clock = TestClock {};
-        let controller = TimeSyncControllerWrapper::<KalmanClockController<_>>::new(
-            clock.clone(),
-            SynchronizationConfig::default(),
-            AlgorithmConfig::default(),
-        )
-        .unwrap();
 
         let socket_path = std::env::temp_dir().join(format!("ntp-test-stream-{}", alloc_port()));
         let _socket = create_socket(&socket_path).unwrap(); // should be overwritten by SockSource's own socket
@@ -296,13 +305,7 @@ mod tests {
                 msg_for_system_sender,
                 source_snapshots: Arc::new(RwLock::new(HashMap::new())),
             },
-            OneWaySource::new(controller.add_one_way_source(
-                index,
-                SourceConfig::default(),
-                0.001,
-                1e-3,
-                None,
-            )),
+            OneWaySource::new(TestController),
         );
 
         // Send example data to socket

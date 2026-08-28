@@ -2,9 +2,7 @@ mod ntp_source;
 mod server;
 
 use clock_steering::unix::UnixClock;
-use ntp_proto::{
-    AlgorithmConfig, NtpVersion, ProtocolVersion, SourceConfig, SynchronizationConfig,
-};
+use ntp_proto::{NtpVersion, ProtocolVersion, SourceConfig, SynchronizationConfig};
 pub use ntp_source::*;
 use serde::{Deserialize, Deserializer};
 pub use server::*;
@@ -390,16 +388,6 @@ fn default_metrics_exporter_listen() -> SocketAddr {
 pub struct DaemonSynchronizationConfig {
     #[serde(flatten)]
     pub synchronization_base: SynchronizationConfig,
-
-    #[serde(default)]
-    #[cfg_attr(
-        not(test),
-        expect(
-            unused,
-            reason = "FIXME: Rework configuration and sock source creation."
-        )
-    )]
-    pub algorithm: AlgorithmConfig,
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -979,14 +967,10 @@ mod tests {
         let config: Result<DaemonSynchronizationConfig, _> = toml::from_str(
             r#"
             minimum-agreeing-sources = 2
-
-            [algorithm]
-            initial-wander = 1e-7
             "#,
         );
 
         let config = config.unwrap();
         assert_eq!(config.synchronization_base.minimum_agreeing_sources, 2);
-        assert_eq!(config.algorithm.initial_wander, 1e-7);
     }
 }

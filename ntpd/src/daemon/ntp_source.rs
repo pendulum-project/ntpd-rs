@@ -407,10 +407,9 @@ mod tests {
     };
 
     use ntp_proto::{
-        AlgorithmConfig, KalmanClockController, NoCipher, NtpDuration, NtpLeapIndicator,
-        NtpManager, NtpPacket, NtpServerInfo, ProtocolVersion, SourceConfig, SynchronizationConfig,
-        TimeSyncController, TimeSyncControllerWrapper, TwoWayKalmanSourceController,
-        TwoWaySourceControllerWrapper,
+        NoCipher, NtpDuration, NtpLeapIndicator, NtpManager, NtpPacket, NtpServerInfo,
+        ObservableSourceTimedata, PollInterval, ProtocolVersion, SourceConfig,
+        SynchronizationConfig,
     };
     use statime_base::{LeapStatus, TimeSnapshot};
     use timestamped_socket::socket::{GeneralTimestampMode, Open, open_ip};
@@ -537,12 +536,24 @@ mod tests {
         }
     }
 
-    #[expect(
-        clippy::type_complexity,
-        reason = "this complex type is only used in testing"
-    )]
+    struct TestController;
+
+    impl SourceController for TestController {
+        fn handle_measurement(&mut self, _measurement: ntp_proto::Measurement) {}
+
+        fn set_usable(&mut self, _usable: bool) {}
+
+        fn desired_poll_interval(&self) -> ntp_proto::PollInterval {
+            PollInterval::default()
+        }
+
+        fn observe(&self) -> ntp_proto::ObservableSourceTimedata {
+            ObservableSourceTimedata::default()
+        }
+    }
+
     fn test_startup<T: Wait>() -> (
-        SourceTask<TestClock, TwoWaySourceControllerWrapper<TwoWayKalmanSourceController>, T>,
+        SourceTask<TestClock, TestController, T>,
         Socket<SocketAddr, Open>,
         mpsc::Receiver<MsgForSystem>,
     ) {
@@ -557,12 +568,6 @@ mod tests {
         let (msg_for_system_sender, msg_for_system_receiver) = mpsc::channel(1);
 
         let index = ClockId::new();
-        let controller = TimeSyncControllerWrapper::<KalmanClockController<_>>::new(
-            TestClock {},
-            SynchronizationConfig::default(),
-            AlgorithmConfig::default(),
-        )
-        .unwrap();
         let ntp_manager = NtpManager::new(SynchronizationConfig::default(), Arc::new([]));
 
         let link_id =
@@ -572,7 +577,7 @@ mod tests {
             SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
             SourceConfig::default(),
             ProtocolVersion::V4,
-            controller.add_source(index, SourceConfig::default()),
+            TestController,
             None,
             index,
             link_id,
