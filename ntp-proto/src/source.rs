@@ -108,33 +108,6 @@ pub struct NtpSource<Controller: SourceController> {
     source_snapshots: Arc<Mutex<HashMap<LinkId, NtpSourceSnapshot>>>,
 }
 
-pub struct OneWaySource<Controller: SourceController> {
-    controller: Controller,
-}
-
-impl<Controller: SourceController> OneWaySource<Controller> {
-    pub fn new(mut controller: Controller) -> OneWaySource<Controller> {
-        controller.set_usable(true);
-        OneWaySource { controller }
-    }
-
-    pub fn handle_measurement(&mut self, measurement: Measurement) {
-        self.controller.handle_measurement(measurement);
-    }
-
-    pub fn observe(&self, name: String, address: String, id: ClockId) -> ObservableSourceState {
-        ObservableSourceState {
-            timedata: self.controller.observe(),
-            unanswered_polls: 0,
-            poll_interval: crate::time_types::PollInterval::from_byte(0),
-            nts_cookies: None,
-            name,
-            address,
-            id,
-        }
-    }
-}
-
 /// Used to determine whether the server is reachable and the data are fresh
 ///
 /// This value is represented as an 8-bit shift register. The register is shifted left
