@@ -569,18 +569,15 @@ where
                 );
             }
             SourceCreateParameters::Sock(ref params) => {
-                let source_controller =
-                    StatimeBaseWrapper::new(source_controller, PollIntervalLimits::default());
-                let source = OneWaySource::new(source_controller);
                 SockSourceTask::spawn(
                     source_id,
-                    params.path.clone(),
                     self.clock,
                     SourceChannels {
                         msg_for_system_sender: self.msg_for_system_tx.clone(),
                         source_snapshots: self.source_snapshots.clone(),
                     },
-                    source,
+                    source_controller,
+                    params.sock_config.clone(),
                 );
             }
             #[cfg(feature = "pps")]
