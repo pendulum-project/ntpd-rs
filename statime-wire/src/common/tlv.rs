@@ -71,7 +71,7 @@ impl<'a> TlvSet<'a> {
         let original = buffer;
         let mut total_length = 0;
 
-        while buffer.len() > 4 {
+        while buffer.len() >= 4 {
             let _tlv_type = TlvType::from_primitive(u16::from_be_bytes([buffer[0], buffer[1]]));
             let length = u16::from_be_bytes([buffer[2], buffer[3]]) as usize;
 
@@ -114,7 +114,7 @@ impl<'a> Iterator for TlvSetIterator<'a> {
     type Item = Tlv<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.buffer.len() <= 4 {
+        if self.buffer.len() < 4 {
             debug_assert_eq!(self.buffer.len(), 0);
             return None;
         }
@@ -416,6 +416,76 @@ mod tests {
 
         assert_eq!(it.next(), Some(tlv2));
         assert_eq!(it.next(), Some(tlv3));
+        assert_eq!(it.next(), None);
+    }
+
+    #[test]
+    fn parse_trailing_zero_length_tlv() {
+        let mut alloc = [0; 64];
+
+        let tlv1 = Tlv {
+            tlv_type: TlvType::PathTrace,
+            value: (&b"ab"[..]).into(),
+        };
+        let tlv2 = Tlv {
+            tlv_type: TlvType::Experimental(0x2004),
+            value: (&[][..]).into(),
+        };
+
+        tlv1.serialize(&mut alloc).unwrap();
+        tlv2.serialize(&mut alloc[tlv1.wire_size()..]).unwrap();
+
+        let buffer = &alloc[..tlv1.wire_size() + tlv2.wire_size()];
+        let tlv_set = TlvSet::deserialize(buffer).unwrap();
+
+        assert_eq!(tlv_set.wire_size(), buffer.len());
+
+        let mut it = tlv_set.tlvs();
+        assert_eq!(it.next(), Some(tlv1));
+        assert_eq!(it.next(), Some(tlv2));
+        assert_eq!(it.next(), None);
+    }
+
+    #[test]
+    fn parse_lone_zero_length_tlv() {
+        let tlv = Tlv {
+            tlv_type: TlvType::Experimental(0x2004),
+            value: (&[][..]).into(),
+        };
+
+        let mut alloc = [0; 64];
+        tlv.serialize(&mut alloc).unwrap();
+
+        let buffer = &alloc[..tlv.wire_size()];
+        let tlv_set = TlvSet::deserialize(buffer).unwrap();
+
+        assert_eq!(tlv_set.wire_size(), 4);
+
+        let mut it = tlv_set.tlvs();
+        assert_eq!(it.next(), Some(tlv));
+        assert_eq!(it.next(), None);
+    }
+
+    #[test]
+    fn iterate_built_set_ending_in_zero_length_tlv() {
+        let tlv1 = Tlv {
+            tlv_type: TlvType::PathTrace,
+            value: (&b"ab"[..]).into(),
+        };
+        let tlv2 = Tlv {
+            tlv_type: TlvType::Experimental(0x2004),
+            value: (&[][..]).into(),
+        };
+
+        let mut alloc = [0; 64];
+        let mut builder = TlvSetBuilder::new(&mut alloc);
+        builder.add(&tlv1).unwrap();
+        builder.add(&tlv2).unwrap();
+        let tlv_set = builder.build();
+
+        let mut it = tlv_set.tlvs();
+        assert_eq!(it.next(), Some(tlv1));
+        assert_eq!(it.next(), Some(tlv2));
         assert_eq!(it.next(), None);
     }
 }
