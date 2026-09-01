@@ -38,10 +38,8 @@ impl Spawner for SockSpawner {
                 self.id,
                 SpawnAction::Create(SourceCreateParameters::Sock(SockSourceCreateParameters {
                     id: ClockId::new(),
-                    path: self.config.path.clone(),
                     config: self.source_config,
-                    precision: self.config.precision.powi(2),
-                    accuracy: self.config.accuracy,
+                    sock_config: self.config.clone(),
                 })),
             ))
             .await?;
@@ -117,8 +115,7 @@ mod tests {
         let SourceCreateParameters::Sock(params) = create_params else {
             panic!("did not receive sock source create parameters!");
         };
-        assert_eq!(params.path, socket_path);
-        assert!((params.precision - precision.powi(2)).abs() < 1e-9);
+        assert_eq!(params.sock_config.path, socket_path);
 
         // Should be complete after spawning
         assert!(spawner.is_complete());
