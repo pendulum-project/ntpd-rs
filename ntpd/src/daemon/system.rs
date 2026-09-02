@@ -31,13 +31,13 @@ use std::{
 };
 
 use ntp_proto::{
-    ClockId, KeySet, NtpClock, NtpManager, ObservableSourceState, SourceConfig, SourceType,
-    StatimeBaseWrapper, SynchronizationConfig, SystemSnapshot,
+    ClockId, KeySet, NtpClock, NtpManager, ObservableSourceState, SourceConfig, StatimeBaseWrapper,
+    SynchronizationConfig, SystemSnapshot,
 };
 use statime_algo::LinkConfig;
 #[cfg(feature = "pps")]
 use statime_base::Duration;
-use statime_base::{ActiveLinkData, ClockError, Link, LinkId, StdController};
+use statime_base::{ActiveLinkData, ClockError, Link, LinkId, SourceType, StdController};
 use timestamped_socket::interface::InterfaceName;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tracing::{debug, info};

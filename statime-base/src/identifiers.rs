@@ -156,3 +156,17 @@ impl Direction {
         self != other
     }
 }
+
+/// The type of a used source of time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum SourceType {
+    /// A generic pulse-per-second source
+    Pps,
+    /// A socket source
+    Sock,
+    /// An NTP source.
+    Ntp,
+    /// A CSPTP source.
+    Csptp,
+}
