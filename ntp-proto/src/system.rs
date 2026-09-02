@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use statime_base::{LeapStatus, LinkId, SourceType, TimeSnapshot};
+use statime_base::{LeapStatus, Link, LinkId, SourceType, TimeSnapshot};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::net::{IpAddr, SocketAddr};
@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
 use crate::source::SourceSnapshot;
-use crate::{ClockId, KeySet, NtpSourceSnapshot, Server, ServerConfig, SourceController};
+use crate::{KeySet, NtpSourceSnapshot, Server, ServerConfig};
 use crate::{
     config::{SourceConfig, SynchronizationConfig},
     identifiers::ReferenceId,
@@ -142,18 +142,13 @@ impl NtpManager {
         Server::new_internal(config, clock, self.server_info.clone(), keyset)
     }
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "FIXME: rework ntp source and manager to use new algorithm."
-    )]
-    pub fn new_source<Controller: SourceController>(
+    pub fn new_source<Controller: Link>(
         &self,
         source_addr: SocketAddr,
         source_config: SourceConfig,
         protocol_version: ProtocolVersion,
         controller: Controller,
         nts: Option<Box<SourceNtsData>>,
-        id: ClockId,
         link_id: LinkId,
     ) -> (NtpSource<Controller>, NtpSourceActionIterator) {
         NtpSource::new(
@@ -162,7 +157,6 @@ impl NtpManager {
             protocol_version,
             controller,
             nts,
-            id,
             link_id,
             self.source_info.clone(),
             self.source_snapshots.clone(),

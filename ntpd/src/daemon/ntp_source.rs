@@ -2,11 +2,8 @@ use std::{
     collections::HashMap, future::Future, marker::PhantomData, net::SocketAddr, pin::Pin, sync::Arc,
 };
 
-use ntp_proto::{
-    ClockId, NtpClock, NtpSource, NtpSourceActionIterator, NtpTimestamp, ObservableSourceState,
-    SourceController,
-};
-use statime_base::LinkId;
+use ntp_proto::{ClockId, NtpClock, NtpSource, NtpSourceActionIterator, ObservableSourceState};
+use statime_base::{Link, LinkId, TAI, Timestamp};
 #[cfg(target_os = "linux")]
 use timestamped_socket::socket::open_interface_udp;
 use timestamped_socket::{
@@ -46,7 +43,7 @@ pub struct SourceChannels {
     pub source_snapshots: Arc<std::sync::RwLock<HashMap<ClockId, ObservableSourceState>>>,
 }
 
-pub(crate) struct SourceTask<C: 'static + NtpClock + Send, Controller: SourceController, T: Wait> {
+pub(crate) struct SourceTask<C: 'static + NtpClock + Send, Controller: Link, T: Wait> {
     _wait: PhantomData<T>,
     index: ClockId,
     link_id: LinkId,
@@ -65,7 +62,7 @@ pub(crate) struct SourceTask<C: 'static + NtpClock + Send, Controller: SourceCon
     // garbage data in the origin_timestamp field, and we need to track and pass along the
     // actual origin timestamp ourselves.
     /// Timestamp of the last packet that we sent
-    last_send_timestamp: Option<NtpTimestamp>,
+    last_send_timestamp: Option<Timestamp<TAI>>,
 }
 
 #[derive(Debug)]
@@ -74,7 +71,7 @@ enum SocketResult {
     Abort,
 }
 
-impl<C, Controller: SourceController, T> SourceTask<C, Controller, T>
+impl<C, Controller: Link, T> SourceTask<C, Controller, T>
 where
     C: 'static + NtpClock + Send + Sync,
     T: Wait,
@@ -204,7 +201,7 @@ where
                                 std::process::exit(exitcode::NOPERM);
                             }
                             Ok(ts) => {
-                                self.last_send_timestamp = Some(ts);
+                                self.last_send_timestamp = Some(ts.into());
                             }
                         }
 
@@ -236,7 +233,7 @@ where
                                 // update the last_send_timestamp with the one given by the kernel, if available
                                 self.last_send_timestamp = opt_send_timestamp
                                     .selected_timestamp()
-                                    .map(|ts| ts.as_tai(37).into())
+                                    .map(|ts| ts.as_tai(37))
                                     .or(self.last_send_timestamp);
                             }
                         }
@@ -279,7 +276,7 @@ where
     }
 }
 
-impl<C, Controller: SourceController> SourceTask<C, Controller, Sleep>
+impl<C, Controller: Link + Send + 'static> SourceTask<C, Controller, Sleep>
 where
     C: 'static + NtpClock + Send + Sync,
 {
@@ -343,7 +340,7 @@ where
 
 #[derive(Debug)]
 enum AcceptResult<'a> {
-    Accept(&'a [u8], NtpTimestamp),
+    Accept(&'a [u8], Timestamp<TAI>),
     Ignore,
     NetworkGone,
 }
@@ -363,13 +360,13 @@ fn accept_packet<'a, C: NtpClock>(
                 || match clock.now() {
                     Ok(now) => {
                         debug!(?size, "received a packet without a timestamp, substituting");
-                        now
+                        now.into()
                     }
                     _ => {
                         panic!("Received packet without timestamp and couldn't substitute");
                     }
                 },
-                |ts| ts.as_tai(37).into(),
+                |ts| ts.as_tai(37),
             );
 
             // Note: packets are allowed to be bigger when including extensions.
@@ -408,8 +405,7 @@ mod tests {
 
     use ntp_proto::{
         NoCipher, NtpDuration, NtpLeapIndicator, NtpManager, NtpPacket, NtpServerInfo,
-        ObservableSourceTimedata, PollInterval, ProtocolVersion, SourceConfig,
-        SynchronizationConfig,
+        NtpTimestamp, ProtocolVersion, SourceConfig, SynchronizationConfig,
     };
     use statime_base::{LeapStatus, TimeSnapshot};
     use timestamped_socket::socket::{GeneralTimestampMode, Open, open_ip};
@@ -540,17 +536,40 @@ mod tests {
 
     struct TestController;
 
-    impl SourceController for TestController {
-        fn handle_measurement(&mut self, _measurement: ntp_proto::Measurement) {}
+    impl Link for TestController {
+        type Error = std::convert::Infallible;
 
-        fn set_usable(&mut self, _usable: bool) {}
-
-        fn desired_poll_interval(&self) -> ntp_proto::PollInterval {
-            PollInterval::default()
+        fn measurement(
+            &self,
+            _measurement: statime_base::Measurement,
+            _direction: statime_base::Direction,
+        ) -> Result<(), Self::Error> {
+            Ok(())
         }
 
-        fn observe(&self) -> ntp_proto::ObservableSourceTimedata {
-            ObservableSourceTimedata::default()
+        fn external_data_update(
+            &self,
+            _root_delay: statime_base::Duration,
+            _leap_status: Option<LeapStatus>,
+            _usable: bool,
+        ) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn active(&self) -> Result<bool, Self::Error> {
+            unimplemented!()
+        }
+
+        fn importance(&self) -> Result<Option<f64>, Self::Error> {
+            unimplemented!()
+        }
+
+        fn desired_poll_interval(&self) -> Result<statime_base::Duration, Self::Error> {
+            Ok(statime_base::Duration::from_seconds_nanos(16, 0))
+        }
+
+        fn id(&self) -> LinkId {
+            unimplemented!()
         }
     }
 
@@ -581,7 +600,6 @@ mod tests {
             ProtocolVersion::V4,
             TestController,
             None,
-            index,
             link_id,
         );
 

@@ -278,51 +278,6 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
 
     format_metric(
         w,
-        "ntp_source_offset",
-        "Offset between the upstream source and system time",
-        &MetricType::Gauge,
-        Some(Unit::Seconds),
-        collect_sources!(state, |p| p.timedata.offset.to_seconds()),
-    )?;
-
-    format_metric(
-        w,
-        "ntp_source_delay",
-        "Current round-trip delay to the upstream source",
-        &MetricType::Gauge,
-        Some(Unit::Seconds),
-        collect_sources!(state, |p| p.timedata.delay.to_seconds()),
-    )?;
-
-    format_metric(
-        w,
-        "ntp_source_uncertainty",
-        "Estimated error of the source clock",
-        &MetricType::Gauge,
-        Some(Unit::Seconds),
-        collect_sources!(state, |p| p.timedata.uncertainty.to_seconds()),
-    )?;
-
-    format_metric(
-        w,
-        "ntp_source_root_delay",
-        "Root delay reported by the time source",
-        &MetricType::Gauge,
-        Some(Unit::Seconds),
-        collect_sources!(state, |p| p.timedata.remote_delay.to_seconds()),
-    )?;
-
-    format_metric(
-        w,
-        "ntp_source_root_dispersion",
-        "Uncertainty reported by the time source",
-        &MetricType::Gauge,
-        Some(Unit::Seconds),
-        collect_sources!(state, |p| p.timedata.remote_uncertainty.to_seconds()),
-    )?;
-
-    format_metric(
-        w,
         "ntp_server_received_packets_total",
         "Number of incoming packets",
         &MetricType::Counter,
