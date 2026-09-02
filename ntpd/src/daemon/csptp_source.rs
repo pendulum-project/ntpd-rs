@@ -1,9 +1,8 @@
 use std::{future::pending, sync::RwLock};
 
-use ntp_proto::{ClockId, SourceController};
+use statime_base::{Link, TAI, Timestamp};
 use statime_csptp::{ClientRecvResult, ClientSocket, CsptpManager, CsptpSource, InternalState};
 use statime_netptp::{NetworkManager, PtpAddressFamily};
-use statime_wire::Timestamp;
 
 use crate::daemon::config::CsptpSourceConfig;
 
@@ -21,16 +20,13 @@ impl<A: PtpAddressFamily> ClientSocket for SocketWrapper<A> {
         // This unwrap will never fail as the conditions are guaranteed.
         Ok(ClientRecvResult {
             bytes_read,
-            timestamp: result
-                .timestamp
-                .map(|ts| ts.as_tai(37).try_into().map_err(std::io::Error::other))
-                .transpose()?,
+            timestamp: result.timestamp.map(|ts| ts.as_tai(37)),
         })
     }
 
-    async fn send_event(&mut self, buf: &[u8]) -> Result<Timestamp, Self::Error> {
+    async fn send_event(&mut self, buf: &[u8]) -> Result<Timestamp<TAI>, Self::Error> {
         if let Some(ts) = self.0.send_event(buf).await? {
-            ts.as_tai(37).try_into().map_err(std::io::Error::other)
+            Ok(ts.as_tai(37))
         } else {
             Err(std::io::Error::other("missing send timestamp"))
         }
@@ -45,8 +41,7 @@ impl CsptpSourceTask {
         clippy::needless_pass_by_value,
         reason = "False positive on config, it is actually consumed in the move into the tokio spawn"
     )]
-    pub fn spawn<A: PtpAddressFamily + Sync + Send, Controller: SourceController>(
-        index: ClockId,
+    pub fn spawn<A: PtpAddressFamily + Sync + Send, Controller: Link + Send + 'static>(
         addr: A,
         config: CsptpSourceConfig,
         controller: Controller,
@@ -56,8 +51,7 @@ impl CsptpSourceTask {
         tokio::spawn(async move {
             let interface = network.open_general();
             let mut source = CsptpSource::new(
-                ClockId::SYSTEM,
-                index,
+                controller.id(),
                 statime_csptp::CsptpSourceConfig {
                     poll_interval: config.poll_interval,
                     response_interval: config.response_interval,
@@ -71,14 +65,15 @@ impl CsptpSourceTask {
                 .run(
                     pending(),
                     || {
-                        Ok::<_, std::convert::Infallible>(SocketWrapper(
+                        Ok::<_, Controller::Error>(SocketWrapper(
                             interface.connected_socket(None, addr),
                         ))
                     },
                     |duration| tokio::time::sleep(duration),
                     rand::thread_rng,
                 )
-                .await;
+                .await
+                .expect("Unexpected controller failure in csptp source.");
         });
     }
 }
