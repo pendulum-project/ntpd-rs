@@ -1556,7 +1556,6 @@ dependencies = [
 name = "statime-csptp"
 version = "2.0.0-alpha.20260715"
 dependencies = [
- "ntp-proto",
  "rand 0.8.7",
  "statime-base",
  "statime-wire",

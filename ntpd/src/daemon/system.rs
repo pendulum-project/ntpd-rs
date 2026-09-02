@@ -320,6 +320,8 @@ where
         let sender = self.system_snapshot_sender.clone();
         let controller = self.controller.clone();
         let ntp_manager = self.ntp_manager.clone();
+        #[cfg(target_os = "linux")]
+        let csptp_manager = self.csptp_manager;
         let sources = self.sources.clone();
         let clock_id = self.clock_id;
         let timer_loop = async move {
@@ -341,6 +343,8 @@ where
                         })
                         .collect::<Option<Vec<_>>>()
                     {
+                        #[cfg(target_os = "linux")]
+                        csptp_manager.update_used_sources(used_sources.iter().copied());
                         let ntp_snapshot =
                             ntp_manager.update_used_sources(used_sources.into_iter());
                         sender
@@ -601,8 +605,6 @@ where
             #[cfg(target_os = "linux")]
             SourceCreateParameters::Csptp(ref params) => match params.addr {
                 IpAddr::V4(addr) => {
-                    use ntp_proto::PollIntervalLimits;
-
                     let network = if let Some(network) = &self.ptp_networking_ipv4 {
                         network.clone()
                     } else {
@@ -616,20 +618,15 @@ where
                         self.ptp_networking_ipv4 = Some(manager.clone());
                         manager
                     };
-                    let controller =
-                        StatimeBaseWrapper::new(source_controller, PollIntervalLimits::default());
                     crate::daemon::csptp_source::CsptpSourceTask::spawn(
-                        params.id,
                         addr,
                         params.config.clone(),
-                        controller,
+                        source_controller,
                         self.csptp_manager,
                         network,
                     );
                 }
                 IpAddr::V6(addr) => {
-                    use ntp_proto::PollIntervalLimits;
-
                     let network = if let Some(network) = self.ptp_networking_ipv6.as_ref() {
                         network.clone()
                     } else {
@@ -643,13 +640,10 @@ where
                         self.ptp_networking_ipv6 = Some(manager.clone());
                         manager
                     };
-                    let controller =
-                        StatimeBaseWrapper::new(source_controller, PollIntervalLimits::default());
                     crate::daemon::csptp_source::CsptpSourceTask::spawn(
-                        params.id,
                         addr,
                         params.config.clone(),
-                        controller,
+                        source_controller,
                         self.csptp_manager,
                         network,
                     );
