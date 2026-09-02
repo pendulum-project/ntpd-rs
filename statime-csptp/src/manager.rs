@@ -1,5 +1,5 @@
-use ntp_proto::{ClockId, SourceType};
-use statime_base::TimeSnapshot;
+use ntp_proto::ClockId;
+use statime_base::{SourceType, TimeSnapshot};
 use statime_wire::{ClockIdentity, ClockQuality};
 
 use crate::{
