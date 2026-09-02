@@ -1,4 +1,4 @@
-use ntp_proto::{ClockId, ObservableSourceState, ObservableSourceTimedata, PollInterval};
+use ntp_proto::{ClockId, ObservableSourceState, PollInterval};
 use pps_time::PpsDevice;
 use statime_base::{Direction, Duration, Link, Measurement, Timestamp};
 use tokio::sync::mpsc;
@@ -85,20 +85,6 @@ impl<Controller: Link + Send + 'static> PpsSourceTask<Controller> {
                             .insert(
                                 self.index,
                                 ObservableSourceState {
-                                    timedata: ObservableSourceTimedata {
-                                        offset: Duration::ZERO.into(),
-                                        uncertainty: Duration::from_f64_seconds(
-                                            self.config.precision,
-                                        )
-                                        .into(),
-                                        delay: Duration::ZERO.into(),
-                                        remote_delay: Duration::from_f64_seconds(
-                                            self.config.accuracy,
-                                        )
-                                        .into(),
-                                        remote_uncertainty: Duration::ZERO.into(),
-                                        last_update: recv_timestamp.into(),
-                                    },
                                     unanswered_polls: 0,
                                     poll_interval: PollInterval::from_byte(0),
                                     nts_cookies: None,

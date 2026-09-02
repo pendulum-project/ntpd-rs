@@ -34,7 +34,6 @@
 #[cfg(not(any(feature = "rustcrypto", feature = "openssl")))]
 compile_error!("A crypto provider is needed, use '--features rustcrypto' or '--features openssl'");
 
-mod algorithm;
 mod clock;
 mod config;
 mod cookiestash;
@@ -133,9 +132,6 @@ impl std::fmt::Display for ClockId {
 }
 
 mod exports {
-    pub use super::algorithm::{
-        Measurement, ObservableSourceTimedata, SourceController, StatimeBaseWrapper,
-    };
     pub use super::clock::NtpClock;
     pub use super::config::{SourceConfig, StepThreshold, SynchronizationConfig};
     pub use super::identifiers::ReferenceId;
