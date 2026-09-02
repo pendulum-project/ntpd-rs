@@ -163,7 +163,7 @@ mod exports {
         AcceptSynchronizationError, NtpSource, NtpSourceAction, NtpSourceActionIterator,
         NtpSourceSnapshot, ObservableSourceState, ProtocolVersion, Reach, SourceNtsData,
     };
-    pub use super::system::{NtpManager, NtpServerInfo, NtpSnapshot, SourceType, SystemSnapshot};
+    pub use super::system::{NtpManager, NtpServerInfo, NtpSnapshot, SystemSnapshot};
 
     #[cfg(feature = "__internal-fuzz")]
     pub use super::time_types::fuzz_duration_from_seconds;
