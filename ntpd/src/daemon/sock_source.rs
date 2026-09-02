@@ -1,6 +1,6 @@
 use std::{fmt::Display, path::Path};
 
-use ntp_proto::{ClockId, ObservableSourceState, ObservableSourceTimedata, PollInterval};
+use ntp_proto::{ClockId, ObservableSourceState, PollInterval};
 use statime_base::{Clock, Direction, Duration, LeapStatus, Link, Measurement, TAI};
 use tracing::debug;
 use tracing::{Instrument, Span, error, instrument};
@@ -158,20 +158,6 @@ where
                             .insert(
                                 self.index,
                                 ObservableSourceState {
-                                    timedata: ObservableSourceTimedata {
-                                        offset: Duration::ZERO.into(),
-                                        uncertainty: Duration::from_f64_seconds(
-                                            self.config.precision,
-                                        )
-                                        .into(),
-                                        delay: Duration::ZERO.into(),
-                                        remote_delay: Duration::from_f64_seconds(
-                                            self.config.accuracy,
-                                        )
-                                        .into(),
-                                        remote_uncertainty: Duration::ZERO.into(),
-                                        last_update: time.into(),
-                                    },
                                     unanswered_polls: 0,
                                     poll_interval: PollInterval::from_byte(0),
                                     nts_cookies: None,

@@ -52,6 +52,17 @@ impl From<LeapStatus> for NtpLeapIndicator {
     }
 }
 
+impl From<NtpLeapIndicator> for Option<LeapStatus> {
+    fn from(value: NtpLeapIndicator) -> Self {
+        match value {
+            NtpLeapIndicator::NoWarning => Some(LeapStatus::None),
+            NtpLeapIndicator::Leap61 => Some(LeapStatus::Leap61),
+            NtpLeapIndicator::Leap59 => Some(LeapStatus::Leap59),
+            NtpLeapIndicator::Unknown | NtpLeapIndicator::Unsynchronized => None,
+        }
+    }
+}
+
 impl NtpLeapIndicator {
     // This function should only ever be called with 2 bit values
     // (in the least significant position)
