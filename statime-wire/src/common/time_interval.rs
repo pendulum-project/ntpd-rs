@@ -1,3 +1,5 @@
+use statime_base::Duration;
+
 use crate::Error;
 
 /// An interval of passed time as represented in PTP messages.
@@ -7,6 +9,12 @@ pub struct TimeInterval(
     /// The length of the time intervals in 2^16ths of a nanoseconds.
     pub i64,
 );
+
+impl From<TimeInterval> for Duration {
+    fn from(value: TimeInterval) -> Self {
+        Duration::from_raw_steps((i128::from(value.0) << 48) / 1_000_000_000)
+    }
+}
 
 impl TimeInterval {
     /// Serialize the timestamp to an 8 byte buffer.
