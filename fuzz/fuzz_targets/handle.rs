@@ -12,12 +12,11 @@ use std::{
 use libfuzzer_sys::fuzz_target;
 use ntp_proto::{
     test_cookie, v5::BloomFilter, EncryptResult, ExtensionField, ExtensionHeaderVersion,
-    FilterAction, FilterList, HandleInnerData, KeySetProvider, NtpClock, NtpDuration,
-    NtpLeapIndicator, NtpServerInfo, NtpSnapshot, NtpTimestamp, NtpVersion, ReferenceId, Server,
-    ServerConfig, ServerReason, ServerResponse, ServerStatHandler,
+    FilterAction, FilterList, HandleInnerData, KeySetProvider, NtpServerInfo, NtpSnapshot,
+    NtpVersion, ReferenceId, Server, ServerConfig, ServerReason, ServerResponse, ServerStatHandler,
 };
 use rand::{rngs::StdRng, set_thread_rng, SeedableRng};
-use statime_base::TimeSnapshot;
+use statime_base::{Clock, TimeSnapshot, Timestamp, TAI};
 
 const fn next_multiple_of(lhs: u16, rhs: u16) -> u16 {
     match lhs % rhs {
@@ -103,7 +102,7 @@ fuzz_target!(|parts: (
             accepted_versions: vec![NtpVersion::V3, NtpVersion::V4, NtpVersion::V5],
         },
         TestClock {
-            cur: NtpTimestamp::from_seconds_nanos_since_ntp_era(100, 0),
+            cur: Timestamp::from_seconds_nanos_since_unix_epoch(100, 0),
         },
         Arc::new(RwLock::new(NtpServerInfo {
             ntp_snapshot: NtpSnapshot {
@@ -137,7 +136,7 @@ fuzz_target!(|parts: (
         ..
     }) = server.fuzz_handle_inner(
         ip,
-        NtpTimestamp::from_seconds_nanos_since_ntp_era(99, 900000000),
+        Timestamp::from_seconds_nanos_since_unix_epoch(99, 900000000),
         message,
         &mut TestStatHandler,
     ) {
@@ -148,44 +147,52 @@ fuzz_target!(|parts: (
     }
 });
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 struct TestClock {
-    cur: NtpTimestamp,
+    cur: Timestamp<TAI>,
 }
 
-impl NtpClock for TestClock {
-    type Error = std::time::SystemTimeError;
-
-    fn now(&self) -> std::result::Result<NtpTimestamp, Self::Error> {
+impl Clock<TAI> for TestClock {
+    fn now(&self) -> Result<Timestamp<TAI>, statime_base::ClockError> {
         Ok(self.cur)
     }
 
-    fn set_frequency(&self, _freq: f64) -> Result<NtpTimestamp, Self::Error> {
-        panic!("Shouldn't be called by server");
+    fn set_frequency(&self, _freq: f64) -> Result<Timestamp<TAI>, statime_base::ClockError> {
+        unimplemented!()
     }
 
-    fn get_frequency(&self) -> Result<f64, Self::Error> {
+    fn get_frequency(&self) -> Result<f64, statime_base::ClockError> {
         Ok(0.0)
     }
 
-    fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
-        panic!("Shouldn't be called by server");
+    fn max_frequency(&self) -> Result<f64, statime_base::ClockError> {
+        Ok(500e-6)
     }
 
-    fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-        panic!("Shouldn't be called by server");
+    fn step_clock(
+        &self,
+        _offset: statime_base::Duration,
+    ) -> Result<Timestamp<TAI>, statime_base::ClockError> {
+        unimplemented!()
     }
 
     fn error_estimate_update(
         &self,
-        _est_error: NtpDuration,
-        _max_error: NtpDuration,
-    ) -> Result<(), Self::Error> {
-        panic!("Shouldn't be called by server");
+        _est_error: statime_base::Duration,
+        _max_error: statime_base::Duration,
+    ) -> Result<(), statime_base::ClockError> {
+        unimplemented!()
     }
 
-    fn status_update(&self, _leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
-        panic!("Shouldn't be called by source");
+    fn leap_update(
+        &self,
+        _leap_status: statime_base::LeapStatus,
+    ) -> Result<(), statime_base::ClockError> {
+        unimplemented!()
+    }
+
+    fn synchronization_update(&self, _synchronized: bool) -> Result<(), statime_base::ClockError> {
+        unimplemented!()
     }
 }
 
