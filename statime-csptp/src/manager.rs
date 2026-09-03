@@ -1,5 +1,4 @@
-use ntp_proto::{ClockId, SourceType};
-use statime_base::TimeSnapshot;
+use statime_base::{LinkId, SourceType, TimeSnapshot};
 use statime_wire::{ClockIdentity, ClockQuality};
 
 use crate::{
@@ -70,8 +69,8 @@ impl<Mutex: StateMutex> CsptpManager<Mutex> {
     }
 
     /// Update which sources are used for time synchronization.
-    pub fn update_used_sources(&self, mut sources: impl Iterator<Item = (ClockId, SourceType)>) {
-        let active_source = sources.next().map(|(clock_id, _)| clock_id);
+    pub fn update_used_sources(&self, mut sources: impl Iterator<Item = (LinkId, SourceType)>) {
+        let active_source = sources.next().map(|(link_id, _)| link_id);
         self.state.with_mut(move |state| {
             if state.active_source != active_source {
                 state.active_source = active_source;

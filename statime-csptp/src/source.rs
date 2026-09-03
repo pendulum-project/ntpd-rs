@@ -1,9 +1,6 @@
-use core::{future::poll_fn, task::Poll, time::Duration};
+use core::{future::poll_fn, task::Poll};
 
-use ntp_proto::{
-    ClockId, Measurement, NtpDuration, NtpLeapIndicator, NtpTimestamp, SourceController,
-};
-use statime_wire::{TimeInterval, Timestamp};
+use statime_base::{LeapStatus, Link, LinkId, Measurement, TAI, Timestamp};
 
 use crate::{
     CsptpManager, StateMutex,
@@ -13,8 +10,7 @@ use crate::{
 /// A single CSPTP source.
 pub struct CsptpSource<'a, Mutex, Controller> {
     config: CsptpSourceConfig,
-    local_clock: ClockId,
-    remote_clock: ClockId,
+    link_id: LinkId,
     manager: &'a CsptpManager<Mutex>,
     controller: Controller,
 }
@@ -27,93 +23,54 @@ pub struct CsptpSource<'a, Mutex, Controller> {
 enum RequestState {
     WaitingForResponse,
     WaitingForFollowUp {
-        request_recv_time: Timestamp,
-        response_recv_time: Timestamp,
-        request_correction: TimeInterval,
-        response_correction: TimeInterval,
-        leap_indication: NtpLeapIndicator,
+        request_recv_time: Timestamp<TAI>,
+        response_recv_time: Timestamp<TAI>,
+        request_correction: statime_base::Duration,
+        response_correction: statime_base::Duration,
+        leap_indication: LeapStatus,
         status: Option<CsptpStatusTlv>,
         ptp_timescale: bool,
         time_traceable: bool,
         frequency_traceable: bool,
     },
     WaitingForResponseHaveFollowUp {
-        remote_send_time: Timestamp,
-        response_correction: TimeInterval,
+        remote_send_time: Timestamp<TAI>,
+        response_correction: statime_base::Duration,
     },
 }
 
 struct CsptpRawMeasurement {
-    request_send_time: Timestamp,
-    request_recv_time: Timestamp,
-    response_send_time: Timestamp,
-    response_recv_time: Timestamp,
-    request_correction: TimeInterval,
-    response_correction: TimeInterval,
-    leap_indication: NtpLeapIndicator,
+    request_send_time: Timestamp<TAI>,
+    request_recv_time: Timestamp<TAI>,
+    response_send_time: Timestamp<TAI>,
+    response_recv_time: Timestamp<TAI>,
+    request_correction: statime_base::Duration,
+    response_correction: statime_base::Duration,
+    leap_indication: LeapStatus,
     status: Option<CsptpStatusTlv>,
     ptp_timescale: bool,
     time_traceable: bool,
     frequency_traceable: bool,
 }
 
-// FIXME: Remove this once we have more properly abstracted over timescales in the algorithm layer.
-fn convert_to_ntp(ts: Timestamp) -> NtpTimestamp {
-    // Epoch offset between NTP and UNIX timescales
-    const EPOCH_OFFSET: u32 = (70 * 365 + 17) * 86400;
-    // Offset between TAI and UTC
-    const UTC_OFFSET: u32 = 37;
-    #[expect(clippy::cast_possible_truncation, reason = "Truncation is intentional")]
-    NtpTimestamp::from_seconds_nanos_since_ntp_era(
-        EPOCH_OFFSET
-            .wrapping_add(ts.seconds() as u32)
-            .wrapping_sub(UTC_OFFSET),
-        ts.nanos(),
-    )
-}
-
-// FIXME: Remove this once we have more proper time abstractions.
-fn add_correction(ts: Timestamp, correction: TimeInterval) -> Timestamp {
-    let correction_nanos = correction.0 >> 16;
-    let correction_seconds = correction_nanos.div_euclid(1_000_000_000);
-    let correction_nanos = correction_nanos.rem_euclid(1_000_000_000);
-
-    let intermediate_nanos = ts.nanos().wrapping_add(
-        correction_nanos
-            .try_into()
-            .expect("Nanosecond correction should already be in a proper range for an u32."),
-    );
-
-    let corrected_seconds = ts
-        .seconds()
-        .wrapping_add_signed(correction_seconds)
-        .wrapping_add(intermediate_nanos.div_euclid(1_000_000_000).into());
-    let corrected_nanos = intermediate_nanos.rem_euclid(1_000_000_000);
-
-    Timestamp::new(corrected_seconds, corrected_nanos)
-        .expect("Calculated nanoseconds should be between 0 and 1_000_000_000")
-}
-
 impl<'a, Mutex, Controller> CsptpSource<'a, Mutex, Controller> {
     /// Setup a new csptp source.
     pub fn new(
-        local_clock: ClockId,
-        remote_clock: ClockId,
+        link_id: LinkId,
         config: CsptpSourceConfig,
         manager: &'a CsptpManager<Mutex>,
         controller: Controller,
     ) -> Self {
         CsptpSource {
             config,
-            local_clock,
-            remote_clock,
+            link_id,
             manager,
             controller,
         }
     }
 }
 
-impl<Mutex: StateMutex, Controller: SourceController> CsptpSource<'_, Mutex, Controller> {
+impl<Mutex: StateMutex, Controller: Link> CsptpSource<'_, Mutex, Controller> {
     /// Run the port
     ///
     /// # Errors
@@ -124,17 +81,22 @@ impl<Mutex: StateMutex, Controller: SourceController> CsptpSource<'_, Mutex, Con
         clippy::missing_panics_doc,
         reason = "Function should never panic unless there is an implementation fault"
     )]
-    pub async fn run<Error, Socket: ClientSocket, F: Future<Output = ()>, R: rand::Rng>(
+    pub async fn run<
+        Error: From<Controller::Error>,
+        Socket: ClientSocket,
+        F: Future<Output = ()>,
+        R: rand::Rng,
+    >(
         &mut self,
         shutdown: impl Future<Output = ()>,
         mut create_socket: impl FnMut() -> Result<Socket, Error>,
-        mut sleep: impl FnMut(Duration) -> F,
+        mut sleep: impl FnMut(std::time::Duration) -> F,
         mut rng: impl FnMut() -> R,
     ) -> Result<(), Error> {
         let mut shutdown = core::pin::pin!(shutdown);
 
         let mut poller = core::pin::pin!(async {
-            let mut poll_interval = core::pin::pin!(sleep(Duration::ZERO));
+            let mut poll_interval = core::pin::pin!(sleep(std::time::Duration::ZERO));
             let mut sequence_id = 0u16;
 
             loop {
@@ -185,36 +147,33 @@ impl<Mutex: StateMutex, Controller: SourceController> CsptpSource<'_, Mutex, Con
                     continue;
                 };
 
-                self.controller.set_usable(true);
-                self.controller.handle_measurement(Measurement {
-                    sender_id: self.local_clock,
-                    receiver_id: self.remote_clock,
-                    sender_ts: convert_to_ntp(add_correction(
-                        measurement.request_send_time,
-                        measurement.request_correction,
-                    )),
-                    receiver_ts: convert_to_ntp(measurement.request_recv_time),
-                    root_delay: NtpDuration::ZERO,
-                    root_dispersion: NtpDuration::ZERO,
-                    leap: measurement.leap_indication,
-                    precision: 0,
-                });
-                self.controller.handle_measurement(Measurement {
-                    sender_id: self.remote_clock,
-                    receiver_id: self.local_clock,
-                    sender_ts: convert_to_ntp(add_correction(
-                        measurement.response_send_time,
-                        measurement.response_correction,
-                    )),
-                    receiver_ts: convert_to_ntp(measurement.response_recv_time),
-                    root_delay: NtpDuration::ZERO,
-                    root_dispersion: NtpDuration::ZERO,
-                    leap: measurement.leap_indication,
-                    precision: 0,
-                });
+                self.controller.external_data_update(
+                    statime_base::Duration::ZERO,
+                    Some(measurement.leap_indication),
+                    true,
+                )?;
+                self.controller.measurement(
+                    Measurement {
+                        send_timestamp: measurement.request_send_time
+                            + measurement.request_correction,
+                        recv_timestamp: measurement.request_recv_time,
+                        uncertainty: statime_base::Duration::ZERO,
+                    },
+                    statime_base::Direction::Forward,
+                )?;
+                self.controller.measurement(
+                    Measurement {
+                        send_timestamp: measurement.response_send_time
+                            + measurement.response_correction,
+                        recv_timestamp: measurement.response_recv_time,
+                        uncertainty: statime_base::Duration::ZERO,
+                    },
+                    statime_base::Direction::Reverse,
+                )?;
+
                 if let Some(status) = measurement.status {
                     self.manager.state.with_mut(|state| {
-                        if state.active_source == Some(self.remote_clock) {
+                        if state.active_source == Some(self.link_id) {
                             state.csptp_state.grandmaster_identity = status.grandmaster_identity;
                             state.csptp_state.grandmaster_priority_1 = status.grandmaster_priority1;
                             state.csptp_state.grandmaster_priority_2 = status.grandmaster_priority2;
@@ -251,7 +210,7 @@ impl<Mutex: StateMutex, Controller: SourceController> CsptpSource<'_, Mutex, Con
         &mut self,
         mut socket: impl ClientSocket,
         request_id: u16,
-        send_timestamp: Timestamp,
+        send_timestamp: Timestamp<TAI>,
     ) -> CsptpRawMeasurement {
         let mut state = RequestState::WaitingForResponse;
 
@@ -295,11 +254,11 @@ impl<Mutex: StateMutex, Controller: SourceController> CsptpSource<'_, Mutex, Con
                     };
 
                     let leap_indication = if message.header.leap59 {
-                        NtpLeapIndicator::Leap59
+                        LeapStatus::Leap59
                     } else if message.header.leap61 {
-                        NtpLeapIndicator::Leap61
+                        LeapStatus::Leap61
                     } else {
-                        NtpLeapIndicator::NoWarning
+                        LeapStatus::None
                     };
 
                     let status = message
@@ -312,10 +271,10 @@ impl<Mutex: StateMutex, Controller: SourceController> CsptpSource<'_, Mutex, Con
                             RequestState::WaitingForResponse => {
                                 // Need a follow_up, so wait for that.
                                 state = RequestState::WaitingForFollowUp {
-                                    request_recv_time: response_tlv.req_ingress_timestamp,
+                                    request_recv_time: response_tlv.req_ingress_timestamp.into(),
                                     response_recv_time: recv_timestamp,
-                                    request_correction: response_tlv.req_correction_field,
-                                    response_correction: message.header.correction_field,
+                                    request_correction: response_tlv.req_correction_field.into(),
+                                    response_correction: message.header.correction_field.into(),
                                     leap_indication,
                                     status,
                                     ptp_timescale: message.header.ptp_timescale,
@@ -334,15 +293,12 @@ impl<Mutex: StateMutex, Controller: SourceController> CsptpSource<'_, Mutex, Con
                                 response_correction,
                             } => CsptpRawMeasurement {
                                 request_send_time: send_timestamp,
-                                request_recv_time: response_tlv.req_ingress_timestamp,
+                                request_recv_time: response_tlv.req_ingress_timestamp.into(),
                                 response_send_time: remote_send_time,
                                 response_recv_time: recv_timestamp,
-                                request_correction: response_tlv.req_correction_field,
-                                response_correction: TimeInterval(
-                                    response_correction
-                                        .0
-                                        .saturating_add(message.header.correction_field.0),
-                                ),
+                                request_correction: response_tlv.req_correction_field.into(),
+                                response_correction: response_correction
+                                    + message.header.correction_field.into(),
                                 leap_indication,
                                 status,
                                 ptp_timescale: message.header.ptp_timescale,
@@ -353,11 +309,11 @@ impl<Mutex: StateMutex, Controller: SourceController> CsptpSource<'_, Mutex, Con
                     } else {
                         CsptpRawMeasurement {
                             request_send_time: send_timestamp,
-                            request_recv_time: response_tlv.req_ingress_timestamp,
-                            response_send_time: sync_message.origin_timestamp,
+                            request_recv_time: response_tlv.req_ingress_timestamp.into(),
+                            response_send_time: sync_message.origin_timestamp.into(),
                             response_recv_time: recv_timestamp,
-                            request_correction: response_tlv.req_correction_field,
-                            response_correction: message.header.correction_field,
+                            request_correction: response_tlv.req_correction_field.into(),
+                            response_correction: message.header.correction_field.into(),
                             leap_indication,
                             status,
                             ptp_timescale: message.header.ptp_timescale,
@@ -371,8 +327,8 @@ impl<Mutex: StateMutex, Controller: SourceController> CsptpSource<'_, Mutex, Con
                         RequestState::WaitingForResponse => {
                             // Need the response also, so wait for that.
                             state = RequestState::WaitingForResponseHaveFollowUp {
-                                remote_send_time: follow_up_message.precise_origin_timestamp,
-                                response_correction: message.header.correction_field,
+                                remote_send_time: follow_up_message.precise_origin_timestamp.into(),
+                                response_correction: message.header.correction_field.into(),
                             };
                             continue;
                         }
@@ -389,14 +345,11 @@ impl<Mutex: StateMutex, Controller: SourceController> CsptpSource<'_, Mutex, Con
                         } => CsptpRawMeasurement {
                             request_send_time: send_timestamp,
                             request_recv_time,
-                            response_send_time: follow_up_message.precise_origin_timestamp,
+                            response_send_time: follow_up_message.precise_origin_timestamp.into(),
                             response_recv_time,
                             request_correction,
-                            response_correction: TimeInterval(
-                                response_correction
-                                    .0
-                                    .saturating_add(message.header.correction_field.0),
-                            ),
+                            response_correction: response_correction
+                                + message.header.correction_field.into(),
                             leap_indication,
                             status,
                             ptp_timescale,
@@ -425,9 +378,9 @@ impl<Mutex: StateMutex, Controller: SourceController> CsptpSource<'_, Mutex, Con
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct CsptpSourceConfig {
     /// Average interval between requests to the server.
-    pub poll_interval: Duration,
+    pub poll_interval: std::time::Duration,
     /// Time to wait before declaring that a response from the server won't arrive.
-    pub response_interval: Duration,
+    pub response_interval: std::time::Duration,
     /// CSPTP domain to use
     pub domain: u8,
 }
@@ -435,8 +388,8 @@ pub struct CsptpSourceConfig {
 impl Default for CsptpSourceConfig {
     fn default() -> Self {
         Self {
-            poll_interval: Duration::from_millis(1000),
-            response_interval: Duration::from_millis(500),
+            poll_interval: std::time::Duration::from_millis(1000),
+            response_interval: std::time::Duration::from_millis(500),
             domain: 128,
         }
     }
@@ -447,7 +400,7 @@ pub struct ClientRecvResult {
     /// Number of bytes that were read
     pub bytes_read: usize,
     /// Timestamp at which the packet arrived, if known.
-    pub timestamp: Option<Timestamp>,
+    pub timestamp: Option<Timestamp<TAI>>,
 }
 
 /// A general network socket for a CSPTP client.
@@ -463,5 +416,8 @@ pub trait ClientSocket {
         buf: &mut [u8],
     ) -> impl Future<Output = Result<ClientRecvResult, Self::Error>>;
     /// Send a packet on the event socket, waiting for a timestamp.
-    fn send_event(&mut self, buf: &[u8]) -> impl Future<Output = Result<Timestamp, Self::Error>>;
+    fn send_event(
+        &mut self,
+        buf: &[u8],
+    ) -> impl Future<Output = Result<Timestamp<TAI>, Self::Error>>;
 }

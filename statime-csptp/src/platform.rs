@@ -1,7 +1,6 @@
 use core::cell::RefCell;
 
-use ntp_proto::ClockId;
-use statime_base::TimeSnapshot;
+use statime_base::{LinkId, TimeSnapshot};
 
 use crate::CsptpState;
 
@@ -13,7 +12,7 @@ use crate::CsptpState;
 pub struct InternalState {
     pub(crate) csptp_state: CsptpState,
     pub(crate) time_snapshot: TimeSnapshot,
-    pub(crate) active_source: Option<ClockId>,
+    pub(crate) active_source: Option<LinkId>,
 }
 
 /// A mutex over a [`InternalState`]

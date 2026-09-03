@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use statime_base::{LeapStatus, LinkId, TimeSnapshot};
+use statime_base::{LeapStatus, LinkId, SourceType, TimeSnapshot};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::net::{IpAddr, SocketAddr};
@@ -83,14 +83,6 @@ impl Default for NtpSnapshot {
             bloom_filter: BloomFilter::new(),
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SourceType {
-    Pps,
-    Sock,
-    Ntp,
-    Csptp,
 }
 
 #[derive(Default, Copy, Clone)]
@@ -200,6 +192,10 @@ impl NtpManager {
                 SourceType::Csptp => Some(SourceSnapshot::External {
                     stratum: 0,
                     source_id: ReferenceId::CSPTP,
+                }),
+                _ => Some(SourceSnapshot::External {
+                    stratum: 0,
+                    source_id: ReferenceId::NONE,
                 }),
             })
             .collect();
