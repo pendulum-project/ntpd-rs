@@ -8,9 +8,10 @@ use std::{
 };
 
 use serde::{Deserialize, Deserializer, de};
+use statime_base::{Clock, TAI};
 
 use crate::{
-    Cipher, KeySet, NtpClock, NtpPacket, NtpVersion, PacketParsingError, ipfilter::IpFilter,
+    Cipher, KeySet, NtpPacket, NtpVersion, PacketParsingError, ipfilter::IpFilter,
     system::NtpServerInfo, time_types::NtpTimestamp,
 };
 
@@ -155,7 +156,7 @@ pub struct HandleInnerData<'a> {
     pub desired_size: Option<usize>,
 }
 
-impl<C: NtpClock> Server<C> {
+impl<C: Clock<TAI>> Server<C> {
     /// Handle a packet sent to the server
     ///
     /// If the buffer isn't large enough to encode the reply, this
@@ -495,51 +496,64 @@ impl<'de> Deserialize<'de> for IpSubnet {
 mod tests {
     use std::net::{Ipv4Addr, Ipv6Addr};
 
+    use statime_base::Timestamp;
+
     use crate::{
-        Cipher, DecodedServerCookie, KeySetProvider, NoCipher, NtpLeapIndicator, NtpSnapshot,
-        PollIntervalLimits, nts::AeadAlgorithm, packet::AesSivCmac256, time_types::NtpDuration,
+        Cipher, DecodedServerCookie, KeySetProvider, NoCipher, NtpSnapshot, PollIntervalLimits,
+        nts::AeadAlgorithm, packet::AesSivCmac256,
     };
 
     use super::*;
 
-    #[derive(Debug, Clone, Default)]
+    #[derive(Debug, Clone)]
     struct TestClock {
-        cur: NtpTimestamp,
+        cur: Timestamp<TAI>,
     }
 
-    impl NtpClock for TestClock {
-        type Error = std::time::SystemTimeError;
-
-        fn now(&self) -> std::result::Result<NtpTimestamp, Self::Error> {
+    impl Clock<TAI> for TestClock {
+        fn now(&self) -> Result<Timestamp<TAI>, statime_base::ClockError> {
             Ok(self.cur)
         }
 
-        fn set_frequency(&self, _freq: f64) -> Result<NtpTimestamp, Self::Error> {
-            panic!("Shouldn't be called by server");
+        fn set_frequency(&self, _freq: f64) -> Result<Timestamp<TAI>, statime_base::ClockError> {
+            unimplemented!()
         }
 
-        fn get_frequency(&self) -> Result<f64, Self::Error> {
+        fn get_frequency(&self) -> Result<f64, statime_base::ClockError> {
             Ok(0.0)
         }
 
-        fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
-            panic!("Shouldn't be called by server");
+        fn max_frequency(&self) -> Result<f64, statime_base::ClockError> {
+            Ok(500e-6)
         }
 
-        fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by server");
+        fn step_clock(
+            &self,
+            _offset: statime_base::Duration,
+        ) -> Result<Timestamp<TAI>, statime_base::ClockError> {
+            unimplemented!()
         }
 
         fn error_estimate_update(
             &self,
-            _est_error: NtpDuration,
-            _max_error: NtpDuration,
-        ) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by server");
+            _est_error: statime_base::Duration,
+            _max_error: statime_base::Duration,
+        ) -> Result<(), statime_base::ClockError> {
+            unimplemented!()
         }
 
-        fn status_update(&self, _leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by source");
+        fn leap_update(
+            &self,
+            _leap_status: statime_base::LeapStatus,
+        ) -> Result<(), statime_base::ClockError> {
+            unimplemented!()
+        }
+
+        fn synchronization_update(
+            &self,
+            _synchronized: bool,
+        ) -> Result<(), statime_base::ClockError> {
+            unimplemented!()
         }
     }
 
@@ -598,7 +612,7 @@ mod tests {
             accepted_versions: vec![NtpVersion::V4],
         };
         let clock = TestClock {
-            cur: NtpTimestamp::from_fixed_int(200),
+            cur: NtpTimestamp::from_fixed_int(200).into(),
         };
         let mut stats = TestStatHandler::default();
 
@@ -675,7 +689,7 @@ mod tests {
             accepted_versions: vec![NtpVersion::V4],
         };
         let clock = TestClock {
-            cur: NtpTimestamp::from_fixed_int(200),
+            cur: NtpTimestamp::from_fixed_int(200).into(),
         };
         let mut server =
             Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());
@@ -718,7 +732,7 @@ mod tests {
             accepted_versions: vec![NtpVersion::V4],
         };
         let clock = TestClock {
-            cur: NtpTimestamp::from_fixed_int(200),
+            cur: NtpTimestamp::from_fixed_int(200).into(),
         };
         let mut stats = TestStatHandler::default();
 
@@ -801,7 +815,7 @@ mod tests {
             accepted_versions: vec![NtpVersion::V4],
         };
         let clock = TestClock {
-            cur: NtpTimestamp::from_fixed_int(200),
+            cur: NtpTimestamp::from_fixed_int(200).into(),
         };
         let mut server =
             Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());
@@ -838,7 +852,7 @@ mod tests {
             accepted_versions: vec![NtpVersion::V4],
         };
         let clock = TestClock {
-            cur: NtpTimestamp::from_fixed_int(200),
+            cur: NtpTimestamp::from_fixed_int(200).into(),
         };
         let mut stats = TestStatHandler::default();
 
@@ -946,7 +960,7 @@ mod tests {
         };
 
         let clock = TestClock {
-            cur: NtpTimestamp::from_fixed_int(200),
+            cur: NtpTimestamp::from_fixed_int(200).into(),
         };
         let mut server = Server::new_internal(
             config,
@@ -1035,7 +1049,7 @@ mod tests {
             accepted_versions: vec![NtpVersion::V4],
         };
         let clock = TestClock {
-            cur: NtpTimestamp::from_fixed_int(200),
+            cur: NtpTimestamp::from_fixed_int(200).into(),
         };
         let mut stats = TestStatHandler::default();
 
@@ -1086,7 +1100,7 @@ mod tests {
             accepted_versions: vec![NtpVersion::V4],
         };
         let clock = TestClock {
-            cur: NtpTimestamp::from_fixed_int(200),
+            cur: NtpTimestamp::from_fixed_int(200).into(),
         };
         let mut stats = TestStatHandler::default();
 
@@ -1146,7 +1160,7 @@ mod tests {
             accepted_versions: vec![NtpVersion::V4],
         };
         let clock = TestClock {
-            cur: NtpTimestamp::from_fixed_int(200),
+            cur: NtpTimestamp::from_fixed_int(200).into(),
         };
         let mut server =
             Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());
@@ -1180,7 +1194,7 @@ mod tests {
             accepted_versions: vec![NtpVersion::V4],
         };
         let clock = TestClock {
-            cur: NtpTimestamp::from_fixed_int(200),
+            cur: NtpTimestamp::from_fixed_int(200).into(),
         };
         let mut server =
             Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());
@@ -1214,7 +1228,7 @@ mod tests {
             accepted_versions: vec![NtpVersion::V4],
         };
         let clock = TestClock {
-            cur: NtpTimestamp::from_fixed_int(200),
+            cur: NtpTimestamp::from_fixed_int(200).into(),
         };
         let mut server =
             Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());
@@ -1248,7 +1262,7 @@ mod tests {
             accepted_versions: vec![NtpVersion::V4],
         };
         let clock = TestClock {
-            cur: NtpTimestamp::from_fixed_int(200),
+            cur: NtpTimestamp::from_fixed_int(200).into(),
         };
         let mut server =
             Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());
@@ -1285,7 +1299,7 @@ mod tests {
             accepted_versions: vec![NtpVersion::V4],
         };
         let clock = TestClock {
-            cur: NtpTimestamp::from_fixed_int(200),
+            cur: NtpTimestamp::from_fixed_int(200).into(),
         };
         let mut stats = TestStatHandler::default();
         let keyset = KeySetProvider::new(1).get();
@@ -1387,7 +1401,7 @@ mod tests {
             accepted_versions: vec![NtpVersion::V4],
         };
         let clock = TestClock {
-            cur: NtpTimestamp::from_fixed_int(200),
+            cur: NtpTimestamp::from_fixed_int(200).into(),
         };
         let mut stats = TestStatHandler::default();
 
@@ -1446,7 +1460,7 @@ mod tests {
 
         config.require_nts = Some(FilterAction::Deny);
         let clock = TestClock {
-            cur: NtpTimestamp::from_fixed_int(200),
+            cur: NtpTimestamp::from_fixed_int(200).into(),
         };
         let mut server =
             Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());
@@ -1490,7 +1504,7 @@ mod tests {
             accepted_versions: vec![NtpVersion::V5],
         };
         let clock = TestClock {
-            cur: NtpTimestamp::from_fixed_int(200),
+            cur: NtpTimestamp::from_fixed_int(200).into(),
         };
         let mut stats = TestStatHandler::default();
 
@@ -1576,7 +1590,7 @@ mod tests {
             accepted_versions: vec![NtpVersion::V3, NtpVersion::V4],
         };
         let clock = TestClock {
-            cur: NtpTimestamp::from_fixed_int(200),
+            cur: NtpTimestamp::from_fixed_int(200).into(),
         };
         let mut stats = TestStatHandler::default();
 
@@ -1617,7 +1631,7 @@ mod tests {
         };
 
         let clock = TestClock {
-            cur: NtpTimestamp::from_fixed_int(200),
+            cur: NtpTimestamp::from_fixed_int(200).into(),
         };
         let mut server =
             Server::new_internal(config, clock, Arc::default(), KeySetProvider::new(1).get());

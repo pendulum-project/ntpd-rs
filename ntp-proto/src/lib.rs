@@ -34,7 +34,6 @@
 #[cfg(not(any(feature = "rustcrypto", feature = "openssl")))]
 compile_error!("A crypto provider is needed, use '--features rustcrypto' or '--features openssl'");
 
-mod clock;
 mod config;
 mod cookiestash;
 mod identifiers;
@@ -132,7 +131,6 @@ impl std::fmt::Display for ClockId {
 }
 
 mod exports {
-    pub use super::clock::NtpClock;
     pub use super::config::{SourceConfig, StepThreshold, SynchronizationConfig};
     pub use super::identifiers::ReferenceId;
     #[cfg(feature = "__internal-fuzz")]
