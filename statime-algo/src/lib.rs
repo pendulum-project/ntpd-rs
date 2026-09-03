@@ -201,6 +201,7 @@ impl<Storage: KalmanStorage<C>, C: Clock<TAI>> Controller for KalmanController<S
             )?;
             state.filter = filter;
             state.clocks.push(ClockInfo { id, clock, config });
+            log::debug!("Created new clock with id {id:?}");
             Ok(id)
         })
     }
@@ -221,7 +222,7 @@ impl<Storage: KalmanStorage<C>, C: Clock<TAI>> Controller for KalmanController<S
             };
             state.filter = state.filter.clone().remove_clock(clock_id)?;
             state.clocks.remove(index);
-
+            log::debug!("Removed clock {clock_id:?}");
             Ok(())
         })
     }
@@ -260,6 +261,8 @@ impl<Storage: KalmanStorage<C>, C: Clock<TAI>> Controller for KalmanController<S
             Ok::<_, AlgoError>(id)
         })?;
 
+        log::debug!("Created tracked link: {link_id:?}");
+
         Ok(KalmanLink {
             link_id,
             controller: this,
@@ -294,6 +297,8 @@ impl<Storage: KalmanStorage<C>, C: Clock<TAI>> Controller for KalmanController<S
 
             Ok::<_, AlgoError>(id)
         })?;
+
+        log::debug!("Created untracked link: {link_id:?}");
 
         Ok(KalmanLink {
             link_id,
@@ -364,6 +369,7 @@ impl<Storage: KalmanStorage<C>, C: Clock<TAI>> KalmanController<Storage, C> {
             clock: system_clock,
             config: system_clock_config,
         });
+        log::debug!("New controller with system clock {id:?}");
         Ok((
             Self {
                 state: Storage::StateMutex::new(KalmanControllerState {
@@ -417,6 +423,10 @@ impl<Storage: KalmanStorageInternal<C>, C: Clock<TAI>> KalmanControllerState<Sto
             if offset > clock_info.config.jump_threshold.as_seconds()
                 && offset > clock_info.config.jump_certainty_threshold * offset_uncertainty
             {
+                log::trace!(
+                    "Clock {:?}: {offset} +- {offset_uncertainty} (jumping)",
+                    clock_info.id
+                );
                 clock_info
                     .clock
                     .step_clock(Duration::from_f64_seconds(-offset))?;
@@ -429,7 +439,8 @@ impl<Storage: KalmanStorageInternal<C>, C: Clock<TAI>> KalmanControllerState<Sto
                     filter = filter.absorb_offset_change(clock_info.id, -offset)?;
                 }
             } else {
-                let frequency = self.filter.clock_frequency(clock_info.id)?.value;
+                let frequence_data = self.filter.clock_frequency(clock_info.id)?;
+                let frequency = frequence_data.value;
 
                 let cur_frequency_steer = clock_info.clock.get_frequency()?;
                 let max_frequency_steer = clock_info.clock.max_frequency()?;
@@ -441,6 +452,12 @@ impl<Storage: KalmanStorageInternal<C>, C: Clock<TAI>> KalmanControllerState<Sto
                 let actual_frequency_steer =
                     wanted_frequency_steer.clamp(-max_frequency_steer, max_frequency_steer);
                 // FIXME: Warn here on repeated clamping.
+
+                log::trace!(
+                    "Clock {:?}: {offset} +- {offset_uncertainty} ({frequency} +- {} s/s, steer: {actual_frequency_steer}, wants {wanted_frequency_steer})",
+                    clock_info.id,
+                    frequence_data.uncertainty()
+                );
 
                 clock_info.clock.set_frequency(actual_frequency_steer)?;
                 filter = filter.absorb_frequency_steer(
@@ -491,8 +508,8 @@ impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<
         self.controller.as_ref().state.with_mut(|state| {
             match state.filter.clone().remove_link(self.link_id) {
                 Ok(filter) => state.filter = filter,
-                Err(_err) => {
-                    // FIXME: log this here, as there is no other way to handle this.
+                Err(error) => {
+                    log::warn!("Internal error, please open a bug report: Could not properly dispose of link: {error:?}");
                 }
             }
         });
@@ -511,6 +528,11 @@ impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<
     /// from unexpected behavior of the underlying clock.
     fn measurement(&self, measurement: Measurement, direction: Direction) -> Result<(), AlgoError> {
         self.controller.as_ref().state.with_mut(|state| {
+            log::debug!(
+                "New measurement on link {:?} {direction:?}: {measurement:?}",
+                self.link_id
+            );
+
             state.filter = state
                 .filter
                 .clone()
