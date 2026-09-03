@@ -176,7 +176,7 @@ impl<C: 'static + Clock<TAI> + Send> ServerTask<C> {
                             let mut send_buf = [0u8; MAX_PACKET_SIZE];
                             match self.server.handle(
                                 source_addr.ip(),
-                                timestamp.as_tai(37).into(),
+                                timestamp.as_tai(37),
                                 &buf[..length],
                                 &mut send_buf[..length],
                                 &mut self.stats,
@@ -231,8 +231,7 @@ mod tests {
     use std::{io::Cursor, net::SocketAddr};
 
     use ntp_proto::{
-        KeySetProvider, NoCipher, NtpPacket, NtpServerInfo, NtpSnapshot, NtpTimestamp,
-        PollIntervalLimits,
+        KeySetProvider, NoCipher, NtpPacket, NtpServerInfo, NtpSnapshot, PollIntervalLimits,
     };
     use statime_base::Timestamp;
     use timestamped_socket::socket::GeneralTimestampMode;
@@ -309,7 +308,7 @@ mod tests {
         let config = ServerConfig::from(SocketAddr::new("127.0.0.1".parse().unwrap(), port));
 
         let clock = TestClock {
-            time: NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 1000).into(),
+            time: Timestamp::from_seconds_nanos_since_unix_epoch(0, 1000),
         };
 
         let server_info = Arc::new(std::sync::RwLock::new(NtpServerInfo {

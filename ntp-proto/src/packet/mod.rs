@@ -2,7 +2,7 @@ use std::{borrow::Cow, io::Cursor};
 
 use rand::{Rng, thread_rng};
 use serde::{Deserialize, Serialize};
-use statime_base::{Clock, LeapStatus, TAI};
+use statime_base::{Clock, LeapStatus, TAI, Timestamp};
 
 use crate::{
     MAX_COOKIES, NtpVersion,
@@ -658,7 +658,7 @@ impl<'a> NtpPacket<'a> {
     pub fn timestamp_response<C: Clock<TAI>>(
         server_info: NtpServerInfo,
         input: Self,
-        recv_timestamp: NtpTimestamp,
+        recv_timestamp: Timestamp<TAI>,
         clock: &C,
     ) -> Self {
         match &input.header {
@@ -666,15 +666,19 @@ impl<'a> NtpPacket<'a> {
                 header: NtpHeader::V3(NtpHeaderV3V4::timestamp_response(
                     &server_info,
                     *header,
-                    recv_timestamp,
+                    recv_timestamp.into(),
                     clock,
                 )),
                 efdata: ExtensionFieldData::default(),
                 mac: None,
             },
             NtpHeader::V4(header) => {
-                let mut response_header =
-                    NtpHeaderV3V4::timestamp_response(&server_info, *header, recv_timestamp, clock);
+                let mut response_header = NtpHeaderV3V4::timestamp_response(
+                    &server_info,
+                    *header,
+                    recv_timestamp.into(),
+                    clock,
+                );
 
                 // Respond with the upgrade timestamp (NTP5NTP5) iff the input had it and the packet
                 // had the correct draft identification
@@ -703,7 +707,7 @@ impl<'a> NtpPacket<'a> {
                 header: NtpHeader::V5(v5::NtpHeaderV5::timestamp_response(
                     &server_info,
                     *header,
-                    recv_timestamp,
+                    recv_timestamp.into(),
                     clock,
                 )),
                 efdata: ExtensionFieldData {
@@ -749,7 +753,7 @@ impl<'a> NtpPacket<'a> {
     pub fn nts_timestamp_response<C: Clock<TAI>>(
         server_info: NtpServerInfo,
         input: Self,
-        recv_timestamp: NtpTimestamp,
+        recv_timestamp: Timestamp<TAI>,
         clock: &C,
         cookie: &DecodedServerCookie,
         keyset: &KeySet,
@@ -760,7 +764,7 @@ impl<'a> NtpPacket<'a> {
                 header: NtpHeader::V4(NtpHeaderV3V4::timestamp_response(
                     &server_info,
                     header,
-                    recv_timestamp,
+                    recv_timestamp.into(),
                     clock,
                 )),
                 efdata: ExtensionFieldData {
@@ -805,7 +809,7 @@ impl<'a> NtpPacket<'a> {
                 header: NtpHeader::V5(v5::NtpHeaderV5::timestamp_response(
                     &server_info,
                     header,
-                    recv_timestamp,
+                    recv_timestamp.into(),
                     clock,
                 )),
                 efdata: ExtensionFieldData {
@@ -1728,7 +1732,7 @@ mod tests {
         let mut response = NtpPacket::timestamp_response(
             NtpServerInfo::default(),
             packet,
-            NtpTimestamp::from_fixed_int(0),
+            Timestamp::from_seconds_nanos_since_unix_epoch(0, 0),
             &TestClock {
                 now: NtpTimestamp::from_fixed_int(2).into(),
             },
@@ -1783,7 +1787,7 @@ mod tests {
         let response = NtpPacket::timestamp_response(
             NtpServerInfo::default(),
             packet,
-            NtpTimestamp::from_fixed_int(0),
+            Timestamp::from_seconds_nanos_since_unix_epoch(0, 0),
             &TestClock {
                 now: NtpTimestamp::from_fixed_int(1).into(),
             },
@@ -1835,7 +1839,7 @@ mod tests {
                 },
             },
             packet,
-            NtpTimestamp::from_fixed_int(0),
+            NtpTimestamp::from_fixed_int(0).into(),
             &TestClock {
                 now: NtpTimestamp::from_fixed_int(1).into(),
             },
@@ -1884,7 +1888,7 @@ mod tests {
         let response = NtpPacket::timestamp_response(
             NtpServerInfo::default(),
             packet,
-            NtpTimestamp::from_fixed_int(0),
+            NtpTimestamp::from_fixed_int(0).into(),
             &TestClock {
                 now: NtpTimestamp::from_fixed_int(1).into(),
             },
@@ -1928,7 +1932,7 @@ mod tests {
         let response = NtpPacket::nts_timestamp_response(
             NtpServerInfo::default(),
             packet,
-            NtpTimestamp::from_fixed_int(0),
+            NtpTimestamp::from_fixed_int(0).into(),
             &TestClock {
                 now: NtpTimestamp::from_fixed_int(1).into(),
             },
@@ -1966,7 +1970,7 @@ mod tests {
         let response = NtpPacket::nts_timestamp_response(
             NtpServerInfo::default(),
             packet,
-            NtpTimestamp::from_fixed_int(0),
+            NtpTimestamp::from_fixed_int(0).into(),
             &TestClock {
                 now: NtpTimestamp::from_fixed_int(1).into(),
             },
@@ -2012,7 +2016,7 @@ mod tests {
         let response = NtpPacket::nts_timestamp_response(
             NtpServerInfo::default(),
             packet,
-            NtpTimestamp::from_fixed_int(0),
+            NtpTimestamp::from_fixed_int(0).into(),
             &TestClock {
                 now: NtpTimestamp::from_fixed_int(1).into(),
             },
@@ -2026,7 +2030,7 @@ mod tests {
         let response = NtpPacket::nts_timestamp_response(
             NtpServerInfo::default(),
             packet,
-            NtpTimestamp::from_fixed_int(0),
+            NtpTimestamp::from_fixed_int(0).into(),
             &TestClock {
                 now: NtpTimestamp::from_fixed_int(1).into(),
             },
@@ -2040,7 +2044,7 @@ mod tests {
         let response = NtpPacket::nts_timestamp_response(
             NtpServerInfo::default(),
             packet,
-            NtpTimestamp::from_fixed_int(0),
+            NtpTimestamp::from_fixed_int(0).into(),
             &TestClock {
                 now: NtpTimestamp::from_fixed_int(1).into(),
             },
@@ -2054,7 +2058,7 @@ mod tests {
         let response = NtpPacket::nts_timestamp_response(
             NtpServerInfo::default(),
             packet,
-            NtpTimestamp::from_fixed_int(0),
+            NtpTimestamp::from_fixed_int(0).into(),
             &TestClock {
                 now: NtpTimestamp::from_fixed_int(1).into(),
             },
