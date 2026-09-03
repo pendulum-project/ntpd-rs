@@ -800,11 +800,13 @@ impl<Controller: Link> NtpSource<Controller> {
     reason = "Long tests are not really a big problem"
 )]
 mod test {
+    use statime_base::{Clock, ClockError};
+
     use crate::{
-        NtpClock, NtpLeapIndicator, NtpSnapshot, NtpTimestamp,
+        NtpSnapshot, NtpTimestamp,
         packet::{AesSivCmac256, NoCipher},
         system::NtpServerInfo,
-        time_types::{NtpDuration, PollIntervalLimits},
+        time_types::PollIntervalLimits,
     };
 
     use super::*;
@@ -812,46 +814,58 @@ mod test {
 
     #[derive(Debug, Clone, Default)]
     struct TestClock {}
-    const EPOCH_OFFSET: u32 = (70 * 365 + 17) * 86400;
-    impl NtpClock for TestClock {
-        type Error = std::time::SystemTimeError;
 
-        fn now(&self) -> std::result::Result<NtpTimestamp, Self::Error> {
-            let cur =
-                std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH)?;
+    impl Clock<TAI> for TestClock {
+        fn now(&self) -> Result<Timestamp<TAI>, statime_base::ClockError> {
+            let cur = std::time::SystemTime::now()
+                .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                .map_err(|_| ClockError::Unknown)?;
 
-            Ok(NtpTimestamp::from_seconds_nanos_since_ntp_era(
-                EPOCH_OFFSET.wrapping_add(cur.as_secs() as u32),
+            Ok(Timestamp::from_seconds_nanos_since_unix_epoch(
+                cur.as_secs(),
                 cur.subsec_nanos(),
             ))
         }
 
-        fn set_frequency(&self, _freq: f64) -> Result<NtpTimestamp, Self::Error> {
-            panic!("Shouldn't be called by source");
+        fn set_frequency(&self, _freq: f64) -> Result<Timestamp<TAI>, statime_base::ClockError> {
+            unimplemented!()
         }
 
-        fn get_frequency(&self) -> Result<f64, Self::Error> {
+        fn get_frequency(&self) -> Result<f64, statime_base::ClockError> {
             Ok(0.0)
         }
 
-        fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
-            panic!("Shouldn't be called by source");
+        fn max_frequency(&self) -> Result<f64, statime_base::ClockError> {
+            Ok(500e-6)
         }
 
-        fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by source");
+        fn step_clock(
+            &self,
+            _offset: statime_base::Duration,
+        ) -> Result<Timestamp<TAI>, statime_base::ClockError> {
+            unimplemented!()
         }
 
         fn error_estimate_update(
             &self,
-            _est_error: NtpDuration,
-            _max_error: NtpDuration,
-        ) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by source");
+            _est_error: statime_base::Duration,
+            _max_error: statime_base::Duration,
+        ) -> Result<(), statime_base::ClockError> {
+            unimplemented!()
         }
 
-        fn status_update(&self, _leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by source");
+        fn leap_update(
+            &self,
+            _leap_status: statime_base::LeapStatus,
+        ) -> Result<(), statime_base::ClockError> {
+            unimplemented!()
+        }
+
+        fn synchronization_update(
+            &self,
+            _synchronized: bool,
+        ) -> Result<(), statime_base::ClockError> {
+            unimplemented!()
         }
     }
 

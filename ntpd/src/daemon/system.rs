@@ -31,8 +31,8 @@ use std::{
 };
 
 use ntp_proto::{
-    ClockId, KeySet, NtpClock, NtpManager, ObservableSourceState, SourceConfig,
-    SynchronizationConfig, SystemSnapshot,
+    ClockId, KeySet, NtpManager, ObservableSourceState, SourceConfig, SynchronizationConfig,
+    SystemSnapshot,
 };
 use statime_algo::LinkConfig;
 #[cfg(feature = "pps")]

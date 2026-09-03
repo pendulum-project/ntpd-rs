@@ -235,7 +235,7 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
             state
                 .system
                 .time_snapshot
-                .root_dispersion(state.program.now.into())
+                .root_dispersion(state.program.now)
                 .as_seconds(),
         ),
     )?;
