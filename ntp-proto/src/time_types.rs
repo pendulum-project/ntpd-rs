@@ -72,6 +72,7 @@ impl NtpTimestamp {
 
     /// Create an NTP timestamp from the number of seconds and nanoseconds that have
     /// passed since the last ntp era boundary.
+    #[cfg(test)]
     pub const fn from_seconds_nanos_since_ntp_era(seconds: u32, nanos: u32) -> Self {
         // Although having a valid interpretation, providing more
         // than 1 second worth of nanoseconds as input probably
@@ -86,14 +87,6 @@ impl NtpTimestamp {
 
         let timestamp = ((seconds as u64) << 32) + fraction;
         NtpTimestamp::from_bits(timestamp.to_be_bytes())
-    }
-
-    pub fn is_before(self, other: NtpTimestamp) -> bool {
-        // Around an era change, self can be near the maximum value
-        // for NtpTimestamp and other near the minimum, and that must
-        // be interpreted as self being before other (which it is due
-        // to wrapping in subtraction of NtpTimestamp)
-        self - other < NtpDuration::ZERO
     }
 
     /// Create an NTP timestamp where the last x bits of the seconds part and

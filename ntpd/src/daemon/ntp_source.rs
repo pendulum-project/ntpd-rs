@@ -693,12 +693,8 @@ mod tests {
         let timestamp = timestamp_data.selected_timestamp().unwrap();
 
         let rec_packet = NtpPacket::deserialize(&buf, &NoCipher).unwrap().0;
-        let send_packet = NtpPacket::timestamp_response(
-            server_info,
-            rec_packet,
-            timestamp.as_tai(37).into(),
-            &clock,
-        );
+        let send_packet =
+            NtpPacket::timestamp_response(server_info, rec_packet, timestamp.as_tai(37), &clock);
 
         let serialized = serialize_packet_unencrypted(&send_packet);
         socket.send_to(&serialized, remote_addr).await.unwrap();

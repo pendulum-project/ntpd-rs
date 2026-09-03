@@ -8,11 +8,11 @@ use std::{
 };
 
 use serde::{Deserialize, Deserializer, de};
-use statime_base::{Clock, TAI};
+use statime_base::{Clock, TAI, Timestamp};
 
 use crate::{
     Cipher, KeySet, NtpPacket, NtpVersion, PacketParsingError, ipfilter::IpFilter,
-    system::NtpServerInfo, time_types::NtpTimestamp,
+    system::NtpServerInfo,
 };
 
 pub enum ServerAction<'a> {
@@ -165,7 +165,7 @@ impl<C: Clock<TAI>> Server<C> {
     pub fn handle<'a>(
         &mut self,
         client_ip: IpAddr,
-        recv_timestamp: NtpTimestamp,
+        recv_timestamp: Timestamp<TAI>,
         message: &[u8],
         buffer: &'a mut [u8],
         stats_handler: &mut impl ServerStatHandler,
@@ -210,7 +210,7 @@ impl<C: Clock<TAI>> Server<C> {
     fn handle_inner<'a>(
         &mut self,
         client_ip: IpAddr,
-        recv_timestamp: NtpTimestamp,
+        recv_timestamp: Timestamp<TAI>,
         message: &'a [u8],
         stats_handler: &mut impl ServerStatHandler,
     ) -> Result<HandleInnerData<'a>, ServerAction<'static>> {
@@ -224,7 +224,7 @@ impl<C: Clock<TAI>> Server<C> {
         // Try and parse the message
         let (packet, cookie) = match NtpPacket::deserialize(message, self.keyset.as_ref()) {
             Ok((packet, cookie)) => {
-                if packet.mode() == crate::NtpAssociationMode::Client {
+                if packet.mode() == crate::packet::NtpAssociationMode::Client {
                     (packet, cookie)
                 } else {
                     stats_handler.register(
@@ -342,7 +342,7 @@ impl<C: Clock<TAI>> Server<C> {
     pub fn fuzz_handle_inner<'a>(
         &mut self,
         client_ip: IpAddr,
-        recv_timestamp: NtpTimestamp,
+        recv_timestamp: Timestamp<TAI>,
         message: &'a [u8],
         stats_handler: &mut impl ServerStatHandler,
     ) -> Result<HandleInnerData<'a>, ServerAction<'static>> {
@@ -500,7 +500,7 @@ mod tests {
 
     use crate::{
         Cipher, DecodedServerCookie, KeySetProvider, NoCipher, NtpSnapshot, PollIntervalLimits,
-        nts::AeadAlgorithm, packet::AesSivCmac256,
+        nts::AeadAlgorithm, packet::AesSivCmac256, time_types::NtpTimestamp,
     };
 
     use super::*;
@@ -635,7 +635,7 @@ mod tests {
         let mut buf = [0; 48];
         let response = server.handle(
             "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
+            NtpTimestamp::from_fixed_int(100).into(),
             &serialized,
             &mut buf,
             &mut stats,
@@ -663,7 +663,7 @@ mod tests {
         let mut buf = [0; 48];
         let response = server.handle(
             "128.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
+            NtpTimestamp::from_fixed_int(100).into(),
             &serialized,
             &mut buf,
             &mut stats,
@@ -697,7 +697,7 @@ mod tests {
         let mut buf = [0; 48];
         let response = server.handle(
             "128.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
+            NtpTimestamp::from_fixed_int(100).into(),
             &serialized,
             &mut buf,
             &mut stats,
@@ -755,7 +755,7 @@ mod tests {
         let mut buf = [0; 48];
         let response = server.handle(
             "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
+            NtpTimestamp::from_fixed_int(100).into(),
             &serialized,
             &mut buf,
             &mut stats,
@@ -783,7 +783,7 @@ mod tests {
         let mut buf = [0; 48];
         let response = server.handle(
             "128.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
+            NtpTimestamp::from_fixed_int(100).into(),
             &serialized,
             &mut buf,
             &mut stats,
@@ -823,7 +823,7 @@ mod tests {
         let mut buf = [0; 48];
         let response = server.handle(
             "128.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
+            NtpTimestamp::from_fixed_int(100).into(),
             &serialized,
             &mut buf,
             &mut stats,
@@ -875,7 +875,7 @@ mod tests {
         let mut buf = [0; 48];
         let response = server.handle(
             "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
+            NtpTimestamp::from_fixed_int(100).into(),
             &serialized,
             &mut buf,
             &mut stats,
@@ -903,7 +903,7 @@ mod tests {
         let mut buf = [0; 48];
         let response = server.handle(
             "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
+            NtpTimestamp::from_fixed_int(100).into(),
             &serialized,
             &mut buf,
             &mut stats,
@@ -919,7 +919,7 @@ mod tests {
         let mut buf = [0; 48];
         let response = server.handle(
             "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
+            NtpTimestamp::from_fixed_int(100).into(),
             &serialized,
             &mut buf,
             &mut stats,
@@ -978,7 +978,7 @@ mod tests {
         let mut buf = [0; 48];
         let response = server.handle(
             "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
+            NtpTimestamp::from_fixed_int(100).into(),
             &serialized,
             &mut buf,
             &mut stats,
@@ -1006,7 +1006,7 @@ mod tests {
         let mut buf = [0; 48];
         let response = server.handle(
             "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
+            NtpTimestamp::from_fixed_int(100).into(),
             &serialized,
             &mut buf,
             &mut stats,
@@ -1071,7 +1071,7 @@ mod tests {
                 let mut buf = [0; 48];
                 let response = server.handle(
                     "127.0.0.1".parse().unwrap(),
-                    NtpTimestamp::from_fixed_int(100),
+                    NtpTimestamp::from_fixed_int(100).into(),
                     &serialized,
                     &mut buf,
                     &mut stats,
@@ -1113,7 +1113,7 @@ mod tests {
         let mut buf = [0; 1];
         let response = server.handle(
             "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
+            NtpTimestamp::from_fixed_int(100).into(),
             &serialized,
             &mut buf,
             &mut stats,
@@ -1134,7 +1134,7 @@ mod tests {
         let mut buf = [0; 48];
         let response = server.handle(
             "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
+            NtpTimestamp::from_fixed_int(100).into(),
             &serialized,
             &mut buf,
             &mut stats,
@@ -1168,7 +1168,7 @@ mod tests {
         let mut buf = [0; 48];
         let response = server.handle(
             "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
+            NtpTimestamp::from_fixed_int(100).into(),
             &serialized,
             &mut buf,
             &mut stats,
@@ -1202,7 +1202,7 @@ mod tests {
         let mut buf = [0; 48];
         let response = server.handle(
             "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
+            NtpTimestamp::from_fixed_int(100).into(),
             &serialized,
             &mut buf,
             &mut stats,
@@ -1236,7 +1236,7 @@ mod tests {
         let mut buf = [0; 48];
         let response = server.handle(
             "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
+            NtpTimestamp::from_fixed_int(100).into(),
             &serialized,
             &mut buf,
             &mut stats,
@@ -1270,7 +1270,7 @@ mod tests {
         let mut buf = [0; 48];
         let response = server.handle(
             "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
+            NtpTimestamp::from_fixed_int(100).into(),
             &serialized,
             &mut buf,
             &mut stats,
@@ -1330,7 +1330,7 @@ mod tests {
         let mut buf = [0; 1024];
         let response = server.handle(
             "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
+            NtpTimestamp::from_fixed_int(100).into(),
             &serialized,
             &mut buf,
             &mut stats,
@@ -1365,7 +1365,7 @@ mod tests {
         let mut buf = [0; 1024];
         let response = server.handle(
             "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
+            NtpTimestamp::from_fixed_int(100).into(),
             &serialized,
             &mut buf,
             &mut stats,
@@ -1418,7 +1418,7 @@ mod tests {
         let mut buf = [0; 1024];
         let response = server.handle(
             "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
+            NtpTimestamp::from_fixed_int(100).into(),
             &serialized,
             &mut buf,
             &mut stats,
@@ -1440,7 +1440,7 @@ mod tests {
         let serialized = serialize_packet_encrypted(&packet_invalid, decodedcookie.c2s.as_ref());
         let response = server.handle(
             "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
+            NtpTimestamp::from_fixed_int(100).into(),
             &serialized,
             &mut buf,
             &mut stats,
@@ -1469,7 +1469,7 @@ mod tests {
         let serialized = serialize_packet_unencrypted(&packet);
         let response = server.handle(
             "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
+            NtpTimestamp::from_fixed_int(100).into(),
             &serialized,
             &mut buf,
             &mut stats,
@@ -1527,7 +1527,7 @@ mod tests {
         let mut buf = [0; 1024];
         let response = server.handle(
             "127.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
+            NtpTimestamp::from_fixed_int(100).into(),
             &serialized,
             &mut buf,
             &mut stats,
@@ -1555,7 +1555,7 @@ mod tests {
         let mut buf = [0; 1024];
         let response = server.handle(
             "128.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
+            NtpTimestamp::from_fixed_int(100).into(),
             &serialized,
             &mut buf,
             &mut stats,
@@ -1603,7 +1603,7 @@ mod tests {
         let mut buf = [0; 1024];
         let response = server.handle(
             "128.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
+            NtpTimestamp::from_fixed_int(100).into(),
             &serialized,
             &mut buf,
             &mut stats,
@@ -1642,7 +1642,7 @@ mod tests {
         let mut buf = [0; 1024];
         let response = server.handle(
             "128.0.0.1".parse().unwrap(),
-            NtpTimestamp::from_fixed_int(100),
+            NtpTimestamp::from_fixed_int(100).into(),
             &serialized,
             &mut buf,
             &mut stats,

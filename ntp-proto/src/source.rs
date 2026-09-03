@@ -803,10 +803,10 @@ mod test {
     use statime_base::{Clock, ClockError};
 
     use crate::{
-        NtpSnapshot, NtpTimestamp,
+        NtpSnapshot,
         packet::{AesSivCmac256, NoCipher},
         system::NtpServerInfo,
-        time_types::PollIntervalLimits,
+        time_types::{NtpTimestamp, PollIntervalLimits},
     };
 
     use super::*;
@@ -1411,7 +1411,7 @@ mod test {
                     ..Default::default()
                 },
                 poll,
-                NtpTimestamp::default(),
+                NtpTimestamp::default().into(),
                 &clock,
             );
             let mut response = response
@@ -1488,7 +1488,7 @@ mod test {
                 ..Default::default()
             },
             poll,
-            NtpTimestamp::default(),
+            NtpTimestamp::default().into(),
             &clock,
         );
         let response = response
@@ -1531,7 +1531,7 @@ mod test {
         let response = NtpPacket::timestamp_response(
             NtpServerInfo::default(),
             poll,
-            NtpTimestamp::default(),
+            NtpTimestamp::default().into(),
             &clock,
         );
         let response = response
@@ -1591,7 +1591,7 @@ mod test {
                 ..Default::default()
             },
             poll,
-            NtpTimestamp::default(),
+            NtpTimestamp::default().into(),
             &clock,
         );
         let response = response
@@ -1686,8 +1686,12 @@ mod test {
             let req = outgoingbuf.unwrap();
 
             let (req, _) = NtpPacket::deserialize(&req, &NoCipher).unwrap();
-            let response =
-                NtpPacket::timestamp_response(server_info, req, NtpTimestamp::default(), &clock);
+            let response = NtpPacket::timestamp_response(
+                server_info,
+                req,
+                NtpTimestamp::default().into(),
+                &clock,
+            );
             let resp_bytes = response.serialize_without_encryption_vec(None).unwrap();
 
             let actions = client.handle_incoming(

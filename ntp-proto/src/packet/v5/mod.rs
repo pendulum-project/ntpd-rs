@@ -1,7 +1,8 @@
 #![warn(clippy::missing_const_for_fn)]
 use crate::{
-    NtpLeapIndicator, PollInterval,
+    PollInterval,
     io::NonBlockingWrite,
+    packet::NtpLeapIndicator,
     system::NtpServerInfo,
     time_types::{NtpDuration, NtpTimestamp},
 };
