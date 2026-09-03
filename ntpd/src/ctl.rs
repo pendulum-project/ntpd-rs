@@ -266,7 +266,7 @@ fn print_state_plain(output: &ObservableState) {
         output
             .system
             .time_snapshot
-            .root_dispersion(output.program.now.into())
+            .root_dispersion(output.program.now)
             .as_seconds(),
     );
     println!(

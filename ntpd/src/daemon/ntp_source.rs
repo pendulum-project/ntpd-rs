@@ -2,8 +2,8 @@ use std::{
     collections::HashMap, future::Future, marker::PhantomData, net::SocketAddr, pin::Pin, sync::Arc,
 };
 
-use ntp_proto::{ClockId, NtpClock, NtpSource, NtpSourceActionIterator, ObservableSourceState};
-use statime_base::{Link, LinkId, TAI, Timestamp};
+use ntp_proto::{ClockId, NtpSource, NtpSourceActionIterator, ObservableSourceState};
+use statime_base::{Clock, Link, LinkId, TAI, Timestamp};
 #[cfg(target_os = "linux")]
 use timestamped_socket::socket::open_interface_udp;
 use timestamped_socket::{
@@ -43,7 +43,7 @@ pub struct SourceChannels {
     pub source_snapshots: Arc<std::sync::RwLock<HashMap<ClockId, ObservableSourceState>>>,
 }
 
-pub(crate) struct SourceTask<C: 'static + NtpClock + Send, Controller: Link, T: Wait> {
+pub(crate) struct SourceTask<C: 'static + Clock<TAI> + Send, Controller: Link, T: Wait> {
     _wait: PhantomData<T>,
     index: ClockId,
     link_id: LinkId,
@@ -73,7 +73,7 @@ enum SocketResult {
 
 impl<C, Controller: Link, T> SourceTask<C, Controller, T>
 where
-    C: 'static + NtpClock + Send + Sync,
+    C: 'static + Clock<TAI> + Send + Sync,
     T: Wait,
 {
     fn setup_socket(&mut self) -> SocketResult {
@@ -201,7 +201,7 @@ where
                                 std::process::exit(exitcode::NOPERM);
                             }
                             Ok(ts) => {
-                                self.last_send_timestamp = Some(ts.into());
+                                self.last_send_timestamp = Some(ts);
                             }
                         }
 
@@ -278,7 +278,7 @@ where
 
 impl<C, Controller: Link + Send + 'static> SourceTask<C, Controller, Sleep>
 where
-    C: 'static + NtpClock + Send + Sync,
+    C: 'static + Clock<TAI> + Send + Sync,
 {
     #[expect(clippy::too_many_arguments)]
     #[instrument(level = tracing::Level::ERROR, name = "Ntp Source", skip(timestamp_mode, clock, channels, source, initial_actions))]
@@ -345,7 +345,7 @@ enum AcceptResult<'a> {
     NetworkGone,
 }
 
-fn accept_packet<'a, C: NtpClock>(
+fn accept_packet<'a, C: Clock<TAI>>(
     result: Result<RecvResult<SocketAddr>, std::io::Error>,
     buf: &'a [u8],
     clock: &C,
@@ -360,7 +360,7 @@ fn accept_packet<'a, C: NtpClock>(
                 || match clock.now() {
                     Ok(now) => {
                         debug!(?size, "received a packet without a timestamp, substituting");
-                        now.into()
+                        now
                     }
                     _ => {
                         panic!("Received packet without timestamp and couldn't substitute");
@@ -404,16 +404,14 @@ mod tests {
     };
 
     use ntp_proto::{
-        NoCipher, NtpDuration, NtpLeapIndicator, NtpManager, NtpPacket, NtpServerInfo,
-        NtpTimestamp, ProtocolVersion, SourceConfig, SynchronizationConfig,
+        NoCipher, NtpManager, NtpPacket, NtpServerInfo, ProtocolVersion, SourceConfig,
+        SynchronizationConfig,
     };
-    use statime_base::{LeapStatus, TimeSnapshot};
+    use statime_base::{ClockError, LeapStatus, TimeSnapshot};
     use timestamped_socket::socket::{GeneralTimestampMode, Open, open_ip};
     use tokio::sync::mpsc;
 
     use crate::test::alloc_port;
-
-    const EPOCH_OFFSET: u32 = (70 * 365 + 17) * 86400;
 
     use super::*;
 
@@ -489,48 +487,54 @@ mod tests {
     #[derive(Debug, Clone, Default)]
     struct TestClock {}
 
-    impl NtpClock for TestClock {
-        type Error = std::time::SystemTimeError;
+    impl Clock<TAI> for TestClock {
+        fn now(&self) -> Result<Timestamp<TAI>, statime_base::ClockError> {
+            let cur = std::time::SystemTime::now()
+                .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                .map_err(|_| ClockError::Unknown)?;
 
-        fn now(&self) -> std::result::Result<NtpTimestamp, Self::Error> {
-            let cur =
-                std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH)?;
-
-            Ok(NtpTimestamp::from_seconds_nanos_since_ntp_era(
-                EPOCH_OFFSET.wrapping_add(cur.as_secs() as u32),
+            Ok(Timestamp::from_seconds_nanos_since_unix_epoch(
+                cur.as_secs(),
                 cur.subsec_nanos(),
             ))
         }
 
-        fn set_frequency(&self, _freq: f64) -> Result<NtpTimestamp, Self::Error> {
-            self.now()
-            //ignore
+        fn set_frequency(&self, _freq: f64) -> Result<Timestamp<TAI>, statime_base::ClockError> {
+            unimplemented!()
         }
 
-        fn get_frequency(&self) -> Result<f64, Self::Error> {
+        fn get_frequency(&self) -> Result<f64, statime_base::ClockError> {
             Ok(0.0)
         }
 
-        fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
-            panic!("Shouldn't be called by source");
+        fn max_frequency(&self) -> Result<f64, statime_base::ClockError> {
+            Ok(500e-6)
         }
 
-        fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            Ok(())
-            //ignore
+        fn step_clock(
+            &self,
+            _offset: statime_base::Duration,
+        ) -> Result<Timestamp<TAI>, statime_base::ClockError> {
+            unimplemented!()
         }
 
         fn error_estimate_update(
             &self,
-            _est_error: NtpDuration,
-            _max_error: NtpDuration,
-        ) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by source");
+            _est_error: statime_base::Duration,
+            _max_error: statime_base::Duration,
+        ) -> Result<(), statime_base::ClockError> {
+            unimplemented!()
         }
 
-        fn status_update(&self, _leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
-            Ok(())
-            //ignore
+        fn leap_update(&self, _leap_status: LeapStatus) -> Result<(), statime_base::ClockError> {
+            unimplemented!()
+        }
+
+        fn synchronization_update(
+            &self,
+            _synchronized: bool,
+        ) -> Result<(), statime_base::ClockError> {
+            unimplemented!()
         }
     }
 

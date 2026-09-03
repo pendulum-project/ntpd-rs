@@ -2,7 +2,8 @@ use super::server::ServerStats;
 use super::sockets::create_unix_socket_with_permissions;
 use super::system::ServerData;
 use libc::{ECONNABORTED, EMFILE, ENFILE, ENOBUFS, ENOMEM};
-use ntp_proto::{ClockId, NtpClock, NtpTimestamp, ObservableSourceState, SystemSnapshot};
+use ntp_proto::{ClockId, ObservableSourceState, SystemSnapshot};
+use statime_base::{Clock, TAI, Timestamp};
 use std::collections::HashMap;
 use std::convert::Into;
 use std::os::unix::fs::PermissionsExt;
@@ -27,11 +28,11 @@ pub struct ProgramData {
     pub build_commit: String,
     pub build_commit_date: String,
     pub uptime_seconds: f64,
-    pub now: NtpTimestamp,
+    pub now: Timestamp<TAI>,
 }
 
 impl ProgramData {
-    pub fn with_dynamics(uptime_seconds: f64, now: NtpTimestamp) -> ProgramData {
+    pub fn with_dynamics(uptime_seconds: f64, now: Timestamp<TAI>) -> ProgramData {
         ProgramData {
             uptime_seconds,
             now,
@@ -47,7 +48,7 @@ impl Default for ProgramData {
             build_commit: env!("NTPD_RS_GIT_REV").to_owned(),
             build_commit_date: env!("NTPD_RS_GIT_DATE").to_owned(),
             uptime_seconds: 0.0,
-            now: NtpTimestamp::default(),
+            now: Timestamp::from_seconds_nanos_since_unix_epoch(0, 0),
         }
     }
 }
@@ -68,7 +69,7 @@ impl From<&ServerData> for ObservableServerState {
 }
 
 #[instrument(level = tracing::Level::ERROR, skip_all, name = "Observer", fields(path = debug(config.observation_path.clone())))]
-pub fn spawn<C: 'static + NtpClock + Send>(
+pub fn spawn<C: 'static + Clock<TAI> + Send>(
     config: &super::config::ObservabilityConfig,
     sources_reader: Arc<std::sync::RwLock<HashMap<ClockId, ObservableSourceState>>>,
     server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
@@ -90,7 +91,7 @@ pub fn spawn<C: 'static + NtpClock + Send>(
     )
 }
 
-async fn observer<C: 'static + NtpClock + Send>(
+async fn observer<C: 'static + Clock<TAI> + Send>(
     config: super::config::ObservabilityConfig,
     sources_reader: Arc<std::sync::RwLock<HashMap<ClockId, ObservableSourceState>>>,
     server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
@@ -171,7 +172,7 @@ async fn handle_connection(
     sources_reader: &std::sync::RwLock<HashMap<ClockId, ObservableSourceState>>,
     server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
     system_reader: tokio::sync::watch::Receiver<SystemSnapshot>,
-    now: NtpTimestamp,
+    now: Timestamp<TAI>,
 ) -> std::io::Result<()> {
     let observe = ObservableState {
         program: ProgramData::with_dynamics(start_time.elapsed().as_secs_f64(), now),
@@ -196,10 +197,7 @@ mod tests {
     use std::time::Duration;
 
     use ntp_proto::v5::BloomFilter;
-    use ntp_proto::{
-        NtpDuration, NtpLeapIndicator, NtpSnapshot, NtpTimestamp, PollIntervalLimits, Reach,
-        ReferenceId,
-    };
+    use ntp_proto::{NtpSnapshot, PollIntervalLimits, Reach, ReferenceId};
     use statime_base::{LeapStatus, TimeSnapshot, Timestamp};
     use tokio::{io::AsyncReadExt, net::UnixStream};
 
@@ -210,38 +208,46 @@ mod tests {
     #[derive(Debug, Clone, Copy)]
     struct TestClock;
 
-    impl NtpClock for TestClock {
-        type Error = core::convert::Infallible;
-
-        fn now(&self) -> Result<NtpTimestamp, Self::Error> {
-            Ok(NtpTimestamp::default())
+    impl Clock<TAI> for TestClock {
+        fn now(&self) -> Result<Timestamp<TAI>, statime_base::ClockError> {
+            Ok(Timestamp::from_seconds_nanos_since_unix_epoch(0, 0))
         }
 
-        fn set_frequency(&self, _freq: f64) -> Result<NtpTimestamp, Self::Error> {
+        fn set_frequency(&self, _freq: f64) -> Result<Timestamp<TAI>, statime_base::ClockError> {
             unimplemented!()
         }
 
-        fn get_frequency(&self) -> Result<f64, Self::Error> {
-            unimplemented!()
+        fn get_frequency(&self) -> Result<f64, statime_base::ClockError> {
+            Ok(0.0)
         }
 
-        fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
-            unimplemented!()
+        fn max_frequency(&self) -> Result<f64, statime_base::ClockError> {
+            Ok(500e-6)
         }
 
-        fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
+        fn step_clock(
+            &self,
+            _offset: statime_base::Duration,
+        ) -> Result<Timestamp<TAI>, statime_base::ClockError> {
             unimplemented!()
         }
 
         fn error_estimate_update(
             &self,
-            _est_error: NtpDuration,
-            _max_error: NtpDuration,
-        ) -> Result<(), Self::Error> {
+            _est_error: statime_base::Duration,
+            _max_error: statime_base::Duration,
+        ) -> Result<(), statime_base::ClockError> {
             unimplemented!()
         }
 
-        fn status_update(&self, _leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
+        fn leap_update(&self, _leap_status: LeapStatus) -> Result<(), statime_base::ClockError> {
+            unimplemented!()
+        }
+
+        fn synchronization_update(
+            &self,
+            _synchronized: bool,
+        ) -> Result<(), statime_base::ClockError> {
             unimplemented!()
         }
     }

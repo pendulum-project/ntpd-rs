@@ -2,11 +2,10 @@ use std::{borrow::Cow, io::Cursor};
 
 use rand::{Rng, thread_rng};
 use serde::{Deserialize, Serialize};
-use statime_base::LeapStatus;
+use statime_base::{Clock, LeapStatus, TAI};
 
 use crate::{
     MAX_COOKIES, NtpVersion,
-    clock::NtpClock,
     identifiers::ReferenceId,
     io::NonBlockingWrite,
     keyset::{DecodedServerCookie, KeySet},
@@ -255,7 +254,7 @@ impl NtpHeaderV3V4 {
         )
     }
 
-    fn timestamp_response<C: NtpClock>(
+    fn timestamp_response<C: Clock<TAI>>(
         server_info: &NtpServerInfo,
         input: Self,
         recv_timestamp: NtpTimestamp,
@@ -279,7 +278,7 @@ impl NtpHeaderV3V4 {
                 .root_dispersion(recv_timestamp.into())
                 .into(),
             // Timestamp must be last to make it as accurate as possible.
-            transmit_timestamp: clock.now().expect("Failed to read time"),
+            transmit_timestamp: clock.now().expect("Failed to read time").into(),
             leap: if server_info.ntp_snapshot.stratum < 16 {
                 server_info
                     .time_snapshot
@@ -656,7 +655,7 @@ impl<'a> NtpPacket<'a> {
         )
     }
 
-    pub fn timestamp_response<C: NtpClock>(
+    pub fn timestamp_response<C: Clock<TAI>>(
         server_info: NtpServerInfo,
         input: Self,
         recv_timestamp: NtpTimestamp,
@@ -747,7 +746,7 @@ impl<'a> NtpPacket<'a> {
     }
 
     #[allow(clippy::too_many_lines)]
-    pub fn nts_timestamp_response<C: NtpClock>(
+    pub fn nts_timestamp_response<C: Clock<TAI>>(
         server_info: NtpServerInfo,
         input: Self,
         recv_timestamp: NtpTimestamp,
@@ -1389,7 +1388,7 @@ impl Default for NtpPacket<'_> {
     reason = "Long tests are not really a big problem"
 )]
 mod tests {
-    use statime_base::TimeSnapshot;
+    use statime_base::{TimeSnapshot, Timestamp};
 
     use crate::{
         NtpSnapshot, keyset::KeySetProvider, nts::AeadAlgorithm, time_types::PollIntervalLimits,
@@ -1399,42 +1398,50 @@ mod tests {
 
     #[derive(Debug, Clone)]
     struct TestClock {
-        now: NtpTimestamp,
+        now: Timestamp<TAI>,
     }
 
-    impl NtpClock for TestClock {
-        type Error = std::io::Error;
-
-        fn now(&self) -> Result<NtpTimestamp, Self::Error> {
+    impl Clock<TAI> for TestClock {
+        fn now(&self) -> Result<Timestamp<TAI>, statime_base::ClockError> {
             Ok(self.now)
         }
 
-        fn set_frequency(&self, _freq: f64) -> Result<NtpTimestamp, Self::Error> {
-            panic!("Unexpected clock steer");
+        fn set_frequency(&self, _freq: f64) -> Result<Timestamp<TAI>, statime_base::ClockError> {
+            unimplemented!()
         }
 
-        fn get_frequency(&self) -> Result<f64, Self::Error> {
+        fn get_frequency(&self) -> Result<f64, statime_base::ClockError> {
             Ok(0.0)
         }
 
-        fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
-            panic!("Unexpected clock steer");
+        fn max_frequency(&self) -> Result<f64, statime_base::ClockError> {
+            Ok(500e-6)
         }
 
-        fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            panic!("Unexpected clock steer");
+        fn step_clock(
+            &self,
+            _offset: statime_base::Duration,
+        ) -> Result<Timestamp<TAI>, statime_base::ClockError> {
+            unimplemented!()
         }
 
         fn error_estimate_update(
             &self,
-            _est_error: NtpDuration,
-            _max_error: NtpDuration,
-        ) -> Result<(), Self::Error> {
-            panic!("Unexpected clock steer");
+            _est_error: statime_base::Duration,
+            _max_error: statime_base::Duration,
+        ) -> Result<(), statime_base::ClockError> {
+            unimplemented!()
         }
 
-        fn status_update(&self, _leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
-            panic!("Unexpected clock steer");
+        fn leap_update(&self, _leap_status: LeapStatus) -> Result<(), statime_base::ClockError> {
+            unimplemented!()
+        }
+
+        fn synchronization_update(
+            &self,
+            _synchronized: bool,
+        ) -> Result<(), statime_base::ClockError> {
+            unimplemented!()
         }
     }
 
@@ -1723,7 +1730,7 @@ mod tests {
             packet,
             NtpTimestamp::from_fixed_int(0),
             &TestClock {
-                now: NtpTimestamp::from_fixed_int(2),
+                now: NtpTimestamp::from_fixed_int(2).into(),
             },
         );
 
@@ -1778,7 +1785,7 @@ mod tests {
             packet,
             NtpTimestamp::from_fixed_int(0),
             &TestClock {
-                now: NtpTimestamp::from_fixed_int(1),
+                now: NtpTimestamp::from_fixed_int(1).into(),
             },
         );
 
@@ -1830,7 +1837,7 @@ mod tests {
             packet,
             NtpTimestamp::from_fixed_int(0),
             &TestClock {
-                now: NtpTimestamp::from_fixed_int(1),
+                now: NtpTimestamp::from_fixed_int(1).into(),
             },
         );
         let response_id = response
@@ -1879,7 +1886,7 @@ mod tests {
             packet,
             NtpTimestamp::from_fixed_int(0),
             &TestClock {
-                now: NtpTimestamp::from_fixed_int(1),
+                now: NtpTimestamp::from_fixed_int(1).into(),
             },
         );
         let response_id = response
@@ -1923,7 +1930,7 @@ mod tests {
             packet,
             NtpTimestamp::from_fixed_int(0),
             &TestClock {
-                now: NtpTimestamp::from_fixed_int(1),
+                now: NtpTimestamp::from_fixed_int(1).into(),
             },
             &decoded,
             &keysetprovider.get(),
@@ -1961,7 +1968,7 @@ mod tests {
             packet,
             NtpTimestamp::from_fixed_int(0),
             &TestClock {
-                now: NtpTimestamp::from_fixed_int(1),
+                now: NtpTimestamp::from_fixed_int(1).into(),
             },
             &decoded,
             &keysetprovider.get(),
@@ -2007,7 +2014,7 @@ mod tests {
             packet,
             NtpTimestamp::from_fixed_int(0),
             &TestClock {
-                now: NtpTimestamp::from_fixed_int(1),
+                now: NtpTimestamp::from_fixed_int(1).into(),
             },
             &decoded,
             &keysetprovider.get(),
@@ -2021,7 +2028,7 @@ mod tests {
             packet,
             NtpTimestamp::from_fixed_int(0),
             &TestClock {
-                now: NtpTimestamp::from_fixed_int(1),
+                now: NtpTimestamp::from_fixed_int(1).into(),
             },
             &decoded,
             &keysetprovider.get(),
@@ -2035,7 +2042,7 @@ mod tests {
             packet,
             NtpTimestamp::from_fixed_int(0),
             &TestClock {
-                now: NtpTimestamp::from_fixed_int(1),
+                now: NtpTimestamp::from_fixed_int(1).into(),
             },
             &decoded,
             &keysetprovider.get(),
@@ -2049,7 +2056,7 @@ mod tests {
             packet,
             NtpTimestamp::from_fixed_int(0),
             &TestClock {
-                now: NtpTimestamp::from_fixed_int(1),
+                now: NtpTimestamp::from_fixed_int(1).into(),
             },
             &decoded,
             &keysetprovider.get(),

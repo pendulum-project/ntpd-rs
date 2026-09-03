@@ -1,5 +1,4 @@
 use clock_steering::unix::UnixClock;
-use ntp_proto::{NtpClock, NtpTimestamp};
 use statime_base::{Clock, ClockError, Duration, LeapStatus, TAI, UTC};
 
 #[derive(Debug, Clone, Copy)]
@@ -105,86 +104,11 @@ impl Clock<TAI> for NtpClockWrapper {
     }
 }
 
-impl NtpClock for NtpClockWrapper {
-    type Error = ClockError;
-
-    fn now(&self) -> Result<ntp_proto::NtpTimestamp, Self::Error> {
-        match self.0 {
-            NtpClockWrapperInner::Utc(unix_clock) => unix_clock.now().map(NtpTimestamp::from),
-            NtpClockWrapperInner::Tai(unix_clock) => unix_clock.now().map(NtpTimestamp::from),
-        }
-    }
-
-    fn set_frequency(&self, freq: f64) -> Result<ntp_proto::NtpTimestamp, Self::Error> {
-        match self.0 {
-            NtpClockWrapperInner::Utc(unix_clock) => {
-                unix_clock.set_frequency(freq).map(NtpTimestamp::from)
-            }
-            NtpClockWrapperInner::Tai(unix_clock) => {
-                unix_clock.set_frequency(freq).map(NtpTimestamp::from)
-            }
-        }
-    }
-
-    fn get_frequency(&self) -> Result<f64, Self::Error> {
-        match self.0 {
-            NtpClockWrapperInner::Utc(unix_clock) => unix_clock.get_frequency(),
-            NtpClockWrapperInner::Tai(unix_clock) => unix_clock.get_frequency(),
-        }
-    }
-
-    fn step_clock(
-        &self,
-        offset: ntp_proto::NtpDuration,
-    ) -> Result<ntp_proto::NtpTimestamp, Self::Error> {
-        match self.0 {
-            NtpClockWrapperInner::Utc(unix_clock) => unix_clock
-                .step_clock(Duration::from(offset))
-                .map(NtpTimestamp::from),
-            NtpClockWrapperInner::Tai(unix_clock) => unix_clock
-                .step_clock(Duration::from(offset))
-                .map(NtpTimestamp::from),
-        }
-    }
-
-    fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
+impl NtpClockWrapper {
+    pub(crate) fn disable_ntp_algorithm(self) -> Result<(), ClockError> {
         match self.0 {
             NtpClockWrapperInner::Utc(unix_clock) => unix_clock.disable_kernel(),
             NtpClockWrapperInner::Tai(unix_clock) => unix_clock.disable_kernel(),
-        }
-    }
-
-    fn error_estimate_update(
-        &self,
-        est_error: ntp_proto::NtpDuration,
-        max_error: ntp_proto::NtpDuration,
-    ) -> Result<(), Self::Error> {
-        match self.0 {
-            NtpClockWrapperInner::Utc(unix_clock) => {
-                unix_clock.error_estimate_update(est_error.into(), max_error.into())
-            }
-            NtpClockWrapperInner::Tai(unix_clock) => {
-                unix_clock.error_estimate_update(est_error.into(), max_error.into())
-            }
-        }
-    }
-
-    fn status_update(&self, leap_status: ntp_proto::NtpLeapIndicator) -> Result<(), Self::Error> {
-        match leap_status {
-            ntp_proto::NtpLeapIndicator::NoWarning => {
-                self.synchronization_update(true)?;
-                self.leap_update(LeapStatus::None)
-            }
-            ntp_proto::NtpLeapIndicator::Leap61 => {
-                self.synchronization_update(true)?;
-                self.leap_update(LeapStatus::Leap61)
-            }
-            ntp_proto::NtpLeapIndicator::Leap59 => {
-                self.synchronization_update(true)?;
-                self.leap_update(LeapStatus::Leap59)
-            }
-            ntp_proto::NtpLeapIndicator::Unknown => self.synchronization_update(true),
-            ntp_proto::NtpLeapIndicator::Unsynchronized => self.synchronization_update(false),
         }
     }
 }

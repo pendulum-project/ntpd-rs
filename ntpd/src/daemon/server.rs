@@ -6,8 +6,9 @@ use std::{
     time::Duration,
 };
 
-use ntp_proto::{KeySet, NtpClock, Server, ServerReason, ServerResponse, ServerStatHandler};
+use ntp_proto::{KeySet, Server, ServerReason, ServerResponse, ServerStatHandler};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use statime_base::{Clock, TAI};
 use timestamped_socket::socket::{RecvResult, open_ip};
 use tokio::task::JoinHandle;
 use tracing::{Instrument, Span, debug, instrument, warn};
@@ -98,7 +99,7 @@ impl<'de> Deserialize<'de> for Counter {
     }
 }
 
-pub struct ServerTask<C: 'static + NtpClock + Send> {
+pub struct ServerTask<C: 'static + Clock<TAI> + Send> {
     config: ServerConfig,
     network_wait_period: std::time::Duration,
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
@@ -106,7 +107,7 @@ pub struct ServerTask<C: 'static + NtpClock + Send> {
     stats: ServerStats,
 }
 
-impl<C: 'static + NtpClock + Send> ServerTask<C> {
+impl<C: 'static + Clock<TAI> + Send> ServerTask<C> {
     #[instrument(level = tracing::Level::ERROR, name = "Ntp Server", skip_all, fields(address = debug(config.listen)))]
     pub fn spawn(
         server: Server<C>,
@@ -227,56 +228,68 @@ impl<C: 'static + NtpClock + Send> ServerTask<C> {
 
 #[cfg(test)]
 mod tests {
-    use std::{convert::Infallible, io::Cursor, net::SocketAddr};
+    use std::{io::Cursor, net::SocketAddr};
 
     use ntp_proto::{
-        KeySetProvider, NoCipher, NtpDuration, NtpLeapIndicator, NtpPacket, NtpServerInfo,
-        NtpSnapshot, NtpTimestamp, PollIntervalLimits,
+        KeySetProvider, NoCipher, NtpPacket, NtpServerInfo, NtpSnapshot, NtpTimestamp,
+        PollIntervalLimits,
     };
+    use statime_base::Timestamp;
     use timestamped_socket::socket::GeneralTimestampMode;
 
     use crate::test::alloc_port;
 
     use super::*;
 
-    #[derive(Debug, Clone, Default)]
+    #[derive(Debug, Clone)]
     struct TestClock {
-        time: NtpTimestamp,
+        time: Timestamp<TAI>,
     }
 
-    impl NtpClock for TestClock {
-        type Error = Infallible;
-
-        fn now(&self) -> std::result::Result<NtpTimestamp, Self::Error> {
+    impl Clock<TAI> for TestClock {
+        fn now(&self) -> Result<Timestamp<TAI>, statime_base::ClockError> {
             Ok(self.time)
         }
 
-        fn set_frequency(&self, _freq: f64) -> Result<NtpTimestamp, Self::Error> {
-            panic!("Shouldn't be called by source");
+        fn set_frequency(&self, _freq: f64) -> Result<Timestamp<TAI>, statime_base::ClockError> {
+            unimplemented!()
         }
 
-        fn get_frequency(&self) -> Result<f64, Self::Error> {
+        fn get_frequency(&self) -> Result<f64, statime_base::ClockError> {
             Ok(0.0)
         }
 
-        fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
-            panic!("Shouldn't be called by source");
+        fn max_frequency(&self) -> Result<f64, statime_base::ClockError> {
+            Ok(500e-6)
         }
 
-        fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by source");
+        fn step_clock(
+            &self,
+            _offset: statime_base::Duration,
+        ) -> Result<Timestamp<TAI>, statime_base::ClockError> {
+            unimplemented!()
         }
 
         fn error_estimate_update(
             &self,
-            _est_error: NtpDuration,
-            _max_error: NtpDuration,
-        ) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by source");
+            _est_error: statime_base::Duration,
+            _max_error: statime_base::Duration,
+        ) -> Result<(), statime_base::ClockError> {
+            unimplemented!()
         }
 
-        fn status_update(&self, _leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by source");
+        fn leap_update(
+            &self,
+            _leap_status: statime_base::LeapStatus,
+        ) -> Result<(), statime_base::ClockError> {
+            unimplemented!()
+        }
+
+        fn synchronization_update(
+            &self,
+            _synchronized: bool,
+        ) -> Result<(), statime_base::ClockError> {
+            unimplemented!()
         }
     }
 
@@ -296,7 +309,7 @@ mod tests {
         let config = ServerConfig::from(SocketAddr::new("127.0.0.1".parse().unwrap(), port));
 
         let clock = TestClock {
-            time: NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 1000),
+            time: NtpTimestamp::from_seconds_nanos_since_ntp_era(0, 1000).into(),
         };
 
         let server_info = Arc::new(std::sync::RwLock::new(NtpServerInfo {
