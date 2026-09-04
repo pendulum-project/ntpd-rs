@@ -7,7 +7,7 @@
 
 use core::{
     marker::PhantomData,
-    ops::{Add, AddAssign, Div, Mul, MulAssign, Sub, SubAssign},
+    ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
 #[cfg(feature = "serde")]
@@ -216,6 +216,12 @@ impl Duration {
     /// A zero-length duration.
     pub const ZERO: Duration = Duration(0);
 
+    /// Absolute length of the duration, saturated.
+    #[must_use]
+    pub fn abs(self) -> Duration {
+        Self(self.0.saturating_abs())
+    }
+
     /// The length of the duration as a floating point number of seconds.
     ///
     /// Note: Very large durations will loose precision when converted
@@ -309,6 +315,19 @@ impl core::fmt::Debug for Duration {
     }
 }
 
+impl core::fmt::Display for Duration {
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Loss of precision isn't important for debug printing."
+    )]
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_fmt(format_args!(
+            "{}s",
+            ((self.0 as f64) / ((1u128 << 64) as f64))
+        ))
+    }
+}
+
 impl<A> Sub<Timestamp<A>> for Timestamp<A> {
     type Output = Duration;
 
@@ -370,6 +389,14 @@ impl Sub<Duration> for Duration {
 impl SubAssign<Duration> for Duration {
     fn sub_assign(&mut self, rhs: Duration) {
         self.0 = self.0.saturating_sub(rhs.0);
+    }
+}
+
+impl Neg for Duration {
+    type Output = Duration;
+
+    fn neg(self) -> Self::Output {
+        Self(self.0.saturating_neg())
     }
 }
 
