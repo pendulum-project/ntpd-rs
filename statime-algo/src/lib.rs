@@ -114,9 +114,38 @@ impl From<ClockError> for AlgoError {
     }
 }
 
+/// Threshold set for jumps during clock steering.
+#[derive(Debug, Clone, Default)]
+pub struct JumpThreshold {
+    /// Maximum backwards time jump allowed (must be a positive duration).
+    pub backwards: Option<Duration>,
+    /// Maximum forwards time jump allowed (must be a positive duration).
+    pub forwards: Option<Duration>,
+}
+
+impl JumpThreshold {
+    fn is_within(&self, duration: Duration) -> bool {
+        self.forwards.is_none_or(|v| duration < v) && self.backwards.is_none_or(|v| duration > -v)
+    }
+}
+
 /// Configuration for an internal, steered clock
 #[derive(Debug, Clone)]
 pub struct ClockConfig {
+    /// Threshold for a step at startup to trigger a warning.
+    pub startup_jump_warning_threshold: JumpThreshold,
+    /// Threshold for a step at startup to trigger an abort.
+    pub startup_jump_abort_threshold: JumpThreshold,
+    /// Threshold for a single step during normal operation to trigger a warning.
+    pub single_jump_warning_threshold: JumpThreshold,
+    /// Threshold for a single step during normal operation to trigger an abort.
+    pub single_jump_abort_threshold: JumpThreshold,
+    /// Threshold for accumulated steps to trigger a warning.
+    pub accumulated_jump_warning_threshold: Option<Duration>,
+    /// Threshold for accumulated steps to trigger an abort.
+    pub accumulated_jump_abort_threshold: Option<Duration>,
+    /// Threshold on offset uncertainty after which a clock is considered out of startup
+    pub startup_end_threshold: Duration,
     /// How large does the offset need to be before we do a jump?
     pub jump_threshold: Duration,
     /// How large does a jump need to be to happen, relative to the uncertainty
@@ -134,6 +163,13 @@ pub struct ClockConfig {
 impl Default for ClockConfig {
     fn default() -> Self {
         Self {
+            startup_jump_warning_threshold: JumpThreshold::default(),
+            startup_jump_abort_threshold: JumpThreshold::default(),
+            single_jump_warning_threshold: JumpThreshold::default(),
+            single_jump_abort_threshold: JumpThreshold::default(),
+            accumulated_jump_warning_threshold: None,
+            accumulated_jump_abort_threshold: None,
+            startup_end_threshold: Duration::from_seconds_nanos(1, 0),
             jump_threshold: Duration::from_seconds_nanos(10, 0),
             jump_certainty_threshold: 5.0,
             slew_time_constant: Duration::from_seconds_nanos(8, 0),
@@ -156,6 +192,8 @@ mod hidden {
         pub(crate) id: ClockId,
         pub(crate) clock: C,
         pub(crate) config: ClockConfig,
+        pub(crate) in_startup: bool,
+        pub(crate) accumulated_steps: Duration,
     }
 
     /// The main controller struct.
@@ -200,7 +238,14 @@ impl<Storage: KalmanStorage<C>, C: Clock<TAI>> Controller for KalmanController<S
                 config.initial_wander,
             )?;
             state.filter = filter;
-            state.clocks.push(ClockInfo { id, clock, config });
+            state.clocks.push(ClockInfo {
+                id,
+                clock,
+                config,
+                in_startup: true,
+                accumulated_steps: Duration::ZERO,
+            });
+            log::debug!("Created new clock with id {id:?}");
             Ok(id)
         })
     }
@@ -221,7 +266,7 @@ impl<Storage: KalmanStorage<C>, C: Clock<TAI>> Controller for KalmanController<S
             };
             state.filter = state.filter.clone().remove_clock(clock_id)?;
             state.clocks.remove(index);
-
+            log::debug!("Removed clock {clock_id:?}");
             Ok(())
         })
     }
@@ -260,6 +305,8 @@ impl<Storage: KalmanStorage<C>, C: Clock<TAI>> Controller for KalmanController<S
             Ok::<_, AlgoError>(id)
         })?;
 
+        log::debug!("Created tracked link: {link_id:?}");
+
         Ok(KalmanLink {
             link_id,
             controller: this,
@@ -294,6 +341,8 @@ impl<Storage: KalmanStorage<C>, C: Clock<TAI>> Controller for KalmanController<S
 
             Ok::<_, AlgoError>(id)
         })?;
+
+        log::debug!("Created untracked link: {link_id:?}");
 
         Ok(KalmanLink {
             link_id,
@@ -363,7 +412,10 @@ impl<Storage: KalmanStorage<C>, C: Clock<TAI>> KalmanController<Storage, C> {
             id,
             clock: system_clock,
             config: system_clock_config,
+            in_startup: true,
+            accumulated_steps: Duration::ZERO,
         });
+        log::debug!("New controller with system clock {id:?}");
         Ok((
             Self {
                 state: Storage::StateMutex::new(KalmanControllerState {
@@ -397,6 +449,93 @@ impl<Storage: KalmanStorage<C>, C: Clock<TAI>> KalmanController<Storage, C> {
     }
 }
 
+/// Exitcode used
+#[cfg(feature = "std")]
+const EXITCODE_SOFTWARE: i32 = 70;
+
+impl<C> ClockInfo<C> {
+    fn check_jump(&mut self, step: Duration) {
+        if self.in_startup {
+            let warn = !self.config.startup_jump_warning_threshold.is_within(step);
+            let abort = !self.config.startup_jump_abort_threshold.is_within(step);
+
+            if abort {
+                log::error!(
+                    "Jump on clock {clock:?} during startup too big: {step}, aborting.",
+                    clock = self.id
+                );
+                #[cfg(feature = "std")]
+                std::process::exit(EXITCODE_SOFTWARE);
+                #[cfg(not(feature = "std"))]
+                panic!("Aborting due to excessive clock jump.");
+            } else if warn {
+                log::warn!(
+                    "Large jump on clock {clock:?} during startup: {step}.",
+                    clock = self.id
+                );
+            }
+        } else {
+            let warn_instant = !self.config.single_jump_warning_threshold.is_within(step);
+            let abort_instant = !self.config.single_jump_abort_threshold.is_within(step);
+
+            let old_accumulated_steps = self.accumulated_steps;
+            self.accumulated_steps += step.abs();
+
+            let warn_accumulated =
+                self.config
+                    .accumulated_jump_warning_threshold
+                    .is_some_and(|threshold| {
+                        old_accumulated_steps < threshold && self.accumulated_steps >= threshold
+                    });
+            let abort_accumulated = self
+                .config
+                .accumulated_jump_abort_threshold
+                .is_some_and(|threshold| self.accumulated_steps >= threshold);
+
+            if abort_instant {
+                log::error!(
+                    "Jump on clock {clock:?} too big: {step}, aborting.",
+                    clock = self.id
+                );
+                #[cfg(feature = "std")]
+                std::process::exit(EXITCODE_SOFTWARE);
+                #[cfg(not(feature = "std"))]
+                panic!("Aborting due to excessive clock jump.");
+            } else if abort_accumulated {
+                log::error!(
+                    "Total amount jumped on clock {clock:?} too big: {total_steps}, aborting.",
+                    clock = self.id,
+                    total_steps = self.accumulated_steps
+                );
+                #[cfg(feature = "std")]
+                std::process::exit(EXITCODE_SOFTWARE);
+                #[cfg(not(feature = "std"))]
+                panic!("Aborting due to excessive clock jump.");
+            } else if warn_instant {
+                log::warn!("Large jump on clock {clock:?}: {step}.", clock = self.id);
+            } else if warn_accumulated {
+                if self.config.accumulated_jump_abort_threshold.is_some() {
+                    log::warn!(
+                        "Large total amount of jumping on clock {clock:?}: {total_steps}, an abort can occur if jumping continues.",
+                        clock = self.id,
+                        total_steps = self.accumulated_steps
+                    );
+                } else {
+                    log::warn!(
+                        "Large total amount of jumping on clock {clock:?}: {total_steps}. (Note: this warning can trigger multiple times, the amount jumped is reset after each warning)",
+                        clock = self.id,
+                        total_steps = self.accumulated_steps,
+                    );
+                    self.accumulated_steps = Duration::ZERO;
+                }
+            }
+        }
+
+        // We have jumped, and so definitionally are out of startup.
+        self.in_startup = false;
+    }
+}
+
 impl<Storage: KalmanStorageInternal<C>, C: Clock<TAI>> KalmanControllerState<Storage, C> {
     fn steer_clocks(&mut self) -> Result<(), AlgoError> {
         let mut filter = self
@@ -417,9 +556,13 @@ impl<Storage: KalmanStorageInternal<C>, C: Clock<TAI>> KalmanControllerState<Sto
             if offset > clock_info.config.jump_threshold.as_seconds()
                 && offset > clock_info.config.jump_certainty_threshold * offset_uncertainty
             {
-                clock_info
-                    .clock
-                    .step_clock(Duration::from_f64_seconds(-offset))?;
+                let step = Duration::from_f64_seconds(-offset);
+                clock_info.check_jump(step);
+                log::trace!(
+                    "Clock {:?}: {offset} +- {offset_uncertainty} (jumping {step})",
+                    clock_info.id
+                );
+                clock_info.clock.step_clock(step)?;
                 if index == 0 {
                     filter = filter.absorb_system_clock_offset_change(
                         clock_info.id,
@@ -429,7 +572,8 @@ impl<Storage: KalmanStorageInternal<C>, C: Clock<TAI>> KalmanControllerState<Sto
                     filter = filter.absorb_offset_change(clock_info.id, -offset)?;
                 }
             } else {
-                let frequency = self.filter.clock_frequency(clock_info.id)?.value;
+                let frequence_data = self.filter.clock_frequency(clock_info.id)?;
+                let frequency = frequence_data.value;
 
                 let cur_frequency_steer = clock_info.clock.get_frequency()?;
                 let max_frequency_steer = clock_info.clock.max_frequency()?;
@@ -442,11 +586,23 @@ impl<Storage: KalmanStorageInternal<C>, C: Clock<TAI>> KalmanControllerState<Sto
                     wanted_frequency_steer.clamp(-max_frequency_steer, max_frequency_steer);
                 // FIXME: Warn here on repeated clamping.
 
+                log::trace!(
+                    "Clock {:?}: {offset} +- {offset_uncertainty} ({frequency} +- {} s/s, steer: {actual_frequency_steer}, wants {wanted_frequency_steer})",
+                    clock_info.id,
+                    frequence_data.uncertainty()
+                );
+
                 clock_info.clock.set_frequency(actual_frequency_steer)?;
                 filter = filter.absorb_frequency_steer(
                     clock_info.id,
                     actual_frequency_steer - cur_frequency_steer,
                 )?;
+            }
+
+            if clock_info.in_startup
+                && offset_uncertainty < clock_info.config.startup_end_threshold.as_seconds()
+            {
+                clock_info.in_startup = false;
             }
 
             if let Some(leap_status) = self.leap_status {
@@ -491,8 +647,8 @@ impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<
         self.controller.as_ref().state.with_mut(|state| {
             match state.filter.clone().remove_link(self.link_id) {
                 Ok(filter) => state.filter = filter,
-                Err(_err) => {
-                    // FIXME: log this here, as there is no other way to handle this.
+                Err(error) => {
+                    log::warn!("Internal error, please open a bug report: Could not properly dispose of link: {error:?}");
                 }
             }
         });
@@ -511,6 +667,11 @@ impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<
     /// from unexpected behavior of the underlying clock.
     fn measurement(&self, measurement: Measurement, direction: Direction) -> Result<(), AlgoError> {
         self.controller.as_ref().state.with_mut(|state| {
+            log::debug!(
+                "New measurement on link {:?} {direction:?}: {measurement:?}",
+                self.link_id
+            );
+
             state.filter = state
                 .filter
                 .clone()
