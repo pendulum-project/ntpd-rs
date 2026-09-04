@@ -34,8 +34,6 @@
 #[cfg(not(any(feature = "rustcrypto", feature = "openssl")))]
 compile_error!("A crypto provider is needed, use '--features rustcrypto' or '--features openssl'");
 
-mod algorithm;
-mod clock;
 mod config;
 mod cookiestash;
 mod identifiers;
@@ -133,10 +131,6 @@ impl std::fmt::Display for ClockId {
 }
 
 mod exports {
-    pub use super::algorithm::{
-        Measurement, ObservableSourceTimedata, SourceController, StatimeBaseWrapper,
-    };
-    pub use super::clock::NtpClock;
     pub use super::config::{SourceConfig, StepThreshold, SynchronizationConfig};
     pub use super::identifiers::ReferenceId;
     #[cfg(feature = "__internal-fuzz")]
@@ -145,12 +139,11 @@ mod exports {
 
     #[cfg(feature = "__internal-fuzz")]
     pub use super::keyset::test_cookie;
-    #[cfg(feature = "__internal-fuzz")]
-    pub use super::packet::ExtensionField;
     pub use super::packet::{
-        Cipher, CipherProvider, EncryptResult, ExtensionHeaderVersion, NoCipher,
-        NtpAssociationMode, NtpLeapIndicator, NtpPacket, PacketParsingError,
+        Cipher, CipherProvider, EncryptResult, NoCipher, NtpPacket, PacketParsingError,
     };
+    #[cfg(feature = "__internal-fuzz")]
+    pub use super::packet::{ExtensionField, ExtensionHeaderVersion};
     #[cfg(feature = "__internal-fuzz")]
     pub use super::server::HandleInnerData;
     pub use super::server::{
@@ -167,7 +160,7 @@ mod exports {
 
     #[cfg(feature = "__internal-fuzz")]
     pub use super::time_types::fuzz_duration_from_seconds;
-    pub use super::time_types::{NtpDuration, NtpTimestamp, PollInterval, PollIntervalLimits};
+    pub use super::time_types::{NtpDuration, PollInterval, PollIntervalLimits};
 
     #[cfg(feature = "__internal-fuzz")]
     pub use super::nts::Request as KeyExchangeRequest;

@@ -266,7 +266,7 @@ fn print_state_plain(output: &ObservableState) {
         output
             .system
             .time_snapshot
-            .root_dispersion(output.program.now.into())
+            .root_dispersion(output.program.now)
             .as_seconds(),
     );
     println!(
@@ -287,26 +287,26 @@ fn print_state_plain(output: &ObservableState) {
             source.nts_cookies.map_or("", |_| " [NTS]"),
             source.id,
         );
-        println!("\tOffset:\t\t\t{:+.6}", source.timedata.offset.to_seconds());
+        /*println!("\tOffset:\t\t\t{:+.6}", source.timedata.offset.to_seconds());
         println!(
             "\tUncertainty:\t\t±{:.6}",
             source.timedata.uncertainty.to_seconds()
         );
-        println!("\tDelay:\t\t\t±{:.6}", source.timedata.delay.to_seconds());
+        println!("\tDelay:\t\t\t±{:.6}", source.timedata.delay.to_seconds());*/
 
         println!(
             "\tPoll interval:\t\t{:.0}s",
             source.poll_interval.as_duration().to_seconds(),
         );
         println!("\tMissing polls:\t\t{}", source.unanswered_polls,);
-        println!(
+        /*println!(
             "\tRoot dispersion:\t{:.6}s",
             source.timedata.remote_uncertainty.to_seconds(),
         );
         println!(
             "\tRoot delay:\t\t{:.6}s",
             source.timedata.remote_delay.to_seconds()
-        );
+        );*/
         if let Some(nts_cookies) = source.nts_cookies {
             println!(
                 "\tNTS cookies:\t\t{}/{} available",

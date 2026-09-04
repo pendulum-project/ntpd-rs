@@ -1,11 +1,13 @@
 #![warn(clippy::missing_const_for_fn)]
 use crate::{
-    NtpClock, NtpLeapIndicator, PollInterval,
+    PollInterval,
     io::NonBlockingWrite,
+    packet::NtpLeapIndicator,
     system::NtpServerInfo,
     time_types::{NtpDuration, NtpTimestamp},
 };
 use rand::random;
+use statime_base::{Clock, TAI};
 
 mod error;
 pub mod extension_fields;
@@ -187,7 +189,7 @@ impl NtpHeaderV5 {
         }
     }
 
-    pub(crate) fn timestamp_response<C: NtpClock>(
+    pub(crate) fn timestamp_response<C: Clock<TAI>>(
         server_info: &NtpServerInfo,
         input: Self,
         recv_timestamp: NtpTimestamp,
@@ -221,7 +223,7 @@ impl NtpHeaderV5 {
             server_cookie: NtpServerCookie::new_random(),
             client_cookie: input.client_cookie,
             receive_timestamp: recv_timestamp,
-            transmit_timestamp: clock.now().expect("Failed to read time"),
+            transmit_timestamp: clock.now().expect("Failed to read time").into(),
         }
     }
 

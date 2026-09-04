@@ -2,11 +2,8 @@ use std::{
     collections::HashMap, future::Future, marker::PhantomData, net::SocketAddr, pin::Pin, sync::Arc,
 };
 
-use ntp_proto::{
-    ClockId, NtpClock, NtpSource, NtpSourceActionIterator, NtpTimestamp, ObservableSourceState,
-    SourceController,
-};
-use statime_base::LinkId;
+use ntp_proto::{ClockId, NtpSource, NtpSourceActionIterator, ObservableSourceState};
+use statime_base::{Clock, Link, LinkId, TAI, Timestamp};
 #[cfg(target_os = "linux")]
 use timestamped_socket::socket::open_interface_udp;
 use timestamped_socket::{
@@ -46,7 +43,7 @@ pub struct SourceChannels {
     pub source_snapshots: Arc<std::sync::RwLock<HashMap<ClockId, ObservableSourceState>>>,
 }
 
-pub(crate) struct SourceTask<C: 'static + NtpClock + Send, Controller: SourceController, T: Wait> {
+pub(crate) struct SourceTask<C: 'static + Clock<TAI> + Send, Controller: Link, T: Wait> {
     _wait: PhantomData<T>,
     index: ClockId,
     link_id: LinkId,
@@ -65,7 +62,7 @@ pub(crate) struct SourceTask<C: 'static + NtpClock + Send, Controller: SourceCon
     // garbage data in the origin_timestamp field, and we need to track and pass along the
     // actual origin timestamp ourselves.
     /// Timestamp of the last packet that we sent
-    last_send_timestamp: Option<NtpTimestamp>,
+    last_send_timestamp: Option<Timestamp<TAI>>,
 }
 
 #[derive(Debug)]
@@ -74,9 +71,9 @@ enum SocketResult {
     Abort,
 }
 
-impl<C, Controller: SourceController, T> SourceTask<C, Controller, T>
+impl<C, Controller: Link, T> SourceTask<C, Controller, T>
 where
-    C: 'static + NtpClock + Send + Sync,
+    C: 'static + Clock<TAI> + Send + Sync,
     T: Wait,
 {
     fn setup_socket(&mut self) -> SocketResult {
@@ -236,7 +233,7 @@ where
                                 // update the last_send_timestamp with the one given by the kernel, if available
                                 self.last_send_timestamp = opt_send_timestamp
                                     .selected_timestamp()
-                                    .map(|ts| ts.as_tai(37).into())
+                                    .map(|ts| ts.as_tai(37))
                                     .or(self.last_send_timestamp);
                             }
                         }
@@ -279,9 +276,9 @@ where
     }
 }
 
-impl<C, Controller: SourceController> SourceTask<C, Controller, Sleep>
+impl<C, Controller: Link + Send + 'static> SourceTask<C, Controller, Sleep>
 where
-    C: 'static + NtpClock + Send + Sync,
+    C: 'static + Clock<TAI> + Send + Sync,
 {
     #[expect(clippy::too_many_arguments)]
     #[instrument(level = tracing::Level::ERROR, name = "Ntp Source", skip(timestamp_mode, clock, channels, source, initial_actions))]
@@ -343,12 +340,12 @@ where
 
 #[derive(Debug)]
 enum AcceptResult<'a> {
-    Accept(&'a [u8], NtpTimestamp),
+    Accept(&'a [u8], Timestamp<TAI>),
     Ignore,
     NetworkGone,
 }
 
-fn accept_packet<'a, C: NtpClock>(
+fn accept_packet<'a, C: Clock<TAI>>(
     result: Result<RecvResult<SocketAddr>, std::io::Error>,
     buf: &'a [u8],
     clock: &C,
@@ -369,7 +366,7 @@ fn accept_packet<'a, C: NtpClock>(
                         panic!("Received packet without timestamp and couldn't substitute");
                     }
                 },
-                |ts| ts.as_tai(37).into(),
+                |ts| ts.as_tai(37),
             );
 
             // Note: packets are allowed to be bigger when including extensions.
@@ -407,17 +404,14 @@ mod tests {
     };
 
     use ntp_proto::{
-        NoCipher, NtpDuration, NtpLeapIndicator, NtpManager, NtpPacket, NtpServerInfo,
-        ObservableSourceTimedata, PollInterval, ProtocolVersion, SourceConfig,
+        NoCipher, NtpManager, NtpPacket, NtpServerInfo, ProtocolVersion, SourceConfig,
         SynchronizationConfig,
     };
-    use statime_base::{LeapStatus, TimeSnapshot};
+    use statime_base::{ClockError, LeapStatus, TimeSnapshot};
     use timestamped_socket::socket::{GeneralTimestampMode, Open, open_ip};
     use tokio::sync::mpsc;
 
     use crate::test::alloc_port;
-
-    const EPOCH_OFFSET: u32 = (70 * 365 + 17) * 86400;
 
     use super::*;
 
@@ -493,64 +487,93 @@ mod tests {
     #[derive(Debug, Clone, Default)]
     struct TestClock {}
 
-    impl NtpClock for TestClock {
-        type Error = std::time::SystemTimeError;
+    impl Clock<TAI> for TestClock {
+        fn now(&self) -> Result<Timestamp<TAI>, statime_base::ClockError> {
+            let cur = std::time::SystemTime::now()
+                .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                .map_err(|_| ClockError::Unknown)?;
 
-        fn now(&self) -> std::result::Result<NtpTimestamp, Self::Error> {
-            let cur =
-                std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH)?;
-
-            Ok(NtpTimestamp::from_seconds_nanos_since_ntp_era(
-                EPOCH_OFFSET.wrapping_add(cur.as_secs() as u32),
+            Ok(Timestamp::from_seconds_nanos_since_unix_epoch(
+                cur.as_secs(),
                 cur.subsec_nanos(),
             ))
         }
 
-        fn set_frequency(&self, _freq: f64) -> Result<NtpTimestamp, Self::Error> {
-            self.now()
-            //ignore
+        fn set_frequency(&self, _freq: f64) -> Result<Timestamp<TAI>, statime_base::ClockError> {
+            unimplemented!()
         }
 
-        fn get_frequency(&self) -> Result<f64, Self::Error> {
+        fn get_frequency(&self) -> Result<f64, statime_base::ClockError> {
             Ok(0.0)
         }
 
-        fn step_clock(&self, _offset: NtpDuration) -> Result<NtpTimestamp, Self::Error> {
-            panic!("Shouldn't be called by source");
+        fn max_frequency(&self) -> Result<f64, statime_base::ClockError> {
+            Ok(500e-6)
         }
 
-        fn disable_ntp_algorithm(&self) -> Result<(), Self::Error> {
-            Ok(())
-            //ignore
+        fn step_clock(
+            &self,
+            _offset: statime_base::Duration,
+        ) -> Result<Timestamp<TAI>, statime_base::ClockError> {
+            unimplemented!()
         }
 
         fn error_estimate_update(
             &self,
-            _est_error: NtpDuration,
-            _max_error: NtpDuration,
-        ) -> Result<(), Self::Error> {
-            panic!("Shouldn't be called by source");
+            _est_error: statime_base::Duration,
+            _max_error: statime_base::Duration,
+        ) -> Result<(), statime_base::ClockError> {
+            unimplemented!()
         }
 
-        fn status_update(&self, _leap_status: NtpLeapIndicator) -> Result<(), Self::Error> {
-            Ok(())
-            //ignore
+        fn leap_update(&self, _leap_status: LeapStatus) -> Result<(), statime_base::ClockError> {
+            unimplemented!()
+        }
+
+        fn synchronization_update(
+            &self,
+            _synchronized: bool,
+        ) -> Result<(), statime_base::ClockError> {
+            unimplemented!()
         }
     }
 
     struct TestController;
 
-    impl SourceController for TestController {
-        fn handle_measurement(&mut self, _measurement: ntp_proto::Measurement) {}
+    impl Link for TestController {
+        type Error = std::convert::Infallible;
 
-        fn set_usable(&mut self, _usable: bool) {}
-
-        fn desired_poll_interval(&self) -> ntp_proto::PollInterval {
-            PollInterval::default()
+        fn measurement(
+            &self,
+            _measurement: statime_base::Measurement,
+            _direction: statime_base::Direction,
+        ) -> Result<(), Self::Error> {
+            Ok(())
         }
 
-        fn observe(&self) -> ntp_proto::ObservableSourceTimedata {
-            ObservableSourceTimedata::default()
+        fn external_data_update(
+            &self,
+            _root_delay: statime_base::Duration,
+            _leap_status: Option<LeapStatus>,
+            _usable: bool,
+        ) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn active(&self) -> Result<bool, Self::Error> {
+            unimplemented!()
+        }
+
+        fn importance(&self) -> Result<Option<f64>, Self::Error> {
+            unimplemented!()
+        }
+
+        fn desired_poll_interval(&self) -> Result<statime_base::Duration, Self::Error> {
+            Ok(statime_base::Duration::from_seconds_nanos(16, 0))
+        }
+
+        fn id(&self) -> LinkId {
+            unimplemented!()
         }
     }
 
@@ -581,7 +604,6 @@ mod tests {
             ProtocolVersion::V4,
             TestController,
             None,
-            index,
             link_id,
         );
 
@@ -671,12 +693,8 @@ mod tests {
         let timestamp = timestamp_data.selected_timestamp().unwrap();
 
         let rec_packet = NtpPacket::deserialize(&buf, &NoCipher).unwrap().0;
-        let send_packet = NtpPacket::timestamp_response(
-            server_info,
-            rec_packet,
-            timestamp.as_tai(37).into(),
-            &clock,
-        );
+        let send_packet =
+            NtpPacket::timestamp_response(server_info, rec_packet, timestamp.as_tai(37), &clock);
 
         let serialized = serialize_packet_unencrypted(&send_packet);
         socket.send_to(&serialized, remote_addr).await.unwrap();

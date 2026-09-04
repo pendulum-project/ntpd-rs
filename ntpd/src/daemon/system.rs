@@ -31,8 +31,8 @@ use std::{
 };
 
 use ntp_proto::{
-    ClockId, KeySet, NtpClock, NtpManager, ObservableSourceState, SourceConfig, StatimeBaseWrapper,
-    SynchronizationConfig, SystemSnapshot,
+    ClockId, KeySet, NtpManager, ObservableSourceState, SourceConfig, SynchronizationConfig,
+    SystemSnapshot,
 };
 use statime_algo::LinkConfig;
 #[cfg(feature = "pps")]
@@ -549,8 +549,6 @@ where
         match params {
             SourceCreateParameters::Ntp(ref mut params) => {
                 let link_id = source_controller.id();
-                let source_controller =
-                    StatimeBaseWrapper::new(source_controller, params.config.poll_interval_limits);
 
                 let (source, initial_actions) = self.ntp_manager.new_source(
                     params.addr,
@@ -558,7 +556,6 @@ where
                     params.protocol_version,
                     source_controller,
                     params.nts.take(),
-                    source_id,
                     link_id,
                 );
 
