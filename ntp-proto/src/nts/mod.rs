@@ -336,9 +336,10 @@ pub struct KeyExchangeClient {
 impl KeyExchangeClient {
     pub fn new(config: &NtsClientConfig) -> Result<Self, NtsError> {
         let builder = tls_utils::client_config_builder_with_protocol_versions(&[&TLS13]);
-        let verifier =
-            tls_utils::PlatformVerifier::new_with_extra_roots(config.certificates.iter().cloned())?
-                .with_provider(builder.crypto_provider().clone());
+        let verifier = tls_utils::PlatformVerifier::new_with_extra_roots(
+            config.certificates.iter().cloned(),
+            builder.crypto_provider().clone(),
+        )?;
         let mut tls_config = builder
             .dangerous()
             .with_custom_certificate_verifier(Arc::new(verifier))
@@ -1267,10 +1268,11 @@ mod tests {
             .unwrap();
 
             let builder = tls_utils::client_config_builder_with_protocol_versions(&[&TLS13]);
-            let verifier =
-                tls_utils::PlatformVerifier::new_with_extra_roots(certificates.iter().cloned())
-                    .unwrap()
-                    .with_provider(builder.crypto_provider().clone());
+            let verifier = tls_utils::PlatformVerifier::new_with_extra_roots(
+                certificates.iter().cloned(),
+                builder.crypto_provider().clone(),
+            )
+            .unwrap();
             let mut tls_config = builder
                 .dangerous()
                 .with_custom_certificate_verifier(Arc::new(verifier))
@@ -1373,10 +1375,11 @@ mod tests {
             .unwrap();
 
             let builder = tls_utils::client_config_builder_with_protocol_versions(&[&TLS13]);
-            let verifier =
-                tls_utils::PlatformVerifier::new_with_extra_roots(certificates.iter().cloned())
-                    .unwrap()
-                    .with_provider(builder.crypto_provider().clone());
+            let verifier = tls_utils::PlatformVerifier::new_with_extra_roots(
+                certificates.iter().cloned(),
+                builder.crypto_provider().clone(),
+            )
+            .unwrap();
             let mut tls_config = builder
                 .dangerous()
                 .with_custom_certificate_verifier(Arc::new(verifier))
@@ -1498,10 +1501,11 @@ mod tests {
             .unwrap();
 
             let builder = tls_utils::client_config_builder_with_protocol_versions(&[&TLS13]);
-            let verifier =
-                tls_utils::PlatformVerifier::new_with_extra_roots(certificates.iter().cloned())
-                    .unwrap()
-                    .with_provider(builder.crypto_provider().clone());
+            let verifier = tls_utils::PlatformVerifier::new_with_extra_roots(
+                certificates.iter().cloned(),
+                builder.crypto_provider().clone(),
+            )
+            .unwrap();
             let mut tls_config = builder
                 .dangerous()
                 .with_custom_certificate_verifier(Arc::new(verifier))
@@ -1595,10 +1599,11 @@ mod tests {
             .unwrap();
 
             let builder = tls_utils::client_config_builder_with_protocol_versions(&[&TLS13]);
-            let verifier =
-                tls_utils::PlatformVerifier::new_with_extra_roots(certificates.iter().cloned())
-                    .unwrap()
-                    .with_provider(builder.crypto_provider().clone());
+            let verifier = tls_utils::PlatformVerifier::new_with_extra_roots(
+                certificates.iter().cloned(),
+                builder.crypto_provider().clone(),
+            )
+            .unwrap();
             let mut tls_config = builder
                 .dangerous()
                 .with_custom_certificate_verifier(Arc::new(verifier))
@@ -1680,10 +1685,11 @@ mod tests {
             .unwrap();
 
             let builder = tls_utils::client_config_builder_with_protocol_versions(&[&TLS13]);
-            let verifier =
-                tls_utils::PlatformVerifier::new_with_extra_roots(certificates.iter().cloned())
-                    .unwrap()
-                    .with_provider(builder.crypto_provider().clone());
+            let verifier = tls_utils::PlatformVerifier::new_with_extra_roots(
+                certificates.iter().cloned(),
+                builder.crypto_provider().clone(),
+            )
+            .unwrap();
             let mut tls_config = builder
                 .dangerous()
                 .with_custom_certificate_verifier(Arc::new(verifier))
@@ -1761,10 +1767,11 @@ mod tests {
             .unwrap();
 
             let builder = tls_utils::client_config_builder_with_protocol_versions(&[&TLS13]);
-            let verifier =
-                tls_utils::PlatformVerifier::new_with_extra_roots(certificates.iter().cloned())
-                    .unwrap()
-                    .with_provider(builder.crypto_provider().clone());
+            let verifier = tls_utils::PlatformVerifier::new_with_extra_roots(
+                certificates.iter().cloned(),
+                builder.crypto_provider().clone(),
+            )
+            .unwrap();
             let mut tls_config = builder
                 .dangerous()
                 .with_custom_certificate_verifier(Arc::new(verifier))
