@@ -321,8 +321,10 @@ where
         });
 
         let controller_run = async {
-            controller_run.await;
-            Ok(())
+            controller_run.await.map_err(|e| {
+                Box::new(std::io::Error::other(format!("{e:?}")))
+                    as Box<dyn std::error::Error + Send>
+            })
         };
 
         let sender = self.system_snapshot_sender.clone();
