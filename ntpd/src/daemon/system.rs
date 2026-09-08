@@ -72,7 +72,10 @@ pub async fn spawn<Controller: StdController<LinkConfig = LinkConfig> + Sync + S
     #[cfg(target_os = "linux")] csptp_server_configs: &[crate::daemon::config::CsptpServerConfig],
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
     #[cfg(target_os = "linux")] csptp_config: CsptpConfig,
-) -> std::io::Result<(JoinHandle<std::io::Result<()>>, DaemonChannels)>
+) -> std::io::Result<(
+    JoinHandle<Result<(), Box<dyn std::error::Error + Send>>>,
+    DaemonChannels,
+)>
 where
     Controller::Link<Arc<Controller>>: Send,
 {
@@ -312,10 +315,15 @@ where
         id
     }
 
-    async fn run(&mut self) -> std::io::Result<()> {
+    async fn run(&mut self) -> Result<(), Box<dyn std::error::Error + Send>> {
         let controller_run = Controller::run(self.controller.clone(), |duration| {
             tokio::time::sleep(duration)
         });
+
+        let controller_run = async {
+            controller_run.await;
+            Ok(())
+        };
 
         let sender = self.system_snapshot_sender.clone();
         let controller = self.controller.clone();
@@ -360,6 +368,9 @@ where
 
                 tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
             }
+
+            #[expect(unreachable_code, reason = "Needed for type inference.")]
+            Ok(())
         };
 
         let ntp_manager = self.ntp_manager.clone();
@@ -374,7 +385,7 @@ where
                             }
                             Some(msg_for_system) => {
                                 self.handle_source_update(msg_for_system)
-                                    .await?;
+                                    .await.map_err(Box::new).map_err(|v| v as Box<dyn std::error::Error + Send>)?;
                             }
                         }
                     }
@@ -401,7 +412,7 @@ where
             Ok(())
         };
 
-        tokio::join!(event_loop, timer_loop, controller_run).0
+        tokio::try_join!(event_loop, timer_loop, controller_run).map(|_| ())
     }
 
     async fn handle_source_update(&mut self, msg: MsgForSystem) -> std::io::Result<()> {
