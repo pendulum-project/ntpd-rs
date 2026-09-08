@@ -53,7 +53,7 @@ pub fn main() -> Result<(), Box<dyn Error>> {
         config::NtpDaemonAction::Version => {
             eprintln!("ntp-daemon {VERSION}");
         }
-        config::NtpDaemonAction::Run => run(&options)?,
+        config::NtpDaemonAction::Run => run(&options).map_err(|e| e as Box<dyn Error>)?,
     }
 
     Ok(())
@@ -202,7 +202,10 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
 
         let _ = notify_ready().await;
 
-        Ok(main_loop_handle.await??)
+        main_loop_handle
+            .await
+            .map_err(|e| Box::new(e) as Box<dyn Error>)?
+            .map_err(|e| e as Box<dyn Error>)
     })
 }
 
