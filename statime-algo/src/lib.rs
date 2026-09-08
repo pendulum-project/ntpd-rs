@@ -686,7 +686,6 @@ impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<
                 },
                 state.clocks[0].id,
             )?;
-            state.steer_clocks()?;
             Ok(())
         })
     }
