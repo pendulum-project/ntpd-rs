@@ -36,6 +36,15 @@ impl<Storage> Matrix<Storage> {
 }
 
 impl<Storage: MatrixStorage> Matrix<Storage> {
+    /// Check whether there are NaNs in the valid part of the matrix.
+    pub(crate) fn contains_nan(&self) -> bool {
+        self.storage
+            .as_ref()
+            .iter()
+            .take(self.cols * self.rows)
+            .any(|v| v.is_nan())
+    }
+
     /// Create a new matrix, filling the values of the cells using the provided function.
     pub fn new(rows: usize, cols: usize, mut values: impl FnMut(usize, usize) -> f64) -> Self {
         Matrix {

@@ -1406,7 +1406,7 @@ mod tests {
         let filter = filter
             .external_data_update(link_1, 0.1, None, true)
             .unwrap()
-            .measurement(&config, link_1.forward(), (0.0, 0.0).into(), clock_int)
+            .measurement(&config, link_1.forward(), (0.0, 1e-4).into(), clock_int)
             .unwrap();
 
         assert!(filter.link_active(link_1).unwrap());
@@ -1421,7 +1421,7 @@ mod tests {
         let filter = filter
             .external_data_update(link_1, 0.1, None, false)
             .unwrap()
-            .measurement(&config, link_1.forward(), (0.0, 0.0).into(), clock_int)
+            .measurement(&config, link_1.forward(), (0.0, 1e-4).into(), clock_int)
             .unwrap();
 
         assert!(!filter.link_active(link_1).unwrap());
