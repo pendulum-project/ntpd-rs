@@ -100,6 +100,8 @@ pub enum AlgoError {
     NotEnoughMeasurements(LinkId),
     /// Clock is in use in the given link and cannot be removed
     ClockInUse(ClockId, LinkId),
+    /// Something went wrong with the calculations in the filter.
+    InternalError,
 }
 
 impl From<MatrixError> for AlgoError {

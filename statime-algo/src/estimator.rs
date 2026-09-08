@@ -314,7 +314,7 @@ impl<Storage: KalmanStorageBase> EstimatorState<Storage> {
         self.state = &update * &self.state;
         self.uncertainty = &update * &self.uncertainty * update.transpose() + noise;
 
-        Ok(self)
+        self.validate_state()
     }
 
     /// Absorb a change in frequency of a clock.
@@ -331,7 +331,7 @@ impl<Storage: KalmanStorageBase> EstimatorState<Storage> {
         let clock_info = self.get_clock_info(steered_clock)?;
         let frequency_index = clock_info.frequency_index();
         self.state[(frequency_index, 0)] += frequency_change;
-        Ok(self)
+        self.validate_state()
     }
 
     /// Absorb a step change in the phase of a clock.
@@ -348,7 +348,7 @@ impl<Storage: KalmanStorageBase> EstimatorState<Storage> {
         let clock_info = self.get_clock_info(steered_clock)?;
         let offset_index = clock_info.offset_index();
         self.state[(offset_index, 0)] += offset_change;
-        Ok(self)
+        self.validate_state()
     }
 
     /// Absorb a step change in the phase of a clock which is also used for the estimator time.
@@ -366,7 +366,7 @@ impl<Storage: KalmanStorageBase> EstimatorState<Storage> {
         let offset_index = clock_info.offset_index();
         self.state[(offset_index, 0)] += offset_change.as_seconds();
         self.time += offset_change;
-        Ok(self)
+        self.validate_state()
     }
 
     /// Predicted the outcome of a measurement on the given link in the given
@@ -446,7 +446,7 @@ impl<Storage: KalmanStorageBase> EstimatorState<Storage> {
         let clock_info = self.get_clock_info(system_clock)?;
         let importance_contrib = update_strength[(clock_info.offset_index(), 0)].abs();
 
-        Ok((self, importance_contrib))
+        Ok((self.validate_state()?, importance_contrib))
     }
 
     /// Provides the matrix that projects the state and uncertainty matrices to a
@@ -542,7 +542,7 @@ impl<Storage: KalmanStorageBase> EstimatorState<Storage> {
             [0.0, initial_frequency.variance],
         ]);
 
-        Ok(self)
+        self.validate_state()
     }
 
     /// Remove a clock from the estimator state.
@@ -559,7 +559,7 @@ impl<Storage: KalmanStorageBase> EstimatorState<Storage> {
             .uncertainty
             .splice_square(clock_info.base_index, ClockInfo::SIZE)?;
 
-        Ok(self)
+        self.validate_state()
     }
 
     /// Add a new link to the estimator state.
@@ -593,7 +593,7 @@ impl<Storage: KalmanStorageBase> EstimatorState<Storage> {
         self.state = self.state.extend_vec([initial_delay.value])?;
         self.uncertainty = self.uncertainty.extend([[initial_delay.variance]]);
 
-        Ok(self)
+        self.validate_state()
     }
 
     /// Remove a link from the estimator state.
@@ -607,7 +607,7 @@ impl<Storage: KalmanStorageBase> EstimatorState<Storage> {
             .uncertainty
             .splice_square(removed_info.index, LinkInfo::SIZE)?;
 
-        Ok(self)
+        self.validate_state()
     }
 
     /// Get the current offset of a clock in the state, along with the uncertainty of that offset.
@@ -750,6 +750,15 @@ impl<Storage: KalmanStorageBase> EstimatorState<Storage> {
             .iter()
             .find(|info| info.id == id)
             .ok_or(AlgoError::UnknownLink(id))
+    }
+
+    /// Check the state does not contain any NaN's
+    fn validate_state(self) -> Result<Self, AlgoError> {
+        if self.state.contains_nan() || self.uncertainty.contains_nan() {
+            Err(AlgoError::InternalError)
+        } else {
+            Ok(self)
+        }
     }
 }
 
