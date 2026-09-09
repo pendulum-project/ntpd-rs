@@ -180,7 +180,7 @@ hickory-resolver = { version = "0.26.0", features = ["dnssec-aws-lc-rs"] }
 libc = "0.2.183"
 libm = "0.2.16"
 pps-time = "0.2.3"
-rand = { version = "0.8.0", default-features = false }
+rand = { version = "0.8.8", default-features = false }
 serde = { version = "1.0.166", features = ["derive"] }
 serde_json = "1.0"
 tokio = "1.37"

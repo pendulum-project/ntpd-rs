@@ -8,7 +8,7 @@ publish = false
 cargo-fuzz = true
 
 [dependencies]
-rand = "0.8.5"
+rand = "0.8.8"
 tokio = { version = "1.32", features = ["full"] }
 
 [dependencies.libfuzzer-sys]
@@ -103,4 +103,4 @@ doc = false
 
 [patch.crates-io]
 rand = { path = "./fuzz_rand_shim" }
-rand_core = { git = "https://github.com/rust-random/rand.git", tag = "0.8.5" }
+rand_core = { git = "https://github.com/rust-random/rand.git", tag = "0.8.8" }
