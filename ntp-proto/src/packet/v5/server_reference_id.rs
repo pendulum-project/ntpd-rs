@@ -139,6 +139,7 @@ impl Default for BloomFilter {
 
 impl Debug for BloomFilter {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        #[allow(clippy::chunks_exact_to_as_chunks)]
         let str: String = self
             .0
             .chunks_exact(32)
