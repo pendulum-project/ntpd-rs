@@ -1,6 +1,6 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::tree::merge::{Merge, MergeError, MergePolicy, OriginId};
+use crate::tree::merge::{Merge, MergeContext, MergeError, MergePolicy, OriginId};
 
 /// An atomic merge boundary in the configuration tree.
 ///
@@ -117,11 +117,7 @@ where
 
 /// A setting is a leaf node, so we don't need to bother too much about merging.
 impl<T> Merge for Setting<T> {
-    fn merge(
-        &mut self,
-        incoming: Self,
-        context: &mut super::merge::MergeContext<'_>,
-    ) -> Result<(), MergeError> {
+    fn merge(&mut self, incoming: Self, context: &mut MergeContext) -> Result<(), MergeError> {
         let Setting::Set { value, origin } = incoming else {
             return Ok(());
         };
@@ -147,18 +143,18 @@ impl<T> Merge for Setting<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tree::merge::{ConfigPath, MergeContext, Origin, ProvenanceTracker};
+    use crate::tree::merge::{ConfigPath, Origin, ProvenanceTracker};
 
-    fn origins() -> (ProvenanceTracker, OriginId, OriginId) {
+    fn origins() -> (OriginId, OriginId) {
         let mut tracker = ProvenanceTracker::new();
         let first = tracker.track(Origin::SystemConfig("/etc/ntp.d/a.toml".into()));
         let second = tracker.track(Origin::SystemConfig("/etc/ntp.d/b.toml".into()));
-        (tracker, first, second)
+        (first, second)
     }
 
     #[test]
     fn equality_ignores_origin() {
-        let (_, first, second) = origins();
+        let (first, second) = origins();
 
         assert_eq!(
             Setting::value_from(1, first),
@@ -171,7 +167,7 @@ mod tests {
 
     #[test]
     fn only_set_settings_are_attributed() {
-        let (_, first, _) = origins();
+        let (first, _) = origins();
 
         let mut setting = Setting::value(1);
         assert_eq!(setting.origin(), None);
@@ -185,8 +181,8 @@ mod tests {
 
     #[test]
     fn override_replaces_value_and_origin() {
-        let (mut tracker, first, second) = origins();
-        let mut context = MergeContext::new(MergePolicy::Override, &mut tracker);
+        let (first, second) = origins();
+        let mut context = MergeContext::new(MergePolicy::Override);
 
         let mut setting = Setting::value_from(1, first);
         setting
@@ -199,8 +195,8 @@ mod tests {
 
     #[test]
     fn reject_overlap_fills_an_unset_setting() {
-        let (mut tracker, first, _) = origins();
-        let mut context = MergeContext::new(MergePolicy::RejectOverlap, &mut tracker);
+        let (first, _) = origins();
+        let mut context = MergeContext::new(MergePolicy::RejectOverlap);
 
         let mut setting = Setting::Unset;
         setting
@@ -213,8 +209,8 @@ mod tests {
 
     #[test]
     fn reject_overlap_reports_both_origins() {
-        let (mut tracker, first, second) = origins();
-        let mut context = MergeContext::new(MergePolicy::RejectOverlap, &mut tracker);
+        let (first, second) = origins();
+        let mut context = MergeContext::new(MergePolicy::RejectOverlap);
 
         let mut setting = Setting::value_from(1, first);
         let error = setting
@@ -235,10 +231,10 @@ mod tests {
 
     #[test]
     fn merging_an_unset_setting_changes_nothing() {
-        let (mut tracker, first, _) = origins();
+        let (first, _) = origins();
 
         for policy in [MergePolicy::Override, MergePolicy::RejectOverlap] {
-            let mut context = MergeContext::new(policy, &mut tracker);
+            let mut context = MergeContext::new(policy);
 
             let mut setting = Setting::value_from(1, first);
             setting.merge(Setting::Unset, &mut context).unwrap();
