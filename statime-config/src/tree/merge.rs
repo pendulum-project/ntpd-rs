@@ -147,10 +147,13 @@ pub struct ConfigMerger<T> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MergeError {
     /// Merge operation would overwrite an existing value at the given path.
+    ///
+    /// The origins are those of the settings involved; they are `None` when a
+    /// setting has not been attributed to a document.
     OverwriteNotAllowed {
         position: ConfigPath,
-        current_value: OriginId,
-        incoming_value: OriginId,
+        current_origin: Option<OriginId>,
+        incoming_origin: Option<OriginId>,
     },
 }
 
