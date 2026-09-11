@@ -116,18 +116,20 @@ impl std::fmt::Display for ConfigPath {
 }
 
 /// The context within the current merge operation.
-pub struct MergeContext<'a> {
+///
+/// This holds operation-scoped state only. Provenance is carried by the
+/// settings themselves, so merging needs no access to the origin registry; the
+/// [`ConfigMerger`] owns that and resolves ids when reporting diagnostics.
+pub struct MergeContext {
     pub policy: MergePolicy,
     pub path: ConfigPath,
-    pub provenance: &'a mut ProvenanceTracker,
 }
 
-impl<'a> MergeContext<'a> {
-    pub fn new(policy: MergePolicy, provenance: &'a mut ProvenanceTracker) -> Self {
+impl MergeContext {
+    pub fn new(policy: MergePolicy) -> Self {
         Self {
             policy,
             path: ConfigPath::root(),
-            provenance,
         }
     }
 
@@ -160,7 +162,7 @@ pub enum MergeError {
 /// Allows the merging of two values following the merge policy in the merge
 /// context.
 pub trait Merge {
-    fn merge(&mut self, incoming: Self, context: &mut MergeContext<'_>) -> Result<(), MergeError>;
+    fn merge(&mut self, incoming: Self, context: &mut MergeContext) -> Result<(), MergeError>;
 }
 
 impl<T> ConfigMerger<T>
