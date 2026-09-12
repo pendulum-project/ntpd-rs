@@ -128,12 +128,11 @@ mod tests {
 
     use crate::daemon::config::CsptpSourceConfig;
     use crate::daemon::spawn::{CsptpSourceCreateParameters, SourceCreateParameters, SpawnEvent};
-    use crate::daemon::{
-        spawn::{
-            SourceRemovalReason, SourceRemovedEvent, SpawnAction, Spawner, csptp::CsptpSpawner,
-        },
-        system::MESSAGE_BUFFER_SIZE,
+    use crate::daemon::spawn::{
+        SourceRemovalReason, SourceRemovedEvent, SpawnAction, Spawner, csptp::CsptpSpawner,
     };
+
+    const MESSAGE_BUFFER_SIZE: usize = 2;
 
     pub fn get_csptp_create_params(res: SpawnEvent) -> Option<CsptpSourceCreateParameters> {
         let SpawnAction::Create(SourceCreateParameters::Csptp(params)) = res.action else {

@@ -13,7 +13,7 @@ use crate::daemon::config::CsptpSourceConfig;
 use crate::daemon::config::PpsSourceConfig;
 use crate::daemon::config::{NtpAddress, SockSourceConfig};
 
-use super::{config::NormalizedAddress, system::NETWORK_WAIT_PERIOD};
+use super::config::NormalizedAddress;
 
 #[cfg(target_os = "linux")]
 pub mod csptp;
@@ -26,6 +26,8 @@ pub mod sock;
 pub mod standard;
 
 const NTS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+// TODO: Eliminate in new setup for spawners.
+const NETWORK_WAIT_PERIOD: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Unique identifier for a spawner.
 /// This is used to identify which spawner was used to create a source

@@ -1,3 +1,6 @@
+// TODO: Eliminate allow.
+#![allow(unused)]
+
 mod clock;
 pub mod config;
 #[cfg(target_os = "linux")]
@@ -25,7 +28,6 @@ use ::tracing::info;
 pub use config::Config;
 pub use observer::ObservableState;
 use statime_algo::{ClockConfig, ControllerConfig, StdKalmanStorage};
-pub use system::spawn;
 use tokio::runtime::Builder;
 use tracing_subscriber::util::SubscriberInitExt;
 
@@ -155,7 +157,8 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
 
         ::tracing::debug!("Configuration loaded, spawning daemon jobs");
         let clock = clock_config.clock;
-        let (main_loop_handle, channels) = spawn(
+        // TODO: Replace with proper code to invoke the new system code.
+        /*let (main_loop_handle, channels) = spawn(
             |clock| {
                 Ok(
                     statime_algo::KalmanController::<StdKalmanStorage<_>, _>::new(
@@ -186,26 +189,29 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
             #[cfg(target_os = "linux")]
             config.csptp,
         )
-        .await?;
+        .await?;*/
 
         for nts_ke_config in config.nts_ke {
             let _join_handle = keyexchange::spawn(nts_ke_config, keyset.clone());
         }
 
-        observer::spawn(
+        // FIXME: Replace with proper new observer code once available.
+        /*observer::spawn(
             &config.observability,
             channels.source_snapshots,
             channels.server_data_receiver,
             channels.system_snapshot_receiver,
             clock,
-        );
+        );*/
 
         let _ = notify_ready().await;
 
-        main_loop_handle
-            .await
-            .map_err(|e| Box::new(e) as Box<dyn Error>)?
-            .map_err(|e| e as Box<dyn Error>)
+        // TODO: Replace with waiting on system run once available.
+        //main_loop_handle
+        //    .await
+        //    .map_err(|e| Box::new(e) as Box<dyn Error>)?
+        //    .map_err(|e| e as Box<dyn Error>)
+        Ok(())
     })
 }
 
