@@ -1,6 +1,7 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::tree::{
+    defaults::ApplyDefaults,
     empty::EffectivelyUnset,
     merge::{Attribute, Merge, MergeContext, MergeError, MergePolicy, OriginId},
 };
@@ -58,6 +59,14 @@ impl<T> Setting<T> {
         }
     }
 
+    /// Set this setting to its built-in default if no document supplied a
+    /// value.
+    pub fn default_to(&mut self, value: T) {
+        if self.is_unset() {
+            *self = Self::value_from(value, OriginId::BUILT_IN_DEFAULT);
+        }
+    }
+
     /// Consume this setting, returning the value in it, if it is set.
     pub fn into_option(self) -> Option<T> {
         match self {
@@ -104,6 +113,19 @@ where
         {
             *slot = Some(origin);
             value.attribute(origin);
+        }
+    }
+}
+
+/// A setting holds no default of its own; it only lets the defaults of any
+/// nested values be applied.
+impl<T> ApplyDefaults for Setting<T>
+where
+    T: ApplyDefaults,
+{
+    fn apply_defaults(&mut self) {
+        if let Self::Set { value, .. } = self {
+            value.apply_defaults();
         }
     }
 }

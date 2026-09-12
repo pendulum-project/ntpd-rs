@@ -78,20 +78,6 @@ pub trait Attribute {
     fn attribute(&mut self, origin: OriginId);
 }
 
-/// Atomic values have no nested values to visit.
-macro_rules! atomic_attribute {
-    ($($type:ty),+ $(,)?) => {$(
-        impl Attribute for $type {
-            fn attribute(&mut self, _origin: OriginId) {}
-        }
-    )+};
-}
-pub(crate) use atomic_attribute;
-
-atomic_attribute!(
-    bool, u8, i8, u16, i16, u32, i32, u64, i64, f64, String, PathBuf
-);
-
 impl<T> Attribute for Vec<T>
 where
     T: Attribute,
