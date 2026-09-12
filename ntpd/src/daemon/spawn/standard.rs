@@ -134,8 +134,9 @@ mod tests {
             SourceRemovalReason, SourceRemovedEvent, SpawnAction, Spawner,
             standard::StandardSpawner, tests::get_ntp_create_params,
         },
-        system::MESSAGE_BUFFER_SIZE,
     };
+
+    const MESSAGE_BUFFER_SIZE: usize = 2;
 
     #[tokio::test]
     async fn creates_a_source() {

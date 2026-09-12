@@ -1,11 +1,11 @@
 use super::server::ServerStats;
 use super::sockets::create_unix_socket_with_permissions;
-use super::system::ServerData;
 use libc::{ECONNABORTED, EMFILE, ENFILE, ENOBUFS, ENOMEM};
 use ntp_proto::{ClockId, ObservableSourceState, SystemSnapshot};
 use statime_base::{Clock, TAI, Timestamp};
 use std::collections::HashMap;
 use std::convert::Into;
+use std::net::Ipv4Addr;
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 use std::{net::SocketAddr, time::Instant};
@@ -53,6 +53,10 @@ impl Default for ProgramData {
     }
 }
 
+///FIXME: Remove when the new system is in place and observability is being build up
+#[derive(Debug, Clone, Copy)]
+pub struct ServerData {}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ObservableServerState {
     pub address: SocketAddr,
@@ -62,8 +66,8 @@ pub struct ObservableServerState {
 impl From<&ServerData> for ObservableServerState {
     fn from(data: &ServerData) -> Self {
         ObservableServerState {
-            address: data.config.listen,
-            stats: data.stats.clone(),
+            address: SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 123),
+            stats: ServerStats::default(),
         }
     }
 }

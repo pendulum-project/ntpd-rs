@@ -140,8 +140,9 @@ mod tests {
             SourceRemovalReason, SourceRemovedEvent, Spawner, pool::PoolSpawner,
             tests::get_ntp_create_params,
         },
-        system::MESSAGE_BUFFER_SIZE,
     };
+
+    const MESSAGE_BUFFER_SIZE: usize = 2;
 
     #[tokio::test]
     async fn creates_multiple_sources() {
