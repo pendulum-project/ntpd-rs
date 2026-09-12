@@ -1,10 +1,14 @@
+mod atomic;
+mod defaults;
 mod empty;
 mod merge;
 mod section;
 mod setting;
 
+use atomic::atomic_value;
+use defaults::ApplyDefaults;
 use empty::{EffectivelyUnset, is_effectively_unset};
-use merge::{Attribute, Merge, MergeContext, MergeError, OriginId, atomic_attribute};
+use merge::{Attribute, Merge, MergeContext, MergeError, OriginId};
 use section::Section;
 use serde::{Deserialize, Serialize};
 use setting::Setting;
@@ -38,6 +42,15 @@ impl Attribute for PartialConfig {
     }
 }
 
+impl ApplyDefaults for PartialConfig {
+    fn apply_defaults(&mut self) {
+        // use-system-config is a loader directive, so it is not defaulted here
+        self.sources.default_to(Vec::new());
+        self.sources.apply_defaults();
+        self.observability.apply_defaults();
+    }
+}
+
 impl Merge for PartialConfig {
     fn merge(&mut self, incoming: Self, context: &mut MergeContext) -> Result<(), MergeError> {
         context.at("use-system-config", |context| {
@@ -63,9 +76,22 @@ pub enum PartialSourceConfig {
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default, rename_all = "kebab-case")]
 pub struct PartialServerSourceConfig {
-    #[serde(default, skip_serializing_if = "is_effectively_unset")]
+    #[serde(skip_serializing_if = "is_effectively_unset")]
     pub url: Setting<String>,
+
+    #[serde(skip_serializing_if = "is_effectively_unset")]
+    pub ntp_version: Setting<u8>,
+}
+
+impl ApplyDefaults for PartialSourceConfig {
+    fn apply_defaults(&mut self) {
+        match self {
+            Self::Server(config) => config.apply_defaults(),
+            Self::Unset => {}
+        }
+    }
 }
 
 impl Attribute for PartialSourceConfig {
@@ -79,13 +105,21 @@ impl Attribute for PartialSourceConfig {
 
 impl EffectivelyUnset for PartialServerSourceConfig {
     fn is_effectively_unset(&self) -> bool {
-        self.url.is_effectively_unset()
+        self.url.is_effectively_unset() && self.ntp_version.is_effectively_unset()
+    }
+}
+
+impl ApplyDefaults for PartialServerSourceConfig {
+    fn apply_defaults(&mut self) {
+        // url is required, so it has no default
+        self.ntp_version.default_to(4);
     }
 }
 
 impl Attribute for PartialServerSourceConfig {
     fn attribute(&mut self, origin: OriginId) {
         self.url.attribute(origin);
+        self.ntp_version.attribute(origin);
     }
 }
 
@@ -98,7 +132,7 @@ pub enum LogLevel {
     Error,
 }
 
-atomic_attribute!(LogLevel);
+atomic_value!(LogLevel);
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default, rename_all = "kebab-case")]
@@ -110,6 +144,12 @@ pub struct PartialObservabilityConfig {
 impl EffectivelyUnset for PartialObservabilityConfig {
     fn is_effectively_unset(&self) -> bool {
         self.log_level.is_effectively_unset()
+    }
+}
+
+impl ApplyDefaults for PartialObservabilityConfig {
+    fn apply_defaults(&mut self) {
+        self.log_level.default_to(LogLevel::Info);
     }
 }
 
@@ -127,6 +167,7 @@ impl Merge for PartialObservabilityConfig {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::tree::merge::{MergePolicy, Origin, ProvenanceTracker};
@@ -138,6 +179,7 @@ mod tests {
             sources: Setting::value(vec![PartialSourceConfig::Server(
                 PartialServerSourceConfig {
                     url: Setting::default(),
+                    ntp_version: Setting::default(),
                 },
             )]),
             ..PartialConfig::default()
@@ -188,6 +230,7 @@ mod tests {
             sources: Setting::value(vec![PartialSourceConfig::Server(
                 PartialServerSourceConfig {
                     url: Setting::value("example.com".to_owned()),
+                    ntp_version: Setting::default(),
                 },
             )]),
             ..observability(Setting::Unset)
@@ -205,6 +248,66 @@ mod tests {
         };
         assert_eq!(source.url.origin(), Some(origin));
         // unset settings are never attributed
+        assert_eq!(observability.log_level.origin(), None);
+    }
+
+    #[test]
+    fn defaults_reach_an_absent_section() {
+        let mut config = PartialConfig::default();
+        config.apply_defaults();
+
+        let Section::Set(observability) = &config.observability else {
+            panic!("the section should have been materialized");
+        };
+        assert_eq!(observability.log_level.get(), Some(&LogLevel::Info));
+        assert_eq!(
+            observability.log_level.origin(),
+            Some(OriginId::BUILT_IN_DEFAULT)
+        );
+        // an empty vector is a meaningful default, not an absence
+        assert_eq!(config.sources.get(), Some(&vec![]));
+    }
+
+    #[test]
+    fn defaults_reach_inside_vector_elements() {
+        let mut tracker = ProvenanceTracker::new();
+        let main = tracker.track(Origin::MainConfig("/etc/ntp.toml".into()));
+
+        let mut config = PartialConfig {
+            sources: Setting::value(vec![PartialSourceConfig::Server(
+                PartialServerSourceConfig {
+                    url: Setting::value("example.com".to_owned()),
+                    ntp_version: Setting::Unset,
+                },
+            )]),
+            ..PartialConfig::default()
+        };
+        config.attribute(main);
+        config.apply_defaults();
+
+        let Some([PartialSourceConfig::Server(source)]) = config.sources.get().map(|v| &v[..])
+        else {
+            panic!("source should still be present");
+        };
+        // sources[0].url comes from the main config, sources[0].ntp-version
+        // from the built-in defaults
+        assert_eq!(source.url.origin(), Some(main));
+        assert_eq!(source.ntp_version.get(), Some(&4));
+        assert_eq!(
+            source.ntp_version.origin(),
+            Some(OriginId::BUILT_IN_DEFAULT)
+        );
+    }
+
+    #[test]
+    fn defaults_never_replace_a_configured_value() {
+        let mut config = observability(Setting::value(LogLevel::Debug));
+        config.apply_defaults();
+
+        let Section::Set(observability) = &config.observability else {
+            panic!("section should still be set");
+        };
+        assert_eq!(observability.log_level.get(), Some(&LogLevel::Debug));
         assert_eq!(observability.log_level.origin(), None);
     }
 

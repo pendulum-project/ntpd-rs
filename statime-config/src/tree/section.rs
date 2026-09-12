@@ -1,6 +1,7 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::tree::{
+    defaults::ApplyDefaults,
     empty::EffectivelyUnset,
     merge::{Attribute, Merge, MergeContext, MergeError, OriginId},
 };
@@ -68,6 +69,23 @@ where
     fn attribute(&mut self, origin: OriginId) {
         if let Section::Set(value) = self {
             value.attribute(origin);
+        }
+    }
+}
+
+/// An absent section still has to be visited: a document that never mentions
+/// a section should still get the defaults of everything inside it.
+impl<T> ApplyDefaults for Section<T>
+where
+    T: ApplyDefaults + Default,
+{
+    fn apply_defaults(&mut self) {
+        if self.is_unset() {
+            *self = Section::Set(T::default());
+        }
+
+        if let Section::Set(value) = self {
+            value.apply_defaults();
         }
     }
 }
