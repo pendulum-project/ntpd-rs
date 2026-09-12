@@ -4,7 +4,7 @@ mod section;
 mod setting;
 
 use empty::{EffectivelyUnset, is_effectively_unset};
-use merge::{Merge, MergeContext, MergeError};
+use merge::{Attribute, Merge, MergeContext, MergeError, OriginId, atomic_attribute};
 use section::Section;
 use serde::{Deserialize, Serialize};
 use setting::Setting;
@@ -27,6 +27,14 @@ impl EffectivelyUnset for PartialConfig {
         self.use_system_config.is_effectively_unset()
             && self.sources.is_effectively_unset()
             && self.observability.is_effectively_unset()
+    }
+}
+
+impl Attribute for PartialConfig {
+    fn attribute(&mut self, origin: OriginId) {
+        self.use_system_config.attribute(origin);
+        self.sources.attribute(origin);
+        self.observability.attribute(origin);
     }
 }
 
@@ -60,9 +68,24 @@ pub struct PartialServerSourceConfig {
     pub url: Setting<String>,
 }
 
+impl Attribute for PartialSourceConfig {
+    fn attribute(&mut self, origin: OriginId) {
+        match self {
+            Self::Server(config) => config.attribute(origin),
+            Self::Unset => {}
+        }
+    }
+}
+
 impl EffectivelyUnset for PartialServerSourceConfig {
     fn is_effectively_unset(&self) -> bool {
         self.url.is_effectively_unset()
+    }
+}
+
+impl Attribute for PartialServerSourceConfig {
+    fn attribute(&mut self, origin: OriginId) {
+        self.url.attribute(origin);
     }
 }
 
@@ -74,6 +97,8 @@ pub enum LogLevel {
     Warn,
     Error,
 }
+
+atomic_attribute!(LogLevel);
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default, rename_all = "kebab-case")]
@@ -88,6 +113,12 @@ impl EffectivelyUnset for PartialObservabilityConfig {
     }
 }
 
+impl Attribute for PartialObservabilityConfig {
+    fn attribute(&mut self, origin: OriginId) {
+        self.log_level.attribute(origin);
+    }
+}
+
 impl Merge for PartialObservabilityConfig {
     fn merge(&mut self, incoming: Self, context: &mut MergeContext) -> Result<(), MergeError> {
         context.at("log-level", |context| {
@@ -98,7 +129,7 @@ impl Merge for PartialObservabilityConfig {
 
 mod tests {
     use super::*;
-    use crate::tree::merge::MergePolicy;
+    use crate::tree::merge::{MergePolicy, Origin, ProvenanceTracker};
 
     #[test]
     fn test_serialized_roundtrip() {
@@ -146,6 +177,35 @@ mod tests {
 
         assert!(!config.is_effectively_unset());
         assert_eq!(toml::to_string(&config).unwrap(), "sources = []\n");
+    }
+
+    #[test]
+    fn attaching_an_origin_descends_into_vector_elements() {
+        let mut tracker = ProvenanceTracker::new();
+        let origin = tracker.track(Origin::MainConfig("/etc/ntp.toml".into()));
+
+        let mut config = PartialConfig {
+            sources: Setting::value(vec![PartialSourceConfig::Server(
+                PartialServerSourceConfig {
+                    url: Setting::value("example.com".to_owned()),
+                },
+            )]),
+            ..observability(Setting::Unset)
+        };
+        config.attribute(origin);
+
+        let Section::Set(observability) = &config.observability else {
+            panic!("section should still be set");
+        };
+        // the vector is atomic when merging, but attribution reaches into it
+        assert_eq!(config.sources.origin(), Some(origin));
+        let Some([PartialSourceConfig::Server(source)]) = config.sources.get().map(|v| &v[..])
+        else {
+            panic!("source should still be present");
+        };
+        assert_eq!(source.url.origin(), Some(origin));
+        // unset settings are never attributed
+        assert_eq!(observability.log_level.origin(), None);
     }
 
     #[test]

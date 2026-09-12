@@ -59,6 +59,38 @@ impl Default for ProvenanceTracker {
     }
 }
 
+/// Recursively attributes the explicitly set nodes of a document to the origin
+/// registered for it. This follows tree structure, independently of how a node
+/// merges: a vector is atomic when merging, but recursive here.
+pub trait Attribute {
+    fn attribute(&mut self, origin: OriginId);
+}
+
+/// Atomic values have no nested values to visit.
+macro_rules! atomic_attribute {
+    ($($type:ty),+ $(,)?) => {$(
+        impl Attribute for $type {
+            fn attribute(&mut self, _origin: OriginId) {}
+        }
+    )+};
+}
+pub(crate) use atomic_attribute;
+
+atomic_attribute!(
+    bool, u8, i8, u16, i16, u32, i32, u64, i64, f64, String, PathBuf
+);
+
+impl<T> Attribute for Vec<T>
+where
+    T: Attribute,
+{
+    fn attribute(&mut self, origin: OriginId) {
+        for element in self {
+            element.attribute(origin);
+        }
+    }
+}
+
 /// A segment of a path in the tree being merged.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PathSegment {

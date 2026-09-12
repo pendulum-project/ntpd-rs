@@ -2,7 +2,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::tree::{
     empty::EffectivelyUnset,
-    merge::{Merge, MergeContext, MergeError, MergePolicy, OriginId},
+    merge::{Attribute, Merge, MergeContext, MergeError, MergePolicy, OriginId},
 };
 
 /// An atomic merge boundary in the configuration tree.
@@ -58,13 +58,6 @@ impl<T> Setting<T> {
         }
     }
 
-    /// Attribute the value in this setting to `origin`.
-    pub fn attribute(&mut self, origin: OriginId) {
-        if let Self::Set { origin: slot, .. } = self {
-            *slot = Some(origin);
-        }
-    }
-
     /// Consume this setting, returning the value in it, if it is set.
     pub fn into_option(self) -> Option<T> {
         match self {
@@ -95,6 +88,23 @@ impl<T> Eq for Setting<T> where T: Eq {}
 impl<T> EffectivelyUnset for Setting<T> {
     fn is_effectively_unset(&self) -> bool {
         self.is_unset()
+    }
+}
+
+/// A setting records its own origin, and visits its nested values.
+impl<T> Attribute for Setting<T>
+where
+    T: Attribute,
+{
+    fn attribute(&mut self, origin: OriginId) {
+        if let Self::Set {
+            value,
+            origin: slot,
+        } = self
+        {
+            *slot = Some(origin);
+            value.attribute(origin);
+        }
     }
 }
 

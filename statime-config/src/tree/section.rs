@@ -2,7 +2,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::tree::{
     empty::EffectivelyUnset,
-    merge::{Merge, MergeContext, MergeError},
+    merge::{Attribute, Merge, MergeContext, MergeError, OriginId},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -56,6 +56,18 @@ where
         match self {
             Section::Unset => true,
             Section::Set(value) => value.is_effectively_unset(),
+        }
+    }
+}
+
+/// A section records no origin of its own, and visits its children.
+impl<T> Attribute for Section<T>
+where
+    T: Attribute,
+{
+    fn attribute(&mut self, origin: OriginId) {
+        if let Section::Set(value) = self {
+            value.attribute(origin);
         }
     }
 }
