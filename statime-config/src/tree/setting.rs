@@ -1,6 +1,9 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::tree::merge::{Merge, MergeContext, MergeError, MergePolicy, OriginId};
+use crate::tree::{
+    empty::EffectivelyUnset,
+    merge::{Merge, MergeContext, MergeError, MergePolicy, OriginId},
+};
 
 /// An atomic merge boundary in the configuration tree.
 ///
@@ -86,6 +89,14 @@ where
 }
 
 impl<T> Eq for Setting<T> where T: Eq {}
+
+/// Settings are effectively unset if they are just unset or if they are set to
+/// their default value with a default origin.
+impl<T> EffectivelyUnset for Setting<T> {
+    fn is_effectively_unset(&self) -> bool {
+        self.is_unset()
+    }
+}
 
 impl<'de, T> Deserialize<'de> for Setting<T>
 where

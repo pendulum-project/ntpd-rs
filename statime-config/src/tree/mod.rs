@@ -1,7 +1,9 @@
+mod empty;
 mod merge;
 mod section;
 mod setting;
 
+use empty::{EffectivelyUnset, is_effectively_unset};
 use merge::{Merge, MergeContext, MergeError};
 use section::Section;
 use serde::{Deserialize, Serialize};
@@ -10,14 +12,22 @@ use setting::Setting;
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "kebab-case")]
 pub struct PartialConfig {
-    #[serde(skip_serializing_if = "Setting::is_unset")]
+    #[serde(skip_serializing_if = "is_effectively_unset")]
     pub use_system_config: Setting<bool>,
 
-    #[serde(skip_serializing_if = "Setting::is_unset")]
+    #[serde(skip_serializing_if = "is_effectively_unset")]
     pub sources: Setting<Vec<PartialSourceConfig>>,
 
-    #[serde(skip_serializing_if = "Section::is_unset")]
+    #[serde(skip_serializing_if = "is_effectively_unset")]
     pub observability: Section<PartialObservabilityConfig>,
+}
+
+impl EffectivelyUnset for PartialConfig {
+    fn is_effectively_unset(&self) -> bool {
+        self.use_system_config.is_effectively_unset()
+            && self.sources.is_effectively_unset()
+            && self.observability.is_effectively_unset()
+    }
 }
 
 impl Merge for PartialConfig {
@@ -46,8 +56,14 @@ pub enum PartialSourceConfig {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PartialServerSourceConfig {
-    #[serde(default, skip_serializing_if = "Setting::is_unset")]
+    #[serde(default, skip_serializing_if = "is_effectively_unset")]
     pub url: Setting<String>,
+}
+
+impl EffectivelyUnset for PartialServerSourceConfig {
+    fn is_effectively_unset(&self) -> bool {
+        self.url.is_effectively_unset()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -62,8 +78,14 @@ pub enum LogLevel {
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default, rename_all = "kebab-case")]
 pub struct PartialObservabilityConfig {
-    #[serde(skip_serializing_if = "Setting::is_unset")]
+    #[serde(skip_serializing_if = "is_effectively_unset")]
     pub log_level: Setting<LogLevel>,
+}
+
+impl EffectivelyUnset for PartialObservabilityConfig {
+    fn is_effectively_unset(&self) -> bool {
+        self.log_level.is_effectively_unset()
+    }
 }
 
 impl Merge for PartialObservabilityConfig {
@@ -100,6 +122,30 @@ mod tests {
             observability: Section::Set(PartialObservabilityConfig { log_level }),
             ..PartialConfig::default()
         }
+    }
+
+    #[test]
+    fn a_set_but_empty_section_is_omitted() {
+        let config = observability(Setting::Unset);
+        assert!(config.is_effectively_unset());
+
+        let serialized = toml::to_string(&config).unwrap();
+        assert_eq!(serialized, "");
+
+        let deserialized: PartialConfig = toml::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.observability, Section::Unset);
+        assert_ne!(deserialized, config);
+    }
+
+    #[test]
+    fn an_explicitly_empty_vector_is_never_empty() {
+        let config = PartialConfig {
+            sources: Setting::value(vec![]),
+            ..PartialConfig::default()
+        };
+
+        assert!(!config.is_effectively_unset());
+        assert_eq!(toml::to_string(&config).unwrap(), "sources = []\n");
     }
 
     #[test]
