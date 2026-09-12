@@ -1,6 +1,9 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::tree::merge::{Merge, MergeContext, MergeError};
+use crate::tree::{
+    empty::EffectivelyUnset,
+    merge::{Merge, MergeContext, MergeError},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Section<T> {
@@ -39,6 +42,20 @@ where
             Self::Set(value) => value.serialize(serializer),
             // note: sections should be marked to be skipped and should never serialize to none
             Self::Unset => serializer.serialize_none(),
+        }
+    }
+}
+
+/// A section says nothing when it is absent, but also when it is present with
+/// every descendant setting unset.
+impl<T> EffectivelyUnset for Section<T>
+where
+    T: EffectivelyUnset,
+{
+    fn is_effectively_unset(&self) -> bool {
+        match self {
+            Section::Unset => true,
+            Section::Set(value) => value.is_effectively_unset(),
         }
     }
 }
