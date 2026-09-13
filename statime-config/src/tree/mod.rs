@@ -2,22 +2,32 @@ mod atomic;
 mod defaults;
 mod empty;
 mod merge;
+mod path;
+mod resolve;
 mod section;
 mod setting;
 
 use atomic::atomic_value;
 use defaults::ApplyDefaults;
 use empty::{EffectivelyUnset, is_effectively_unset};
-use merge::{Attribute, Merge, MergeContext, MergeError, OriginId};
+use merge::{Attribute, Merge, MergeContext};
+use resolve::Resolve;
 use section::Section;
 use serde::{Deserialize, Serialize};
 use setting::Setting;
+
+use crate::{
+    Config, LogLevel, ObservabilityConfig, ServerSourceConfig, SourceConfig, error::ConfigError,
+};
+
+pub(crate) use merge::OriginId;
+pub(crate) use path::ConfigPath;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "kebab-case")]
 pub struct PartialConfig {
     #[serde(skip_serializing_if = "is_effectively_unset")]
-    pub use_system_config: Setting<bool>,
+    pub use_system_config: Setting<Option<bool>>,
 
     #[serde(skip_serializing_if = "is_effectively_unset")]
     pub sources: Setting<Vec<PartialSourceConfig>>,
@@ -44,7 +54,7 @@ impl Attribute for PartialConfig {
 
 impl ApplyDefaults for PartialConfig {
     fn apply_defaults(&mut self) {
-        // use-system-config is a loader directive, so it is not defaulted here
+        self.use_system_config.default_to(None);
         self.sources.default_to(Vec::new());
         self.sources.apply_defaults();
         self.observability.apply_defaults();
@@ -52,7 +62,7 @@ impl ApplyDefaults for PartialConfig {
 }
 
 impl Merge for PartialConfig {
-    fn merge(&mut self, incoming: Self, context: &mut MergeContext) -> Result<(), MergeError> {
+    fn merge(&mut self, incoming: Self, context: &mut MergeContext) -> Result<(), ConfigError> {
         context.at("use-system-config", |context| {
             self.use_system_config
                 .merge(incoming.use_system_config, context)
@@ -62,6 +72,20 @@ impl Merge for PartialConfig {
         })?;
         context.at("observability", |context| {
             self.observability.merge(incoming.observability, context)
+        })
+    }
+}
+
+impl Resolve for PartialConfig {
+    type Resolved = Config;
+
+    fn resolve(self, path: &mut ConfigPath) -> Result<Config, ConfigError> {
+        Ok(Config {
+            use_system_config: path.at("use-system-config", |path| {
+                self.use_system_config.resolve(path)
+            })?,
+            sources: path.at("sources", |path| self.sources.resolve(path))?,
+            observability: path.at("observability", |path| self.observability.resolve(path))?,
         })
     }
 }
@@ -103,6 +127,31 @@ impl Attribute for PartialSourceConfig {
     }
 }
 
+impl Resolve for PartialSourceConfig {
+    type Resolved = SourceConfig;
+
+    fn resolve(self, path: &mut ConfigPath) -> Result<SourceConfig, ConfigError> {
+        match self {
+            Self::Server(config) => Ok(SourceConfig::Server(config.resolve(path)?)),
+            // no mode was given, so there is nothing to resolve this source to
+            Self::Unset => Err(ConfigError::MissingRequiredValue {
+                position: path.at("mode", |path| path.clone()),
+            }),
+        }
+    }
+}
+
+impl Resolve for PartialServerSourceConfig {
+    type Resolved = ServerSourceConfig;
+
+    fn resolve(self, path: &mut ConfigPath) -> Result<ServerSourceConfig, ConfigError> {
+        Ok(ServerSourceConfig {
+            url: path.at("url", |path| self.url.resolve(path))?,
+            ntp_version: path.at("ntp-version", |path| self.ntp_version.resolve(path))?,
+        })
+    }
+}
+
 impl EffectivelyUnset for PartialServerSourceConfig {
     fn is_effectively_unset(&self) -> bool {
         self.url.is_effectively_unset() && self.ntp_version.is_effectively_unset()
@@ -123,15 +172,6 @@ impl Attribute for PartialServerSourceConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-pub enum LogLevel {
-    Debug,
-    Info,
-    Warn,
-    Error,
-}
-
 atomic_value!(LogLevel);
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -139,6 +179,16 @@ atomic_value!(LogLevel);
 pub struct PartialObservabilityConfig {
     #[serde(skip_serializing_if = "is_effectively_unset")]
     pub log_level: Setting<LogLevel>,
+}
+
+impl Resolve for PartialObservabilityConfig {
+    type Resolved = ObservabilityConfig;
+
+    fn resolve(self, path: &mut ConfigPath) -> Result<ObservabilityConfig, ConfigError> {
+        Ok(ObservabilityConfig {
+            log_level: path.at("log-level", |path| self.log_level.resolve(path))?,
+        })
+    }
 }
 
 impl EffectivelyUnset for PartialObservabilityConfig {
@@ -160,7 +210,7 @@ impl Attribute for PartialObservabilityConfig {
 }
 
 impl Merge for PartialObservabilityConfig {
-    fn merge(&mut self, incoming: Self, context: &mut MergeContext) -> Result<(), MergeError> {
+    fn merge(&mut self, incoming: Self, context: &mut MergeContext) -> Result<(), ConfigError> {
         context.at("log-level", |context| {
             self.log_level.merge(incoming.log_level, context)
         })
@@ -311,6 +361,80 @@ mod tests {
         assert_eq!(observability.log_level.origin(), None);
     }
 
+    fn one_server(url: Setting<String>) -> PartialConfig {
+        PartialConfig {
+            sources: Setting::value(vec![PartialSourceConfig::Server(
+                PartialServerSourceConfig {
+                    url,
+                    ntp_version: Setting::default(),
+                },
+            )]),
+            ..PartialConfig::default()
+        }
+    }
+
+    #[test]
+    fn resolving_a_defaulted_tree_yields_the_runtime_config() {
+        let mut config = one_server(Setting::value("example.com".to_owned()));
+        config.apply_defaults();
+
+        let resolved = config.resolve(&mut ConfigPath::root()).unwrap();
+
+        assert_eq!(
+            resolved,
+            Config {
+                // optional, and no document supplied it
+                use_system_config: None,
+                sources: vec![SourceConfig::Server(ServerSourceConfig {
+                    url: "example.com".to_owned(),
+                    // defaulted, so it is present without being configured
+                    ntp_version: 4,
+                })],
+                observability: ObservabilityConfig {
+                    log_level: LogLevel::Info,
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn a_setting_holding_an_option_resolves_like_any_other() {
+        let mut config = one_server(Setting::value("example.com".to_owned()));
+        config.use_system_config = Setting::value(Some(true));
+        config.apply_defaults();
+
+        let resolved = config.resolve(&mut ConfigPath::root()).unwrap();
+
+        assert_eq!(resolved.use_system_config, Some(true));
+    }
+
+    #[test]
+    fn a_default_of_none_is_a_value_with_provenance() {
+        let mut config = one_server(Setting::value("example.com".to_owned()));
+        config.apply_defaults();
+
+        // the field is optional because its default is `None`, so the absence
+        // is attributable like any other defaulted value
+        assert_eq!(config.use_system_config.get(), Some(&None));
+        assert_eq!(
+            config.use_system_config.origin(),
+            Some(OriginId::BUILT_IN_DEFAULT)
+        );
+    }
+
+    #[test]
+    fn a_missing_required_value_reports_its_path() {
+        let mut config = one_server(Setting::Unset);
+        config.apply_defaults();
+
+        let error = config.resolve(&mut ConfigPath::root()).unwrap_err();
+
+        let ConfigError::MissingRequiredValue { position } = error else {
+            panic!("expected a missing required value, got {error:?}");
+        };
+        assert_eq!(position.to_string(), "sources[0].url");
+    }
+
     #[test]
     fn mentioning_the_same_section_is_not_a_conflict() {
         let mut effective = observability(Setting::value(LogLevel::Info));
@@ -328,9 +452,11 @@ mod tests {
         let incoming = observability(Setting::value(LogLevel::Debug));
 
         let mut context = MergeContext::new(MergePolicy::RejectOverlap);
-        let MergeError::OverwriteNotAllowed { position, .. } =
-            effective.merge(incoming, &mut context).unwrap_err();
+        let error = effective.merge(incoming, &mut context).unwrap_err();
 
+        let ConfigError::OverwriteNotAllowed { position, .. } = error else {
+            panic!("expected an overwrite conflict, got {error:?}");
+        };
         assert_eq!(position.to_string(), "observability.log-level");
     }
 }
