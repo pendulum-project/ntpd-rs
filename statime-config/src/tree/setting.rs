@@ -1,9 +1,14 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::tree::{
-    defaults::ApplyDefaults,
-    empty::EffectivelyUnset,
-    merge::{Attribute, Merge, MergeContext, MergeError, MergePolicy, OriginId},
+use crate::{
+    error::ConfigError,
+    tree::{
+        defaults::ApplyDefaults,
+        empty::EffectivelyUnset,
+        merge::{Attribute, Merge, MergeContext, MergePolicy, OriginId},
+        path::ConfigPath,
+        resolve::Resolve,
+    },
 };
 
 /// An atomic merge boundary in the configuration tree.
@@ -74,6 +79,15 @@ impl<T> Setting<T> {
             Self::Set { value, .. } => Some(value),
         }
     }
+
+    /// Consume this setting, returning the value in it. If no value is set,
+    /// returns an error naming the setting.
+    pub fn require(self, path: &ConfigPath) -> Result<T, ConfigError> {
+        self.into_option()
+            .ok_or_else(|| ConfigError::MissingRequiredValue {
+                position: path.clone(),
+            })
+    }
 }
 
 /// Two settings are equal when they carry equal values.
@@ -130,6 +144,18 @@ where
     }
 }
 
+/// A setting resolves to whatever its value is.
+impl<T> Resolve for Setting<T>
+where
+    T: Resolve,
+{
+    type Resolved = T::Resolved;
+
+    fn resolve(self, path: &mut ConfigPath) -> Result<Self::Resolved, ConfigError> {
+        self.require(path)?.resolve(path)
+    }
+}
+
 impl<'de, T> Deserialize<'de> for Setting<T>
 where
     T: Deserialize<'de>,
@@ -160,7 +186,7 @@ where
 
 /// A setting is a leaf node, so we don't need to bother too much about merging.
 impl<T> Merge for Setting<T> {
-    fn merge(&mut self, incoming: Self, context: &mut MergeContext) -> Result<(), MergeError> {
+    fn merge(&mut self, incoming: Self, context: &mut MergeContext) -> Result<(), ConfigError> {
         let Setting::Set { value, origin } = incoming else {
             return Ok(());
         };
@@ -170,7 +196,7 @@ impl<T> Merge for Setting<T> {
         } = self
             && context.policy == MergePolicy::RejectOverlap
         {
-            return Err(MergeError::OverwriteNotAllowed {
+            return Err(ConfigError::OverwriteNotAllowed {
                 position: context.path.clone(),
                 current_origin: *current,
                 incoming_origin: origin,
@@ -186,7 +212,7 @@ impl<T> Merge for Setting<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tree::merge::{ConfigPath, Origin, ProvenanceTracker};
+    use crate::tree::merge::{Origin, ProvenanceTracker};
 
     fn origins() -> (OriginId, OriginId) {
         let mut tracker = ProvenanceTracker::new();
@@ -262,7 +288,7 @@ mod tests {
 
         assert_eq!(
             error,
-            MergeError::OverwriteNotAllowed {
+            ConfigError::OverwriteNotAllowed {
                 position: ConfigPath::root(),
                 current_origin: Some(first),
                 incoming_origin: Some(second),

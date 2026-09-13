@@ -1,9 +1,14 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::tree::{
-    defaults::ApplyDefaults,
-    empty::EffectivelyUnset,
-    merge::{Attribute, Merge, MergeContext, MergeError, OriginId},
+use crate::{
+    error::ConfigError,
+    tree::{
+        defaults::ApplyDefaults,
+        empty::EffectivelyUnset,
+        merge::{Attribute, Merge, MergeContext, OriginId},
+        path::ConfigPath,
+        resolve::Resolve,
+    },
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -90,6 +95,21 @@ where
     }
 }
 
+/// A section resolves to whatever its contents resolve to.
+impl<T> Resolve for Section<T>
+where
+    T: Resolve + Default,
+{
+    type Resolved = T::Resolved;
+
+    fn resolve(self, path: &mut ConfigPath) -> Result<Self::Resolved, ConfigError> {
+        match self {
+            Section::Set(value) => value.resolve(path),
+            Section::Unset => T::default().resolve(path),
+        }
+    }
+}
+
 /// A section is a recursive merge boundary: two documents mentioning the same
 /// table is never a conflict by itself, so the policy is only consulted by the
 /// settings underneath.
@@ -97,7 +117,7 @@ impl<T> Merge for Section<T>
 where
     T: Merge,
 {
-    fn merge(&mut self, incoming: Self, context: &mut MergeContext) -> Result<(), MergeError> {
+    fn merge(&mut self, incoming: Self, context: &mut MergeContext) -> Result<(), ConfigError> {
         let Section::Set(incoming) = incoming else {
             return Ok(());
         };

@@ -1,5 +1,10 @@
 use std::{collections::HashMap, path::PathBuf};
 
+use crate::{
+    error::ConfigError,
+    tree::path::{ConfigPath, PathSegment},
+};
+
 /// Whether to merge by overriding values, or by rejecting any overlapping values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MergePolicy {
@@ -89,62 +94,6 @@ where
     }
 }
 
-/// A segment of a path in the tree being merged.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PathSegment {
-    Field(&'static str),
-    Index(usize),
-}
-
-/// Converts a `&'static str` to a [`PathSegment::Field`].
-impl From<&'static str> for PathSegment {
-    fn from(value: &'static str) -> Self {
-        PathSegment::Field(value)
-    }
-}
-
-/// Converts a `usize` to a [`PathSegment::Index`].
-impl From<usize> for PathSegment {
-    fn from(value: usize) -> Self {
-        PathSegment::Index(value)
-    }
-}
-
-/// A path in the tree being merged.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConfigPath(Vec<PathSegment>);
-
-impl ConfigPath {
-    pub fn root() -> Self {
-        Self(vec![])
-    }
-
-    pub fn at<R>(&mut self, segment: impl Into<PathSegment>, f: impl FnOnce(&mut Self) -> R) -> R {
-        self.0.push(segment.into());
-        let result = f(self);
-        self.0.pop();
-        result
-    }
-}
-
-impl std::fmt::Display for ConfigPath {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (pos, segment) in self.0.iter().enumerate() {
-            match segment {
-                PathSegment::Field(field) => {
-                    if pos != 0 {
-                        write!(f, ".")?;
-                    }
-                    write!(f, "{field}")?
-                }
-                PathSegment::Index(index) => write!(f, "[{index}]")?,
-            }
-        }
-
-        Ok(())
-    }
-}
-
 /// The context within the current merge operation.
 ///
 /// This holds operation-scoped state only. Provenance is carried by the
@@ -164,9 +113,9 @@ impl MergeContext {
     }
 
     pub fn at<R>(&mut self, segment: impl Into<PathSegment>, f: impl FnOnce(&mut Self) -> R) -> R {
-        self.path.0.push(segment.into());
+        self.path.push(segment);
         let result = f(self);
-        self.path.0.pop();
+        self.path.pop();
         result
     }
 }
@@ -176,23 +125,10 @@ pub struct ConfigMerger<T> {
     provenance: ProvenanceTracker,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MergeError {
-    /// Merge operation would overwrite an existing value at the given path.
-    ///
-    /// The origins are those of the settings involved; they are `None` when a
-    /// setting has not been attributed to a document.
-    OverwriteNotAllowed {
-        position: ConfigPath,
-        current_origin: Option<OriginId>,
-        incoming_origin: Option<OriginId>,
-    },
-}
-
 /// Allows the merging of two values following the merge policy in the merge
 /// context.
 pub trait Merge {
-    fn merge(&mut self, incoming: Self, context: &mut MergeContext) -> Result<(), MergeError>;
+    fn merge(&mut self, incoming: Self, context: &mut MergeContext) -> Result<(), ConfigError>;
 }
 
 impl<T> ConfigMerger<T>
