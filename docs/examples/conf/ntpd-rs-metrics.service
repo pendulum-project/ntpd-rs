@@ -7,7 +7,6 @@ Type=notify
 Restart=always
 ExecStart=/usr/bin/ntp-metrics-exporter
 Environment="RUST_LOG=info"
-RuntimeDirectory=ntpd-rs-observe
 User=ntpd-rs-observe
 Group=ntpd-rs-observe
 
