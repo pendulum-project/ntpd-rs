@@ -322,6 +322,20 @@ impl Default for CsptpConfig {
     }
 }
 
+impl From<CsptpConfig> for statime_csptp::CsptpConfig {
+    fn from(value: CsptpConfig) -> Self {
+        Self {
+            identity: value.identity,
+            priority_1: value.priority_1,
+            priority_2: value.priority_2,
+            clock_quality: value.clock_quality,
+            ptp_timescale: value.ptp_timescale,
+            time_traceable: value.time_traceable,
+            frequency_traceable: value.frequency_traceable,
+        }
+    }
+}
+
 #[cfg(target_os = "linux")]
 fn csptp_config_default_priority() -> u8 {
     128
