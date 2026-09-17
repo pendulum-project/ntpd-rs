@@ -71,6 +71,8 @@ pub enum AlgoError {
     UnknownClock(ClockId),
     /// Clock already exists in the estimator or filter state
     ClockAlreadyExists(ClockId),
+    /// Clock needed a jump beyond the configured limits.
+    JumpAbortLimitExceeded(ClockId),
     /// Link not found in the estimator or filter state
     UnknownLink(LinkId),
     /// Link already exists in the estimator or filter state
@@ -367,12 +369,11 @@ impl<Storage: KalmanStorage<C>, C: Clock<TAI>> Controller for KalmanController<S
     async fn run<Fut: Future<Output = ()> + Send, F: Send + Fn(core::time::Duration) -> Fut>(
         this: impl AsRef<Self> + Send,
         sleep: F,
-    ) {
+    ) -> Result<(), Self::Error> {
         loop {
-            let _ = this
-                .as_ref()
+            this.as_ref()
                 .state
-                .with_mut(KalmanControllerState::steer_clocks);
+                .with_mut(KalmanControllerState::steer_clocks)?;
             sleep(core::time::Duration::from_secs(1)).await;
         }
     }
@@ -451,12 +452,8 @@ impl<Storage: KalmanStorage<C>, C: Clock<TAI>> KalmanController<Storage, C> {
     }
 }
 
-/// Exitcode used
-#[cfg(feature = "std")]
-const EXITCODE_SOFTWARE: i32 = 70;
-
 impl<C> ClockInfo<C> {
-    fn check_jump(&mut self, step: Duration) {
+    fn check_jump(&mut self, step: Duration) -> Result<(), AlgoError> {
         if self.in_startup {
             let warn = !self.config.startup_jump_warning_threshold.is_within(step);
             let abort = !self.config.startup_jump_abort_threshold.is_within(step);
@@ -466,10 +463,7 @@ impl<C> ClockInfo<C> {
                     "Jump on clock {clock:?} during startup too big: {step}, aborting.",
                     clock = self.id
                 );
-                #[cfg(feature = "std")]
-                std::process::exit(EXITCODE_SOFTWARE);
-                #[cfg(not(feature = "std"))]
-                panic!("Aborting due to excessive clock jump.");
+                return Err(AlgoError::JumpAbortLimitExceeded(self.id));
             } else if warn {
                 log::warn!(
                     "Large jump on clock {clock:?} during startup: {step}.",
@@ -499,20 +493,14 @@ impl<C> ClockInfo<C> {
                     "Jump on clock {clock:?} too big: {step}, aborting.",
                     clock = self.id
                 );
-                #[cfg(feature = "std")]
-                std::process::exit(EXITCODE_SOFTWARE);
-                #[cfg(not(feature = "std"))]
-                panic!("Aborting due to excessive clock jump.");
+                return Err(AlgoError::JumpAbortLimitExceeded(self.id));
             } else if abort_accumulated {
                 log::error!(
                     "Total amount jumped on clock {clock:?} too big: {total_steps}, aborting.",
                     clock = self.id,
                     total_steps = self.accumulated_steps
                 );
-                #[cfg(feature = "std")]
-                std::process::exit(EXITCODE_SOFTWARE);
-                #[cfg(not(feature = "std"))]
-                panic!("Aborting due to excessive clock jump.");
+                return Err(AlgoError::JumpAbortLimitExceeded(self.id));
             } else if warn_instant {
                 log::warn!("Large jump on clock {clock:?}: {step}.", clock = self.id);
             } else if warn_accumulated {
@@ -535,6 +523,8 @@ impl<C> ClockInfo<C> {
 
         // We have jumped, and so definitionally are out of startup.
         self.in_startup = false;
+
+        Ok(())
     }
 }
 
@@ -559,7 +549,7 @@ impl<Storage: KalmanStorageInternal<C>, C: Clock<TAI>> KalmanControllerState<Sto
                 && offset > clock_info.config.jump_certainty_threshold * offset_uncertainty
             {
                 let step = Duration::from_f64_seconds(-offset);
-                clock_info.check_jump(step);
+                clock_info.check_jump(step)?;
                 log::trace!(
                     "Clock {:?}: {offset} +- {offset_uncertainty} (jumping {step})",
                     clock_info.id
@@ -688,7 +678,6 @@ impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<
                 },
                 state.clocks[0].id,
             )?;
-            state.steer_clocks()?;
             Ok(())
         })
     }

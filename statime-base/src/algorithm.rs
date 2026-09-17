@@ -80,7 +80,7 @@ pub trait Controller {
     fn run<Fut: Future<Output = ()> + Send, F: Send + Fn(core::time::Duration) -> Fut>(
         this: impl AsRef<Self> + Send,
         sleep: F,
-    ) -> impl Future<Output = ()> + Send;
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 }
 
 /// Information on an active link provided by the controller.
