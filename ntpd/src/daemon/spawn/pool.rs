@@ -1,23 +1,35 @@
 use std::fmt::Display;
+use std::sync::{Arc, Mutex};
 use std::{net::SocketAddr, ops::Deref};
 
 use ntp_proto::SourceConfig;
+use statime_algo::LinkConfig;
+use statime_base::{Link, LinkId, SourceType, StdController};
 use tokio::sync::mpsc;
 use tracing::warn;
 
+use crate::daemon::config::TimestampMode;
+use crate::daemon::ntp_source::SourceTask;
+use crate::daemon::spawn::CreationParameters;
+use crate::daemon::spawn::SpawnFailureReason::{self, RetryableFailure};
+
 use super::super::config::PoolSourceConfig;
 
-use super::{ClockId, SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId};
+use super::{Spawner, SpawnerId};
 
 struct PoolSource {
-    id: ClockId,
+    id: LinkId,
     addr: SocketAddr,
 }
 
 pub struct PoolSpawner {
     config: PoolSourceConfig,
     source_config: SourceConfig,
-    id: SpawnerId,
+    state: Arc<Mutex<PoolSpawnerState>>,
+}
+
+#[derive(Default)]
+struct PoolSpawnerState {
     current_sources: Vec<PoolSource>,
     known_ips: Vec<SocketAddr>,
 }
@@ -38,92 +50,123 @@ impl PoolSpawner {
         PoolSpawner {
             config,
             source_config,
-            id: SpawnerId::new(),
-            current_sources: vec![],
-            known_ips: vec![],
+            state: Arc::default(),
         }
     }
 }
 
-impl Spawner for PoolSpawner {
-    type Error = PoolSpawnError;
+impl<TimeController: StdController> Spawner<TimeController> for PoolSpawner
+where
+    TimeController::LinkConfig: From<statime_algo::LinkConfig>,
+    TimeController::TrackedLinkConfig: From<statime_algo::TrackedLinkConfig>,
+    TimeController::Link<Arc<TimeController>>: Send + 'static,
+{
+    fn try_spawn(&mut self) -> super::TrySpawnFuture<TimeController> {
+        let config = self.config.clone();
+        let source_config = self.source_config;
+        let state = self.state.clone();
 
-    async fn try_spawn(
-        &mut self,
-        action_tx: &mpsc::Sender<SpawnEvent>,
-    ) -> Result<(), PoolSpawnError> {
-        // early return if there is nothing to do
-        if self.current_sources.len() >= self.config.count {
-            return Ok(());
-        }
+        Box::new(async move {
+            if state.lock().unwrap().current_sources.len() >= config.count {
+                return Err(SpawnFailureReason::RetryableFailure);
+            }
 
-        if self.known_ips.len() < self.config.count - self.current_sources.len() {
-            match self.config.addr.lookup_host().await {
-                Ok(addresses) => {
-                    // add the addresses looked up to our list of known ips
-                    self.known_ips.append(&mut addresses.collect());
-                    // remove known ips that we are already connected to or that we want to ignore
-                    self.known_ips.retain(|ip| {
-                        !self.current_sources.iter().any(|p| p.addr == *ip)
-                            && !self.config.ignore.iter().any(|ign| *ign == ip.ip())
-                    });
-                }
-                Err(e) => {
-                    warn!(error = ?e, "error while resolving source address, retrying");
-                    return Ok(());
+            // FIXME: Simplify once https://github.com/rust-lang/rust/issues/69663
+            // finally gets fixed.
+            let need_addresses = {
+                let state = state.lock().unwrap();
+                state.known_ips.is_empty()
+            };
+
+            if std::dbg!(need_addresses) {
+                match config.addr.lookup_host().await {
+                    Ok(addresses) => {
+                        let mut state = state.lock().unwrap();
+                        // Ensure the borrow checker can check partial mutable borrows.
+                        let state = &mut *state;
+                        // add the addresses looked up to our list of known ips
+                        state.known_ips.append(&mut addresses.collect());
+                        // remove known ips that we are already connected to or that we want to ignore
+                        state.known_ips.retain(|ip| {
+                            !state.current_sources.iter().any(|p| p.addr == *ip)
+                                && !config.ignore.iter().any(|ign| *ign == ip.ip())
+                        });
+
+                        std::dbg!(&state.known_ips);
+                    }
+                    Err(e) => {
+                        warn!(error = ?e, "error while resolving source address, retrying");
+                        return Err(RetryableFailure);
+                    }
                 }
             }
-        }
 
-        // Try and add sources to our pool
-        while self.current_sources.len() < self.config.count {
-            if let Some(addr) = self.known_ips.pop() {
-                let id = ClockId::new();
-                self.current_sources.push(PoolSource { id, addr });
-                let action = SpawnAction::create_ntp(
-                    id,
-                    addr,
-                    self.config.addr.deref().clone(),
-                    self.config.ntp_version,
-                    self.source_config,
-                    None,
-                );
-                tracing::debug!(?action, "intending to spawn new pool source at");
+            let addr = state.lock().unwrap().known_ips.pop();
 
-                action_tx
-                    .send(SpawnEvent::new(self.id, action))
-                    .await
-                    .expect("Channel was no longer connected");
+            if let Some(addr) = addr {
+                Ok(CreationParameters {
+                    stype: SourceType::Ntp,
+                    link_config: LinkConfig {
+                        desired_error_bound: statime_base::Duration::from_seconds_nanos(
+                            0, 1_000_000,
+                        ),
+                        period: None,
+                    }
+                    .into(),
+                    tracked_link_config: Some(
+                        statime_algo::TrackedLinkConfig {
+                            decay_rate: 1. / 86400f64.sqrt(),
+                            longest_interval_for_delay_estimation:
+                                statime_base::Duration::from_seconds_nanos(1, 0),
+                        }
+                        .into(),
+                    ),
+                    creator: Box::new(
+                        move |controller: TimeController::Link<Arc<TimeController>>,
+                              clock,
+                              managers| {
+                            let link_id = controller.id();
+                            let (source, initial_actions) = managers.ntp_manager().new_source(
+                                addr,
+                                source_config,
+                                config.ntp_version,
+                                controller,
+                                None,
+                            );
+
+                            state
+                                .lock()
+                                .unwrap()
+                                .current_sources
+                                .push(PoolSource { id: link_id, addr });
+
+                            SourceTask::spawn(
+                                link_id,
+                                config.addr.to_string(),
+                                addr,
+                                None,
+                                clock,
+                                TimestampMode::Software,
+                                source,
+                                initial_actions,
+                            )
+                        },
+                    ),
+                })
             } else {
-                break;
+                Err(SpawnFailureReason::RetryableFailure)
             }
-        }
-
-        Ok(())
+        })
     }
 
-    fn is_complete(&self) -> bool {
-        self.current_sources.len() >= self.config.count
+    fn needs_spawn(&self) -> bool {
+        let state = self.state.lock().unwrap();
+        state.current_sources.len() < self.config.count
     }
 
-    async fn handle_source_removed(
-        &mut self,
-        removed_source: SourceRemovedEvent,
-    ) -> Result<(), PoolSpawnError> {
-        self.current_sources.retain(|p| p.id != removed_source.id);
-        Ok(())
-    }
-
-    fn get_id(&self) -> SpawnerId {
-        self.id
-    }
-
-    fn get_addr_description(&self) -> String {
-        format!("{} ({})", *self.config.addr, self.config.count)
-    }
-
-    fn get_description(&self) -> &'static str {
-        "pool"
+    fn source_terminated(&mut self, id: LinkId, reason: super::LinkTerminationReason) {
+        let mut state = self.state.lock().unwrap();
+        state.current_sources.retain(|p| p.id != id);
     }
 }
 
@@ -132,20 +175,26 @@ mod tests {
     use ntp_proto::ProtocolVersion;
 
     use ntp_proto::SourceConfig;
+    use statime_base::ClockId;
+    use statime_base::Controller;
+    use statime_base::Link;
     use tokio::sync::mpsc::{self, error::TryRecvError};
 
+    use crate::daemon::clock::NtpClockWrapper;
+    use crate::daemon::spawn::CreationParameters;
+    use crate::daemon::spawn::LinkTerminationReason;
+    use crate::daemon::spawn::TestController;
+    use crate::daemon::system::SystemManagers;
     use crate::daemon::{
         config::{NormalizedAddress, PoolSourceConfig},
-        spawn::{
-            SourceRemovalReason, SourceRemovedEvent, Spawner, pool::PoolSpawner,
-            tests::get_ntp_create_params,
-        },
+        spawn::{Spawner, pool::PoolSpawner},
     };
 
     const MESSAGE_BUFFER_SIZE: usize = 2;
 
     #[tokio::test]
     async fn creates_multiple_sources() {
+        let managers = SystemManagers::test_managers();
         let address_strings = ["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
         let addresses = address_strings.map(|addr| addr.parse().unwrap());
 
@@ -159,122 +208,54 @@ mod tests {
             },
             SourceConfig::default(),
         );
-        let spawner_id = pool.get_id();
-        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
-        assert!(!pool.is_complete());
-        pool.try_spawn(&action_tx).await.unwrap();
-        let res = action_rx.try_recv().unwrap();
-        assert_eq!(spawner_id, res.id);
-        let params = get_ntp_create_params(res).unwrap();
-        let addr1 = params.addr;
-        assert_eq!(
-            params.protocol_version,
-            ProtocolVersion::v4_upgrading_to_v5_with_default_tries()
-        );
+        assert!(<PoolSpawner as Spawner<TestController>>::needs_spawn(&pool));
+        let params: CreationParameters<TestController> =
+            Box::into_pin(pool.try_spawn()).await.unwrap();
 
-        let res = action_rx.try_recv().unwrap();
-        assert_eq!(spawner_id, res.id);
-        let params = get_ntp_create_params(res).unwrap();
-        let addr2 = params.addr;
-        assert_eq!(
-            params.protocol_version,
-            ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
-        );
+        assert!(params.tracked_link_config.is_some());
 
-        assert_ne!(addr1, addr2);
-        assert!(addresses.contains(&addr1));
-        assert!(addresses.contains(&addr2));
+        let link = TestController::create_tracked_link(
+            TestController {},
+            ClockId::new(),
+            None,
+            params.link_config,
+            params.tracked_link_config.unwrap(),
+        )
+        .unwrap();
 
-        let res = action_rx.try_recv().unwrap_err();
-        assert_eq!(res, TryRecvError::Empty);
-        assert!(pool.is_complete());
-    }
+        let handle1 = (params.creator)(link, NtpClockWrapper::default(), &managers);
 
-    #[tokio::test]
-    async fn respects_ntp_version_force_v5() {
-        let address_strings = ["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
-        let addresses = address_strings.map(|addr| addr.parse().unwrap());
+        assert!(<PoolSpawner as Spawner<TestController>>::needs_spawn(&pool));
+        let params: CreationParameters<TestController> =
+            Box::into_pin(pool.try_spawn()).await.unwrap();
 
-        let mut pool = PoolSpawner::new(
-            PoolSourceConfig {
-                addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
-                    .into(),
-                count: 2,
-                ignore: vec![],
-                ntp_version: ProtocolVersion::V5,
-            },
-            SourceConfig::default(),
-        );
-        let spawner_id = pool.get_id();
-        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
+        assert!(params.tracked_link_config.is_some());
 
-        assert!(!pool.is_complete());
-        pool.try_spawn(&action_tx).await.unwrap();
-        let res = action_rx.try_recv().unwrap();
-        assert_eq!(spawner_id, res.id);
-        let params = get_ntp_create_params(res).unwrap();
-        let addr1 = params.addr;
-        assert_eq!(params.protocol_version, ProtocolVersion::V5);
+        let link = TestController::create_tracked_link(
+            TestController {},
+            ClockId::new(),
+            None,
+            params.link_config,
+            params.tracked_link_config.unwrap(),
+        )
+        .unwrap();
 
-        let res = action_rx.try_recv().unwrap();
-        assert_eq!(spawner_id, res.id);
-        let params = get_ntp_create_params(res).unwrap();
-        let addr2 = params.addr;
-        assert_eq!(params.protocol_version, ProtocolVersion::V5);
+        let handle2 = (params.creator)(link, NtpClockWrapper::default(), &managers);
 
-        assert_ne!(addr1, addr2);
-        assert!(addresses.contains(&addr1));
-        assert!(addresses.contains(&addr2));
+        assert!(!<PoolSpawner as Spawner<TestController>>::needs_spawn(
+            &pool
+        ));
 
-        let res = action_rx.try_recv().unwrap_err();
-        assert_eq!(res, TryRecvError::Empty);
-        assert!(pool.is_complete());
-    }
+        //FIXME: Check the sources are disjunct once we have sufficient observability for that.
 
-    #[tokio::test]
-    async fn respects_ntp_version_force_v4() {
-        let address_strings = ["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
-        let addresses = address_strings.map(|addr| addr.parse().unwrap());
-
-        let mut pool = PoolSpawner::new(
-            PoolSourceConfig {
-                addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
-                    .into(),
-                count: 2,
-                ignore: vec![],
-                ntp_version: ProtocolVersion::V4,
-            },
-            SourceConfig::default(),
-        );
-        let spawner_id = pool.get_id();
-        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
-
-        assert!(!pool.is_complete());
-        pool.try_spawn(&action_tx).await.unwrap();
-        let res = action_rx.try_recv().unwrap();
-        assert_eq!(spawner_id, res.id);
-        let params = get_ntp_create_params(res).unwrap();
-        let addr1 = params.addr;
-        assert_eq!(params.protocol_version, ProtocolVersion::V4);
-
-        let res = action_rx.try_recv().unwrap();
-        assert_eq!(spawner_id, res.id);
-        let params = get_ntp_create_params(res).unwrap();
-        let addr2 = params.addr;
-        assert_eq!(params.protocol_version, ProtocolVersion::V4);
-
-        assert_ne!(addr1, addr2);
-        assert!(addresses.contains(&addr1));
-        assert!(addresses.contains(&addr2));
-
-        let res = action_rx.try_recv().unwrap_err();
-        assert_eq!(res, TryRecvError::Empty);
-        assert!(pool.is_complete());
+        handle1.abort();
+        handle2.abort();
     }
 
     #[tokio::test]
     async fn respect_ignores() {
+        let managers = SystemManagers::test_managers();
         let address_strings = ["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
         let addresses = address_strings.map(|addr| addr.parse().unwrap());
         let ignores = vec!["127.0.0.1".parse().unwrap()];
@@ -283,40 +264,63 @@ mod tests {
             PoolSourceConfig {
                 addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
                     .into(),
-                count: 2,
+                count: 3,
                 ignore: ignores.clone(),
                 ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
             },
             SourceConfig::default(),
         );
-        let spawner_id = pool.get_id();
-        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
-        assert!(!pool.is_complete());
-        pool.try_spawn(&action_tx).await.unwrap();
-        let res = action_rx.try_recv().unwrap();
-        assert_eq!(spawner_id, res.id);
-        let params = get_ntp_create_params(res).unwrap();
-        let addr1 = params.addr;
+        assert!(<PoolSpawner as Spawner<TestController>>::needs_spawn(&pool));
+        let params: CreationParameters<TestController> =
+            Box::into_pin(pool.try_spawn()).await.unwrap();
 
-        let res = action_rx.try_recv().unwrap();
-        assert_eq!(spawner_id, res.id);
-        let params = get_ntp_create_params(res).unwrap();
-        let addr2 = params.addr;
+        assert!(params.tracked_link_config.is_some());
 
-        assert_ne!(addr1, addr2);
-        assert!(addresses.contains(&addr1));
-        assert!(addresses.contains(&addr2));
-        assert!(!ignores.contains(&addr1.ip()));
-        assert!(!ignores.contains(&addr2.ip()));
+        let link = TestController::create_tracked_link(
+            TestController {},
+            ClockId::new(),
+            None,
+            params.link_config,
+            params.tracked_link_config.unwrap(),
+        )
+        .unwrap();
 
-        let res = action_rx.try_recv().unwrap_err();
-        assert_eq!(res, TryRecvError::Empty);
-        assert!(pool.is_complete());
+        let handle1 = (params.creator)(link, NtpClockWrapper::default(), &managers);
+
+        assert!(<PoolSpawner as Spawner<TestController>>::needs_spawn(&pool));
+        let params: CreationParameters<TestController> =
+            Box::into_pin(pool.try_spawn()).await.unwrap();
+
+        assert!(params.tracked_link_config.is_some());
+
+        let link = TestController::create_tracked_link(
+            TestController {},
+            ClockId::new(),
+            None,
+            params.link_config,
+            params.tracked_link_config.unwrap(),
+        )
+        .unwrap();
+
+        let handle2 = (params.creator)(link, NtpClockWrapper::default(), &managers);
+
+        assert!(<PoolSpawner as Spawner<TestController>>::needs_spawn(&pool));
+        assert!(
+            Box::into_pin(<PoolSpawner as Spawner<TestController>>::try_spawn(
+                &mut pool
+            ))
+            .await
+            .is_err()
+        );
+
+        handle1.abort();
+        handle2.abort();
     }
 
     #[tokio::test]
     async fn refills_sources_upto_limit() {
+        let managers = SystemManagers::test_managers();
         let address_strings = ["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
         let addresses = address_strings.map(|addr| addr.parse().unwrap());
 
@@ -330,38 +334,78 @@ mod tests {
             },
             SourceConfig::default(),
         );
-        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
-        assert!(!pool.is_complete());
-        pool.try_spawn(&action_tx).await.unwrap();
-        let res = action_rx.try_recv().unwrap();
-        let params = get_ntp_create_params(res).unwrap();
-        let addr1 = params.addr;
-        let res = action_rx.try_recv().unwrap();
-        let params = get_ntp_create_params(res).unwrap();
-        let addr2 = params.addr;
-        assert!(pool.is_complete());
+        assert!(<PoolSpawner as Spawner<TestController>>::needs_spawn(&pool));
+        let params: CreationParameters<TestController> =
+            Box::into_pin(pool.try_spawn()).await.unwrap();
 
-        pool.handle_source_removed(SourceRemovedEvent {
-            id: params.id,
-            reason: SourceRemovalReason::NetworkIssue,
-        })
-        .await
+        assert!(params.tracked_link_config.is_some());
+
+        let link = TestController::create_tracked_link(
+            TestController {},
+            ClockId::new(),
+            None,
+            params.link_config,
+            params.tracked_link_config.unwrap(),
+        )
+        .unwrap();
+        let id_1 = link.id();
+
+        let handle1 = (params.creator)(link, NtpClockWrapper::default(), &managers);
+
+        assert!(<PoolSpawner as Spawner<TestController>>::needs_spawn(&pool));
+        let params: CreationParameters<TestController> =
+            Box::into_pin(pool.try_spawn()).await.unwrap();
+
+        assert!(params.tracked_link_config.is_some());
+
+        let link = TestController::create_tracked_link(
+            TestController {},
+            ClockId::new(),
+            None,
+            params.link_config,
+            params.tracked_link_config.unwrap(),
+        )
         .unwrap();
 
-        assert!(!pool.is_complete());
-        pool.try_spawn(&action_tx).await.unwrap();
-        let res = action_rx.try_recv().unwrap();
-        let params = get_ntp_create_params(res).unwrap();
-        let addr3 = params.addr;
+        let handle2 = (params.creator)(link, NtpClockWrapper::default(), &managers);
 
-        // no duplicates!
-        assert_ne!(addr1, addr2);
-        assert_ne!(addr2, addr3);
-        assert_ne!(addr3, addr1);
+        assert!(!<PoolSpawner as Spawner<TestController>>::needs_spawn(
+            &pool
+        ));
 
-        assert!(addresses.contains(&addr3));
-        assert!(pool.is_complete());
+        handle1.abort();
+        <PoolSpawner as Spawner<TestController>>::source_terminated(
+            &mut pool,
+            id_1,
+            LinkTerminationReason::NetworkIssue,
+        );
+
+        assert!(<PoolSpawner as Spawner<TestController>>::needs_spawn(&pool));
+        let params: CreationParameters<TestController> =
+            Box::into_pin(pool.try_spawn()).await.unwrap();
+
+        assert!(params.tracked_link_config.is_some());
+
+        let link = TestController::create_tracked_link(
+            TestController {},
+            ClockId::new(),
+            None,
+            params.link_config,
+            params.tracked_link_config.unwrap(),
+        )
+        .unwrap();
+
+        let handle3 = (params.creator)(link, NtpClockWrapper::default(), &managers);
+
+        assert!(!<PoolSpawner as Spawner<TestController>>::needs_spawn(
+            &pool
+        ));
+
+        //FIXME: Check the sources are disjunct once we have sufficient observability for that.
+
+        handle2.abort();
+        handle3.abort();
     }
 
     #[tokio::test]
@@ -375,11 +419,15 @@ mod tests {
             },
             SourceConfig::default(),
         );
-        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
-        assert!(!pool.is_complete());
-        pool.try_spawn(&action_tx).await.unwrap();
-        let res = action_rx.try_recv().unwrap_err();
-        assert_eq!(res, TryRecvError::Empty);
-        assert!(!pool.is_complete());
+
+        assert!(<PoolSpawner as Spawner<TestController>>::needs_spawn(&pool));
+
+        assert!(
+            Box::into_pin(<PoolSpawner as Spawner<TestController>>::try_spawn(
+                &mut pool
+            ))
+            .await
+            .is_err()
+        );
     }
 }
