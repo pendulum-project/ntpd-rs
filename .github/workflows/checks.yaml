@@ -141,6 +141,15 @@ jobs:
         with:
           shared-key: "cov-${{matrix.rust}}-${{matrix.target}}-${{ env.FEATURE_HASH }}"
 
+      # Check each package separately: workspace consumers enable std through feature unification.
+      - name: Check no_std libraries
+        if: >-
+          ${{ matrix.target == 'x86_64-unknown-linux-gnu' &&
+              (matrix.rust == 'msrv' || (matrix.rust == 'stable' && matrix.features == '')) }}
+        run: |
+          cargo check -p statime-base --lib --no-default-features --locked
+          cargo check -p statime-algo --lib --no-default-features --locked
+
       - name: setup coverage environment
         run: cargo --locked llvm-cov show-env --export-prefix >> $GITHUB_ENV
 
