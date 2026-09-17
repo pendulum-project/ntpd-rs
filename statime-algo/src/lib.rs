@@ -447,7 +447,7 @@ impl<Storage: KalmanStorage<C>, C: Clock<TAI>> KalmanController<Storage, C> {
     /// Fails when the clock is not known to the filter.
     pub fn clock_frequency(&self, clock_id: ClockId) -> Result<UncertainValue, AlgoError> {
         self.state
-            .with_ref(|state| state.filter.clock_offset(clock_id))
+            .with_ref(|state| state.filter.clock_frequency(clock_id))
     }
 }
 
