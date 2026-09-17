@@ -34,6 +34,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 
 use config::NtpDaemonOptions;
 
+use crate::daemon::spawn::pool::PoolSpawner;
 use crate::daemon::spawn::standard::StandardSpawner;
 use crate::daemon::system::{System, SystemConfig};
 use crate::daemon::tracing::LogReloadTaskStarter;
@@ -200,7 +201,12 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
                     )));
                 }
                 config::NtpSourceConfig::Nts(flattened_pair) => todo!(),
-                config::NtpSourceConfig::Pool(flattened_pair) => todo!(),
+                config::NtpSourceConfig::Pool(flattened_pair) => {
+                    system.add_spawner(Box::new(PoolSpawner::new(
+                        flattened_pair.first,
+                        flattened_pair.second.with_defaults(config.source_defaults),
+                    )));
+                }
                 config::NtpSourceConfig::NtsPool(flattened_pair) => todo!(),
                 config::NtpSourceConfig::Sock(sock_source_config) => todo!(),
                 config::NtpSourceConfig::Pps(pps_source_config) => todo!(),
