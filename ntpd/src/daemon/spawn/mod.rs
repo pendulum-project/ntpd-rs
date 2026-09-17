@@ -29,7 +29,7 @@ use super::config::NormalizedAddress;
 //pub mod csptp;
 //pub mod nts;
 //pub mod nts_pool;
-//pub mod pool;
+pub mod pool;
 //#[cfg(feature = "pps")]
 //pub mod pps;
 //pub mod sock;
