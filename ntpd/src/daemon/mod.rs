@@ -22,6 +22,7 @@ pub mod spawn;
 mod system;
 pub mod tracing;
 
+use std::sync::Arc;
 use std::{error::Error, io::IsTerminal, path::Path};
 
 use ::tracing::info;
@@ -33,6 +34,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 
 use config::NtpDaemonOptions;
 
+use crate::daemon::spawn::standard::StandardSpawner;
 use crate::daemon::system::{System, SystemConfig};
 use crate::daemon::tracing::LogReloadTaskStarter;
 use crate::notify::notify_ready;
@@ -158,7 +160,7 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
 
         ::tracing::debug!("Configuration loaded, spawning daemon jobs");
         let clock = clock_config.clock;
-        let (controller, system_clock) =
+        let (controller, system_clock_id) =
             statime_algo::KalmanController::<StdKalmanStorage<_>, _>::new(
                 clock,
                 ClockConfig::default(),
@@ -174,18 +176,37 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
                 },
             )
             .map_err(|error| std::io::Error::other(format!("{error:?}")))?;
-        let system = System::new(
+        let system = Arc::new(System::new(
+            clock,
             controller,
-            system_clock,
+            system_clock_id,
             SystemConfig {
                 minimum_retry_timeout: std::time::Duration::from_secs(1),
                 maximum_retry_timeout: std::time::Duration::from_mins(10),
             },
             config.synchronization.synchronization_base,
             config.csptp.into(),
-        );
+        ));
 
-        let main_loop_handle = tokio::spawn(async move { system.run().await });
+        let system_clone = system.clone();
+        let main_loop_handle = tokio::spawn(async move { system_clone.run().await });
+
+        for source in config.sources {
+            match source {
+                config::NtpSourceConfig::Standard(flattened_pair) => {
+                    system.add_spawner(Box::new(StandardSpawner::new(
+                        flattened_pair.first,
+                        flattened_pair.second.with_defaults(config.source_defaults),
+                    )));
+                }
+                config::NtpSourceConfig::Nts(flattened_pair) => todo!(),
+                config::NtpSourceConfig::Pool(flattened_pair) => todo!(),
+                config::NtpSourceConfig::NtsPool(flattened_pair) => todo!(),
+                config::NtpSourceConfig::Sock(sock_source_config) => todo!(),
+                config::NtpSourceConfig::Pps(pps_source_config) => todo!(),
+                config::NtpSourceConfig::Csptp(csptp_source_config) => todo!(),
+            }
+        }
 
         for nts_ke_config in config.nts_ke {
             let _join_handle = keyexchange::spawn(nts_ke_config, keyset.clone());
