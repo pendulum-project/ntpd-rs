@@ -6,6 +6,7 @@ use ntp_proto::{NtpVersion, ProtocolVersion, SourceConfig, SynchronizationConfig
 pub use ntp_source::*;
 use serde::{Deserialize, Deserializer};
 pub use server::*;
+use statime_algo::LinkConfig;
 use std::io;
 use std::{
     fmt::Display,

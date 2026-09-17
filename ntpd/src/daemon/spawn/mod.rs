@@ -1,8 +1,14 @@
-use std::{future::Future, net::SocketAddr, sync::atomic::AtomicU64};
+use std::{
+    future::Future,
+    net::SocketAddr,
+    sync::{Arc, atomic::AtomicU64},
+};
 
 use ntp_proto::{ClockId, ProtocolVersion, SourceConfig, SourceNtsData};
+use statime_base::{LinkId, SourceType, StdController};
 use tokio::{
     sync::mpsc,
+    task::JoinHandle,
     time::{Instant, timeout},
 };
 use tracing::warn;
@@ -11,23 +17,25 @@ use tracing::warn;
 use crate::daemon::config::CsptpSourceConfig;
 #[cfg(feature = "pps")]
 use crate::daemon::config::PpsSourceConfig;
-use crate::daemon::config::{NtpAddress, SockSourceConfig};
+use crate::daemon::{
+    clock::NtpClockWrapper,
+    config::{NtpAddress, SockSourceConfig},
+    system::SystemManagers,
+};
 
 use super::config::NormalizedAddress;
 
-#[cfg(target_os = "linux")]
-pub mod csptp;
-pub mod nts;
-pub mod nts_pool;
-pub mod pool;
-#[cfg(feature = "pps")]
-pub mod pps;
-pub mod sock;
+//#[cfg(target_os = "linux")]
+//pub mod csptp;
+//pub mod nts;
+//pub mod nts_pool;
+//pub mod pool;
+//#[cfg(feature = "pps")]
+//pub mod pps;
+//pub mod sock;
 pub mod standard;
 
 const NTS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
-// TODO: Eliminate in new setup for spawners.
-const NETWORK_WAIT_PERIOD: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Unique identifier for a spawner.
 /// This is used to identify which spawner was used to create a source
@@ -47,255 +55,50 @@ impl Default for SpawnerId {
     }
 }
 
-/// A `SpawnEvent` is an event created by the spawner for the system
-///
-/// The action that the system should execute is encoded in the `action` field.
-/// The spawner should make sure that it only ever sends events with its own
-/// spawner id.
-#[derive(Debug)]
-pub struct SpawnEvent {
-    pub id: SpawnerId,
-    pub action: SpawnAction,
-}
-
-impl SpawnEvent {
-    pub fn new(id: SpawnerId, action: SpawnAction) -> SpawnEvent {
-        SpawnEvent { id, action }
-    }
-}
-
-/// Events coming from the system are encoded in this enum
-#[derive(Debug)]
-pub enum SystemEvent {
-    SourceRemoved(SourceRemovedEvent),
-    SourceRegistered(SourceCreateParameters),
-    Idle,
-}
-
-impl SystemEvent {
-    pub fn source_removed(id: ClockId, reason: SourceRemovalReason) -> SystemEvent {
-        SystemEvent::SourceRemoved(SourceRemovedEvent { id, reason })
-    }
-}
-
-#[derive(Debug)]
-pub struct SourceRemovedEvent {
-    pub id: ClockId,
-    pub reason: SourceRemovalReason,
-}
-
-/// This indicates what the reason was that a source was removed.
-#[derive(Debug, PartialEq, Eq)]
-pub enum SourceRemovalReason {
-    Demobilized,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkTerminationReason {
+    MustDemobilize,
     NetworkIssue,
     Unreachable,
+    Failed,
+    Deleted,
 }
 
-/// The kind of action that the spawner requests to the system.
-/// Currently a spawner can only create sources
-#[derive(Debug)]
-pub enum SpawnAction {
-    Create(SourceCreateParameters),
-    // Remove(()),
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpawnFailureReason {
+    RetryableFailure,
+    NetworkIssue,
 }
 
-impl SpawnAction {
-    pub fn create_ntp(
-        id: ClockId,
-        addr: SocketAddr,
-        normalized_addr: NormalizedAddress,
-        protocol_version: ProtocolVersion,
-        config: SourceConfig,
-        nts: Option<Box<SourceNtsData>>,
-    ) -> SpawnAction {
-        SpawnAction::Create(SourceCreateParameters::Ntp(NtpSourceCreateParameters {
-            id,
-            addr,
-            normalized_addr,
-            protocol_version,
-            config,
-            nts,
-        }))
-    }
+pub type TrySpawnFuture<TimeController> = Box<
+    dyn Future<Output = Result<CreationParameters<TimeController>, SpawnFailureReason>>
+        + Sync
+        + Send
+        + 'static,
+>;
+
+pub struct CreationParameters<TimeController: StdController> {
+    pub stype: SourceType,
+    pub link_config: TimeController::LinkConfig,
+    pub tracked_link_config: Option<TimeController::TrackedLinkConfig>,
+    pub creator: SourceCreator<TimeController::Link<Arc<TimeController>>>,
 }
 
-#[derive(Debug)]
-pub enum SourceCreateParameters {
-    Ntp(NtpSourceCreateParameters),
-    Sock(SockSourceCreateParameters),
-    #[cfg(feature = "pps")]
-    Pps(PpsSourceCreateParameters),
-    #[cfg(target_os = "linux")]
-    Csptp(CsptpSourceCreateParameters),
-}
+pub type SourceCreator<LinkController> = Box<
+    dyn FnOnce(
+            LinkController,
+            NtpClockWrapper,
+            &SystemManagers,
+        ) -> JoinHandle<LinkTerminationReason>
+        + Sync
+        + Send
+        + 'static,
+>;
 
-impl SourceCreateParameters {
-    pub fn get_id(&self) -> ClockId {
-        match self {
-            Self::Ntp(params) => params.id,
-            Self::Sock(params) => params.id,
-            #[cfg(feature = "pps")]
-            Self::Pps(params) => params.id,
-            #[cfg(target_os = "linux")]
-            Self::Csptp(params) => params.id,
-        }
-    }
-
-    pub fn get_addr(&self) -> String {
-        match self {
-            Self::Ntp(params) => params.addr.to_string(),
-            Self::Sock(params) => params.sock_config.path.display().to_string(),
-            #[cfg(feature = "pps")]
-            Self::Pps(params) => params.pps_config.path.display().to_string(),
-            #[cfg(target_os = "linux")]
-            Self::Csptp(params) => params.addr.to_string(),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct NtpSourceCreateParameters {
-    pub id: ClockId,
-    pub addr: SocketAddr,
-    pub normalized_addr: NormalizedAddress,
-    pub protocol_version: ProtocolVersion,
-    pub config: SourceConfig,
-    pub nts: Option<Box<SourceNtsData>>,
-}
-
-#[cfg(target_os = "linux")]
-#[derive(Debug)]
-pub struct CsptpSourceCreateParameters {
-    pub id: ClockId,
-    pub addr: std::net::IpAddr,
-    pub config: CsptpSourceConfig,
-}
-
-#[derive(Debug)]
-#[expect(
-    unused,
-    reason = "FIXME: Rework configuration and sock source creation."
-)]
-pub struct SockSourceCreateParameters {
-    pub id: ClockId,
-    pub config: SourceConfig,
-    pub sock_config: SockSourceConfig,
-}
-
-#[cfg(feature = "pps")]
-#[derive(Debug)]
-#[expect(
-    unused,
-    reason = "FIXME: Rework configuration and sock source creation."
-)]
-pub struct PpsSourceCreateParameters {
-    pub id: ClockId,
-    pub config: SourceConfig,
-    pub pps_config: PpsSourceConfig,
-}
-
-pub trait Spawner {
-    type Error: std::error::Error + Send;
-
-    /// Try to create all desired sources. Should return immediately on failure
-    ///
-    /// It is ok for this function to use some time when spawning a new client.
-    /// However, it should not implement it's own retry or backoff feature, but
-    /// rather rely on that provided by the basic spawner.
-    fn try_spawn(
-        &mut self,
-        action_tx: &mpsc::Sender<SpawnEvent>,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
-
-    /// Is there desire to spawn new sources?
-    fn is_complete(&self) -> bool;
-
-    /// Event handler for when a source is removed.
-    ///
-    /// This is called each time the system notifies this spawner that one of
-    /// the spawned sources was removed from the system. The spawner can then add
-    /// additional sources or do nothing, depending on its configuration and
-    /// algorithm.
-    ///
-    /// This should just do bookkeeping, any adding of sources should be done
-    /// in try_add.
-    fn handle_source_removed(
-        &mut self,
-        event: SourceRemovedEvent,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
-
-    /// Event handler for when a source is successfully registered in the system
-    ///
-    /// Every time the spawner sends a source to the system this handler will
-    /// eventually be called when the system has successfully registered the source
-    /// and will start polling it for ntp packets.
-    ///
-    /// This should just do bookkeeping, any adding of sources should be done
-    /// in try_add.
-    fn handle_registered(
-        &mut self,
-        _event: SourceCreateParameters,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
-        async { Ok(()) }
-    }
-
-    /// Get the id of the spawner
-    fn get_id(&self) -> SpawnerId;
-
-    /// Get a description of the address this spawner is connected to
-    fn get_addr_description(&self) -> String;
-
-    /// Get a description of the type of spawner
-    fn get_description(&self) -> &'static str;
-}
-
-pub async fn spawner_task<S: Spawner + Send + 'static>(
-    mut spawner: S,
-    action_tx: mpsc::Sender<SpawnEvent>,
-    mut system_notify: mpsc::Receiver<SystemEvent>,
-) -> Result<(), S::Error> {
-    let mut has_ticket = true;
-    let mut last_ticket_time = Instant::now();
-
-    loop {
-        if last_ticket_time.elapsed() >= NETWORK_WAIT_PERIOD {
-            has_ticket = true;
-        }
-
-        if has_ticket && !spawner.is_complete() {
-            spawner.try_spawn(&action_tx).await?;
-            has_ticket = false;
-            last_ticket_time = Instant::now();
-        }
-
-        let event = if has_ticket {
-            system_notify.recv().await
-        } else {
-            timeout(
-                NETWORK_WAIT_PERIOD.saturating_sub(last_ticket_time.elapsed()),
-                system_notify.recv(),
-            )
-            .await
-            .unwrap_or(Some(SystemEvent::Idle))
-        };
-
-        let Some(event) = event else {
-            break;
-        };
-
-        match event {
-            SystemEvent::SourceRegistered(source_params) => {
-                spawner.handle_registered(source_params).await?;
-            }
-            SystemEvent::SourceRemoved(removed_source) => {
-                spawner.handle_source_removed(removed_source).await?;
-            }
-            SystemEvent::Idle => {}
-        }
-    }
-
-    Ok(())
+pub trait Spawner<TimeController: StdController> {
+    fn try_spawn(&mut self) -> TrySpawnFuture<TimeController>;
+    fn needs_spawn(&self) -> bool;
+    fn source_terminated(&mut self, id: LinkId, reason: LinkTerminationReason);
 }
 
 pub(super) async fn resolve_single_ntp_server(address: NtpAddress) -> Option<SocketAddr> {
@@ -332,13 +135,144 @@ pub(super) async fn resolve_single_ntp_server(address: NtpAddress) -> Option<Soc
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{NtpSourceCreateParameters, SourceCreateParameters, SpawnAction, SpawnEvent};
+pub use tests::*;
 
-    pub fn get_ntp_create_params(res: SpawnEvent) -> Option<NtpSourceCreateParameters> {
-        let SpawnAction::Create(SourceCreateParameters::Ntp(params)) = res.action else {
-            return None;
-        };
-        Some(params)
+#[cfg(test)]
+mod tests {
+    use std::future::pending;
+
+    use ntp_proto::SourceConfig;
+    use statime_base::{ClockId, Controller, Link, LinkId, StdController};
+
+    use crate::daemon::{clock::NtpClockWrapper, system::SystemManagers};
+
+    #[derive(Default, Debug, Clone, Copy)]
+    pub struct ConfigSentinel;
+    impl From<statime_algo::LinkConfig> for ConfigSentinel {
+        fn from(_value: statime_algo::LinkConfig) -> Self {
+            ConfigSentinel
+        }
+    }
+
+    impl From<statime_algo::TrackedLinkConfig> for ConfigSentinel {
+        fn from(_value: statime_algo::TrackedLinkConfig) -> Self {
+            ConfigSentinel
+        }
+    }
+
+    pub struct TestController {}
+
+    impl AsRef<TestController> for TestController {
+        fn as_ref(&self) -> &TestController {
+            self
+        }
+    }
+
+    impl Controller for TestController {
+        type Clock = NtpClockWrapper;
+
+        type Link<ControllerRef: AsRef<Self>> = TestLink;
+
+        type Error = std::convert::Infallible;
+
+        type ClockConfig = ();
+
+        type LinkConfig = ConfigSentinel;
+
+        type TrackedLinkConfig = ConfigSentinel;
+
+        fn add_clock(
+            &self,
+            _clock: Self::Clock,
+            _config: Self::ClockConfig,
+        ) -> Result<statime_base::ClockId, Self::Error> {
+            unimplemented!()
+        }
+
+        fn remove_clock(&self, _clock_id: statime_base::ClockId) -> Result<(), Self::Error> {
+            unimplemented!()
+        }
+
+        fn create_tracked_link<ControllerRef: AsRef<Self>>(
+            _this: ControllerRef,
+            _clock_a: statime_base::ClockId,
+            _clock_b: Option<statime_base::ClockId>,
+            _config: Self::LinkConfig,
+            _tracked_config: Self::TrackedLinkConfig,
+        ) -> Result<Self::Link<ControllerRef>, Self::Error> {
+            Ok(TestLink(
+                LinkId::new(ClockId::new(), ClockId::new()).unwrap(),
+            ))
+        }
+
+        fn create_untracked_link<ControllerRef: AsRef<Self>>(
+            _this: ControllerRef,
+            _clock_a: statime_base::ClockId,
+            _clock_b: Option<statime_base::ClockId>,
+            _config: Self::LinkConfig,
+        ) -> Result<Self::Link<ControllerRef>, Self::Error> {
+            Ok(TestLink(
+                LinkId::new(ClockId::new(), ClockId::new()).unwrap(),
+            ))
+        }
+
+        fn clock_snapshot(
+            &self,
+            _clock: statime_base::ClockId,
+        ) -> Result<statime_base::TimeSnapshot, Self::Error> {
+            unimplemented!()
+        }
+
+        fn run<Fut: Future<Output = ()> + Send, F: Send + Fn(core::time::Duration) -> Fut>(
+            _this: impl AsRef<Self> + Send,
+            _sleep: F,
+        ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+            pending()
+        }
+    }
+
+    impl StdController for TestController {
+        fn active_links(&self) -> std::vec::Vec<statime_base::ActiveLinkData> {
+            unimplemented!()
+        }
+    }
+
+    pub struct TestLink(LinkId);
+
+    impl Link for TestLink {
+        type Error = std::convert::Infallible;
+
+        fn measurement(
+            &self,
+            measurement: statime_base::Measurement,
+            direction: statime_base::Direction,
+        ) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn external_data_update(
+            &self,
+            root_delay: statime_base::Duration,
+            leap_status: Option<statime_base::LeapStatus>,
+            usable: bool,
+        ) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn active(&self) -> Result<bool, Self::Error> {
+            unimplemented!()
+        }
+
+        fn importance(&self) -> Result<Option<f64>, Self::Error> {
+            unimplemented!()
+        }
+
+        fn desired_poll_interval(&self) -> Result<statime_base::Duration, Self::Error> {
+            Ok(statime_base::Duration::from_seconds_nanos(16, 0))
+        }
+
+        fn id(&self) -> statime_base::LinkId {
+            self.0
+        }
     }
 }

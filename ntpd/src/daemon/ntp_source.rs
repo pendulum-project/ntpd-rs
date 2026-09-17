@@ -14,6 +14,8 @@ use tracing::{Instrument, Span, debug, error, instrument, warn};
 
 use tokio::time::{Instant, Sleep};
 
+use crate::daemon::spawn::LinkTerminationReason;
+
 use super::{config::TimestampMode, exitcode};
 
 /// Trait needed to allow injecting of futures other than `tokio::time::Sleep` for testing
@@ -45,7 +47,6 @@ pub struct SourceChannels {
 
 pub(crate) struct SourceTask<C: 'static + Clock<TAI> + Send, Controller: Link, T: Wait> {
     _wait: PhantomData<T>,
-    index: ClockId,
     link_id: LinkId,
     clock: C,
     interface: Option<InterfaceName>,
@@ -53,7 +54,6 @@ pub(crate) struct SourceTask<C: 'static + Clock<TAI> + Send, Controller: Link, T
     name: String,
     source_addr: SocketAddr,
     socket: Option<Socket<SocketAddr, Connected>>,
-    channels: SourceChannels,
 
     source: NtpSource<Controller>,
 
@@ -102,9 +102,7 @@ where
         SocketResult::Ok
     }
 
-    // FIXME: Figure out reasonable ways to simplify and/or split this function
-    #[expect(clippy::too_many_lines)]
-    async fn run(&mut self, mut poll_wait: Pin<&mut T>) {
+    async fn run(&mut self, mut poll_wait: Pin<&mut T>) -> LinkTerminationReason {
         loop {
             enum SelectResult {
                 Timer,
@@ -131,47 +129,19 @@ where
                                 debug!("we received a message without having sent one; discarding");
                                 continue;
                             };
-                            let actions =
-                                self.source
-                                    .handle_incoming(packet, send_timestamp, recv_timestamp);
-                            self.channels
-                                .source_snapshots
-                                .write()
-                                .expect("Unexpected poisoned mutex")
-                                .insert(
-                                    self.index,
-                                    self.source.observe(self.name.clone(), self.index),
-                                );
-                            actions
+
+                            self.source
+                                .handle_incoming(packet, send_timestamp, recv_timestamp)
                         }
                         AcceptResult::NetworkGone => {
-                            self.channels
-                                .msg_for_system_sender
-                                .send(MsgForSystem::NetworkIssue(self.link_id))
-                                .await
-                                .ok();
-                            self.channels
-                                .source_snapshots
-                                .write()
-                                .expect("Unexpected poisoned mutex")
-                                .remove(&self.index);
-                            return;
+                            return LinkTerminationReason::NetworkIssue;
                         }
                         AcceptResult::Ignore => NtpSourceActionIterator::default(),
                     }
                 }
                 SelectResult::Timer => {
                     tracing::debug!("wait completed");
-                    let actions = self.source.handle_timer();
-                    self.channels
-                        .source_snapshots
-                        .write()
-                        .expect("Unexpected poisoned mutex")
-                        .insert(
-                            self.index,
-                            self.source.observe(self.name.clone(), self.index),
-                        );
-                    actions
+                    self.source.handle_timer()
                 }
             };
 
@@ -179,17 +149,7 @@ where
                 match action {
                     ntp_proto::NtpSourceAction::Send(packet) => {
                         if matches!(self.setup_socket(), SocketResult::Abort) {
-                            self.channels
-                                .msg_for_system_sender
-                                .send(MsgForSystem::NetworkIssue(self.link_id))
-                                .await
-                                .ok();
-                            self.channels
-                                .source_snapshots
-                                .write()
-                                .expect("Unexpected poisoned mutex")
-                                .remove(&self.index);
-                            return;
+                            return LinkTerminationReason::NetworkIssue;
                         }
 
                         match self.clock.now() {
@@ -216,17 +176,7 @@ where
                                     | libc::ENETUNREACH,
                                 ) = error.raw_os_error()
                                 {
-                                    self.channels
-                                        .msg_for_system_sender
-                                        .send(MsgForSystem::NetworkIssue(self.link_id))
-                                        .await
-                                        .ok();
-                                    self.channels
-                                        .source_snapshots
-                                        .write()
-                                        .expect("Unexpected poisoned mutex")
-                                        .remove(&self.index);
-                                    return;
+                                    return LinkTerminationReason::NetworkIssue;
                                 }
                             }
                             Ok(opt_send_timestamp) => {
@@ -245,30 +195,10 @@ where
                         }
                     }
                     ntp_proto::NtpSourceAction::Reset => {
-                        self.channels
-                            .msg_for_system_sender
-                            .send(MsgForSystem::Unreachable(self.link_id))
-                            .await
-                            .ok();
-                        self.channels
-                            .source_snapshots
-                            .write()
-                            .expect("Unexpected poisoned mutex")
-                            .remove(&self.index);
-                        return;
+                        return LinkTerminationReason::Unreachable;
                     }
                     ntp_proto::NtpSourceAction::Demobilize => {
-                        self.channels
-                            .msg_for_system_sender
-                            .send(MsgForSystem::MustDemobilize(self.link_id))
-                            .await
-                            .ok();
-                        self.channels
-                            .source_snapshots
-                            .write()
-                            .expect("Unexpected poisoned mutex")
-                            .remove(&self.index);
-                        return;
+                        return LinkTerminationReason::MustDemobilize;
                     }
                 }
             }
@@ -281,19 +211,17 @@ where
     C: 'static + Clock<TAI> + Send + Sync,
 {
     #[expect(clippy::too_many_arguments)]
-    #[instrument(level = tracing::Level::ERROR, name = "Ntp Source", skip(timestamp_mode, clock, channels, source, initial_actions))]
+    #[instrument(level = tracing::Level::ERROR, name = "Ntp Source", skip(timestamp_mode, clock, source, initial_actions))]
     pub fn spawn(
-        index: ClockId,
         link_id: LinkId,
         name: String,
         source_addr: SocketAddr,
         interface: Option<InterfaceName>,
         clock: C,
         timestamp_mode: TimestampMode,
-        channels: SourceChannels,
         source: NtpSource<Controller>,
         initial_actions: NtpSourceActionIterator,
-    ) -> tokio::task::JoinHandle<()> {
+    ) -> tokio::task::JoinHandle<LinkTerminationReason> {
         tokio::spawn(
             (async move {
                 let poll_wait = tokio::time::sleep(std::time::Duration::default());
@@ -318,11 +246,9 @@ where
 
                 let mut process = SourceTask {
                     _wait: PhantomData,
-                    index,
                     link_id,
                     name,
                     clock,
-                    channels,
                     interface,
                     timestamp_mode,
                     source_addr,
@@ -331,7 +257,7 @@ where
                     last_send_timestamp: None,
                 };
 
-                process.run(poll_wait).await;
+                process.run(poll_wait).await
             })
             .instrument(Span::current()),
         )
@@ -538,7 +464,7 @@ mod tests {
         }
     }
 
-    struct TestController;
+    struct TestController(LinkId);
 
     impl Link for TestController {
         type Error = std::convert::Infallible;
@@ -573,14 +499,13 @@ mod tests {
         }
 
         fn id(&self) -> LinkId {
-            unimplemented!()
+            self.0
         }
     }
 
     fn test_startup<T: Wait>() -> (
         SourceTask<TestClock, TestController, T>,
         Socket<SocketAddr, Open>,
-        mpsc::Receiver<MsgForSystem>,
     ) {
         let port_base = alloc_port();
         let test_socket = open_ip(
@@ -589,8 +514,6 @@ mod tests {
             false,
         )
         .unwrap();
-
-        let (msg_for_system_sender, msg_for_system_receiver) = mpsc::channel(1);
 
         let index = ClockId::new();
         let ntp_manager = NtpManager::new(SynchronizationConfig::default(), Arc::new([]));
@@ -602,21 +525,15 @@ mod tests {
             SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
             SourceConfig::default(),
             ProtocolVersion::V4,
-            TestController,
+            TestController(link_id),
             None,
-            link_id,
         );
 
         let process = SourceTask {
             _wait: PhantomData,
-            index,
             link_id,
             name: "test".into(),
             clock: TestClock {},
-            channels: SourceChannels {
-                msg_for_system_sender,
-                source_snapshots: Arc::new(RwLock::new(HashMap::new())),
-            },
             source_addr: SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
             interface: None,
             timestamp_mode: TimestampMode::KernelRecv,
@@ -625,19 +542,19 @@ mod tests {
             last_send_timestamp: None,
         };
 
-        (process, test_socket, msg_for_system_receiver)
+        (process, test_socket)
     }
 
     #[tokio::test]
     async fn test_poll_sends_state_update_and_packet() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, socket, _) = test_startup();
+        let (mut process, socket) = test_startup();
 
         let (poll_wait, poll_send) = TestWait::new();
 
         let handle = tokio::spawn(async move {
             tokio::pin!(poll_wait);
-            process.run(poll_wait).await;
+            process.run(poll_wait).await
         });
 
         poll_send.notify();
@@ -662,7 +579,7 @@ mod tests {
     #[tokio::test]
     async fn test_timeroundtrip() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, mut socket, mut msg_recv) = test_startup();
+        let (mut process, mut socket) = test_startup();
 
         let server_info = NtpServerInfo {
             time_snapshot: TimeSnapshot {
@@ -677,7 +594,7 @@ mod tests {
 
         let handle = tokio::spawn(async move {
             tokio::pin!(poll_wait);
-            process.run(poll_wait).await;
+            process.run(poll_wait).await
         });
 
         poll_send.notify();
@@ -699,7 +616,7 @@ mod tests {
         let serialized = serialize_packet_unencrypted(&send_packet);
         socket.send_to(&serialized, remote_addr).await.unwrap();
 
-        assert!(msg_recv.try_recv().is_err());
+        assert!(!handle.is_finished());
 
         handle.abort();
     }
@@ -707,13 +624,13 @@ mod tests {
     #[tokio::test]
     async fn test_deny_stops_poll() {
         // Note: Ports must be unique among tests to deal with parallelism
-        let (mut process, mut socket, mut msg_recv) = test_startup();
+        let (mut process, mut socket) = test_startup();
 
         let (poll_wait, poll_send) = TestWait::new();
 
         let handle = tokio::spawn(async move {
             tokio::pin!(poll_wait);
-            process.run(poll_wait).await;
+            process.run(poll_wait).await
         });
 
         for _ in 0..3 {
@@ -733,9 +650,6 @@ mod tests {
             let send_packet = NtpPacket::deny_response(rec_packet);
             let serialized = serialize_packet_unencrypted(&send_packet);
 
-            // Flush earlier messages
-            while msg_recv.try_recv().is_ok() {}
-
             socket
                 .send_to(&serialized, std::dbg!(remote_addr))
                 .await
@@ -746,15 +660,13 @@ mod tests {
 
         poll_send.notify();
 
-        let msg = dbg!(msg_recv.recv().await.unwrap());
-        assert!(matches!(msg, MsgForSystem::MustDemobilize(_)));
+        let status = handle.await.unwrap();
+        assert_eq!(status, LinkTerminationReason::MustDemobilize);
 
         let mut buf = [0; 48];
         tokio::select! {
             () = tokio::time::sleep(Duration::from_millis(10)) => {/*expected */},
             _ = socket.recv(&mut buf) => { unreachable!("should not receive anything") }
         }
-
-        handle.abort();
     }
 }
