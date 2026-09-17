@@ -206,13 +206,12 @@ impl TimeSnapshot {
     pub fn root_dispersion(&self, now: Timestamp<TAI>) -> Duration {
         let t = (now - self.root_variance_base_time).as_seconds();
         // Note: dispersion is the standard deviation, so we need a sqrt here.
-        Duration::from_f64_seconds(
-            (self.root_variance_base
+        Duration::from_f64_seconds(libm::sqrt(
+            self.root_variance_base
                 + t * self.root_variance_linear
-                + t.powi(2) * self.root_variance_quadratic
-                + t.powi(3) * self.root_variance_cubic)
-                .sqrt(),
-        )
+                + (t * t) * self.root_variance_quadratic
+                + (t * t * t) * self.root_variance_cubic,
+        ))
     }
 }
 
@@ -230,5 +229,51 @@ impl Default for TimeSnapshot {
             accumulated_steps: Duration::ZERO,
             accumulated_steps_threshold: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TimeSnapshot;
+    use crate::{Duration, Timestamp};
+
+    #[test]
+    fn test_root_dispersion() {
+        let snapshot = TimeSnapshot {
+            root_variance_base_time: Timestamp::from_seconds_nanos_since_unix_epoch(100, 0),
+            root_variance_base: 1.0,
+            root_variance_linear: 2.0,
+            root_variance_quadratic: 3.0,
+            root_variance_cubic: 4.0,
+            ..Default::default()
+        };
+        let base_time = snapshot.root_variance_base_time;
+
+        assert_eq!(
+            snapshot.root_dispersion(base_time),
+            Duration::from_seconds_nanos(1, 0)
+        );
+        assert_eq!(
+            snapshot.root_dispersion(base_time + Duration::from_seconds_nanos(2, 0)),
+            Duration::from_seconds_nanos(7, 0)
+        );
+
+        // At half a second the variance is 3.25; allow rounding in its square root.
+        let dispersion = snapshot
+            .root_dispersion(base_time + Duration::from_seconds_nanos(0, 500_000_000))
+            .as_seconds();
+        assert!((dispersion - 3.25_f64.sqrt()).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_root_dispersion_zero_variance() {
+        let snapshot = TimeSnapshot::default();
+        let base_time = snapshot.root_variance_base_time;
+
+        assert_eq!(snapshot.root_dispersion(base_time), Duration::ZERO);
+        assert_eq!(
+            snapshot.root_dispersion(base_time + Duration::from_seconds_nanos(2, 0)),
+            Duration::ZERO
+        );
     }
 }
