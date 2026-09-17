@@ -19,7 +19,13 @@ use tokio::{
     time::{Instant, Sleep},
 };
 
-use crate::daemon::spawn::SpawnerId;
+use crate::daemon::{
+    clock::NtpClockWrapper,
+    spawn::{
+        CreationParameters, LinkTerminationReason, SpawnFailureReason, Spawner, SpawnerId,
+        TrySpawnFuture,
+    },
+};
 
 pub struct SystemConfig {
     pub minimum_retry_timeout: std::time::Duration,
@@ -34,7 +40,12 @@ pub struct System<TimeController: StdController> {
         clippy::struct_field_names,
         reason = "The system clock is a special clock separate from the fact that it is part of the system struct."
     )]
-    system_clock: ClockId,
+    system_clock_id: ClockId,
+    #[expect(
+        clippy::struct_field_names,
+        reason = "The system clock is a special clock separate from the fact that it is part of the system struct."
+    )]
+    system_clock: NtpClockWrapper,
     config: SystemConfig,
 }
 
@@ -58,48 +69,6 @@ struct LinkData {
     spawner: SpawnerId,
     stype: SourceType,
     task: JoinHandle<LinkTerminationReason>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LinkTerminationReason {
-    MustDemobilize,
-    NetworkIssue,
-    Unreachable,
-    Failed,
-    Deleted,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SpawnFailureReason {
-    RetryableFailure,
-    NetworkIssue,
-}
-
-pub type TrySpawnFuture<TimeController> = Box<
-    dyn Future<Output = Result<CreationParameters<TimeController>, SpawnFailureReason>>
-        + Sync
-        + Send
-        + 'static,
->;
-
-pub struct CreationParameters<TimeController: StdController> {
-    pub stype: SourceType,
-    pub link_config: TimeController::LinkConfig,
-    pub tracked_link_config: Option<TimeController::TrackedLinkConfig>,
-    pub creator: SourceCreator<TimeController::Link<Arc<TimeController>>>,
-}
-
-pub type SourceCreator<LinkController> = Box<
-    dyn FnOnce(LinkController, &SystemManagers) -> JoinHandle<LinkTerminationReason>
-        + Sync
-        + Send
-        + 'static,
->;
-
-pub trait Spawner<TimeController: StdController> {
-    fn try_spawn(&mut self) -> TrySpawnFuture<TimeController>;
-    fn needs_spawn(&mut self) -> bool;
-    fn source_terminated(&mut self, id: LinkId, reason: LinkTerminationReason);
 }
 
 enum SpawnState<TimeController: StdController> {
@@ -190,6 +159,21 @@ pub struct SystemManagers {
 }
 
 impl SystemManagers {
+    #[cfg(test)]
+    pub fn test_managers() -> Self {
+        SystemManagers {
+            ntp_manager: Arc::new(NtpManager::new(
+                SynchronizationConfig::default(),
+                Arc::default(),
+            )),
+            ptp_networking_ipv4: Mutex::new(None),
+            ptp_networking_ipv6: Mutex::new(None),
+            csptp_manager: Box::leak(Box::new(statime_csptp::CsptpManager::new(
+                CsptpConfig::default(),
+            ))),
+        }
+    }
+
     pub fn ntp_manager(&self) -> Arc<NtpManager> {
         self.ntp_manager.clone()
     }
@@ -227,8 +211,9 @@ impl SystemManagers {
 
 impl<TimeController: StdController + Sync + Send> System<TimeController> {
     pub fn new(
+        system_clock: NtpClockWrapper,
         controller: TimeController,
-        system_clock: ClockId,
+        system_clock_id: ClockId,
         system_config: SystemConfig,
         ntp_config: SynchronizationConfig,
         csptp_config: CsptpConfig,
@@ -247,6 +232,7 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
             },
             controller: Arc::new(controller),
             system_clock,
+            system_clock_id,
             config: system_config,
         }
     }
@@ -291,7 +277,7 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
                         {
                             TimeController::create_tracked_link(
                                 self.controller.clone(),
-                                todo!(),
+                                self.system_clock_id,
                                 None,
                                 parameters.link_config,
                                 tracked_link_config,
@@ -299,7 +285,7 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
                         } else {
                             TimeController::create_untracked_link(
                                 self.controller.clone(),
-                                todo!(),
+                                self.system_clock_id,
                                 None,
                                 parameters.link_config,
                             )
@@ -309,7 +295,8 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
                             Err(error) => todo!(),
                         };
                         let link_id = link.id();
-                        let driven_link = (parameters.creator)(link, &self.managers);
+                        let driven_link =
+                            (parameters.creator)(link, self.system_clock, &self.managers);
                         state.driven_links.insert(
                             link_id,
                             LinkData {
@@ -336,7 +323,7 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
                 {
                     let time_snapshot = self
                         .controller
-                        .clock_snapshot(self.system_clock)
+                        .clock_snapshot(self.system_clock_id)
                         .expect("Unable to get system clock time snapshot");
                     let mut used_sources = self.controller.active_links();
                     used_sources.sort_by(|a, b| b.importance.total_cmp(&a.importance));

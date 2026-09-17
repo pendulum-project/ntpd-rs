@@ -149,8 +149,8 @@ impl NtpManager {
         protocol_version: ProtocolVersion,
         controller: Controller,
         nts: Option<Box<SourceNtsData>>,
-        link_id: LinkId,
     ) -> (NtpSource<Controller>, NtpSourceActionIterator) {
+        let link_id = controller.id();
         NtpSource::new(
             source_addr,
             source_config,
