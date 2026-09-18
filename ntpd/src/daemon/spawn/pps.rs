@@ -83,10 +83,11 @@ mod tests {
         daemon::{
             config::PpsSourceConfig,
             spawn::{SourceCreateParameters, SpawnAction, Spawner, pps::PpsSpawner},
-            system::MESSAGE_BUFFER_SIZE,
         },
         test::alloc_port,
     };
+
+    const MESSAGE_BUFFER_SIZE: usize = 2;
 
     #[tokio::test]
     async fn creates_a_source() {

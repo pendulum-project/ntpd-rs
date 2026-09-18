@@ -6,6 +6,7 @@ use ntp_proto::{NtpVersion, ProtocolVersion, SourceConfig, SynchronizationConfig
 pub use ntp_source::*;
 use serde::{Deserialize, Deserializer};
 pub use server::*;
+use statime_algo::LinkConfig;
 use std::io;
 use std::{
     fmt::Display,
@@ -318,6 +319,21 @@ impl Default for CsptpConfig {
             ptp_timescale: true,
             time_traceable: false,
             frequency_traceable: false,
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl From<CsptpConfig> for statime_csptp::CsptpConfig {
+    fn from(value: CsptpConfig) -> Self {
+        Self {
+            identity: value.identity,
+            priority_1: value.priority_1,
+            priority_2: value.priority_2,
+            clock_quality: value.clock_quality,
+            ptp_timescale: value.ptp_timescale,
+            time_traceable: value.time_traceable,
+            frequency_traceable: value.frequency_traceable,
         }
     }
 }

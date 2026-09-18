@@ -1,123 +1,148 @@
 use std::fmt::Display;
+use std::sync::{Arc, Mutex};
 use std::{net::SocketAddr, ops::Deref};
 
 use ntp_proto::SourceConfig;
+use rustls23::pki_types::ServerName::IpAddress;
+use statime_algo::{LinkConfig, TrackedLinkConfig};
+use statime_base::{Link, SourceType, StdController};
 use tokio::sync::mpsc;
 
-use crate::daemon::spawn::resolve_single_ntp_server;
+use crate::daemon::config::{NtpAddress, TimestampMode};
+use crate::daemon::ntp_source::SourceTask;
+use crate::daemon::spawn::CreationParameters;
 
 use super::super::config::StandardSource;
 
 use super::{
-    ClockId, SourceRemovalReason, SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId,
+    ClockId, LinkTerminationReason, SpawnFailureReason, Spawner, SpawnerId,
+    resolve_single_ntp_server,
 };
 
 pub struct StandardSpawner {
-    id: SpawnerId,
     config: StandardSource,
     source_config: SourceConfig,
+    state: Arc<Mutex<StandardSpawnerState>>,
+}
+
+#[derive(Default)]
+struct StandardSpawnerState {
     resolved: Option<SocketAddr>,
     has_spawned: bool,
 }
 
-#[derive(Debug)]
-pub enum StandardSpawnError {
-    SendError(mpsc::error::SendError<SpawnEvent>),
-}
-
-impl Display for StandardSpawnError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::SendError(e) => write!(f, "Channel send error: {e}"),
-        }
-    }
-}
-
-impl From<mpsc::error::SendError<SpawnEvent>> for StandardSpawnError {
-    fn from(value: mpsc::error::SendError<SpawnEvent>) -> Self {
-        Self::SendError(value)
-    }
-}
-
-impl std::error::Error for StandardSpawnError {}
-
 impl StandardSpawner {
     pub fn new(config: StandardSource, source_config: SourceConfig) -> StandardSpawner {
         StandardSpawner {
-            id: SpawnerId::new(),
             config,
             source_config,
-            resolved: None,
-            has_spawned: false,
+            state: Arc::default(),
         }
     }
 
-    async fn do_resolve(&mut self, force_resolve: bool) -> Option<SocketAddr> {
-        if let (false, Some(addr)) = (force_resolve, self.resolved) {
+    async fn do_resolve(
+        state: &Mutex<StandardSpawnerState>,
+        force_resolve: bool,
+        config: &StandardSource,
+    ) -> Option<SocketAddr> {
+        // FIXME: Simplify once https://github.com/rust-lang/rust/issues/69663
+        // finally gets fixed.
+        let cached_result = {
+            let locked_state = state.lock().unwrap();
+
+            if let (false, Some(addr)) = (force_resolve, locked_state.resolved) {
+                Some(addr)
+            } else {
+                None
+            }
+        };
+
+        if let Some(addr) = cached_result {
             Some(addr)
         } else {
-            let address = resolve_single_ntp_server(self.config.address.clone()).await?;
-            self.resolved = Some(address);
-            self.resolved
+            let address = resolve_single_ntp_server(config.address.clone()).await?;
+            let mut locked_state = state.lock().unwrap();
+            locked_state.resolved = Some(address);
+            locked_state.resolved
         }
     }
 }
 
-impl Spawner for StandardSpawner {
-    type Error = StandardSpawnError;
+impl<TimeController: StdController> Spawner<TimeController> for StandardSpawner
+where
+    TimeController::LinkConfig: From<statime_algo::LinkConfig>,
+    TimeController::TrackedLinkConfig: From<statime_algo::TrackedLinkConfig>,
+    TimeController::Link<Arc<TimeController>>: Send + 'static,
+{
+    fn try_spawn(&mut self) -> super::TrySpawnFuture<TimeController> {
+        let state = self.state.clone();
+        let config = self.config.clone();
+        let source_config = self.source_config;
+        Box::new(async move {
+            let Some(addr) = Self::do_resolve(&state, false, &config).await else {
+                return Err(SpawnFailureReason::RetryableFailure);
+            };
 
-    async fn try_spawn(
-        &mut self,
-        action_tx: &mpsc::Sender<SpawnEvent>,
-    ) -> Result<(), StandardSpawnError> {
-        let Some(addr) = self.do_resolve(false).await else {
-            return Ok(());
-        };
-        action_tx
-            .send(SpawnEvent::new(
-                self.id,
-                SpawnAction::create_ntp(
-                    ClockId::new(),
-                    addr,
-                    self.config.address.deref().clone(),
-                    self.config.ntp_version,
-                    self.source_config,
-                    None,
+            Ok(CreationParameters {
+                stype: SourceType::Ntp,
+                link_config: LinkConfig {
+                    desired_error_bound: statime_base::Duration::from_seconds_nanos(0, 1_000_000),
+                    period: None,
+                }
+                .into(),
+                tracked_link_config: Some(
+                    statime_algo::TrackedLinkConfig {
+                        decay_rate: 1. / 86400f64.sqrt(),
+                        longest_interval_for_delay_estimation:
+                            statime_base::Duration::from_seconds_nanos(1, 0),
+                    }
+                    .into(),
                 ),
-            ))
-            .await?;
-        self.has_spawned = true;
-        Ok(())
+                creator: Box::new(
+                    move |controller: TimeController::Link<Arc<TimeController>>,
+                          clock,
+                          managers| {
+                        let link_id = controller.id();
+                        let (source, initial_actions) = managers.ntp_manager().new_source(
+                            addr,
+                            source_config,
+                            config.ntp_version,
+                            controller,
+                            None,
+                        );
+
+                        state.lock().unwrap().has_spawned = true;
+
+                        SourceTask::spawn(
+                            link_id,
+                            config.address.to_string(),
+                            addr,
+                            None,
+                            clock,
+                            TimestampMode::Software,
+                            source,
+                            initial_actions,
+                        )
+                    },
+                ),
+            })
+        })
     }
 
-    fn is_complete(&self) -> bool {
-        self.has_spawned
+    fn needs_spawn(&self) -> bool {
+        let state = self.state.lock().unwrap();
+        !state.has_spawned
     }
 
-    async fn handle_source_removed(
-        &mut self,
-        removed_source: SourceRemovedEvent,
-    ) -> Result<(), StandardSpawnError> {
-        if removed_source.reason == SourceRemovalReason::Unreachable {
+    fn source_terminated(&mut self, id: statime_base::LinkId, reason: LinkTerminationReason) {
+        let mut state = self.state.lock().unwrap();
+        if reason == LinkTerminationReason::Unreachable {
             // force new resolution
-            self.resolved = None;
+            state.resolved = None;
         }
-        if removed_source.reason != SourceRemovalReason::Demobilized {
-            self.has_spawned = false;
+        if reason != LinkTerminationReason::MustDemobilize {
+            state.has_spawned = false;
         }
-        Ok(())
-    }
-
-    fn get_id(&self) -> SpawnerId {
-        self.id
-    }
-
-    fn get_addr_description(&self) -> String {
-        self.config.address.to_string()
-    }
-
-    fn get_description(&self) -> &'static str {
-        "standard"
     }
 }
 
@@ -126,16 +151,22 @@ mod tests {
     use ntp_proto::ProtocolVersion;
 
     use ntp_proto::SourceConfig;
+    use statime_base::ClockId;
+    use statime_base::Controller;
+    use statime_base::Link;
     use tokio::sync::mpsc::{self, error::TryRecvError};
 
+    use crate::daemon::clock::NtpClockWrapper;
+    use crate::daemon::spawn::CreationParameters;
+    use crate::daemon::spawn::LinkTerminationReason;
+    use crate::daemon::spawn::TestController;
+    use crate::daemon::system::SystemManagers;
     use crate::daemon::{
         config::{NormalizedAddress, StandardSource},
-        spawn::{
-            SourceRemovalReason, SourceRemovedEvent, SpawnAction, Spawner,
-            standard::StandardSpawner, tests::get_ntp_create_params,
-        },
-        system::MESSAGE_BUFFER_SIZE,
+        spawn::{Spawner, standard::StandardSpawner},
     };
+
+    const MESSAGE_BUFFER_SIZE: usize = 2;
 
     #[tokio::test]
     async fn creates_a_source() {
@@ -151,82 +182,32 @@ mod tests {
             },
             SourceConfig::default(),
         );
-        let spawner_id = spawner.get_id();
-        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
-        assert!(!spawner.is_complete());
-        spawner.try_spawn(&action_tx).await.unwrap();
-        let res = action_rx.try_recv().unwrap();
-        assert_eq!(res.id, spawner_id);
-        let SpawnAction::Create(create_params) = &res.action;
-        assert_eq!(create_params.get_addr(), "127.0.0.1:123");
-        let params = get_ntp_create_params(res).unwrap();
-        assert_eq!(params.addr.to_string(), "127.0.0.1:123");
-        assert_eq!(
-            params.protocol_version,
-            ProtocolVersion::v4_upgrading_to_v5_with_default_tries()
-        );
+        let managers = SystemManagers::test_managers();
 
-        // Should be complete after spawning
-        assert!(spawner.is_complete());
-    }
+        assert!(<StandardSpawner as Spawner<TestController>>::needs_spawn(
+            &spawner
+        ));
+        let params: CreationParameters<TestController> =
+            Box::into_pin(spawner.try_spawn()).await.unwrap();
 
-    #[tokio::test]
-    async fn respects_ntp_version_force_v5() {
-        let mut spawner = StandardSpawner::new(
-            StandardSource {
-                address: NormalizedAddress::with_hardcoded_dns(
-                    "example.com",
-                    123,
-                    vec!["127.0.0.1:123".parse().unwrap()],
-                )
-                .into(),
-                ntp_version: ProtocolVersion::V5,
-            },
-            SourceConfig::default(),
-        );
-        let spawner_id = spawner.get_id();
-        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
+        assert!(params.tracked_link_config.is_some());
 
-        assert!(!spawner.is_complete());
-        spawner.try_spawn(&action_tx).await.unwrap();
-        let res = action_rx.try_recv().unwrap();
-        assert_eq!(res.id, spawner_id);
-        let params = get_ntp_create_params(res).unwrap();
-        assert_eq!(params.addr.to_string(), "127.0.0.1:123");
-        assert_eq!(params.protocol_version, ProtocolVersion::V5);
+        let link = TestController::create_tracked_link(
+            TestController {},
+            ClockId::new(),
+            None,
+            params.link_config,
+            params.tracked_link_config.unwrap(),
+        )
+        .unwrap();
 
-        // Should be complete after spawning
-        assert!(spawner.is_complete());
-    }
+        let handle = (params.creator)(link, NtpClockWrapper::default(), &managers);
+        assert!(!<StandardSpawner as Spawner<TestController>>::needs_spawn(
+            &spawner
+        ));
 
-    #[tokio::test]
-    async fn respects_ntp_version_force_v4() {
-        let mut spawner = StandardSpawner::new(
-            StandardSource {
-                address: NormalizedAddress::with_hardcoded_dns(
-                    "example.com",
-                    123,
-                    vec!["127.0.0.1:123".parse().unwrap()],
-                )
-                .into(),
-                ntp_version: ProtocolVersion::V4,
-            },
-            SourceConfig::default(),
-        );
-        let spawner_id = spawner.get_id();
-        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
-
-        assert!(!spawner.is_complete());
-        spawner.try_spawn(&action_tx).await.unwrap();
-        let res = action_rx.try_recv().unwrap();
-        assert_eq!(res.id, spawner_id);
-        let params = get_ntp_create_params(res).unwrap();
-        assert_eq!(params.addr.to_string(), "127.0.0.1:123");
-        assert_eq!(params.protocol_version, ProtocolVersion::V4);
-
-        // Should be complete after spawning
-        assert!(spawner.is_complete());
+        handle.abort();
     }
 
     #[tokio::test]
@@ -243,28 +224,63 @@ mod tests {
             },
             SourceConfig::default(),
         );
-        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
-        assert!(!spawner.is_complete());
-        spawner.try_spawn(&action_tx).await.unwrap();
-        let res = action_rx.try_recv().unwrap();
-        let params = get_ntp_create_params(res).unwrap();
-        assert!(spawner.is_complete());
+        let managers = SystemManagers::test_managers();
 
-        spawner
-            .handle_source_removed(SourceRemovedEvent {
-                id: params.id,
-                reason: SourceRemovalReason::NetworkIssue,
-            })
-            .await
-            .unwrap();
+        assert!(<StandardSpawner as Spawner<TestController>>::needs_spawn(
+            &spawner
+        ));
+        let params: CreationParameters<TestController> =
+            Box::into_pin(spawner.try_spawn()).await.unwrap();
 
-        assert!(!spawner.is_complete());
-        spawner.try_spawn(&action_tx).await.unwrap();
-        let res = action_rx.try_recv().unwrap();
-        let params = get_ntp_create_params(res).unwrap();
-        assert_eq!(params.addr.to_string(), "127.0.0.1:123");
-        assert!(spawner.is_complete());
+        assert!(params.tracked_link_config.is_some());
+
+        let link = TestController::create_tracked_link(
+            TestController {},
+            ClockId::new(),
+            None,
+            params.link_config,
+            params.tracked_link_config.unwrap(),
+        )
+        .unwrap();
+        let link_id = link.id();
+
+        let handle = (params.creator)(link, NtpClockWrapper::default(), &managers);
+        assert!(!<StandardSpawner as Spawner<TestController>>::needs_spawn(
+            &spawner
+        ));
+
+        handle.abort();
+
+        <StandardSpawner as Spawner<TestController>>::source_terminated(
+            &mut spawner,
+            link_id,
+            LinkTerminationReason::NetworkIssue,
+        );
+
+        assert!(<StandardSpawner as Spawner<TestController>>::needs_spawn(
+            &spawner
+        ));
+        let params: CreationParameters<TestController> =
+            Box::into_pin(spawner.try_spawn()).await.unwrap();
+
+        assert!(params.tracked_link_config.is_some());
+
+        let link = TestController::create_tracked_link(
+            TestController {},
+            ClockId::new(),
+            None,
+            params.link_config,
+            params.tracked_link_config.unwrap(),
+        )
+        .unwrap();
+
+        let handle = (params.creator)(link, NtpClockWrapper::default(), &managers);
+        assert!(!<StandardSpawner as Spawner<TestController>>::needs_spawn(
+            &spawner
+        ));
+
+        handle.abort();
     }
 
     #[tokio::test]
@@ -284,47 +300,44 @@ mod tests {
             },
             SourceConfig::default(),
         );
-        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
-        assert!(!spawner.is_complete());
-        spawner.try_spawn(&action_tx).await.unwrap();
-        let res = action_rx.recv().await.unwrap();
-        let params = get_ntp_create_params(res).unwrap();
-        let initial_addr = params.addr;
-        assert!(spawner.is_complete());
+        let managers = SystemManagers::test_managers();
 
-        // We repeat multiple times and check at least one is different to be less
-        // sensitive to dns resolver giving the same pool ip.
-        let mut seen_addresses = vec![];
-        for _ in 0..5 {
-            spawner
-                .handle_source_removed(SourceRemovedEvent {
-                    id: params.id,
-                    reason: SourceRemovalReason::Unreachable,
-                })
-                .await
-                .unwrap();
+        assert!(<StandardSpawner as Spawner<TestController>>::needs_spawn(
+            &spawner
+        ));
+        let params: CreationParameters<TestController> =
+            Box::into_pin(spawner.try_spawn()).await.unwrap();
 
-            assert!(!spawner.is_complete());
-            spawner.try_spawn(&action_tx).await.unwrap();
-            let res = action_rx.recv().await.unwrap();
-            let params = get_ntp_create_params(res).unwrap();
-            seen_addresses.push(params.addr);
-            assert!(spawner.is_complete());
-        }
-        let seen_addresses = seen_addresses;
+        assert!(params.tracked_link_config.is_some());
 
-        for addr in &seen_addresses {
-            assert!(
-                addresses.contains(addr),
-                "{addr:?} should have been drawn from {addresses:?}"
-            );
-        }
+        let link = TestController::create_tracked_link(
+            TestController {},
+            ClockId::new(),
+            None,
+            params.link_config,
+            params.tracked_link_config.unwrap(),
+        )
+        .unwrap();
+        let link_id = link.id();
 
-        assert!(
-            seen_addresses.iter().any(|seen| seen != &initial_addr),
-            "Re-resolved\n\n\t{seen_addresses:?}\n\n should contain at least one address that isn't the original\n\n\t{initial_addr:?}",
+        let handle = (params.creator)(link, NtpClockWrapper::default(), &managers);
+        assert!(!<StandardSpawner as Spawner<TestController>>::needs_spawn(
+            &spawner
+        ));
+
+        handle.abort();
+
+        <StandardSpawner as Spawner<TestController>>::source_terminated(
+            &mut spawner,
+            link_id,
+            LinkTerminationReason::Unreachable,
         );
+
+        assert!(spawner.state.lock().unwrap().resolved.is_none());
+        assert!(<StandardSpawner as Spawner<TestController>>::needs_spawn(
+            &spawner
+        ));
     }
 
     #[tokio::test]
@@ -337,11 +350,13 @@ mod tests {
             },
             SourceConfig::default(),
         );
-        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
 
-        spawner.try_spawn(&action_tx).await.unwrap();
-
-        let res = action_rx.try_recv().unwrap_err();
-        assert_eq!(res, TryRecvError::Empty);
+        assert!(
+            Box::into_pin(<StandardSpawner as Spawner<TestController>>::try_spawn(
+                &mut spawner
+            ))
+            .await
+            .is_err()
+        );
     }
 }

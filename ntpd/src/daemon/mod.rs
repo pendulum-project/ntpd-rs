@@ -1,3 +1,6 @@
+// TODO: Eliminate allow.
+#![allow(unused)]
+
 mod clock;
 pub mod config;
 #[cfg(target_os = "linux")]
@@ -19,18 +22,21 @@ pub mod spawn;
 mod system;
 pub mod tracing;
 
+use std::sync::Arc;
 use std::{error::Error, io::IsTerminal, path::Path};
 
 use ::tracing::info;
 pub use config::Config;
 pub use observer::ObservableState;
 use statime_algo::{ClockConfig, ControllerConfig, StdKalmanStorage};
-pub use system::spawn;
 use tokio::runtime::Builder;
 use tracing_subscriber::util::SubscriberInitExt;
 
 use config::NtpDaemonOptions;
 
+use crate::daemon::spawn::pool::PoolSpawner;
+use crate::daemon::spawn::standard::StandardSpawner;
+use crate::daemon::system::{System, SystemConfig};
 use crate::daemon::tracing::LogReloadTaskStarter;
 use crate::notify::notify_ready;
 
@@ -130,7 +136,7 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
         Builder::new_multi_thread().enable_all().build()?
     };
 
-    runtime.block_on(async move {
+    let result = runtime.block_on(async move {
         if let Some(task_starter) = task_starter {
             task_starter.start();
         }
@@ -155,50 +161,74 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
 
         ::tracing::debug!("Configuration loaded, spawning daemon jobs");
         let clock = clock_config.clock;
-        let (main_loop_handle, channels) = spawn(
-            |clock| {
-                Ok(
-                    statime_algo::KalmanController::<StdKalmanStorage<_>, _>::new(
-                        clock,
-                        ClockConfig::default(),
-                        ControllerConfig {
-                            minimum_agreeing_sources: config
-                                .synchronization
-                                .synchronization_base
-                                .minimum_agreeing_sources,
-                            select_offset_uncertainty_window: 1.0,
-                            select_link_uncertainty_window: 2.0,
-                            select_delay_uncertainty_window: 0.5,
-                            select_max_window_size: 0.5,
-                        },
-                    )
-                    .expect("unable to create controller"),
-                )
+        let (controller, system_clock_id) =
+            statime_algo::KalmanController::<StdKalmanStorage<_>, _>::new(
+                clock,
+                ClockConfig::default(),
+                ControllerConfig {
+                    minimum_agreeing_sources: config
+                        .synchronization
+                        .synchronization_base
+                        .minimum_agreeing_sources,
+                    select_offset_uncertainty_window: 1.0,
+                    select_link_uncertainty_window: 2.0,
+                    select_delay_uncertainty_window: 0.5,
+                    select_max_window_size: 0.5,
+                },
+            )
+            .map_err(|error| std::io::Error::other(format!("{error:?}")))?;
+        let system = Arc::new(System::new(
+            clock,
+            controller,
+            system_clock_id,
+            SystemConfig {
+                minimum_retry_timeout: std::time::Duration::from_secs(1),
+                maximum_retry_timeout: std::time::Duration::from_mins(10),
             },
             config.synchronization.synchronization_base,
-            config.source_defaults,
-            clock_config,
-            &config.sources,
-            &config.servers,
             #[cfg(target_os = "linux")]
-            &config.csptp_servers,
-            keyset.clone(),
-            #[cfg(target_os = "linux")]
-            config.csptp,
-        )
-        .await?;
+            config.csptp.into(),
+        ));
+
+        let system_clone = system.clone();
+        let main_loop_handle = tokio::spawn(async move { system_clone.run().await });
+
+        for source in config.sources {
+            match source {
+                config::NtpSourceConfig::Standard(flattened_pair) => {
+                    system.add_spawner(Box::new(StandardSpawner::new(
+                        flattened_pair.first,
+                        flattened_pair.second.with_defaults(config.source_defaults),
+                    )));
+                }
+                config::NtpSourceConfig::Nts(flattened_pair) => todo!(),
+                config::NtpSourceConfig::Pool(flattened_pair) => {
+                    system.add_spawner(Box::new(PoolSpawner::new(
+                        flattened_pair.first,
+                        flattened_pair.second.with_defaults(config.source_defaults),
+                    )));
+                }
+                config::NtpSourceConfig::NtsPool(flattened_pair) => todo!(),
+                config::NtpSourceConfig::Sock(sock_source_config) => todo!(),
+                #[cfg(feature = "pps")]
+                config::NtpSourceConfig::Pps(pps_source_config) => todo!(),
+                #[cfg(target_os = "linux")]
+                config::NtpSourceConfig::Csptp(csptp_source_config) => todo!(),
+            }
+        }
 
         for nts_ke_config in config.nts_ke {
             let _join_handle = keyexchange::spawn(nts_ke_config, keyset.clone());
         }
 
-        observer::spawn(
+        // FIXME: Replace with proper new observer code once available.
+        /*observer::spawn(
             &config.observability,
             channels.source_snapshots,
             channels.server_data_receiver,
             channels.system_snapshot_receiver,
             clock,
-        );
+        );*/
 
         let _ = notify_ready().await;
 
@@ -206,7 +236,11 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
             .await
             .map_err(|e| Box::new(e) as Box<dyn Error>)?
             .map_err(|e| e as Box<dyn Error>)
-    })
+    });
+
+    runtime.shutdown_background();
+
+    result
 }
 
 pub(crate) mod exitcode {
