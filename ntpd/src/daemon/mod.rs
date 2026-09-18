@@ -186,6 +186,7 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
                 maximum_retry_timeout: std::time::Duration::from_mins(10),
             },
             config.synchronization.synchronization_base,
+            #[cfg(target_os = "linux")]
             config.csptp.into(),
         ));
 
@@ -209,7 +210,9 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
                 }
                 config::NtpSourceConfig::NtsPool(flattened_pair) => todo!(),
                 config::NtpSourceConfig::Sock(sock_source_config) => todo!(),
+                #[cfg(feature = "pps")]
                 config::NtpSourceConfig::Pps(pps_source_config) => todo!(),
+                #[cfg(target_os = "linux")]
                 config::NtpSourceConfig::Csptp(csptp_source_config) => todo!(),
             }
         }
