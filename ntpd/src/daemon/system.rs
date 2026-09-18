@@ -13,7 +13,8 @@ use std::{
 
 use ntp_proto::{NtpManager, SynchronizationConfig};
 use statime_base::{ActiveLinkData, ClockId, Link, LinkId, SourceType, StdController};
-use statime_csptp::{CsptpConfig, CsptpManager};
+#[cfg(target_os = "linux")]
+use statime_csptp::CsptpConfig;
 use tokio::{
     task::JoinHandle,
     time::{Instant, Sleep},
@@ -166,8 +167,11 @@ impl SystemManagers {
                 SynchronizationConfig::default(),
                 Arc::default(),
             )),
+            #[cfg(target_os = "linux")]
             ptp_networking_ipv4: Mutex::new(None),
+            #[cfg(target_os = "linux")]
             ptp_networking_ipv6: Mutex::new(None),
+            #[cfg(target_os = "linux")]
             csptp_manager: Box::leak(Box::new(statime_csptp::CsptpManager::new(
                 CsptpConfig::default(),
             ))),
@@ -178,6 +182,7 @@ impl SystemManagers {
         self.ntp_manager.clone()
     }
 
+    #[cfg(target_os = "linux")]
     pub fn netptp_ipv4(&self) -> std::io::Result<statime_netptp::NetworkManager<Ipv4Addr>> {
         let mut ptp_networking_ipv4 = self.ptp_networking_ipv4.lock().unwrap();
 
@@ -190,6 +195,7 @@ impl SystemManagers {
         }
     }
 
+    #[cfg(target_os = "linux")]
     pub fn netptp_ipv6(&self) -> std::io::Result<statime_netptp::NetworkManager<Ipv6Addr>> {
         let mut ptp_networking_ipv6 = self.ptp_networking_ipv6.lock().unwrap();
 
@@ -202,6 +208,7 @@ impl SystemManagers {
         }
     }
 
+    #[cfg(target_os = "linux")]
     pub fn csptp_manager(
         &self,
     ) -> &'static statime_csptp::CsptpManager<std::sync::RwLock<statime_csptp::InternalState>> {
@@ -216,18 +223,22 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
         system_clock_id: ClockId,
         system_config: SystemConfig,
         ntp_config: SynchronizationConfig,
-        csptp_config: CsptpConfig,
+        #[cfg(target_os = "linux")] csptp_config: CsptpConfig,
     ) -> Self {
         let ntp_manager = Arc::new(NtpManager::new(ntp_config, Arc::default()));
 
+        #[cfg(target_os = "linux")]
         let csptp_manager = Box::leak(Box::new(statime_csptp::CsptpManager::new(csptp_config)));
 
         Self {
             state: RwLock::default(),
             managers: SystemManagers {
                 ntp_manager,
+                #[cfg(target_os = "linux")]
                 ptp_networking_ipv4: Mutex::new(None),
+                #[cfg(target_os = "linux")]
                 ptp_networking_ipv6: Mutex::new(None),
+                #[cfg(target_os = "linux")]
                 csptp_manager,
             },
             controller: Arc::new(controller),

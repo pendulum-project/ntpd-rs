@@ -323,6 +323,7 @@ impl Default for CsptpConfig {
     }
 }
 
+#[cfg(target_os = "linux")]
 impl From<CsptpConfig> for statime_csptp::CsptpConfig {
     fn from(value: CsptpConfig) -> Self {
         Self {
