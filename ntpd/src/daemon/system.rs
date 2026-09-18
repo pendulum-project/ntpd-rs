@@ -97,7 +97,7 @@ enum SpawnState<TimeController: StdController> {
     Inactive,
 }
 
-struct SpawnerData<TimeController: StdController> {
+pub(crate) struct SpawnerData<TimeController: StdController> {
     spawner: Box<dyn Spawner<TimeController> + Sync + Send>,
     spawn_state: SpawnState<TimeController>,
     current_timeout: std::time::Duration,
@@ -445,6 +445,11 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
         if let Some(waker) = state.waker.take() {
             waker.wake();
         }
+    }
+
+    pub fn spawners(self) -> HashMap<SpawnerId, SpawnerData<TimeController>> {
+        let state = self.state.into_inner().expect("could not aquire read lock");
+        state.spawners
     }
 
     pub async fn add_server<F: AsyncFnOnce(NtpClockWrapper, &SystemManagers) -> JoinHandle<()>>(
