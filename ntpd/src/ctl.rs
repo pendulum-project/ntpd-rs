@@ -42,6 +42,7 @@ pub enum NtpCtlAction {
     Version,
     Validate,
     Status,
+    List,
     ForceSync,
 }
 
@@ -53,6 +54,7 @@ pub(crate) struct NtpCtlOptions {
     version: bool,
     validate: bool,
     status: bool,
+    list: bool,
     force_sync: bool,
     action: NtpCtlAction,
 }
@@ -142,6 +144,8 @@ impl NtpCtlOptions {
             self.action = NtpCtlAction::Validate;
         } else if self.status {
             self.action = NtpCtlAction::Status;
+        } else if self.list {
+            self.action = NtpCtlAction::List;
         } else if self.force_sync {
             self.action = NtpCtlAction::ForceSync;
         } else {
@@ -213,6 +217,10 @@ pub fn main() -> std::io::Result<ExitCode> {
                         Format::Prometheus => print_state(Format::Prometheus, observation).await,
                     }
                 })
+        }
+        NtpCtlAction::List => {
+            print_spawners();
+            Ok(ExitCode::SUCCESS)
         }
     }
 }
@@ -351,6 +359,10 @@ fn print_state_plain(output: &ObservableState) {
         );
         println!();
     }
+}
+
+fn print_spawners() {
+    todo!();
 }
 
 #[cfg(test)]

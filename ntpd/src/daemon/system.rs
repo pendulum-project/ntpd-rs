@@ -389,4 +389,9 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
             waker.wake();
         }
     }
+
+    pub fn spawners(self) -> HashMap<SpawnerId, SpawnerData<TimeController>> {
+        let state = self.state.into_inner().expect("could not aquire read lock");
+        state.spawners
+    }
 }
