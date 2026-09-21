@@ -369,10 +369,9 @@ impl<Storage: KalmanStorage<C>, C: Clock<TAI>> Controller for KalmanController<S
         sleep: F,
     ) {
         loop {
-            let _ = this
-                .as_ref()
-                .state
-                .with_mut(KalmanControllerState::steer_clocks);
+            if let Err(error) = this.as_ref().update() {
+                log::warn!("Could not steer clocks: {error:?}");
+            }
             sleep(core::time::Duration::from_secs(1)).await;
         }
     }
@@ -430,6 +429,18 @@ impl<Storage: KalmanStorage<C>, C: Clock<TAI>> KalmanController<Storage, C> {
             },
             id,
         ))
+    }
+
+    /// Advance the estimator to the current time and steer the clocks once.
+    ///
+    /// Call this once per second instead of [`Controller::run`] when scheduling
+    /// the controller externally. No new measurement is required.
+    ///
+    /// # Errors
+    /// Returns clock errors and failures to advance or update the estimator.
+    /// Clock operations completed before an error are not rolled back.
+    pub fn update(&self) -> Result<(), AlgoError> {
+        self.state.with_mut(KalmanControllerState::steer_clocks)
     }
 
     /// Get the current offset of a clock.
