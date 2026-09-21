@@ -72,7 +72,7 @@ jobs:
           if-no-files-found: error
 
   checks:
-    uses: './.github/workflows/checks.yaml'
+    uses: '$/.github/workflows/checks.yaml'
 
   release:
     needs: [gather, checks]
