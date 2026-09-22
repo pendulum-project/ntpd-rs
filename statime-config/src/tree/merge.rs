@@ -35,6 +35,7 @@ impl OriginId {
 }
 
 /// Tracks the origin ids to specific origins.
+#[derive(Debug)]
 pub struct ProvenanceTracker {
     origins: HashMap<OriginId, Origin>,
 }
@@ -120,30 +121,10 @@ impl MergeContext {
     }
 }
 
-pub struct ConfigMerger<T> {
-    effective: T,
-    provenance: ProvenanceTracker,
-}
-
 /// Allows the merging of two values following the merge policy in the merge
 /// context.
 pub trait Merge {
     fn merge(&mut self, incoming: Self, context: &mut MergeContext) -> Result<(), ConfigError>;
-}
-
-impl<T> ConfigMerger<T>
-where
-    T: Merge,
-{
-    pub fn new() -> Self
-    where
-        T: Default,
-    {
-        Self {
-            effective: T::default(),
-            provenance: ProvenanceTracker::default(),
-        }
-    }
 }
 
 #[cfg(test)]

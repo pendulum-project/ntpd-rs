@@ -49,6 +49,7 @@ impl<T> Setting<T> {
     }
 
     /// Return the value in this setting, if it is set.
+    #[cfg(test)]
     pub fn get(&self) -> Option<&T> {
         match self {
             Self::Unset => None,
@@ -57,6 +58,7 @@ impl<T> Setting<T> {
     }
 
     /// The origin of this setting, if it is set and has been attributed.
+    #[cfg(test)]
     pub fn origin(&self) -> Option<OriginId> {
         match self {
             Self::Unset => None,
@@ -286,14 +288,17 @@ mod tests {
             .merge(Setting::value_from(2, second), &mut context)
             .unwrap_err();
 
-        assert_eq!(
-            error,
-            ConfigError::OverwriteNotAllowed {
-                position: ConfigPath::root(),
-                current_origin: Some(first),
-                incoming_origin: Some(second),
-            }
-        );
+        let ConfigError::OverwriteNotAllowed {
+            position,
+            current_origin,
+            incoming_origin,
+        } = error
+        else {
+            panic!("expected an overwrite conflict, got {error:?}");
+        };
+        assert_eq!(position, ConfigPath::root());
+        assert_eq!(current_origin, Some(first));
+        assert_eq!(incoming_origin, Some(second));
         // the existing value is left untouched by a rejected merge
         assert_eq!(setting.get(), Some(&1));
     }
