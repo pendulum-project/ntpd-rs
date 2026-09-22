@@ -7,6 +7,10 @@
 use std::process;
 
 fn main() {
-    let result = ntpd::daemon_main();
-    process::exit(if result.is_ok() { 0 } else { 1 });
+    if let Err(err) = ntpd::daemon_main() {
+        eprintln!("{err}");
+        process::exit( 1 );
+    }else{
+        process::exit( 0 );
+    }
 }
