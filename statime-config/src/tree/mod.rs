@@ -1,4 +1,5 @@
 mod atomic;
+mod config_merger;
 mod defaults;
 mod empty;
 mod merge;
@@ -20,8 +21,9 @@ use crate::{
     Config, LogLevel, ObservabilityConfig, ServerSourceConfig, SourceConfig, error::ConfigError,
 };
 
-pub(crate) use merge::OriginId;
-pub(crate) use path::ConfigPath;
+pub(crate) use config_merger::ConfigMerger;
+pub use merge::{Origin, OriginId, ProvenanceTracker};
+pub use path::ConfigPath;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "kebab-case")]
