@@ -10,25 +10,25 @@ mod resolve;
 mod section;
 mod setting;
 
-use atomic::atomic_value;
-use configurable::Configurable;
-use defaults::ApplyDefaults;
-use empty::{EffectivelyUnset, is_effectively_unset};
-use merge::{Attributable, Merge, MergeContext};
-use resolve::Resolve;
-use section::Section;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    Config, LogLevel, ObservabilityConfig, ServerSourceConfig, SourceConfig, error::ConfigError,
-};
+// these are reachable outside the crate only through the hidden module the
+// derive macro's generated code uses, since `tree` itself is private
+pub(crate) use atomic::atomic_value;
+pub use configurable::Configurable;
+pub use defaults::ApplyDefaults;
+pub use empty::{EffectivelyUnset, is_effectively_unset};
+pub use merge::{Attributable, Merge, MergeContext};
+pub use resolve::Resolve;
+pub use section::Section;
+
+use crate::{Config, ObservabilityConfig, ServerSourceConfig, SourceConfig, error::ConfigError};
 
 pub(crate) use config_merger::ConfigMerger;
 pub(crate) use directive::UseSystemConfig;
-pub use merge::Origin;
-pub(crate) use merge::OriginId;
+pub use merge::{Origin, OriginId};
 pub use path::ConfigPath;
-pub(crate) use setting::Setting;
+pub use setting::Setting;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "kebab-case", deny_unknown_fields)]
@@ -177,60 +177,13 @@ impl Attributable for PartialServerSourceConfig {
     }
 }
 
-atomic_value!(LogLevel);
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(default, rename_all = "kebab-case", deny_unknown_fields)]
-pub struct PartialObservabilityConfig {
-    #[serde(skip_serializing_if = "is_effectively_unset")]
-    pub log_level: <LogLevel as Configurable>::Node,
-}
-
-impl Configurable for ObservabilityConfig {
-    type Partial = PartialObservabilityConfig;
-    type Node = Section<PartialObservabilityConfig>;
-}
-
-impl Resolve for PartialObservabilityConfig {
-    type Resolved = ObservabilityConfig;
-
-    fn resolve(self, path: &mut ConfigPath) -> Result<ObservabilityConfig, ConfigError> {
-        Ok(ObservabilityConfig {
-            log_level: path.at("log-level", |path| self.log_level.resolve(path))?,
-        })
-    }
-}
-
-impl EffectivelyUnset for PartialObservabilityConfig {
-    fn is_effectively_unset(&self) -> bool {
-        self.log_level.is_effectively_unset()
-    }
-}
-
-impl ApplyDefaults for PartialObservabilityConfig {
-    fn apply_defaults(&mut self) {
-        self.log_level.default_to(LogLevel::Info);
-    }
-}
-
-impl Attributable for PartialObservabilityConfig {
-    fn attribute(&mut self, origin: OriginId) {
-        self.log_level.attribute(origin);
-    }
-}
-
-impl Merge for PartialObservabilityConfig {
-    fn merge(&mut self, incoming: Self, context: &mut MergeContext<'_>) -> Result<(), ConfigError> {
-        context.at("log-level", |context| {
-            self.log_level.merge(incoming.log_level, context)
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tree::merge::{MergePolicy, Origin, ProvenanceTracker};
+    use crate::{
+        LogLevel, PartialObservabilityConfig,
+        tree::merge::{MergePolicy, Origin, ProvenanceTracker},
+    };
 
     #[test]
     fn test_serialized_roundtrip() {
