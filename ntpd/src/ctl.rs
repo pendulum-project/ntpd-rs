@@ -12,6 +12,7 @@ use tokio::runtime::Builder;
 const USAGE_MSG: &str = "\
 usage: ntp-ctl validate [-c PATH]
        ntp-ctl status [-f FORMAT] [-c PATH]
+       ntp-ctl list [-c PATH]
        ntp-ctl force-sync [-c PATH]
        ntp-ctl -h | ntp-ctl -v";
 
@@ -114,6 +115,9 @@ impl NtpCtlOptions {
                             }
                             "status" => {
                                 options.status = true;
+                            }
+                            "list" => {
+                                options.list = true;
                             }
                             "force-sync" => {
                                 options.force_sync = true;
@@ -223,7 +227,24 @@ pub fn main() -> std::io::Result<ExitCode> {
                 })
         }
         NtpCtlAction::List => {
-            print_spawners();
+            let config = Config::from_args(options.config.as_ref(), false, vec![], vec![]);
+
+            if let Err(ref e) = config {
+                println!("Warning: Unable to load configuration file: {e}");
+            }
+
+            let config = config.unwrap_or_default();
+
+            let observation = config
+                .observability
+                .observation_path
+                .unwrap_or_else(|| PathBuf::from("/var/run/ntpd-rs/observe"));
+            Builder::new_current_thread()
+                .enable_all()
+                .build()?
+                .block_on(async {
+                    print_spawners(observation).await.unwrap();
+                });
             Ok(ExitCode::SUCCESS)
         }
     }
@@ -365,8 +386,31 @@ fn print_state_plain(output: &ObservableState) {
     }
 }
 
-fn print_spawners() {
-    todo!();
+async fn print_spawners(observe_socket: PathBuf) -> Result<ExitCode, std::io::Error> {
+    let mut stream = match tokio::net::UnixStream::connect(&observe_socket).await {
+        Ok(stream) => stream,
+        Err(e) => {
+            eprintln!("Could not open socket at {}: {e}", observe_socket.display(),);
+            return Ok(ExitCode::FAILURE);
+        }
+    };
+
+    let mut msg = Vec::with_capacity(16 * 1024);
+    let output =
+        match crate::daemon::sockets::read_json::<ObservableState>(&mut stream, &mut msg).await {
+            Ok(output) => output,
+            Err(e) => {
+                eprintln!("Failed to read state from observation socket: {e}");
+
+                return Ok(ExitCode::FAILURE);
+            }
+        };
+
+    for spawner in output.spawners {
+        println!("{:?}: {:?}", spawner.id, spawner.current_timeout);
+    }
+
+    Ok(ExitCode::SUCCESS)
 }
 
 #[cfg(test)]
@@ -422,6 +466,7 @@ mod tests {
             system: SystemSnapshot::default(),
             sources: vec![],
             servers: vec![],
+            spawners: vec![],
         };
         let result = write_socket_helper(Format::Plain, value).await?;
 
@@ -440,6 +485,7 @@ mod tests {
             system: SystemSnapshot::default(),
             sources: vec![],
             servers: vec![],
+            spawners: vec![],
         };
         let result = write_socket_helper(Format::Prometheus, value).await?;
 

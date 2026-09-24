@@ -21,6 +21,7 @@ use tokio::{
 
 use crate::daemon::{
     clock::NtpClockWrapper,
+    observer::ObservableSpawnerState,
     nts_key_provider::{self, KeysetConfig},
     spawn::{
         CreationParameters, LinkTerminationReason, SpawnFailureReason, Spawner, SpawnerId,
@@ -447,9 +448,16 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
         }
     }
 
-    pub fn spawners(self) -> HashMap<SpawnerId, SpawnerData<TimeController>> {
-        let state = self.state.into_inner().expect("could not aquire read lock");
-        state.spawners
+    pub fn spawners(&self) -> Vec<ObservableSpawnerState> {
+        let state = self.state.lock().unwrap();
+        state
+            .spawners
+            .iter()
+            .map(|(id, data)| ObservableSpawnerState {
+                id: *id,
+                current_timeout: data.current_timeout,
+            })
+            .collect()
     }
 
     pub async fn add_server<F: AsyncFnOnce(NtpClockWrapper, &SystemManagers) -> JoinHandle<()>>(
