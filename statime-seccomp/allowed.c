@@ -147,4 +147,10 @@
 
 // These additions are not found in NTPsec but are necessary for ntpd-rs.
 
-	SCMP_SYS(sigaltstack)
+	SCMP_SYS(sigaltstack),
+	SCMP_SYS(epoll_create1),
+	SCMP_SYS(epoll_ctl),
+	SCMP_SYS(epoll_wait),
+	SCMP_SYS(eventfd2),
+	SCMP_SYS(prctl),
+	SCMP_SYS(sched_getaffinity),
