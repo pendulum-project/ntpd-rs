@@ -44,11 +44,11 @@ jobs:
           # Stable on x86_64 Linux gnu/musl with all features
           - rust: "stable"
             runs_on: ubuntu-latest
-            features: "--all-features"
+            features: "--features all-portable"
             target: "x86_64-unknown-linux-gnu"
           - rust: "stable"
             runs_on: ubuntu-latest
-            features: "--all-features"
+            features: "--features all-portable"
             target: "x86_64-unknown-linux-musl"
 
           # Stable on x86_64 Linux gnu with different featuresets
@@ -80,19 +80,19 @@ jobs:
             target: "aarch64-apple-darwin"
           - rust: "stable"
             runs_on: macos-latest
-            features: "--all-features"
+            features: "--features all-portable"
             target: "aarch64-apple-darwin"
 
           # MSRV on x86_64 Linux (also checking direct-minimal-versions of dependencies)
           - rust: "msrv"
             runs_on: ubuntu-latest
-            features: "--all-features"
+            features: "--features all-portable"
             target: "x86_64-unknown-linux-gnu"
 
           # Beta on x86_64 Linux with all features (ensuring future compatibility)
           - rust: beta
             runs_on: ubuntu-latest
-            features: "--all-features"
+            features: "--features all-portable"
             target: "x86_64-unknown-linux-gnu"
     steps:
       - name: Checkout sources

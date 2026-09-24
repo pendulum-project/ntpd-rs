@@ -48,6 +48,7 @@ tokio-rustls.workspace = true
 
 [features]
 default = [ "aws-lc", "rustcrypto", "pps", "srv" ]
+all-portable = [ "hardware-timestamping", "pps", "srv", "aws-lc", "rustcrypto", "openssl-vendored" ]
 hardware-timestamping = []
 pps = [ "dep:pps-time" ]
 srv = [ "dep:hickory-resolver" ]
