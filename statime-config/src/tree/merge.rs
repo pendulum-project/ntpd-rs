@@ -1,7 +1,7 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use crate::{
-    error::ConfigError,
+    ConfigError,
     tree::path::{ConfigPath, PathSegment},
 };
 
@@ -63,6 +63,7 @@ impl ProvenanceTracker {
     }
 
     /// Get the origin for a given origin id, if it is known.
+    #[cfg(test)]
     pub fn get_origin(&self, id: OriginId) -> Option<&Origin> {
         if id == OriginId::BUILT_IN_DEFAULT {
             return Some(&Origin::BuiltInDefault);

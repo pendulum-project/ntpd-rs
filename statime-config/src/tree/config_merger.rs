@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::{
-    error::ConfigError,
+    ConfigError,
     tree::{
         defaults::ApplyDefaults,
         merge::{Attribute, Merge, MergeContext, MergePolicy, Origin, ProvenanceTracker},
