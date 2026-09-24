@@ -1,13 +1,18 @@
+use crate::daemon::config::ObservabilityConfig;
+use crate::daemon::spawn::{Spawner, SpawnerId};
+use crate::daemon::system::System;
+
 use super::server::ServerStats;
 use super::sockets::create_unix_socket_with_permissions;
 use libc::{ECONNABORTED, EMFILE, ENFILE, ENOBUFS, ENOMEM};
 use ntp_proto::{ClockId, ObservableSourceState, SystemSnapshot};
-use statime_base::{Clock, TAI, Timestamp};
+use statime_base::{Clock, StdController, TAI, Timestamp};
 use std::collections::HashMap;
 use std::convert::Into;
 use std::net::Ipv4Addr;
 use std::os::unix::fs::PermissionsExt;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
+use std::time::Duration;
 use std::{net::SocketAddr, time::Instant};
 use tokio::task::JoinHandle;
 use tracing::{Instrument, Span, debug, error, instrument, trace, warn};
@@ -20,6 +25,7 @@ pub struct ObservableState {
     pub system: SystemSnapshot,
     pub sources: Vec<ObservableSourceState>,
     pub servers: Vec<ObservableServerState>,
+    pub spawners: Vec<ObservableSpawnerState>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -72,8 +78,113 @@ impl From<&ServerData> for ObservableServerState {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ObservableSpawnerState {
+    pub id: SpawnerId,
+    pub current_timeout: Duration,
+    //pub last_spawn: Instant,
+}
+
 #[instrument(level = tracing::Level::ERROR, skip_all, name = "Observer", fields(path = debug(config.observation_path.clone())))]
-pub fn spawn<C: 'static + Clock<TAI> + Send>(
+pub fn spawn<
+    C: 'static + Clock<TAI> + Send,
+    TimeController: StdController + Send + Sync + 'static,
+>(
+    config: ObservabilityConfig,
+    system: Arc<System<TimeController>>,
+    clock: C,
+) -> JoinHandle<std::io::Result<()>> {
+    tokio::spawn(
+        (async move {
+            let result = observer(config, system, clock).await;
+            if let Err(ref e) = result {
+                warn!("Abnormal termination of the state observer: {e}");
+                warn!("The state observer will not be available");
+            }
+            result
+        })
+        .instrument(Span::current()),
+    )
+}
+
+async fn observer<C: 'static + Clock<TAI> + Send, TimeController: StdController + Send + Sync>(
+    config: ObservabilityConfig,
+    system: Arc<System<TimeController>>,
+    clock: C,
+) -> std::io::Result<()> where
+{
+    let start_time = Instant::now();
+    let timeout = std::time::Duration::from_millis(500);
+
+    let Some(path) = config.observation_path else {
+        return Ok(());
+    };
+
+    // this binary needs to run as root to be able to adjust the system clock.
+    // by default, the socket inherits root permissions, but the client should not need
+    // elevated permissions to read from the socket. So we explicitly set the permissions
+    let permissions: std::fs::Permissions =
+        PermissionsExt::from_mode(config.observation_permissions);
+
+    let observe_listener = create_unix_socket_with_permissions(&path, permissions)?;
+    let observe_permits = Arc::new(tokio::sync::Semaphore::new(8));
+
+    loop {
+        let permit = observe_permits
+            .clone()
+            .acquire_owned()
+            .await
+            .expect("Semaphore for observability was unexpectedly closed");
+        let (mut stream, _addr) = match observe_listener.accept().await {
+            Ok(a) => a,
+            Err(e) if matches!(e.raw_os_error(), Some(ECONNABORTED)) => {
+                debug!("Unexpectedly closed unix socket: {e}");
+                continue;
+            }
+            Err(e) if matches!(e.raw_os_error(), Some(ENFILE | EMFILE | ENOMEM | ENOBUFS)) => {
+                error!(
+                    "Not enough resources available to accept incoming observability socket: {e}"
+                );
+                tokio::time::sleep(timeout).await;
+                continue;
+            }
+            Err(e) => {
+                error!("Could not accept connection due to unexpected problem: {e}");
+                return Err(e);
+            }
+        };
+        //let sources_reader = sources_reader.clone();
+        //let server_reader = server_reader.clone();
+        //let system_reader = system_reader.clone();
+        let spawners = system.spawners();
+        let now = clock.now().expect("Unable to get current time");
+        let fut = async move {
+            handle_connection(
+                &mut stream,
+                start_time,
+                //&sources_reader,
+                //server_reader,
+                //system_reader,
+                spawners,
+                now,
+            )
+            .await
+        };
+
+        tokio::spawn(async move {
+            match tokio::time::timeout(timeout, fut).await {
+                Err(_) => debug!("Returning observability records timed out"),
+                Ok(Err(err)) => warn!("error handling connection: {err}"),
+                Ok(_) => trace!("Returned observability records to connection"),
+            }
+            drop(permit);
+        });
+    }
+}
+
+/*
+    #[instrument(level = tracing::Level::ERROR, skip_all, name = "Observer", fields(path = debug(config.observation_path.clone())))]
+    pub fn spawn<C: 'static + Clock<TAI> + Send>(
     config: &super::config::ObservabilityConfig,
     sources_reader: Arc<std::sync::RwLock<HashMap<ClockId, ObservableSourceState>>>,
     server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
@@ -94,7 +205,8 @@ pub fn spawn<C: 'static + Clock<TAI> + Send>(
         .instrument(Span::current()),
     )
 }
-
+*/
+/*
 async fn observer<C: 'static + Clock<TAI> + Send>(
     config: super::config::ObservabilityConfig,
     sources_reader: Arc<std::sync::RwLock<HashMap<ClockId, ObservableSourceState>>>,
@@ -169,27 +281,31 @@ async fn observer<C: 'static + Clock<TAI> + Send>(
         });
     }
 }
-
+*/
 async fn handle_connection(
     stream: &mut (impl tokio::io::AsyncWrite + Unpin),
     start_time: Instant,
-    sources_reader: &std::sync::RwLock<HashMap<ClockId, ObservableSourceState>>,
-    server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
-    system_reader: tokio::sync::watch::Receiver<SystemSnapshot>,
+    //sources_reader: &std::sync::RwLock<HashMap<ClockId, ObservableSourceState>>,
+    //server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
+    //system_reader: tokio::sync::watch::Receiver<SystemSnapshot>,
+    spawners: Vec<ObservableSpawnerState>,
     now: Timestamp<TAI>,
 ) -> std::io::Result<()> {
     let observe = ObservableState {
         program: ProgramData::with_dynamics(start_time.elapsed().as_secs_f64(), now),
-        sources: sources_reader
-            .read()
-            .expect("Unexpected poisoned mutex")
-            .values()
-            .cloned()
-            .collect(),
-        system: *system_reader.borrow(),
-        servers: server_reader.borrow().iter().map(Into::into).collect(),
+        sources: Vec::new(),
+        system: SystemSnapshot::default(),
+        servers: Vec::new(),
+        //sources: sources_reader
+        //    .read()
+        //    .expect("Unexpected poisoned mutex")
+        //    .values()
+        //    .cloned()
+        //    .collect(),
+        //system: *system_reader.borrow(),
+        //servers: server_reader.borrow().iter().map(Into::into).collect(),
+        spawners,
     };
-
     super::sockets::write_json(stream, &observe).await?;
 
     Ok(())
@@ -306,15 +422,17 @@ mod tests {
         });
 
         let handle = tokio::spawn(async move {
-            observer(
-                config,
-                source_snapshots,
-                servers_reader,
-                system_reader,
-                TestClock,
-            )
-            .await
-            .unwrap();
+            todo!();
+            /*            observer(
+                     config,
+                     source_snapshots,
+                     servers_reader,
+                     system_reader,
+                     TestClock,
+                 )
+                 .await
+                 .unwrap();
+            */
         });
 
         tokio::time::sleep(Duration::from_millis(10)).await;

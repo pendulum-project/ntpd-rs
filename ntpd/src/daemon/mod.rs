@@ -222,6 +222,7 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
         }
 
         // FIXME: Replace with proper new observer code once available.
+        observer::spawn(config.observability, system, clock);
         /*observer::spawn(
             &config.observability,
             channels.source_snapshots,

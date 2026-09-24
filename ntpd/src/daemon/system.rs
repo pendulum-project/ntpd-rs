@@ -22,6 +22,7 @@ use tokio::{
 
 use crate::daemon::{
     clock::NtpClockWrapper,
+    observer::ObservableSpawnerState,
     spawn::{
         CreationParameters, LinkTerminationReason, SpawnFailureReason, Spawner, SpawnerId,
         TrySpawnFuture,
@@ -50,7 +51,7 @@ pub struct System<TimeController: StdController> {
     config: SystemConfig,
 }
 
-struct SystemState<TimeController: StdController> {
+pub struct SystemState<TimeController: StdController> {
     waker: Option<Waker>,
     driven_links: HashMap<LinkId, LinkData>,
     spawners: HashMap<SpawnerId, SpawnerData<TimeController>>,
@@ -401,8 +402,15 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
         }
     }
 
-    pub fn spawners(self) -> HashMap<SpawnerId, SpawnerData<TimeController>> {
-        let state = self.state.into_inner().expect("could not aquire read lock");
-        state.spawners
+    pub fn spawners(&self) -> Vec<ObservableSpawnerState> {
+        let state = self.state.read().expect("could not aquire read lock");
+        state
+            .spawners
+            .iter()
+            .map(|(id, data)| ObservableSpawnerState {
+                id: *id,
+                current_timeout: data.current_timeout,
+            })
+            .collect()
     }
 }

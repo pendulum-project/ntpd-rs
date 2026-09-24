@@ -11,11 +11,14 @@ address = "ntpd-rs.pool.ntp.org"
 count = 4
 
 # Alternative configuration for IPv6 only machines
-#[[source]]
-#mode = "pool"
-#address = "2.pool.ntp.org"
-#count = 4
+[[source]]
+mode = "pool"
+address = "2.pool.ntp.org"
+count = 4
 
+[[source]]
+mode = "server"
+address = "time.tweede.golf"
 # Below are configured various thresholds beyond which ntpd-rs will not
 # change the system clock. CHANGE THESE TO MATCH YOUR SECURITY NEEDS!
 # For guidance, see OPERATIONAL_CONSIDERATIONS.md
