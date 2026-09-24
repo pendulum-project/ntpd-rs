@@ -242,6 +242,33 @@ mod tests {
         );
     }
 
+    /// Assert that a document is rejected while parsing, by a complaint that
+    /// points at `offender`.
+    fn rejects(document: &str, offender: &str) {
+        let documents = Memory::new().document("/etc/ntp.toml", document);
+        let error = load(documents).unwrap_err();
+
+        assert!(
+            matches!(error, ConfigError::CouldNotParse { .. }),
+            "expected {document:?} to be rejected while parsing, got {error:?}"
+        );
+        assert!(
+            error.to_string().contains(offender),
+            "the complaint about {document:?} does not mention `{offender}`: {error}"
+        );
+    }
+
+    #[test]
+    fn an_unknown_key_is_rejected_wherever_it_appears() {
+        rejects("log-levle = 'warn'", "log-levle");
+        rejects("[observability]\nlog-levle = 'warn'", "log-levle");
+        rejects(
+            "[[sources]]\nmode = 'server'\nurl = 'a'\nurll = 'b'",
+            "urll",
+        );
+        rejects("[[sources]]\nmode = 'nonsense'", "nonsense");
+    }
+
     #[test]
     fn the_default_directory_need_not_exist() {
         let documents = Memory::new().document("/etc/ntp.toml", "use-system-config = true");

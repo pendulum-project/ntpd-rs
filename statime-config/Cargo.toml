@@ -11,6 +11,5 @@ publish.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-statime-base = { workspace = true, features = ["std"] }
 toml.workspace = true
 serde.workspace = true
