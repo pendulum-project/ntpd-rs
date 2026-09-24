@@ -187,7 +187,7 @@ where
 
 /// A setting is a leaf node, so we don't need to bother too much about merging.
 impl<T> Merge for Setting<T> {
-    fn merge(&mut self, incoming: Self, context: &mut MergeContext) -> Result<(), ConfigError> {
+    fn merge(&mut self, incoming: Self, context: &mut MergeContext<'_>) -> Result<(), ConfigError> {
         let Setting::Set { value, origin } = incoming else {
             return Ok(());
         };
@@ -199,8 +199,8 @@ impl<T> Merge for Setting<T> {
         {
             return Err(ConfigError::OverwriteNotAllowed {
                 position: context.path.clone(),
-                current_origin: *current,
-                incoming_origin: origin,
+                current_origin: context.origin(*current),
+                incoming_origin: context.origin(origin),
             });
         }
 
@@ -215,16 +215,17 @@ mod tests {
     use super::*;
     use crate::tree::merge::{Origin, ProvenanceTracker};
 
-    fn origins() -> (OriginId, OriginId) {
+    /// Two tracked documents, along with the registry that can name them.
+    fn origins() -> (ProvenanceTracker, OriginId, OriginId) {
         let mut tracker = ProvenanceTracker::new();
         let first = tracker.track(Origin::SystemConfig("/etc/ntp.d/a.toml".into()));
         let second = tracker.track(Origin::SystemConfig("/etc/ntp.d/b.toml".into()));
-        (first, second)
+        (tracker, first, second)
     }
 
     #[test]
     fn equality_ignores_origin() {
-        let (first, second) = origins();
+        let (_tracker, first, second) = origins();
 
         assert_eq!(
             Setting::value_from(1, first),
@@ -237,7 +238,7 @@ mod tests {
 
     #[test]
     fn only_set_settings_are_attributed() {
-        let (first, _) = origins();
+        let (_tracker, first, _) = origins();
 
         let mut setting = Setting::value(1);
         assert_eq!(setting.origin(), None);
@@ -251,8 +252,8 @@ mod tests {
 
     #[test]
     fn override_replaces_value_and_origin() {
-        let (first, second) = origins();
-        let mut context = MergeContext::new(MergePolicy::Override);
+        let (tracker, first, second) = origins();
+        let mut context = MergeContext::new(MergePolicy::Override, &tracker);
 
         let mut setting = Setting::value_from(1, first);
         setting
@@ -265,8 +266,8 @@ mod tests {
 
     #[test]
     fn reject_overlap_fills_an_unset_setting() {
-        let (first, _) = origins();
-        let mut context = MergeContext::new(MergePolicy::RejectOverlap);
+        let (tracker, first, _) = origins();
+        let mut context = MergeContext::new(MergePolicy::RejectOverlap, &tracker);
 
         let mut setting = Setting::Unset;
         setting
@@ -279,8 +280,8 @@ mod tests {
 
     #[test]
     fn reject_overlap_reports_both_origins() {
-        let (first, second) = origins();
-        let mut context = MergeContext::new(MergePolicy::RejectOverlap);
+        let (tracker, first, second) = origins();
+        let mut context = MergeContext::new(MergePolicy::RejectOverlap, &tracker);
 
         let mut setting = Setting::value_from(1, first);
         let error = setting
@@ -296,18 +297,25 @@ mod tests {
             panic!("expected an overwrite conflict, got {error:?}");
         };
         assert_eq!(position, ConfigPath::root());
-        assert_eq!(current_origin, Some(first));
-        assert_eq!(incoming_origin, Some(second));
+        // the error names the documents, not the ids it was built from
+        assert_eq!(
+            current_origin,
+            Some(Origin::SystemConfig("/etc/ntp.d/a.toml".into()))
+        );
+        assert_eq!(
+            incoming_origin,
+            Some(Origin::SystemConfig("/etc/ntp.d/b.toml".into()))
+        );
         // the existing value is left untouched by a rejected merge
         assert_eq!(setting.get(), Some(&1));
     }
 
     #[test]
     fn merging_an_unset_setting_changes_nothing() {
-        let (first, _) = origins();
+        let (tracker, first, _) = origins();
 
         for policy in [MergePolicy::Override, MergePolicy::RejectOverlap] {
-            let mut context = MergeContext::new(policy);
+            let mut context = MergeContext::new(policy, &tracker);
 
             let mut setting = Setting::value_from(1, first);
             setting.merge(Setting::Unset, &mut context).unwrap();

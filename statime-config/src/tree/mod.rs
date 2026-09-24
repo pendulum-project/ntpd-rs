@@ -23,7 +23,8 @@ use crate::{
 
 pub(crate) use config_merger::ConfigMerger;
 pub(crate) use directive::UseSystemConfig;
-pub use merge::OriginId;
+pub use merge::Origin;
+pub(crate) use merge::OriginId;
 pub use path::ConfigPath;
 pub(crate) use setting::Setting;
 
@@ -65,7 +66,7 @@ impl ApplyDefaults for PartialConfig {
 }
 
 impl Merge for PartialConfig {
-    fn merge(&mut self, incoming: Self, context: &mut MergeContext) -> Result<(), ConfigError> {
+    fn merge(&mut self, incoming: Self, context: &mut MergeContext<'_>) -> Result<(), ConfigError> {
         context.at("sources", |context| {
             self.sources.merge(incoming.sources, context)
         })?;
@@ -206,7 +207,7 @@ impl Attribute for PartialObservabilityConfig {
 }
 
 impl Merge for PartialObservabilityConfig {
-    fn merge(&mut self, incoming: Self, context: &mut MergeContext) -> Result<(), ConfigError> {
+    fn merge(&mut self, incoming: Self, context: &mut MergeContext<'_>) -> Result<(), ConfigError> {
         context.at("log-level", |context| {
             self.log_level.merge(incoming.log_level, context)
         })
@@ -429,7 +430,8 @@ mod tests {
         let mut effective = observability(Setting::value(LogLevel::Info));
         let incoming = observability(Setting::Unset);
 
-        let mut context = MergeContext::new(MergePolicy::RejectOverlap);
+        let tracker = ProvenanceTracker::new();
+        let mut context = MergeContext::new(MergePolicy::RejectOverlap, &tracker);
         effective.merge(incoming, &mut context).unwrap();
 
         assert_eq!(effective, observability(Setting::value(LogLevel::Info)));
@@ -440,7 +442,8 @@ mod tests {
         let mut effective = observability(Setting::value(LogLevel::Info));
         let incoming = observability(Setting::value(LogLevel::Debug));
 
-        let mut context = MergeContext::new(MergePolicy::RejectOverlap);
+        let tracker = ProvenanceTracker::new();
+        let mut context = MergeContext::new(MergePolicy::RejectOverlap, &tracker);
         let error = effective.merge(incoming, &mut context).unwrap_err();
 
         let ConfigError::OverwriteNotAllowed { position, .. } = error else {

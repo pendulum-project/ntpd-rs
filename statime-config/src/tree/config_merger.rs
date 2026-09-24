@@ -51,19 +51,12 @@ where
     ) -> Result<(), ConfigError> {
         partial.attribute(self.provenance.track(origin));
         self.effective
-            .merge(partial, &mut MergeContext::new(policy))
+            .merge(partial, &mut MergeContext::new(policy, &self.provenance))
     }
 
     /// Fill in the built-in defaults of everything no document supplied.
     pub fn apply_defaults(&mut self) {
         self.effective.apply_defaults();
-    }
-
-    /// The origins seen so far, to resolve the ids in [`ConfigMerger::effective`]
-    /// or in a [`ConfigError`] with.
-    #[cfg(test)]
-    pub fn provenance(&self) -> &ProvenanceTracker {
-        &self.provenance
     }
 
     /// Try to produce the final configuration. Fails if any required values are missing.
@@ -147,15 +140,36 @@ mod tests {
             panic!("expected an overwrite conflict, got {error:?}");
         };
         assert_eq!(position.to_string(), "observability.log-level");
-        // both ids resolve to the fragment that set the value
-        let provenance = merger.provenance();
         assert_eq!(
-            provenance.get_origin(current_origin.unwrap()),
-            Some(&Origin::SystemConfig("/etc/ntp.d/a.toml".into()))
+            current_origin,
+            Some(Origin::SystemConfig("/etc/ntp.d/a.toml".into()))
         );
         assert_eq!(
-            provenance.get_origin(incoming_origin.unwrap()),
-            Some(&Origin::SystemConfig("/etc/ntp.d/b.toml".into()))
+            incoming_origin,
+            Some(Origin::SystemConfig("/etc/ntp.d/b.toml".into()))
+        );
+    }
+
+    #[test]
+    fn a_conflict_names_both_documents() {
+        let mut merger = ConfigMerger::<PartialConfig>::new();
+        merger
+            .add_system(
+                "/etc/ntp.d/a.toml".into(),
+                document("observability.log-level = 'warn'"),
+            )
+            .unwrap();
+
+        let error = merger
+            .add_system(
+                "/etc/ntp.d/b.toml".into(),
+                document("observability.log-level = 'error'"),
+            )
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "`observability.log-level` is set by both `/etc/ntp.d/a.toml` and `/etc/ntp.d/b.toml`"
         );
     }
 }

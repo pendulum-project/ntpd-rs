@@ -7,7 +7,7 @@ mod load;
 mod tree;
 
 pub use error::ConfigError;
-pub use tree::{ConfigPath, OriginId};
+pub use tree::{ConfigPath, Origin};
 
 /// The configuration of a statime instance.
 #[derive(Debug, Clone, PartialEq, Eq)]

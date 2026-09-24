@@ -117,7 +117,7 @@ impl<T> Merge for Section<T>
 where
     T: Merge,
 {
-    fn merge(&mut self, incoming: Self, context: &mut MergeContext) -> Result<(), ConfigError> {
+    fn merge(&mut self, incoming: Self, context: &mut MergeContext<'_>) -> Result<(), ConfigError> {
         let Section::Set(incoming) = incoming else {
             return Ok(());
         };
