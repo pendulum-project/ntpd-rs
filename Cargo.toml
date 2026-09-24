@@ -8,10 +8,11 @@ members = [
     "statime-csptp",
     "statime-netptp",
     "statime-wire",
-    "statime-seccomp",
     "timestamped-socket",
 ]
-exclude = [ ]
+exclude = [
+    "statime-seccomp"
+]
 
 # Properly take compiler version into account when resolving crates.
 resolver = "3"

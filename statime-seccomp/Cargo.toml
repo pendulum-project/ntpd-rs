@@ -1,17 +1,15 @@
 [package]
 name = "statime-seccomp"
-license.workspace = true
+license = "Apache-2.0 OR MIT"
 version = "1.0.0-testing.1"
-edition.workspace = true
-repository.workspace = true
-homepage.workspace = true
-readme.workspace = true
-description.workspace = true
-publish.workspace = true
-rust-version.workspace = true
+edition = "2024"
+readme = "./NOTICE.md"
+descriptione = "Minimalist seccomp filter for statime"
+publish = true
+rust-version = "1.95" # MSRV
 
-[lints]
-workspace = true
+[lints.rust]
+missing_docs = "deny"
 
 [features]
 default = []
