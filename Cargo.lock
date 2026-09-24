@@ -1558,7 +1558,6 @@ name = "statime-config"
 version = "2.0.0-alpha.20260715"
 dependencies = [
  "serde",
- "statime-base",
  "toml",
 ]
 

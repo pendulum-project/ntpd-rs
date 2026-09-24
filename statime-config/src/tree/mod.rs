@@ -29,7 +29,7 @@ pub use path::ConfigPath;
 pub(crate) use setting::Setting;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, rename_all = "kebab-case")]
+#[serde(default, rename_all = "kebab-case", deny_unknown_fields)]
 pub struct PartialConfig {
     /// Directive to use the system configuration, not emitted in final config.
     #[serde(skip_serializing_if = "is_effectively_unset")]
@@ -87,17 +87,14 @@ impl Resolve for PartialConfig {
     }
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case", tag = "mode")]
 pub enum PartialSourceConfig {
     Server(PartialServerSourceConfig),
-    #[default]
-    #[serde(untagged)]
-    Unset,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(default, rename_all = "kebab-case")]
+#[serde(default, rename_all = "kebab-case", deny_unknown_fields)]
 pub struct PartialServerSourceConfig {
     #[serde(skip_serializing_if = "is_effectively_unset")]
     pub url: Setting<String>,
@@ -110,7 +107,6 @@ impl ApplyDefaults for PartialSourceConfig {
     fn apply_defaults(&mut self) {
         match self {
             Self::Server(config) => config.apply_defaults(),
-            Self::Unset => {}
         }
     }
 }
@@ -119,7 +115,6 @@ impl Attribute for PartialSourceConfig {
     fn attribute(&mut self, origin: OriginId) {
         match self {
             Self::Server(config) => config.attribute(origin),
-            Self::Unset => {}
         }
     }
 }
@@ -130,10 +125,6 @@ impl Resolve for PartialSourceConfig {
     fn resolve(self, path: &mut ConfigPath) -> Result<SourceConfig, ConfigError> {
         match self {
             Self::Server(config) => Ok(SourceConfig::Server(config.resolve(path)?)),
-            // no mode was given, so there is nothing to resolve this source to
-            Self::Unset => Err(ConfigError::MissingRequiredValue {
-                position: path.at("mode", |path| path.clone()),
-            }),
         }
     }
 }
@@ -172,7 +163,7 @@ impl Attribute for PartialServerSourceConfig {
 atomic_value!(LogLevel);
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(default, rename_all = "kebab-case")]
+#[serde(default, rename_all = "kebab-case", deny_unknown_fields)]
 pub struct PartialObservabilityConfig {
     #[serde(skip_serializing_if = "is_effectively_unset")]
     pub log_level: Setting<LogLevel>,
