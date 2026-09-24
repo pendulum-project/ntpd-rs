@@ -1,6 +1,7 @@
 mod atomic;
 mod config_merger;
 mod defaults;
+mod directive;
 mod empty;
 mod merge;
 mod path;
@@ -15,21 +16,23 @@ use merge::{Attribute, Merge, MergeContext};
 use resolve::Resolve;
 use section::Section;
 use serde::{Deserialize, Serialize};
-use setting::Setting;
 
 use crate::{
     Config, LogLevel, ObservabilityConfig, ServerSourceConfig, SourceConfig, error::ConfigError,
 };
 
 pub(crate) use config_merger::ConfigMerger;
-pub use merge::{Origin, OriginId, ProvenanceTracker};
+pub(crate) use directive::UseSystemConfig;
+pub use merge::OriginId;
 pub use path::ConfigPath;
+pub(crate) use setting::Setting;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "kebab-case")]
 pub struct PartialConfig {
+    /// Directive to use the system configuration, not emitted in final config.
     #[serde(skip_serializing_if = "is_effectively_unset")]
-    pub use_system_config: Setting<Option<bool>>,
+    pub use_system_config: Setting<UseSystemConfig>,
 
     #[serde(skip_serializing_if = "is_effectively_unset")]
     pub sources: Setting<Vec<PartialSourceConfig>>,
@@ -48,7 +51,6 @@ impl EffectivelyUnset for PartialConfig {
 
 impl Attribute for PartialConfig {
     fn attribute(&mut self, origin: OriginId) {
-        self.use_system_config.attribute(origin);
         self.sources.attribute(origin);
         self.observability.attribute(origin);
     }
@@ -56,7 +58,6 @@ impl Attribute for PartialConfig {
 
 impl ApplyDefaults for PartialConfig {
     fn apply_defaults(&mut self) {
-        self.use_system_config.default_to(None);
         self.sources.default_to(Vec::new());
         self.sources.apply_defaults();
         self.observability.apply_defaults();
@@ -65,10 +66,6 @@ impl ApplyDefaults for PartialConfig {
 
 impl Merge for PartialConfig {
     fn merge(&mut self, incoming: Self, context: &mut MergeContext) -> Result<(), ConfigError> {
-        context.at("use-system-config", |context| {
-            self.use_system_config
-                .merge(incoming.use_system_config, context)
-        })?;
         context.at("sources", |context| {
             self.sources.merge(incoming.sources, context)
         })?;
@@ -83,9 +80,6 @@ impl Resolve for PartialConfig {
 
     fn resolve(self, path: &mut ConfigPath) -> Result<Config, ConfigError> {
         Ok(Config {
-            use_system_config: path.at("use-system-config", |path| {
-                self.use_system_config.resolve(path)
-            })?,
             sources: path.at("sources", |path| self.sources.resolve(path))?,
             observability: path.at("observability", |path| self.observability.resolve(path))?,
         })
@@ -385,8 +379,6 @@ mod tests {
         assert_eq!(
             resolved,
             Config {
-                // optional, and no document supplied it
-                use_system_config: None,
                 sources: vec![SourceConfig::Server(ServerSourceConfig {
                     url: "example.com".to_owned(),
                     // defaulted, so it is present without being configured
@@ -400,27 +392,22 @@ mod tests {
     }
 
     #[test]
-    fn a_setting_holding_an_option_resolves_like_any_other() {
+    fn the_loader_directive_takes_no_part_in_the_traversals() {
         let mut config = one_server(Setting::value("example.com".to_owned()));
-        config.use_system_config = Setting::value(Some(true));
+        config.use_system_config = Setting::value(UseSystemConfig::Enabled(true));
+        config.attribute(OriginId::BUILT_IN_DEFAULT);
         config.apply_defaults();
 
-        let resolved = config.resolve(&mut ConfigPath::root()).unwrap();
+        // it is neither attributed nor defaulted, and resolving ignores it
+        assert_eq!(config.use_system_config.origin(), None);
+        config.clone().resolve(&mut ConfigPath::root()).unwrap();
 
-        assert_eq!(resolved.use_system_config, Some(true));
-    }
-
-    #[test]
-    fn a_default_of_none_is_a_value_with_provenance() {
-        let mut config = one_server(Setting::value("example.com".to_owned()));
-        config.apply_defaults();
-
-        // the field is optional because its default is `None`, so the absence
-        // is attributable like any other defaulted value
-        assert_eq!(config.use_system_config.get(), Some(&None));
+        // but it does survive a serialization roundtrip
+        let serialized = toml::to_string(&config).unwrap();
+        let deserialized: PartialConfig = toml::from_str(&serialized).unwrap();
         assert_eq!(
-            config.use_system_config.origin(),
-            Some(OriginId::BUILT_IN_DEFAULT)
+            deserialized.use_system_config.get(),
+            Some(&UseSystemConfig::Enabled(true))
         );
     }
 

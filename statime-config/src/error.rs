@@ -27,4 +27,8 @@ pub enum ConfigError {
         path: PathBuf,
         cause: toml::de::Error,
     },
+
+    /// A system configuration fragment set `use-system-config`. Only the main
+    /// configuration may do so.
+    DirectiveNotAllowed { path: PathBuf },
 }

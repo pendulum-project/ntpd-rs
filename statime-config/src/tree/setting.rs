@@ -1,7 +1,7 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
-    error::ConfigError,
+    ConfigError,
     tree::{
         defaults::ApplyDefaults,
         empty::EffectivelyUnset,
@@ -49,7 +49,6 @@ impl<T> Setting<T> {
     }
 
     /// Return the value in this setting, if it is set.
-    #[cfg(test)]
     pub fn get(&self) -> Option<&T> {
         match self {
             Self::Unset => None,

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
-    error::ConfigError,
+    ConfigError,
     tree::{
         defaults::ApplyDefaults,
         empty::EffectivelyUnset,
