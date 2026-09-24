@@ -1544,6 +1544,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "statime-seccomp"
+version = "2.0.0-alpha.20260715"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "statime-wire"
 version = "2.0.0-alpha.20260715"
 dependencies = [

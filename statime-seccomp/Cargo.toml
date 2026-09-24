@@ -1,0 +1,22 @@
+[package]
+name = "statime-seccomp"
+license.workspace = true
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = []
+
+[dependencies]
+
+[build-dependencies]
+cc = "1"
