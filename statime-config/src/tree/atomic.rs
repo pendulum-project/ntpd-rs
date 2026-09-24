@@ -14,6 +14,11 @@ macro_rules! atomic_value {
             fn apply_defaults(&mut self) {}
         }
 
+        impl $crate::tree::configurable::Configurable for $type {
+            type Partial = Self;
+            type Node = $crate::tree::setting::Setting<Self>;
+        }
+
         impl $crate::tree::resolve::Resolve for $type {
             type Resolved = Self;
 

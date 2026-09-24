@@ -1,5 +1,6 @@
 mod atomic;
 mod config_merger;
+mod configurable;
 mod defaults;
 mod directive;
 mod empty;
@@ -10,6 +11,7 @@ mod section;
 mod setting;
 
 use atomic::atomic_value;
+use configurable::Configurable;
 use defaults::ApplyDefaults;
 use empty::{EffectivelyUnset, is_effectively_unset};
 use merge::{Attributable, Merge, MergeContext};
@@ -36,10 +38,15 @@ pub struct PartialConfig {
     pub use_system_config: Setting<UseSystemConfig>,
 
     #[serde(skip_serializing_if = "is_effectively_unset")]
-    pub sources: Setting<Vec<PartialSourceConfig>>,
+    pub sources: <Vec<SourceConfig> as Configurable>::Node,
 
     #[serde(skip_serializing_if = "is_effectively_unset")]
-    pub observability: Section<PartialObservabilityConfig>,
+    pub observability: <ObservabilityConfig as Configurable>::Node,
+}
+
+impl Configurable for Config {
+    type Partial = PartialConfig;
+    type Node = Section<PartialConfig>;
 }
 
 impl EffectivelyUnset for PartialConfig {
@@ -93,14 +100,24 @@ pub enum PartialSourceConfig {
     Server(PartialServerSourceConfig),
 }
 
+impl Configurable for SourceConfig {
+    type Partial = PartialSourceConfig;
+    type Node = Section<PartialSourceConfig>;
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default, rename_all = "kebab-case", deny_unknown_fields)]
 pub struct PartialServerSourceConfig {
     #[serde(skip_serializing_if = "is_effectively_unset")]
-    pub url: Setting<String>,
+    pub url: <String as Configurable>::Node,
 
     #[serde(skip_serializing_if = "is_effectively_unset")]
-    pub ntp_version: Setting<u8>,
+    pub ntp_version: <u8 as Configurable>::Node,
+}
+
+impl Configurable for ServerSourceConfig {
+    type Partial = PartialServerSourceConfig;
+    type Node = Section<PartialServerSourceConfig>;
 }
 
 impl ApplyDefaults for PartialSourceConfig {
@@ -166,7 +183,12 @@ atomic_value!(LogLevel);
 #[serde(default, rename_all = "kebab-case", deny_unknown_fields)]
 pub struct PartialObservabilityConfig {
     #[serde(skip_serializing_if = "is_effectively_unset")]
-    pub log_level: Setting<LogLevel>,
+    pub log_level: <LogLevel as Configurable>::Node,
+}
+
+impl Configurable for ObservabilityConfig {
+    type Partial = PartialObservabilityConfig;
+    type Node = Section<PartialObservabilityConfig>;
 }
 
 impl Resolve for PartialObservabilityConfig {
