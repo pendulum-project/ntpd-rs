@@ -7,8 +7,7 @@
 #define ELEMS(arr) (sizeof (arr)/sizeof *(arr))
 
 static int const allowed[] = {
-    SCMP_SYS(rt_sigaction),
-    SCMP_SYS(exit_group),
+    #include "allowed.c"
 };
 
 uint32_t const statime_kill_thread  = SCMP_ACT_KILL;
