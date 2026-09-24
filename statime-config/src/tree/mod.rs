@@ -12,7 +12,7 @@ mod setting;
 use atomic::atomic_value;
 use defaults::ApplyDefaults;
 use empty::{EffectivelyUnset, is_effectively_unset};
-use merge::{Attribute, Merge, MergeContext};
+use merge::{Attributable, Merge, MergeContext};
 use resolve::Resolve;
 use section::Section;
 use serde::{Deserialize, Serialize};
@@ -50,7 +50,7 @@ impl EffectivelyUnset for PartialConfig {
     }
 }
 
-impl Attribute for PartialConfig {
+impl Attributable for PartialConfig {
     fn attribute(&mut self, origin: OriginId) {
         self.sources.attribute(origin);
         self.observability.attribute(origin);
@@ -111,7 +111,7 @@ impl ApplyDefaults for PartialSourceConfig {
     }
 }
 
-impl Attribute for PartialSourceConfig {
+impl Attributable for PartialSourceConfig {
     fn attribute(&mut self, origin: OriginId) {
         match self {
             Self::Server(config) => config.attribute(origin),
@@ -153,7 +153,7 @@ impl ApplyDefaults for PartialServerSourceConfig {
     }
 }
 
-impl Attribute for PartialServerSourceConfig {
+impl Attributable for PartialServerSourceConfig {
     fn attribute(&mut self, origin: OriginId) {
         self.url.attribute(origin);
         self.ntp_version.attribute(origin);
@@ -191,7 +191,7 @@ impl ApplyDefaults for PartialObservabilityConfig {
     }
 }
 
-impl Attribute for PartialObservabilityConfig {
+impl Attributable for PartialObservabilityConfig {
     fn attribute(&mut self, origin: OriginId) {
         self.log_level.attribute(origin);
     }

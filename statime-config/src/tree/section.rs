@@ -5,7 +5,7 @@ use crate::{
     tree::{
         defaults::ApplyDefaults,
         empty::EffectivelyUnset,
-        merge::{Attribute, Merge, MergeContext, OriginId},
+        merge::{Attributable, Merge, MergeContext, OriginId},
         path::ConfigPath,
         resolve::Resolve,
     },
@@ -67,9 +67,9 @@ where
 }
 
 /// A section records no origin of its own, and visits its children.
-impl<T> Attribute for Section<T>
+impl<T> Attributable for Section<T>
 where
-    T: Attribute,
+    T: Attributable,
 {
     fn attribute(&mut self, origin: OriginId) {
         if let Section::Set(value) = self {

@@ -6,7 +6,7 @@ use std::path::PathBuf;
 /// visit.
 macro_rules! atomic_value {
     ($($type:ty),+ $(,)?) => {$(
-        impl $crate::tree::merge::Attribute for $type {
+        impl $crate::tree::merge::Attributable for $type {
             fn attribute(&mut self, _origin: $crate::tree::merge::OriginId) {}
         }
 
