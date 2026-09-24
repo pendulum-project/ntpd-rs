@@ -19,4 +19,6 @@ default = []
 [dependencies]
 
 [build-dependencies]
-cc = "1"
+# we cannot simply use cc = "1" here, since that will cause the minimal version check to fail due to
+# other dependencies also depending on cc
+cc = "1.0.100"
