@@ -118,6 +118,9 @@ pub(crate) fn initialize_logging_parse_config(
 }
 
 fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
+    #[cfg(feature = "seccomp")]
+    statime_seccomp::Log.enable()?;
+
     let (config, task_starter) = initialize_logging_parse_config(
         options.log_level,
         options.config.as_deref(),
