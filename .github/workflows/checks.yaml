@@ -122,7 +122,7 @@ jobs:
       - name: Setup tools for cross compilation
         uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # v1.6.3
         with:
-          packages: musl-tools musl-dev qemu-user-static crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386
+          packages: musl-tools musl-dev qemu-user-static crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386 libseccomp-dev
           version: 1
         if: ${{matrix.runs_on == 'ubuntu-latest'}}
 
@@ -309,7 +309,7 @@ jobs:
       - name: Setup tools for cross compilation
         uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # v1.6.3
         with:
-          packages: musl-tools musl-dev qemu-user-static crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386
+          packages: musl-tools musl-dev qemu-user-static crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386 libseccomp-dev
           version: 1
         if: ${{matrix.runs_on == 'ubuntu-latest'}}
 
