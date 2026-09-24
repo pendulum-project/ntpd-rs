@@ -6,26 +6,26 @@ use std::path::PathBuf;
 /// visit.
 macro_rules! atomic_value {
     ($($type:ty),+ $(,)?) => {$(
-        impl $crate::tree::merge::Attributable for $type {
-            fn attribute(&mut self, _origin: $crate::tree::merge::OriginId) {}
+        impl $crate::__private::Attributable for $type {
+            fn attribute(&mut self, _origin: $crate::__private::OriginId) {}
         }
 
-        impl $crate::tree::defaults::ApplyDefaults for $type {
+        impl $crate::__private::ApplyDefaults for $type {
             fn apply_defaults(&mut self) {}
         }
 
-        impl $crate::tree::configurable::Configurable for $type {
+        impl $crate::__private::Configurable for $type {
             type Partial = Self;
-            type Node = $crate::tree::setting::Setting<Self>;
+            type Node = $crate::__private::Setting<Self>;
         }
 
-        impl $crate::tree::resolve::Resolve for $type {
+        impl $crate::__private::Resolve for $type {
             type Resolved = Self;
 
             fn resolve(
                 self,
-                _path: &mut $crate::tree::ConfigPath,
-            ) -> Result<Self::Resolved, $crate::error::ConfigError> {
+                _path: &mut $crate::__private::ConfigPath,
+            ) -> Result<Self::Resolved, $crate::ConfigError> {
                 Ok(self)
             }
         }
