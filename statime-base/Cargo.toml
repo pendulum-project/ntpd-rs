@@ -19,4 +19,9 @@ std = []
 serde = ["std", "dep:serde"]
 
 [dependencies]
+libm.workspace = true
 serde = { workspace = true, optional = true }
+
+# Ignore unused libm, as it is needed for polyfilling when std is not used.
+[package.metadata.cargo-udeps]
+ignore = [["libm"]]

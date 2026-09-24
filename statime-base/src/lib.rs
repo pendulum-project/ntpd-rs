@@ -13,3 +13,6 @@ pub use time_types::*;
 
 #[cfg(feature = "std")]
 extern crate std;
+
+#[cfg(not(feature = "std"))]
+mod float_polyfill;
