@@ -216,6 +216,33 @@ mod tests {
     }
 
     #[test]
+    fn errors_describe_themselves() {
+        let missing_value = Memory::new().document(
+            "/etc/ntp.toml",
+            "[[sources]]\nmode = 'server'\nntp-version = 5",
+        );
+        assert_eq!(
+            load(missing_value).unwrap_err().to_string(),
+            "`sources[0].url` is required, but was never set"
+        );
+
+        let unreadable = Memory::new();
+        assert_eq!(
+            load(unreadable).unwrap_err().to_string(),
+            "could not read `/etc/ntp.toml`: no such document"
+        );
+
+        let directive = Memory::new()
+            .document("/etc/ntp.toml", "use-system-config = '/etc/ntp.d'")
+            .document("/etc/ntp.d/10-logging.toml", "use-system-config = true");
+        assert_eq!(
+            load(directive).unwrap_err().to_string(),
+            "`/etc/ntp.d/10-logging.toml` sets `use-system-config`, \
+             which only the main configuration may do"
+        );
+    }
+
+    #[test]
     fn the_default_directory_need_not_exist() {
         let documents = Memory::new().document("/etc/ntp.toml", "use-system-config = true");
 

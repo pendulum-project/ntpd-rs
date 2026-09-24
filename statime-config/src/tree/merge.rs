@@ -63,7 +63,6 @@ impl ProvenanceTracker {
     }
 
     /// Get the origin for a given origin id, if it is known.
-    #[cfg(test)]
     pub fn get_origin(&self, id: OriginId) -> Option<&Origin> {
         if id == OriginId::BUILT_IN_DEFAULT {
             return Some(&Origin::BuiltInDefault);
@@ -97,20 +96,18 @@ where
 }
 
 /// The context within the current merge operation.
-///
-/// This holds operation-scoped state only. Provenance is carried by the
-/// settings themselves, so merging needs no access to the origin registry; the
-/// [`ConfigMerger`] owns that and resolves ids when reporting diagnostics.
-pub struct MergeContext {
+pub struct MergeContext<'a> {
     pub policy: MergePolicy,
     pub path: ConfigPath,
+    provenance: &'a ProvenanceTracker,
 }
 
-impl MergeContext {
-    pub fn new(policy: MergePolicy) -> Self {
+impl<'a> MergeContext<'a> {
+    pub fn new(policy: MergePolicy, provenance: &'a ProvenanceTracker) -> Self {
         Self {
             policy,
             path: ConfigPath::root(),
+            provenance,
         }
     }
 
@@ -120,12 +117,17 @@ impl MergeContext {
         self.path.pop();
         result
     }
+
+    /// The document an id stands for, for use in a diagnostic.
+    pub fn origin(&self, id: Option<OriginId>) -> Option<Origin> {
+        id.and_then(|id| self.provenance.get_origin(id)).cloned()
+    }
 }
 
 /// Allows the merging of two values following the merge policy in the merge
 /// context.
 pub trait Merge {
-    fn merge(&mut self, incoming: Self, context: &mut MergeContext) -> Result<(), ConfigError>;
+    fn merge(&mut self, incoming: Self, context: &mut MergeContext<'_>) -> Result<(), ConfigError>;
 }
 
 #[cfg(test)]
