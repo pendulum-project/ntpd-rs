@@ -5,6 +5,10 @@ use crate::{cerr, control_message::empty_msghdr, raw_socket::sockaddr_len};
 use super::{control_message, RawSocket};
 
 impl RawSocket {
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "libc constants and sizes that will always fit."
+    )]
     pub(crate) fn so_timestamp(&self, options: u32) -> std::io::Result<()> {
         // Documentation on the timestamping calls:
         //
@@ -27,7 +31,7 @@ impl RawSocket {
                 self.fd,
                 libc::SOL_SOCKET,
                 libc::SO_TIMESTAMP,
-                &options as *const _ as *const libc::c_void,
+                (&raw const options).cast::<libc::c_void>(),
                 std::mem::size_of_val(&options) as libc::socklen_t,
             ))
         }?;
@@ -44,7 +48,7 @@ impl RawSocket {
                     self.fd,
                     libc::SOL_SOCKET,
                     libc::SO_TS_CLOCK,
-                    &clock as *const _ as *const libc::c_void,
+                    (&raw const clock).cast::<libc::c_void>(),
                     std::mem::size_of_val(&clock) as libc::socklen_t,
                 ))
             }?;
@@ -52,6 +56,10 @@ impl RawSocket {
         Ok(())
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "sizes that will always fit."
+    )]
     pub(crate) fn enable_destination_ipv4(&self) -> std::io::Result<()> {
         // SAFETY:
         //
@@ -64,7 +72,7 @@ impl RawSocket {
                 self.fd,
                 libc::IPPROTO_IP,
                 libc::IP_RECVDSTADDR,
-                &(1 as libc::c_int) as *const _ as *const libc::c_void,
+                std::ptr::from_ref(&(1 as libc::c_int)).cast::<libc::c_void>(),
                 std::mem::size_of::<libc::c_int>() as libc::socklen_t,
             ))?;
         }
@@ -77,6 +85,10 @@ impl RawSocket {
         self.send(msg)
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "sizes and error codes that will always fit."
+    )]
     pub(crate) fn send_from_to_v4(
         &self,
         msg: &[u8],
