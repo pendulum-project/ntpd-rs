@@ -5,4 +5,5 @@ fn main() {
         .compile("seccomp-trampoline.o");
 
     println!("cargo:rerun-if-changed=seccomp.c");
+    println!("cargo:rerun-if-changed=allowed.c");
 }

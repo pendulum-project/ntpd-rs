@@ -3,7 +3,7 @@
 //! - A lightweight Rust wrapper around this interface.
 //!
 //! Example:
-//! ```should_panic
+//! ```
 //! fn main() {
 //!     statime_seccomp::KillProcess.enable().unwrap();
 //! }
