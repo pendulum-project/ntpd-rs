@@ -4,9 +4,7 @@
 //!
 //! Example:
 //! ```
-//! fn main() {
-//!     statime_seccomp::KillProcess.enable().unwrap();
-//! }
+//! statime_seccomp::KillProcess.enable().expect("could not enable seccomp filter");
 //! ```
 //!
 use std::io::{Error, Result};
