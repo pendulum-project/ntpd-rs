@@ -77,3 +77,95 @@ impl Seccomp {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    fn not_allowed() -> std::io::Result<()> {
+        std::env::set_current_dir(".").map(|_| ())
+    }
+
+    fn allowed() -> std::io::Result<()> {
+        std::net::UdpSocket::bind("0.0.0.0:0").map(|_| ())
+    }
+
+    #[test]
+    fn cannot_downgrade() {
+        Fail.enable().unwrap();
+        assert!(Log.enable().is_err());
+    }
+
+    #[test]
+    fn allowlisted_functions_are_fine() {
+        Fail.enable().unwrap();
+        assert!(allowed().is_ok());
+    }
+
+    #[test]
+    fn blocklisted_functions_are_stopped() {
+        Fail.enable().unwrap();
+        assert!(not_allowed().is_err());
+    }
+
+    #[test]
+    fn blocklisted_functions_are_fine_when_logged() {
+        Log.enable().unwrap();
+        assert!(not_allowed().is_ok());
+    }
+
+    #[test]
+    fn thread_is_stopped() {
+        // Rust doesn't expect a thread to terminate suddenly; this causes a panic in the std lib;
+        // catch that panic to demonstrate that the thread is stopped but the entire process isn't.
+        let result = std::panic::catch_unwind(move || {
+            let handle = std::thread::spawn(|| {
+                KillThread.enable().unwrap();
+                let _ = not_allowed();
+            });
+            let _ = handle.join();
+        });
+
+        assert!(result.is_err());
+    }
+
+    #[allow(clippy::undocumented_unsafe_blocks)]
+    #[test]
+    fn process_is_stopped() {
+        for catchable in [true, false] {
+            unsafe {
+                //NOTE on async-signal safety: yes, there will be threads running, but:
+                // - not_allowed() is async-signal-safe
+                // - see https://github.com/seccomp/libseccomp/pull/390 for seccomp
+                // - this is test code
+                match libc::fork() {
+                    0 => {
+                        // we are the child
+                        unsafe extern "C" fn exit42(_: std::ffi::c_int) {
+                            unsafe { libc::_exit(42) }
+                        }
+                        libc::signal(libc::SIGSYS, exit42 as *const () as libc::sighandler_t);
+
+                        if catchable { Trap } else { KillProcess }.enable().unwrap();
+                        let _ = not_allowed();
+
+                        unreachable!();
+                    }
+                    child_pid => {
+                        // we are the parent
+                        let mut status = 0;
+                        assert_eq!(libc::wait(&mut status), child_pid);
+
+                        if catchable {
+                            assert!(libc::WIFEXITED(status));
+                            assert_eq!(libc::WEXITSTATUS(status), 42);
+                        } else {
+                            assert!(libc::WIFSIGNALED(status));
+                            assert_eq!(libc::WTERMSIG(status), libc::SIGSYS);
+                        }
+                    }
+                };
+            }
+        }
+    }
+}

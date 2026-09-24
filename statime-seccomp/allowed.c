@@ -29,7 +29,6 @@
 	SCMP_SYS(adjtimex),
 	SCMP_SYS(bind),
 	SCMP_SYS(brk),
-	SCMP_SYS(chdir),
 	SCMP_SYS(clock_adjtime),
 	SCMP_SYS(clock_gettime),
 	SCMP_SYS(clock_settime),

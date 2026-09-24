@@ -4,12 +4,17 @@ license = "Apache-2.0 OR MIT"
 version = "1.0.0-testing.1"
 edition = "2024"
 readme = "./NOTICE.md"
-descriptione = "Minimalist seccomp filter for statime"
 publish = true
 rust-version = "1.95" # MSRV
 
 [lints.rust]
 missing_docs = "deny"
+
+[lints.clippy]
+missing_errors_doc = "warn"
+missing_fields_in_debug = "warn"
+missing_panics_doc = "warn"
+undocumented_unsafe_blocks = "warn"
 
 [features]
 default = []
@@ -20,3 +25,6 @@ default = []
 # we cannot simply use cc = "1" here, since that will cause the minimal version check to fail due to
 # other dependencies also depending on cc
 cc = "1.0.100"
+
+[dev-dependencies]
+libc = "0.2.183"
