@@ -5,7 +5,7 @@ use crate::{
     tree::{
         defaults::ApplyDefaults,
         empty::EffectivelyUnset,
-        merge::{Attribute, Merge, MergeContext, MergePolicy, OriginId},
+        merge::{Attributable, Merge, MergeContext, MergePolicy, OriginId},
         path::ConfigPath,
         resolve::Resolve,
     },
@@ -116,9 +116,9 @@ impl<T> EffectivelyUnset for Setting<T> {
 }
 
 /// A setting records its own origin, and visits its nested values.
-impl<T> Attribute for Setting<T>
+impl<T> Attributable for Setting<T>
 where
-    T: Attribute,
+    T: Attributable,
 {
     fn attribute(&mut self, origin: OriginId) {
         if let Self::Set {

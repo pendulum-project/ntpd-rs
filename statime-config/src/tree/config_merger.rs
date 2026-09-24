@@ -4,7 +4,7 @@ use crate::{
     ConfigError,
     tree::{
         defaults::ApplyDefaults,
-        merge::{Attribute, Merge, MergeContext, MergePolicy, Origin, ProvenanceTracker},
+        merge::{Attributable, Merge, MergeContext, MergePolicy, Origin, ProvenanceTracker},
         path::ConfigPath,
         resolve::Resolve,
     },
@@ -19,7 +19,7 @@ pub struct ConfigMerger<T> {
 
 impl<T> ConfigMerger<T>
 where
-    T: Default + Attribute + Merge + ApplyDefaults + Resolve,
+    T: Default + Attributable + Merge + ApplyDefaults + Resolve,
 {
     pub fn new() -> Self {
         Self {
@@ -74,7 +74,7 @@ where
 
 impl<T> Default for ConfigMerger<T>
 where
-    T: Default + Attribute + Merge + ApplyDefaults + Resolve,
+    T: Default + Attributable + Merge + ApplyDefaults + Resolve,
 {
     fn default() -> Self {
         Self::new()

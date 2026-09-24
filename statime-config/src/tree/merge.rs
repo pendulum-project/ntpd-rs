@@ -77,16 +77,16 @@ impl Default for ProvenanceTracker {
     }
 }
 
-/// Recursively attributes the explicitly set nodes of a document to the origin
-/// registered for it. This follows tree structure, independently of how a node
-/// merges: a vector is atomic when merging, but recursive here.
-pub trait Attribute {
+/// Recursively attributes (i.e. assigns an origin) the nodes of a document.
+/// This follows tree structure, independently of how a node merges: a vector
+/// is atomic when merging, but recursive here.
+pub trait Attributable {
     fn attribute(&mut self, origin: OriginId);
 }
 
-impl<T> Attribute for Vec<T>
+impl<T> Attributable for Vec<T>
 where
-    T: Attribute,
+    T: Attributable,
 {
     fn attribute(&mut self, origin: OriginId) {
         for element in self {
