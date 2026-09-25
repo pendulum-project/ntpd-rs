@@ -44,11 +44,11 @@ jobs:
           # Stable on x86_64 Linux gnu/musl with all features
           - rust: "stable"
             runs_on: ubuntu-latest
-            features: "--all-features"
+            features: "--features all-portable"
             target: "x86_64-unknown-linux-gnu"
           - rust: "stable"
             runs_on: ubuntu-latest
-            features: "--all-features"
+            features: "--features all-portable"
             target: "x86_64-unknown-linux-musl"
 
           # Stable on x86_64 Linux gnu with different featuresets
@@ -80,17 +80,23 @@ jobs:
             target: "aarch64-apple-darwin"
           - rust: "stable"
             runs_on: macos-latest
-            features: "--all-features"
+            features: "--features all-portable"
             target: "aarch64-apple-darwin"
 
           # MSRV on x86_64 Linux (also checking direct-minimal-versions of dependencies)
           - rust: "msrv"
             runs_on: ubuntu-latest
-            features: "--all-features"
+            features: "--features all-portable"
             target: "x86_64-unknown-linux-gnu"
 
           # Beta on x86_64 Linux with all features (ensuring future compatibility)
           - rust: beta
+            runs_on: ubuntu-latest
+            features: "--features all-portable"
+            target: "x86_64-unknown-linux-gnu"
+
+          # Stable on x86_64 Linux gnu/musl with seccomp filtering
+          - rust: stable
             runs_on: ubuntu-latest
             features: "--all-features"
             target: "x86_64-unknown-linux-gnu"
@@ -122,7 +128,7 @@ jobs:
       - name: Setup tools for cross compilation
         uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # v1.6.3
         with:
-          packages: musl-tools musl-dev qemu-user-static crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386
+          packages: musl-tools musl-dev qemu-user-static crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386 libseccomp-dev
           version: 1
         if: ${{matrix.runs_on == 'ubuntu-latest'}}
 
@@ -309,7 +315,7 @@ jobs:
       - name: Setup tools for cross compilation
         uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # v1.6.3
         with:
-          packages: musl-tools musl-dev qemu-user-static crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386
+          packages: musl-tools musl-dev qemu-user-static crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386 libseccomp-dev
           version: 1
         if: ${{matrix.runs_on == 'ubuntu-latest'}}
 

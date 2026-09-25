@@ -932,6 +932,7 @@ dependencies = [
  "statime-base",
  "statime-csptp",
  "statime-netptp",
+ "statime-seccomp",
  "statime-wire",
  "timestamped-socket",
  "tokio",
@@ -1549,6 +1550,13 @@ dependencies = [
  "timestamped-socket",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "statime-seccomp"
+version = "1.0.0-testing.1"
+dependencies = [
+ "cc",
 ]
 
 [[package]]

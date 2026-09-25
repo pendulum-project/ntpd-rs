@@ -18,6 +18,7 @@ workspace = true
 ntp-proto.workspace = true
 statime-base = { workspace = true, features = ["std"] }
 statime-algo = { workspace = true, features = ["std"] }
+statime-seccomp = { workspace = true, optional = true }
 
 hickory-resolver = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "io-util", "io-std", "fs", "sync", "net", "macros", "signal"] }
@@ -47,6 +48,7 @@ tokio-rustls.workspace = true
 
 [features]
 default = [ "aws-lc", "rustcrypto", "pps", "srv" ]
+all-portable = [ "hardware-timestamping", "pps", "srv", "aws-lc", "rustcrypto", "openssl-vendored" ]
 hardware-timestamping = []
 pps = [ "dep:pps-time" ]
 srv = [ "dep:hickory-resolver" ]
@@ -54,6 +56,7 @@ aws-lc = ["rustls23/aws-lc-rs", "rustls23/prefer-post-quantum"] # the latter als
 rustcrypto = ["ntp-proto/rustcrypto"]
 openssl = ["dep:rustls-openssl", "ntp-proto/openssl"]
 openssl-vendored = ["openssl", "rustls-openssl/vendored"]
+seccomp = [ "dep:statime-seccomp" ]
 
 [package.metadata.deb]
 name = "ntpd-rs"
