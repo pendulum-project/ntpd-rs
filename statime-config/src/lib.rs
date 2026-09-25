@@ -36,10 +36,10 @@ pub mod __private {
 pub struct Config {
     /// Only the main configuration may set this: a system configuration
     /// fragment cannot decide which fragments get read.
-    #[config(default = UseSystemConfig::default())]
+    #[config(default)]
     pub use_system_config: UseSystemConfig,
 
-    #[config(default = Vec::new())]
+    #[config(default)]
     pub sources: Vec<SourceConfig>,
 
     pub observability: ObservabilityConfig,

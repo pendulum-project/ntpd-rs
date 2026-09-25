@@ -3,9 +3,16 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
-use syn::{Data, DeriveInput, Expr, Fields, Ident, Type, parse_macro_input, spanned::Spanned};
+use syn::{
+    Data, DeriveInput, Expr, Fields, Ident, Token, Type, parse_macro_input, parse_quote,
+    spanned::Spanned,
+};
 
 /// Generate the partial counterpart of a configuration struct.
+///
+/// A field with no `default` is required, one with `#[config(default = expr)]`
+/// falls back to that expression, and a bare `#[config(default)]` falls back to
+/// the field type's own [`Default`].
 #[proc_macro_derive(Configurable, attributes(config))]
 pub fn derive_configurable(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -200,7 +207,12 @@ fn field_default(field: &syn::Field) -> syn::Result<Option<Expr>> {
 
         attribute.parse_nested_meta(|meta| {
             if meta.path.is_ident("default") {
-                default = Some(meta.value()?.parse()?);
+                // a bare `default` means the type's own `Default`
+                default = Some(if meta.input.peek(Token![=]) {
+                    meta.value()?.parse()?
+                } else {
+                    parse_quote!(::core::default::Default::default())
+                });
                 return Ok(());
             }
 
