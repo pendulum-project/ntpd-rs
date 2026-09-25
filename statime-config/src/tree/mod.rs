@@ -2,7 +2,6 @@ mod atomic;
 mod config_merger;
 mod configurable;
 mod defaults;
-mod directive;
 mod empty;
 mod merge;
 mod path;
@@ -22,77 +21,12 @@ pub use merge::{Attributable, Merge, MergeContext};
 pub use resolve::Resolve;
 pub use section::Section;
 
-use crate::{Config, ObservabilityConfig, ServerSourceConfig, SourceConfig, error::ConfigError};
+use crate::{ServerSourceConfig, SourceConfig, error::ConfigError};
 
 pub(crate) use config_merger::ConfigMerger;
-pub(crate) use directive::UseSystemConfig;
 pub use merge::{Origin, OriginId};
 pub use path::ConfigPath;
 pub use setting::Setting;
-
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, rename_all = "kebab-case", deny_unknown_fields)]
-pub struct PartialConfig {
-    /// Directive to use the system configuration, not emitted in final config.
-    #[serde(skip_serializing_if = "is_effectively_unset")]
-    pub use_system_config: Setting<UseSystemConfig>,
-
-    #[serde(skip_serializing_if = "is_effectively_unset")]
-    pub sources: <Vec<SourceConfig> as Configurable>::Node,
-
-    #[serde(skip_serializing_if = "is_effectively_unset")]
-    pub observability: <ObservabilityConfig as Configurable>::Node,
-}
-
-impl Configurable for Config {
-    type Partial = PartialConfig;
-    type Node = Section<PartialConfig>;
-}
-
-impl EffectivelyUnset for PartialConfig {
-    fn is_effectively_unset(&self) -> bool {
-        self.use_system_config.is_effectively_unset()
-            && self.sources.is_effectively_unset()
-            && self.observability.is_effectively_unset()
-    }
-}
-
-impl Attributable for PartialConfig {
-    fn attribute(&mut self, origin: OriginId) {
-        self.sources.attribute(origin);
-        self.observability.attribute(origin);
-    }
-}
-
-impl ApplyDefaults for PartialConfig {
-    fn apply_defaults(&mut self) {
-        self.sources.default_to(Vec::new);
-        self.sources.apply_defaults();
-        self.observability.apply_defaults();
-    }
-}
-
-impl Merge for PartialConfig {
-    fn merge(&mut self, incoming: Self, context: &mut MergeContext<'_>) -> Result<(), ConfigError> {
-        context.at("sources", |context| {
-            self.sources.merge(incoming.sources, context)
-        })?;
-        context.at("observability", |context| {
-            self.observability.merge(incoming.observability, context)
-        })
-    }
-}
-
-impl Resolve for PartialConfig {
-    type Resolved = Config;
-
-    fn resolve(self, path: &mut ConfigPath) -> Result<Config, ConfigError> {
-        Ok(Config {
-            sources: path.at("sources", |path| self.sources.resolve(path))?,
-            observability: path.at("observability", |path| self.observability.resolve(path))?,
-        })
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case", tag = "mode")]
@@ -181,7 +115,8 @@ impl Attributable for PartialServerSourceConfig {
 mod tests {
     use super::*;
     use crate::{
-        LogLevel, PartialObservabilityConfig,
+        Config, LogLevel, ObservabilityConfig, PartialConfig, PartialObservabilityConfig,
+        UseSystemConfig,
         tree::merge::{MergePolicy, Origin, ProvenanceTracker},
     };
 
@@ -346,35 +281,16 @@ mod tests {
         assert_eq!(
             resolved,
             Config {
+                // defaulted, so they are present without being configured
+                use_system_config: UseSystemConfig::Enabled(false),
                 sources: vec![SourceConfig::Server(ServerSourceConfig {
                     url: "example.com".to_owned(),
-                    // defaulted, so it is present without being configured
                     ntp_version: 4,
                 })],
                 observability: ObservabilityConfig {
                     log_level: LogLevel::Info,
                 },
             }
-        );
-    }
-
-    #[test]
-    fn the_loader_directive_takes_no_part_in_the_traversals() {
-        let mut config = one_server(Setting::value("example.com".to_owned()));
-        config.use_system_config = Setting::value(UseSystemConfig::Enabled(true));
-        config.attribute(OriginId::BUILT_IN_DEFAULT);
-        config.apply_defaults();
-
-        // it is neither attributed nor defaulted, and resolving ignores it
-        assert_eq!(config.use_system_config.origin(), None);
-        config.clone().resolve(&mut ConfigPath::root()).unwrap();
-
-        // but it does survive a serialization roundtrip
-        let serialized = toml::to_string(&config).unwrap();
-        let deserialized: PartialConfig = toml::from_str(&serialized).unwrap();
-        assert_eq!(
-            deserialized.use_system_config.get(),
-            Some(&UseSystemConfig::Enabled(true))
         );
     }
 

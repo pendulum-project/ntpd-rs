@@ -3,12 +3,15 @@ use std::path::{Path, PathBuf};
 use serde::de::DeserializeOwned;
 
 use crate::{
-    Config, ConfigError,
+    Config, ConfigError, PartialConfig, UseSystemConfig,
     load::files::{Files, Filesystem},
-    tree::{ConfigMerger, PartialConfig, Setting, UseSystemConfig},
+    tree::{ConfigMerger, Setting},
 };
 
 mod files;
+
+/// Where `use-system-config = true` reads its fragments from.
+const DEFAULT_SYSTEM_CONFIG: &str = "/usr/lib/ntpd-rs/system-config";
 
 impl Config {
     /// Load the configuration from `path`, layered on top of the system
@@ -25,8 +28,8 @@ impl Config {
         for fragment in system_fragments(files, &main.use_system_config)? {
             let partial = parse::<PartialConfig>(files, &fragment)?;
 
-            // the directive steers the loader, so it cannot be set by the
-            // documents the loader went on to find
+            // this setting is what sent the loader looking for fragments, so
+            // the documents it found cannot be the ones to answer it
             if !partial.use_system_config.is_unset() {
                 return Err(ConfigError::DirectiveNotAllowed { path: fragment });
             }
@@ -57,12 +60,22 @@ fn parse<T: DeserializeOwned>(files: &impl Files, path: &Path) -> Result<T, Conf
     })
 }
 
+/// The directory to read fragments from, and whether the configuration named
+/// it: a directory that was asked for and is missing is a mistake, whereas the
+/// default one can be missing.
+fn fragment_directory(setting: &Setting<UseSystemConfig>) -> Option<(PathBuf, bool)> {
+    match setting.get()? {
+        UseSystemConfig::Enabled(false) => None,
+        UseSystemConfig::Enabled(true) => Some((PathBuf::from(DEFAULT_SYSTEM_CONFIG), false)),
+        UseSystemConfig::Directory(path) => Some((path.clone(), true)),
+    }
+}
+
 fn system_fragments(
     files: &impl Files,
-    directive: &Setting<UseSystemConfig>,
+    setting: &Setting<UseSystemConfig>,
 ) -> Result<Vec<PathBuf>, ConfigError> {
-    let Some((directory, named)) = directive.get().and_then(|directive| directive.directory())
-    else {
+    let Some((directory, named)) = fragment_directory(setting) else {
         // use-system-config is not set, or set explicitly to false
         return Ok(Vec::new());
     };
@@ -178,10 +191,10 @@ mod tests {
     }
 
     #[test]
-    fn no_directive_means_no_system_configuration() {
+    fn an_unset_setting_means_no_system_configuration() {
         let documents = Memory::new()
             .document("/etc/ntp.toml", "")
-            // the same fragment the directive would have read
+            // the same fragment the setting would have reached
             .document(
                 "/usr/lib/ntpd-rs/system-config/10-logging.toml",
                 "observability.log-level = 'warn'",
@@ -190,6 +203,27 @@ mod tests {
         let config = load(documents).unwrap();
 
         assert_eq!(config.observability.log_level, LogLevel::Info);
+    }
+
+    #[test]
+    fn the_system_config_setting_is_part_of_the_configuration() {
+        let documents = Memory::new()
+            .document("/etc/ntp.toml", "use-system-config = '/etc/ntp.d'")
+            .directory("/etc/ntp.d");
+
+        let config = load(documents).unwrap();
+
+        assert_eq!(
+            config.use_system_config,
+            UseSystemConfig::Directory("/etc/ntp.d".into())
+        );
+
+        // and it takes its default like any other setting
+        let unset = Memory::new().document("/etc/ntp.toml", "");
+        assert_eq!(
+            load(unset).unwrap().use_system_config,
+            UseSystemConfig::Enabled(false)
+        );
     }
 
     #[test]
@@ -232,11 +266,11 @@ mod tests {
             "could not read `/etc/ntp.toml`: no such document"
         );
 
-        let directive = Memory::new()
+        let set_in_fragment = Memory::new()
             .document("/etc/ntp.toml", "use-system-config = '/etc/ntp.d'")
             .document("/etc/ntp.d/10-logging.toml", "use-system-config = true");
         assert_eq!(
-            load(directive).unwrap_err().to_string(),
+            load(set_in_fragment).unwrap_err().to_string(),
             "`/etc/ntp.d/10-logging.toml` sets `use-system-config`, \
              which only the main configuration may do"
         );
