@@ -37,12 +37,12 @@ int statime_sandbox(uint32_t def_action) {
         int syscall_nr = allowed[i];
         int result = seccomp_rule_add(ctx, SCMP_ACT_ALLOW, syscall_nr, 0);
         if (result < 0)
-            return result;
+            return seccomp_release(ctx), result;
     }
 
     int result = seccomp_load(ctx);
     if (result < 0)
-        return result;
+        return seccomp_release(ctx), result;
 
     seccomp_release(ctx);
     return 0;
