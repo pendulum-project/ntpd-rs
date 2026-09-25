@@ -187,7 +187,7 @@ serde = { version = "1.0.166", features = ["derive"] }
 serde_json = "1.0"
 tokio = "1.37"
 log = "0.4.34"
-proc-macro2 = "1.0.86"
+proc-macro2 = "1.0.91"
 quote = "1.0.36"
 syn = { version = "2.0.90", features = ["full"] }
 toml = { version = ">=0.6.0,<0.9.0", default-features = false, features = ["parse", "display"] }
