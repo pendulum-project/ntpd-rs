@@ -1,0 +1,1546 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://docs.ntpd-rs.pendulum-project.org/latest/man/ntp.toml.5/">
+      
+      
+        <link rel="prev" href="../ntp-daemon.8/">
+      
+      
+        <link rel="next" href="../ntp-ctl.8/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>ntp.toml(5) - ntpd-rs documentation</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#name" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="ntpd-rs documentation" class="md-header__button md-logo" aria-label="ntpd-rs documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            ntpd-rs documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              ntp.toml(5)
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m14.3 16-.7-2h-3.2l-.7 2H7.8L11 7h2l3.2 9zM20 8.69V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12zm-9.15 3.96h2.3L12 9z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_2" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to system preference"  type="radio" name="__palette" id="__palette_2">
+    
+      <label class="md-header__button md-icon" title="Switch to system preference" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="ntpd-rs documentation" class="md-nav__button md-logo" aria-label="ntpd-rs documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    ntpd-rs documentation
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/server-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Setting up an NTP server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/gps-pps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GPS / PPS time sources
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/exporting-metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Exporting metrics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/nts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Network Time Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/nts-pool/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    NTS pool experiments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/ntpv5/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    NTPv5
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/migrating-chrony/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Migrating from chrony
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/migrating-ntpd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Migrating from ntpd
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/migrating-ntpsec/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Migrating from NTPsec
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/security-guidance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hardening ntpd-rs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Man Pages
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Man Pages
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ntp-daemon.8/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ntp-daemon(8)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ntp.toml(5)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ntp-ctl.8/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ntp-ctl(8)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ntp-metrics-exporter.8/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ntp-metrics-exporter(8)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/code-structure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/threat-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Threat model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/ca/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Private CA and certificate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/audits/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Audits
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/further-reading/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Further reading
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<!-- ---
+title: NTP.TOML(5) ntpd-rs 1.9.0 | ntpd-rs
+--- -->
+
+<h1 id="name">NAME</h1>
+<p><code>ntp.toml</code> - configuration file for the ntpd-rs ntp-daemon</p>
+<h1 id="description">DESCRIPTION</h1>
+<p>Configuration of ntpd-rs happens in the <code>ntp.toml</code> configuration format. The
+TOML format is in lots of ways similar to a simple INI with several extensions
+allowing a JSON-like syntax.</p>
+<p>The ntpd-rs configuration file consists of several sections, each of which
+configures a separate part of the ntp-daemon process. Each of the sections is
+described in the rest of this document. Many settings will have defaults, which
+will be indicated by each configuration setting shown.</p>
+<p>The <abbr title="Network Time Protocol">NTP</abbr> daemon only supports unicast client-server connections. Most <abbr title="Network Time Protocol">NTP</abbr>
+traffic, especially across the public internet, almost exclusively uses this
+mode, so it is not considered a practical limitation for most scenarios.</p>
+<h1 id="source-modes">SOURCE MODES</h1>
+<p>Different types of sources (see the section below for details) are supported by
+the <abbr title="Network Time Protocol">NTP</abbr> daemon. To set the type of the source, you can configure the mode field
+with any of these options:</p>
+<dl>
+<dt><code>server</code></dt>
+<dd>A server source connects to a single specific <abbr title="Network Time Protocol">NTP</abbr> server. If a connection is
+lost, attempts will be made to reconnect to the source.</dd>
+<dt><code>pool</code></dt>
+<dd>A pool source retrieves multiple <abbr title="Network Time Protocol">NTP</abbr> servers by resolving a hostname via
+<abbr title="Domain Name System">DNS</abbr>. It then attempts to connect to multiple of these servers at the same
+time. If a connection is lost, a new server will be retrieved from the pool.</dd>
+<dt><code>nts</code></dt>
+<dd>Connect to a single Network Time Security (<abbr title="Network Time Security">NTS</abbr>) source. The <abbr title="Network Time Security">NTS</abbr> protocol
+uses a <abbr title="Transport Layer Security">TLS</abbr> handshake to exchange secrets with a server to allow verifying
+that <abbr title="Network Time Protocol">NTP</abbr> messages have not been tampered with. Note that the <abbr title="Transport Layer Security">TLS</abbr> protocol
+requires that both the client and server have a rough idea of the current
+time.</dd>
+<dt><code>nts-pool</code></dt>
+<dd>Connect to a pool of Network Time Security (<abbr title="Network Time Security">NTS</abbr>) sources. This is currently
+experimental, and may change in backwards incompatible ways.</dd>
+<dt><code>sock</code></dt>
+<dd>A sock source connects to a GPSd socket to get timing data from <abbr title="Global Positioning System">GPS</abbr>
+receivers. Note that GPSd must be (re-)started after starting ntpd-rs for
+GPSd to connect to the socket.</dd>
+<dt><code>pps</code></dt>
+<dd>A <abbr title="Pulse Per Second">PPS</abbr> source connects to a Pulse Per Second device, which is by default
+assumed to send a pulse every rounded second. As these devices only
+provide periodic data, they do not count towards <code>minimum-agreeing-sources</code>.</dd>
+</dl>
+<h1 id="configuration">CONFIGURATION</h1>
+<h2 id="source-defaults"><code>[source-defaults]</code></h2>
+<p>Some of the behavior of a source is configurable. You can set defaults for those
+settings in the <code>[source-defaults]</code> section.</p>
+<dl>
+<dt><code>poll-interval-limits</code> = { <code>min</code> = <em>min</em>, <code>max</code> = <em>max</em> } (<strong>{ min = 4, max = 10}</strong>)</dt>
+<dd>Specifies the limit on how often a source is queried for a new time. For
+most instances the defaults will be adequate. The min and max are given as
+the log2 of the number of seconds (i.e. two to the power of the interval).
+An interval of 4 equates to 16 seconds, 10 results in an interval of 1024
+seconds. If specified, both min and max must be specified.</dd>
+<dt><code>initial-poll-interval</code> = <em>interval</em> (<strong>4</strong>)</dt>
+<dd>Initial poll interval used on startup. The value is given as the log2 of
+the number of seconds (i.e. two to the power of the interval). The default
+value of 4 results in an interval of 16 seconds.</dd>
+</dl>
+<h2 id="source"><code>[[source]]</code></h2>
+<p>Each <code>[[source]]</code> is a set of one or more time sources for the daemon to
+retrieve time information from. Any number of sources can be configured by
+repeating a <code>[[source]]</code> section (note the double brackets) for as many times as
+required. Each source can be configured to connect to a specific remote
+location. Multiple modes for connecting to sources are supported. If less than
+<code>minimum-agreeing-sources</code> time sources have been configured, no time will be
+synchronized to the local clock. Note that a pool counts as multiple time
+sources.</p>
+<dl>
+<dt><code>mode</code> = <em>mode</em></dt>
+<dd>Specify one of the source modes that ntpd-rs supports: <code>server</code>, <code>pool</code>,
+<code>nts</code>, <code>nts-pool</code>, <code>sock</code> or <code>pps</code>. For a description of the different source modes, see
+the <em>SOURCE MODES</em> section. Note that sources of type <code>nts-pool</code> are experimental
+and may change their behavior in backwards-incompatible ways between versions.</dd>
+<dt><code>address</code> = <em>address</em></dt>
+<dd>Specify the remote address of the source. For server sources this will be
+the remote address of the <abbr title="Network Time Protocol">NTP</abbr> server. For pools, this will be the <abbr title="Domain Name System">DNS</abbr>
+address of the <abbr title="Network Time Protocol">NTP</abbr> pool and for <abbr title="Network Time Security">NTS</abbr> this will be the address of the key
+exchange server. The server address may include a port number by appending a
+colon (<code>:</code>) followed by a port number. If not specified the daemon will
+connect to <code>server</code> and <code>pool</code> servers via port <em>123</em>, for <code>nts</code> sources the
+default port is <em>4460</em>.</dd>
+<dt><code>certificate-authority</code> = <em>cert</em></dt>
+<dd>Can only be set on sources with the <code>nts</code> mode. Path to a certificate for an
+additional certificate authority to use, aside from the certificate
+authorities specified by the system configuration. Note that this cannot be
+used to specify a self-signed certificate.</dd>
+<dt><code>count</code> = <em>number</em> (<strong>4</strong>)</dt>
+<dd>Can only be set on sources with the <code>pool</code> mode. Specifies the maximum
+number of servers that the daemon will attempt to connect to from a pool.
+The daemon will keep retrying to get more sources from the pool when
+connections are lost, up to the maximum specified by this configuration
+value.</dd>
+<dt><code>enable-srv-resolution</code> = <em>bool</em> (<strong>false</strong>)</dt>
+<dd>Can only be set on source with the <code>nts</code> or <code>nts-pool</code> mode. Enables following
+SRV records when resolving the address of the <abbr title="Network Time Security">NTS</abbr>-ke server. Such records
+must be DNSSEC signed. Note that this feature is still experimental and may
+change in backwards incompatible ways.</dd>
+<dt><code>ignore</code> = <em>ip addresses</em></dt>
+<dd><code>pool</code> mode only. Specifies a list of IP addresses of servers in the pool
+which should not be used. For example: <code>["127.0.0.1"]</code>. Empty by default.</dd>
+<dt><code>measurement_noise_estimate</code> = <em>Noise variance (seconds squared)</em></dt>
+<dd><code>pps</code> and <code>sock</code> mode only. Deprecated, use <code>precision</code> instead.</dd>
+<dt><code>precision</code> = <em>Noise standard deviation (seconds)</em></dt>
+<dd><code>pps</code> and <code>sock</code> mode only. Precision of the source. This should be an estimate
+of the size of the expected measurement noise. Technically defined as the
+1-standard deviation bound on the measurement error. This is needed as
+<code>sock</code> and <code>pps</code> sources don't have a good way to estimate their own error.</dd>
+<dt><code>accuracy</code> = <em>Uncertainty standard deviation (seconds)</em></dt>
+<dd><code>pps</code> and <code>sock</code> mode only. Accuracy of the underlying time source. This should
+be an estimate of the size of the error in the clock you are synchronizing with,
+as well as any mostly-unchanging offset in the measurement process. This can be
+used to deprioritize sources which have large offsets in the measurement process
+or which are of poorer quality than others.</dd>
+<dt><code>poll-interval-limits</code> = { <code>min</code> = <em>min</em>, <code>max</code> = <em>max</em> } (defaults from <code>[source-defaults]</code>)</dt>
+<dd>Specifies the limit on how often a source is queried for a new time. For
+most instances the defaults will be adequate. The min and max are given as
+the log2 of the number of seconds (i.e. two to the power of the interval).
+An interval of 4 equates to 16 seconds, 10 results in an interval of 1024
+seconds. If only one of the two boundaries is specified, the other is
+inherited from <code>[source-defaults]</code></dd>
+<dt><code>initial-poll-interval</code> = <em>interval</em> (defaults from <code>[source-defaults]</code>)</dt>
+<dd>Initial poll interval used on startup. The value is given as the log2 of
+the number of seconds (i.e. two to the power of the interval). The default
+value of 4 results in an interval of 16 seconds.</dd>
+<dt><code>ntp-version</code> = <code>4</code> | <code>5</code> | <code>"auto"</code> (<strong>4</strong>)</dt>
+<dd>Which <abbr title="Network Time Protocol">NTP</abbr> version to use for this source. By default this uses <abbr title="Network Time Protocol">NTP</abbr> version
+4. You can use <code>5</code> to set the protocol version to the draft NTPv5
+specification, but your source must support the same draft. To use the
+experimental upgrade protocol set the <abbr title="Network Time Protocol">NTP</abbr> version to <code>"auto"</code>. This uses a
+specially constructed NTPv4 packet to attempt an upgrade to the supported
+draft NTPv5 version if the source also supports the same draft version.
+NTPv5 support is currently in beta and can still change in a backwards
+incompatible way.</dd>
+</dl>
+<h2 id="server"><code>[[server]]</code></h2>
+<p>The <abbr title="Network Time Protocol">NTP</abbr> daemon can be configured to distribute time via any number of
+<code>[[server]]</code> sections. If no such sections have been defined, the daemon runs in
+a client only mode. Any number of servers can be configured by repeating the
+<code>[[server]]</code> section (note the double brackets) for as many times as required.
+Each server can serve a specific socket address or listen on all available
+network interfaces on a specific port. Servers always serve the system clock
+time.</p>
+<dl>
+<dt><code>listen</code> = <em>socketaddr</em></dt>
+<dd>Address of a <abbr title="User Datagram Protocol">UDP</abbr> socket on which the server should listen for incoming <abbr title="Network Time Protocol">NTP</abbr>
+requests. Specified as an interface IP address, a colon and a port number.
+The standard port number for <abbr title="Network Time Protocol">NTP</abbr> is <abbr title="User Datagram Protocol">UDP</abbr> port 123. Both IPv4 and IPv6 are
+supported. For example to listen on localhost port 123 in IPv4 you can use
+<code>127.0.0.1:123</code>. You can listen on all available network interfaces at once
+using <code>0.0.0.0:123</code> for IPv4 or <code>[::]:123</code> for IPv6.</dd>
+<dt><code>rate-limiting-cache-size</code> = <em>size</em> (<strong>0</strong>)</dt>
+<dd>Number of elements in the rate limiting cache. At most <em>size</em> elements are
+kept in the cache. This means that if more than <em>size</em> different clients
+attempt to connect to the server too frequently, the cache size will have
+reduced functionality, as rate limiting information gets lost when new
+clients connect to the server. If set to zero, the cache is unused, this
+is the default.</dd>
+<dt><code>rate-limiting-cutoff-ms</code> = <em>cutoff</em> (<strong>0</strong>)</dt>
+<dd>Minimum time between two requests from the same client, if a request was
+sent sooner than the cutoff time, the client will be asked to slow down
+their requests by the server responding with a packet with the <abbr title="Network Time Protocol">NTP</abbr> <code>RATE</code>
+kiss code. No actual time measurement will be returned to the client in
+that case. If set to zero, no rate limiting is applied, this is the default.</dd>
+<dt><code>allowlist</code> = { filter = [ <em>subnet</em>, .. ], action = <code>"deny"</code> | <code>"ignore"</code> } (<strong>unset</strong>)</dt>
+<dd>Only allow any number of filtered <em>subnets</em> to connect to the daemon. Any
+IP that matches one of the subnets specified is allowed to contact this
+server. The subnets must be specified in <abbr title="Classless Inter-Domain Routing">CIDR</abbr> notation (an IP address
+followed by a slash and the number of masked bits, for example <code>127.0.0.1/8</code>
+or <code>192.168.1.1/24</code>). The action determines what measure is taken for IP
+addresses not in any of the specified subnets. When <code>deny</code>, an explicit
+packet with the <abbr title="Network Time Protocol">NTP</abbr> <code>DENY</code> kiss code is returned to the sender indicating
+that they are not allowed to do so. When <code>ignore</code> is specified, messages are
+discarded with no response sent. The default value is equivalent to allowing
+any IP address, and would be equivalent to setting the filter to
+<code>["0.0.0.0/0", "::/0"]</code>, with either action.</dd>
+<dt><code>denylist</code> = { filter = [ <em>subnet</em>, .. ], action = <code>"deny"</code> | <code>"ignore"</code> } (<strong>unset</strong>)</dt>
+<dd>Do not allow any number of filtered <em>subnets</em> to connect to the daemon. Any
+IP that matches one of the subnets specified is not allowed to contact this
+server. The subnets must be specified in <abbr title="Classless Inter-Domain Routing">CIDR</abbr> notation (an IP address
+followed by a slash and the number of masked bits, for example <code>127.0.0.1/8</code>
+or <code>192.168.1.1/24</code>). The action determines what measure is taken for IP
+addresses in any of the specified subnets. When <code>deny</code>, an explicit packet
+with the <abbr title="Network Time Protocol">NTP</abbr> <code>DENY</code> kiss code is returned to the sender indicating that they
+are not allowed to do so. When <code>ignore</code> is specified, messages are discarded
+with no response sent. The default value is equivalent to allowing any IP
+address, and would be equivalent to setting the filter to <code>[]</code>, with either
+action.</dd>
+<dt><code>require-nts</code> = <code>true</code> | <code>false</code> | <code>"deny"</code> | <code>"ignore"</code> (<strong>false</strong>)</dt>
+<dd>Whether incoming requests to the server must have <abbr title="Network Time Security">NTS</abbr> enabled. When set to
+<code>true</code> or <code>"ignore"</code> any non-<abbr title="Network Time Security">NTS</abbr> enabled messages will be ignored. When set
+to <code>"deny"</code> non-<abbr title="Network Time Security">NTS</abbr> enabled messages will be explicitly denied with an <abbr title="Network Time Protocol">NTP</abbr>
+<code>DENY</code> kiss code. When set to <code>false</code> (the default), normal <abbr title="Network Time Protocol">NTP</abbr> messages are
+also allowed.</dd>
+<dt><code>accept-ntp-versions</code> = [ <code>3</code> | <code>4</code> | <code>5</code>, .. ] (<strong>[3, 4]</strong>)</dt>
+<dd>An array of <abbr title="Network Time Protocol">NTP</abbr> versions that are accepted by the server. By default only
+NTPv3 and NTPv4 packets are supported. To also allow draft NTPv5 packets,
+you can set this value to <code>[3, 4, 5]</code>. NTPv5 support is currently in beta
+and can still change in a backwards incompatible way.</dd>
+</dl>
+<h2 id="observability"><code>[observability]</code></h2>
+<p>Settings in this section configure how you can observe the behavior of the
+daemon. Currently, the daemon can be observed either through the logs or by
+retrieving several key metrics either through ntp-ctl(8) or through
+ntp-metrics-exporter(8).</p>
+<dl>
+<dt><code>log-level</code> = <code>"trace"</code> | <code>"debug"</code> | <code>"info"</code> | <code>"warn"</code> | <code>"error"</code> (<strong>info</strong>)</dt>
+<dd>Set the logging level for messages printed to stdout. The lowest level
+<code>trace</code> gives very detailed information about anything going on in the
+daemon, whereas the highest level <code>error</code> only logs error conditions in the
+daemon. Levels higher than the given log level are logged as well.</dd>
+<dt><code>log-path</code> = <em>path</em> (<strong>unset</strong>)</dt>
+<dd>Path to which the deamon should direct its log output. The file at this
+location is reopened on SIGHUP. When not present, log output will be
+directed to stdout.</dd>
+<dt><code>log-path-metrics-exporter</code> = <em>path</em> (<strong>unset</strong>)</dt>
+<dd>Path to which the metrics exporter daemon should direct its log output. The
+file at this location is reopened on SIGHUP. When not present, log output
+will be directed to stdout.</dd>
+<dt><code>ansi-colors</code> = <code>true</code> | <code>false</code> (see note)</dt>
+<dd>Can be used to control ANSI escape codes in logs. By default, ANSI escape
+codes are used to add some colors and other formatting to the logs when the
+log target is a terminal.</dd>
+<dt><code>observation-path</code> = <em>path</em> (<strong>unset</strong>)</dt>
+<dd>Path where the daemon will create an observation Unix domain socket. This
+socket is used by <code>ntp-ctl</code> and <code>ntp-metrics-exporter</code> to read the current
+status of the daemon. If not set (the default) no observation socket will be
+created and it is not possible to use <code>ntp-ctl</code> or <code>ntp-metrics-exporter</code> to
+observe the daemon.</dd>
+<dt><code>observation-permissions</code> = <em>mode</em> (<strong>0o666</strong>)</dt>
+<dd>The file system permissions with which the observation socket should be
+created. Warning: You should always write this number with the octal prefix
+<code>0o</code>, otherwise your permissions might be interpreted wrongly. The default
+should be OK for most applications however.</dd>
+<dt><code>metrics-exporter-listen</code> = <em>socketaddr</em> (<strong>127.0.0.1:9975</strong>)</dt>
+<dd>The listen address that is used for the ntp-metrics-exporter(8).</dd>
+</dl>
+<h2 id="keyset"><code>[keyset]</code></h2>
+<p>The keyset configures the internal key infrastructure for <abbr title="Network Time Security">NTS</abbr> packets. Note that
+this is separate from the <abbr title="Transport Layer Security">TLS</abbr> certificate and private key, for those see the
+relevant configuration in the <code>[[nts-ke-server]]</code> section.</p>
+<dl>
+<dt><code>stale-key-count</code> = <em>count</em> (<strong>7</strong>)</dt>
+<dd>Maximum number of old keys to retain in the cache. Whenever keys are rotated
+the old keys will become invalid, but clients may still have <abbr title="Network Time Security">NTS</abbr> cookies
+encrypted with any of the old keys.</dd>
+<dt><code>key-rotation-interval</code> = <em>seconds</em> (<strong>86400</strong>)</dt>
+<dd>Time between key rotation events. Every time <em>seconds</em> elapses, a new
+internal key will be generated for creating <abbr title="Network Time Security">NTS</abbr> cookies. By default this is
+set to a day.</dd>
+<dt><code>key-storage-path</code> = <em>path</em> (<strong>unset</strong>)</dt>
+<dd>If set, stores the internal <abbr title="Network Time Security">NTS</abbr> keys in the file indicated by <em>path</em>. This
+allows keys to survive a server reboot. If not set, clients using <abbr title="Network Time Security">NTS</abbr> may
+need to redo a key exchange operation to get new <abbr title="Network Time Security">NTS</abbr> cookies.
+The daemon will not create any parent directories if they don't exist.
+It will create the file if it doesn't exist.</dd>
+</dl>
+<h2 id="nts-ke-server"><code>[[nts-ke-server]]</code></h2>
+<p>The daemon can be configured to operate as an <abbr title="Network Time Security">NTS</abbr> key exchange server by
+repeating any number of <code>[[nts-ke-server]]</code> sections. If no such sections have
+been defined, the daemon will offer no <abbr title="Network Time Security">NTS</abbr> key exchange services. All <abbr title="NTS Key Exchange">NTS-KE</abbr>
+servers make use of the shared keyset. It is the purpose of the key exchange
+server to safely distribute cookies to clients. These cookies can then
+be used in <abbr title="Network Time Protocol">NTP</abbr> packets with the normal server to validate that the traffic was
+not tampered with.</p>
+<dl>
+<dt><code>listen</code> = <em>socket</em></dt>
+<dd>Address of a <abbr title="Transmission Control Protocol">TCP</abbr> socket on which the server should listen for incoming <abbr title="Network Time Security">NTS</abbr>
+key exchange requests. Specified as an interface IP address, a colon and a
+port number. The standard port number for an <abbr title="Network Time Security">NTS</abbr> key exchange server is <abbr title="Transmission Control Protocol">TCP</abbr>
+port 4460. Both IPv4 and IPv6 are supported. For example to listen on
+localhost port 4460 in IPv4 you can use <code>127.0.0.1:4460</code>. You can listen on
+all available network interfaces at once using <code>0.0.0.0:4460</code> for IPv4 or
+<code>[::]:4460</code> for IPv6.</dd>
+<dt><code>certificate-chain-path</code> = <em>path</em></dt>
+<dd>Path to a certificate chain for the public certificate that the server
+offers to clients.</dd>
+<dt><code>private-key-path</code> = <em>path</em></dt>
+<dd>Path to the private key associated with the server certificate in the
+certificate chain.</dd>
+<dt><code>key-exchange-timeout-ms</code> = <em>timeout</em> (<strong>1000</strong>)</dt>
+<dd>Timeout in milliseconds for how long a key exchange may take. If the timeout
+is exceeded the connection will be dropped.</dd>
+<dt><code>concurrent-connections</code> = <em>number</em> (<strong>512</strong>)</dt>
+<dd>Maximum number of total concurrent connections the key exchange server will handle.
+Any connections above the threshold will be held in an <abbr title="Operating System">OS</abbr> level queue.</dd>
+<dt><code>longlived-connections</code> = <em>number</em> (<strong><code>concurrent-connections</code>/10</strong>)</dt>
+<dd>Maximum number of concurrent longlived connections from nts pools the key
+exchange server will handle. Note that pool support is currently in beta
+and can still change in backwards incompatible ways.</dd>
+</dl>
+<p><code>ntp-port</code> = <em>port</em>
+    Port number the key exchange server should instruct clients to use. Should
+    be used when the port number of the <abbr title="Network Time Protocol">NTP</abbr> server is not the default.</p>
+<p><code>ntp-server</code> = <em>server-name</em>
+    Server address (either as ip or as domain name) where clients can find the
+    <abbr title="Network Time Protocol">NTP</abbr> server. Should be used when this name does not match the name of the
+    <abbr title="Network Time Security">NTS</abbr> key exchange server.</p>
+<dl>
+<dt><code>accept-ntp-versions</code> = [ <code>4</code> | <code>5</code>, .. ] (<strong>[4]</strong>)</dt>
+<dd>An array of <abbr title="Network Time Protocol">NTP</abbr> versions that are accepted by the server. By default only
+<abbr title="Network Time Security">NTS</abbr> for NTPv4 packets is supported. To also allow negotiating <abbr title="Network Time Security">NTS</abbr> for draft
+NTPv5 packets, you can set this value to <code>[4, 5]</code>. NTPv5 support is
+currently in beta and can still change in a backwards incompatible way.</dd>
+<dt><code>accepted-pool-authentication-tokens</code> = <em>list of keys</em> (<strong>[]</strong>)</dt>
+<dd>Tokens pools can use to authenticate pool-specific requests to this <abbr title="Network Time Security">NTS</abbr>
+server. Note that pool support is currently in beta and can still change in
+a backwards incompatible way.</dd>
+</dl>
+<h2 id="synchronization"><code>[synchronization]</code></h2>
+<p>This section of the configuration focusses on how the time information from the
+time sources is gathered and applied to the system clock.</p>
+<dl>
+<dt><code>minimum-agreeing-sources</code> = <em>count</em> (<strong>3</strong>)</dt>
+<dd>The minimum number of sources that should agree on the current time before
+the daemon does any steering operation on the clock. Note that if you have
+configured fewer than this amount of sources, this may result in the daemon
+never updating the clock.</dd>
+<dt><code>single-step-panic-threshold</code> = <em>seconds</em> | { <code>forward</code> = <em>forward</em>, <code>backward</code> = <em>backward</em> } (<strong>1000</strong>)</dt>
+<dd>The threshold in seconds at which the daemon will completely exit (i.e.
+panic) when a single non-startup step occurs. Generally during normal
+operation the clock on your system should run somewhat close to the time it
+is synchronized to. As such, it is highly unlikely that such a large step
+will take place, and the daemon will exit to prevent any accidental
+mistakes. If set to the value <code>"inf"</code>, any step will be allowed. May either
+be configured as one number of seconds for both forward and backward steps,
+or separate values for forward and backward steps.</dd>
+<dt><code>startup-step-panic-threshold</code> = <em>seconds</em> | { <code>forward</code> = <em>forward</em>, <code>backward</code> = <em>backward</em> } (<strong>{ forward = "inf", backward = "86400" }</strong>)</dt>
+<dd>The threshold in seconds at which the daemon will completely exit (i.e.
+panic) when a step occurs at startup. The default allows any forward step,
+but prevents backward steps larger than a single day. Generally computer
+clocks that are not synchronized will run behind the true time, instead of
+running ahead. If a computer is running ahead and steps back a large time
+this generally indicates a problem. If set to the value <code>"inf"</code>, any step
+will be allowed. May either be configured as one number of seconds for both
+forward and backward steps, or separate values for forward and backward
+steps. When using this, ntp-ctl's force-sync command can still be used to
+manually set the system time beyond these limits, to recover from a bad
+system clock.</dd>
+<dt><code>accumulated-step-panic-threshold</code> = <em>seconds</em> (<strong>unset</strong>)</dt>
+<dd>Every time the daemon steps the time instead of slowly adjusting the clock
+by using frequency changes, this counter is increased by the absolute value
+of the step (i.e. both forward and backward steps are counted). When this
+threshold is reached, the daemon will exit immediately (i.e. panic). During
+normal operation steps are unlikely to occur, and as such, steps may
+indicate that someone or something is triggering illicit steps. By default
+however this panic mechanism is disabled. Is disabled if left unset or if
+set to the value <code>0</code>.</dd>
+<dt><code>warn-on-jump</code> = <em>bool</em> (<strong>true</strong>)</dt>
+<dd>Should the daemon emit a warning when stepping the clock. Such jumps can be
+problematic for other software, for example database servers. This setting
+can be used to disabled on systems where steps are expected and not harmful
+for other software.</dd>
+<dt><code>local-stratum</code> = <em>stratum</em> (<strong>16</strong>)</dt>
+<dd>Sets the <abbr title="Network Time Protocol">NTP</abbr> clock stratum of the system clock when no <abbr title="Network Time Protocol">NTP</abbr> time sources have
+been configured, or when the time has not yet been synchronized from an <abbr title="Network Time Protocol">NTP</abbr>
+time source. Can be used in servers to indicate that there are external
+mechanisms synchronizing the clock.</dd>
+<dt><code>reference-id</code> = <em>reference-id</em> (<strong>XNON</strong>)</dt>
+<dd>Sets the reported <abbr title="Network Time Protocol">NTP</abbr> clock reference id when local-statum is set to <code>1</code>.
+This is used to indicate the source of the time reference (<code>GPS</code> etc.).</dd>
+</dl>
+<h2 id="synchronizationalgorithm"><code>[synchronization.algorithm]</code></h2>
+<p>Warning: the algorithm section contains mostly internal algorithm tweaks that
+generally do not need to be changed. However, they are offered here for specific
+use cases. These settings are considered implementation details however, and as
+such may change in future ntpd-rs versions.</p>
+<dl>
+<dt><code>precision-low-probability</code> = <em>probability</em> (<strong>1/3</strong>)</dt>
+<dd>Probability bound below which we start moving towards decreasing our
+precision estimate. Unit: probability, 0-1</dd>
+<dt><code>precision-high-probability</code> = <em>probability</em> (<strong>2/3</strong>)</dt>
+<dd>Probability bound above which we start moving towards increasing our
+precision estimate. Unit: probability, 0-1</dd>
+<dt><code>precision-hysteresis</code> = <em>hysteresis</em> (<strong>16</strong>)</dt>
+<dd>Amount of hysteresis in changing the precision estimate. Unit: count, 1+</dd>
+<dt><code>precision-minimum-weight</code> = <em>weight</em> (<strong>0.1</strong>)</dt>
+<dd>Lower bound on the amount of effect our precision estimate has on the total
+noise estimate before we allow decreasing of the precision estimate. Unit:
+weight, 0-1</dd>
+<dt><code>poll-interval-low-weight</code> = <em>weight</em> (<strong>0.4</strong>)</dt>
+<dd>Amount which a measurement contributes to the state, below which we start
+increasing the poll interval. Unit: weight, 0-1</dd>
+<dt><code>poll-interval-high-weight</code> = <em>weight</em> (<strong>0.6</strong>)</dt>
+<dd>Amount which a measurement contributes to the state, above which we start
+decreasing the poll-interval interval. Unit: weight, 0-1</dd>
+<dt><code>poll-interval-hysteresis</code> = <em>hysteresis</em> (<strong>16</strong>)</dt>
+<dd>Amount of hysteresis in changing the poll interval. Unit: count, 1+</dd>
+<dt><code>poll-interval-step-threshold</code> = <em>threshold</em> (<strong>1e-6</strong>)</dt>
+<dd>Probability threshold for when a measurement is considered a significant
+enough outlier that we decide something weird is going on and we need to do
+more measurements. Unit: probability, 0-1</dd>
+<dt><code>delay-outlier-threshold</code> = <em>threshold</em> (<strong>5.0</strong>)</dt>
+<dd>Threshold (in number of standard deviations) above which measurements with a
+significantly larger network delay are rejected. Unit: standard deviations,
+0+</dd>
+<dt><code>initial-wander</code> = <em>wander</em> (<strong>1e-8</strong>)</dt>
+<dd>Initial estimate of the clock wander of the combination of our local clock
+and that of the source. Unit: s/s^2</dd>
+<dt><code>initial-frequency-uncertainty</code> = <em>uncertainty</em> (<strong>100e-6</strong>)</dt>
+<dd>Initial uncertainty of the frequency difference between our clock and that
+of the source. Unit: s/s</dd>
+<dt><code>maximum-source-uncertainty</code> = <em>uncertainty</em> (<strong>0.25</strong>)</dt>
+<dd>Maximum source uncertainty before we start disregarding it. Note that this
+is combined uncertainty due to noise and possible asymmetry error (see also
+weights below). Unit: seconds</dd>
+<dt><code>range-statistical-weight</code> = <em>weight</em> (<strong>2.0</strong>)</dt>
+<dd>Weight of statistical uncertainty when constructing overlap ranges. Unit:
+standard deviations, 0+</dd>
+<dt><code>range-delay-weight</code> = <em>weight</em> (<strong>0.25</strong>)</dt>
+<dd>Weight of delay uncertainty when constructing overlap ranges. Unit: weight,
+0-1</dd>
+<dt><code>steer-offset-threshold</code> = <em>threshold</em> (<strong>2.0</strong>)</dt>
+<dd>How far from 0 (in multiples of the uncertainty) should the offset be before
+we correct. Unit: standard deviations, 0+</dd>
+<dt><code>steer-offset-leftover</code> = <em>stddev</em> (<strong>1.0</strong>)</dt>
+<dd>How many standard deviations do we leave after offset correction? Unit:
+standard deviations, 0+</dd>
+<dt><code>steer-frequency-threshold</code> = <em>threshold</em> (<strong>0.0</strong>)</dt>
+<dd>How far from 0 (in multiples of the uncertainty) should the frequency
+estimate be before we correct. Unit: standard deviations, 0+</dd>
+<dt><code>steer-frequency-leftover</code> = <em>stddev</em> (<strong>0.0</strong>)</dt>
+<dd>How many standard deviations do we leave after frequency correction? Unit:
+standard deviations, 0+</dd>
+<dt><code>step-threshold</code> = <em>threshold</em> (<strong>0.010</strong>)</dt>
+<dd>From what offset should we step the clock instead of trying to adjust
+gradually? Unit: seconds, 0+</dd>
+<dt><code>slew-maximum-frequency-offset</code> = <em>offset</em> (<strong>200e-6</strong>)</dt>
+<dd>What is the maximum frequency offset during a slew. Unit: s/s</dd>
+<dt><code>slew-minimum-duration</code> = <em>duration</em> (<strong>8.0</strong>)</dt>
+<dd>What is the minimum duration of a slew. Unit: seconds</dd>
+<dt><code>maximum-frequency-steer</code> = <em>frequency</em> (<strong>495e-6</strong>)</dt>
+<dd>Absolute maximum frequency correction. Unit: s/s</dd>
+<dt><code>ignore-server-dispersion</code> = <em>bool</em> (<strong>false</strong>)</dt>
+<dd>Ignore a server's advertised dispersion when synchronizing. Can improve
+synchronization quality with servers reporting overly conservative root
+dispersion.</dd>
+<dt><code>meddling-threshold</code> = <em>threshold</em> (<strong>5.0</strong>)</dt>
+<dd>Threshold for detecting external clock meddling. Unit: seconds</dd>
+</dl>
+<h1 id="see-also">SEE ALSO</h1>
+<p><a href="../ntp-daemon.8/">ntp-daemon(8)</a>, <a href="../ntp-ctl.8/">ntp-ctl(8)</a>,
+<a href="../ntp-metrics-exporter.8/">ntp-metrics-exporter(8)</a></p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.tooltips", "content.code.copy", "content.code.select", "navigation.sections"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
