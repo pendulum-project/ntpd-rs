@@ -84,7 +84,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{LogLevel, tree::PartialConfig};
+    use crate::{LogLevel, PartialConfig};
 
     fn document(contents: &str) -> PartialConfig {
         toml::from_str(contents).unwrap()
