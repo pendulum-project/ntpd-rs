@@ -12,6 +12,7 @@ mod load;
 mod tree;
 
 pub use error::ConfigError;
+pub use load::{RootConfig, load};
 pub use statime_config_derive::{Configurable, ConfigurableAtomic};
 pub use tree::{ConfigPath, Origin};
 
@@ -22,7 +23,7 @@ pub mod __private {
     pub use serde::{self, Deserialize, Serialize};
 
     pub use crate::{
-        ConfigError,
+        ConfigError, RootConfig, UseSystemConfig,
         tree::{
             ApplyDefaults, Attributable, ConfigPath, Configurable, ConfigurableAtomic,
             EffectivelyUnset, Merge, MergeContext, OriginId, Resolve, Section, Setting,
@@ -33,10 +34,11 @@ pub mod __private {
 
 /// The configuration of a statime instance.
 #[derive(Debug, Clone, PartialEq, Eq, Configurable)]
+#[config(root)]
 pub struct Config {
     /// Only the main configuration may set this: a system configuration
     /// fragment cannot decide which fragments get read.
-    #[config(default)]
+    #[config(use_system_config, default)]
     pub use_system_config: UseSystemConfig,
 
     #[config(default)]
@@ -56,6 +58,10 @@ pub enum UseSystemConfig {
 
     /// A directory to read the fragments from, instead of the default one.
     Directory(PathBuf),
+}
+
+impl UseSystemConfig {
+    pub const DEFAULT_SYSTEM_CONFIG: &str = "/usr/lib/ntpd-rs/system-config";
 }
 
 impl Default for UseSystemConfig {

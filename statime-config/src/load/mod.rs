@@ -3,47 +3,61 @@ use std::path::{Path, PathBuf};
 use serde::de::DeserializeOwned;
 
 use crate::{
-    Config, ConfigError, PartialConfig, UseSystemConfig,
+    ConfigError, UseSystemConfig,
     load::files::{Files, Filesystem},
-    tree::{ConfigMerger, Setting},
+    tree::{ApplyDefaults, Attributable, ConfigMerger, Configurable, Merge, Resolve, Setting},
 };
 
 mod files;
 
-/// Where `use-system-config = true` reads its fragments from.
-const DEFAULT_SYSTEM_CONFIG: &str = "/usr/lib/ntpd-rs/system-config";
+/// Everything the loader needs of a partial configuration tree
+pub trait PartialTree:
+    DeserializeOwned + Default + Attributable + Merge + ApplyDefaults + Resolve
+{
+}
 
-impl Config {
-    /// Load the configuration from `path`, layered on top of the system
-    /// configuration fragments it asks for, if any.
-    pub fn load(path: impl AsRef<Path>) -> Result<Self, ConfigError> {
-        Self::load_from(&Filesystem, path.as_ref())
-    }
+impl<T> PartialTree for T where
+    T: DeserializeOwned + Default + Attributable + Merge + ApplyDefaults + Resolve
+{
+}
 
-    fn load_from(files: &impl Files, main_path: &Path) -> Result<Self, ConfigError> {
-        let main = parse::<PartialConfig>(files, main_path)?;
+/// A configuration that a document can be loaded into.
+///
+/// Only the root of a configuration carries the setting that decides which
+/// system configuration to layer underneath it.
+pub trait RootConfig: Configurable<Partial: PartialTree<Resolved = Self>> {
+    fn use_system_config(partial: &Self::Partial) -> &Setting<UseSystemConfig>;
+}
 
-        let mut merger = ConfigMerger::new();
+/// Load a configuration from `path`, layered on top of the system
+/// configuration fragments it asks for, if any.
+pub fn load<T: RootConfig>(path: impl AsRef<Path>) -> Result<T, ConfigError> {
+    load_from(&Filesystem, path.as_ref())
+}
 
-        for fragment in system_fragments(files, &main.use_system_config)? {
-            let partial = parse::<PartialConfig>(files, &fragment)?;
+fn load_from<T: RootConfig>(files: &impl Files, main_path: &Path) -> Result<T, ConfigError> {
+    let main = parse::<T::Partial>(files, main_path)?;
 
-            // this setting is what sent the loader looking for fragments, so
-            // the documents it found cannot be the ones to answer it
-            if !partial.use_system_config.is_unset() {
-                return Err(ConfigError::DirectiveNotAllowed { path: fragment });
-            }
+    let mut merger = ConfigMerger::new();
 
-            merger.add_system(fragment, partial)?;
+    for fragment in system_fragments(files, T::use_system_config(&main))? {
+        let partial = parse::<T::Partial>(files, &fragment)?;
+
+        // this setting is what sent the loader looking for fragments, so
+        // the documents it found cannot be the ones to answer it
+        if !T::use_system_config(&partial).is_unset() {
+            return Err(ConfigError::DirectiveNotAllowed { path: fragment });
         }
 
-        merger.add_main(main_path.to_path_buf(), main)?;
-        merger.apply_defaults();
-
-        let (config, _provenance) = merger.finish()?;
-
-        Ok(config)
+        merger.add_system(fragment, partial)?;
     }
+
+    merger.add_main(main_path.to_path_buf(), main)?;
+    merger.apply_defaults();
+
+    let (config, _provenance) = merger.finish()?;
+
+    Ok(config)
 }
 
 fn parse<T: DeserializeOwned>(files: &impl Files, path: &Path) -> Result<T, ConfigError> {
@@ -66,7 +80,9 @@ fn parse<T: DeserializeOwned>(files: &impl Files, path: &Path) -> Result<T, Conf
 fn fragment_directory(setting: &Setting<UseSystemConfig>) -> Option<(PathBuf, bool)> {
     match setting.get()? {
         UseSystemConfig::Enabled(false) => None,
-        UseSystemConfig::Enabled(true) => Some((PathBuf::from(DEFAULT_SYSTEM_CONFIG), false)),
+        UseSystemConfig::Enabled(true) => {
+            Some((PathBuf::from(UseSystemConfig::DEFAULT_SYSTEM_CONFIG), false))
+        }
         UseSystemConfig::Directory(path) => Some((path.clone(), true)),
     }
 }
@@ -112,10 +128,12 @@ fn system_fragments(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ConfigError, LogLevel, ServerSourceConfig, SourceConfig, load::files::Memory};
+    use crate::{
+        Config, ConfigError, LogLevel, ServerSourceConfig, SourceConfig, load::files::Memory,
+    };
 
     fn load(documents: Memory) -> Result<Config, ConfigError> {
-        Config::load_from(&documents, Path::new("/etc/ntp.toml"))
+        load_from::<Config>(&documents, Path::new("/etc/ntp.toml"))
     }
 
     #[test]

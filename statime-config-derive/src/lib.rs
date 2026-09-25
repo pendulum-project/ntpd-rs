@@ -1,7 +1,7 @@
 //! Derive macro for `statime-config`.
 
 use proc_macro::TokenStream;
-use proc_macro2::TokenStream as TokenStream2;
+use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use syn::{
     Data, DataEnum, DataStruct, DeriveInput, Expr, Fields, Ident, LitStr, Token, Type, Variant,
@@ -55,6 +55,9 @@ struct Field {
     renamed: bool,
     ty: Type,
     default: Option<Expr>,
+    /// The field the loader reads before it merges anything.
+    use_system_config: bool,
+    span: Span,
 }
 
 fn expand(input: DeriveInput) -> syn::Result<TokenStream2> {
@@ -79,6 +82,20 @@ fn expand_struct(input: &DeriveInput, data: &DataStruct) -> syn::Result<TokenStr
     let private = quote!(::statime_config::__private);
 
     let fields = collect_fields(data)?;
+    let root = is_root(input)?;
+
+    // only the root of a tree is something a document can be loaded into
+    let root_impl = use_system_config_field(&fields, root, input)?.map(|field| {
+        quote! {
+            impl #private::RootConfig for #name {
+                fn use_system_config(
+                    partial: &#partial,
+                ) -> &#private::Setting<#private::UseSystemConfig> {
+                    &partial.#field
+                }
+            }
+        }
+    });
 
     let declarations = fields.iter().map(|field| {
         let Field {
@@ -148,6 +165,8 @@ fn expand_struct(input: &DeriveInput, data: &DataStruct) -> syn::Result<TokenStr
             type Partial = #partial;
             type Node = #private::Section<#partial>;
         }
+
+        #root_impl
 
         impl #private::EffectivelyUnset for #partial {
             fn is_effectively_unset(&self) -> bool {
@@ -354,7 +373,11 @@ fn collect_fields(data: &DataStruct) -> syn::Result<Vec<Field>> {
         .iter()
         .map(|field| {
             let name = field.ident.clone().expect("named fields have a name");
-            let FieldConfig { default, rename } = field_config(field)?;
+            let FieldConfig {
+                default,
+                rename,
+                use_system_config,
+            } = field_config(field)?;
 
             Ok(Field {
                 renamed: rename.is_some(),
@@ -362,9 +385,65 @@ fn collect_fields(data: &DataStruct) -> syn::Result<Vec<Field>> {
                 name,
                 ty: field.ty.clone(),
                 default,
+                use_system_config,
+                span: field.span(),
             })
         })
         .collect()
+}
+
+/// Whether this struct is the root of a configuration tree
+fn is_root(input: &DeriveInput) -> syn::Result<bool> {
+    let mut root = false;
+
+    for attribute in &input.attrs {
+        if !attribute.path().is_ident("config") {
+            continue;
+        }
+
+        attribute.parse_nested_meta(|meta| {
+            if meta.path.is_ident("root") {
+                root = true;
+                return Ok(());
+            }
+
+            Err(meta.error("unrecognised configuration attribute"))
+        })?;
+    }
+
+    Ok(root)
+}
+
+/// The field a root reads to decide whether, and from where, to layer a system
+/// configuration underneath it.
+fn use_system_config_field<'a>(
+    fields: &'a [Field],
+    root: bool,
+    input: &DeriveInput,
+) -> syn::Result<Option<&'a Ident>> {
+    let mut marked = fields.iter().filter(|field| field.use_system_config);
+    let first = marked.next();
+
+    if let Some(second) = marked.next() {
+        return Err(syn::Error::new(
+            second.span,
+            "a configuration reads at most one `use_system_config` setting",
+        ));
+    }
+
+    match (root, first) {
+        (true, Some(field)) => Ok(Some(&field.name)),
+        (true, None) => Err(syn::Error::new(
+            input.span(),
+            "a `#[config(root)]` configuration needs a field marked \
+             `#[config(use_system_config)]`, holding a `UseSystemConfig`",
+        )),
+        (false, Some(field)) => Err(syn::Error::new(
+            field.span,
+            "only a `#[config(root)]` configuration reads a `use_system_config` setting",
+        )),
+        (false, None) => Ok(None),
+    }
 }
 
 /// What the `#[config(...)]` attributes on a field say.
@@ -372,6 +451,9 @@ fn collect_fields(data: &DataStruct) -> syn::Result<Vec<Field>> {
 struct FieldConfig {
     default: Option<Expr>,
     rename: Option<String>,
+    /// Whether this is the field the loader reads to decide whether, and from
+    /// where, to layer a system configuration underneath the document.
+    use_system_config: bool,
 }
 
 fn field_config(field: &syn::Field) -> syn::Result<FieldConfig> {
@@ -395,6 +477,11 @@ fn field_config(field: &syn::Field) -> syn::Result<FieldConfig> {
 
             if meta.path.is_ident("rename") {
                 config.rename = Some(meta.value()?.parse::<LitStr>()?.value());
+                return Ok(());
+            }
+
+            if meta.path.is_ident("use_system_config") {
+                config.use_system_config = true;
                 return Ok(());
             }
 
