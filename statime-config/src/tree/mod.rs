@@ -1,258 +1,130 @@
 mod atomic;
 mod config_merger;
-mod defaults;
-mod directive;
+mod configurable;
 mod empty;
 mod merge;
+mod partial_value;
 mod path;
-mod resolve;
 mod section;
 mod setting;
 
-use atomic::atomic_value;
-use defaults::ApplyDefaults;
-use empty::{EffectivelyUnset, is_effectively_unset};
-use merge::{Attributable, Merge, MergeContext};
-use resolve::Resolve;
-use section::Section;
-use serde::{Deserialize, Serialize};
-
-use crate::{
-    Config, LogLevel, ObservabilityConfig, ServerSourceConfig, SourceConfig, error::ConfigError,
-};
+pub use atomic::ConfigurableAtomic;
+pub use configurable::Configurable;
+pub use empty::{EffectivelyUnset, is_effectively_unset};
+pub use merge::{Merge, MergeContext, Origin, OriginId};
+pub use partial_value::PartialValue;
+pub use path::ConfigPath;
+pub use section::Section;
+pub use setting::Setting;
 
 pub(crate) use config_merger::ConfigMerger;
-pub(crate) use directive::UseSystemConfig;
-pub use merge::Origin;
-pub(crate) use merge::OriginId;
-pub use path::ConfigPath;
-pub(crate) use setting::Setting;
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, rename_all = "kebab-case", deny_unknown_fields)]
-pub struct PartialConfig {
-    /// Directive to use the system configuration, not emitted in final config.
-    #[serde(skip_serializing_if = "is_effectively_unset")]
-    pub use_system_config: Setting<UseSystemConfig>,
+#[cfg(test)]
+mod renaming {
+    use super::*;
+    use crate::{ConfigError, Configurable};
 
-    #[serde(skip_serializing_if = "is_effectively_unset")]
-    pub sources: Setting<Vec<PartialSourceConfig>>,
+    #[derive(Debug, Clone, PartialEq, Eq, Configurable)]
+    struct Renamed {
+        #[config(rename = "the-key")]
+        wire_name: u8,
 
-    #[serde(skip_serializing_if = "is_effectively_unset")]
-    pub observability: Section<PartialObservabilityConfig>,
-}
-
-impl EffectivelyUnset for PartialConfig {
-    fn is_effectively_unset(&self) -> bool {
-        self.use_system_config.is_effectively_unset()
-            && self.sources.is_effectively_unset()
-            && self.observability.is_effectively_unset()
+        #[config(rename = "and-another", default = 7)]
+        second: u8,
     }
-}
 
-impl Attributable for PartialConfig {
-    fn attribute(&mut self, origin: OriginId) {
-        self.sources.attribute(origin);
-        self.observability.attribute(origin);
+    #[test]
+    fn a_renamed_field_is_read_under_its_new_name() {
+        let partial: PartialRenamed = toml::from_str("the-key = 3").unwrap();
+
+        assert_eq!(partial.wire_name.get(), Some(&3));
     }
-}
 
-impl ApplyDefaults for PartialConfig {
-    fn apply_defaults(&mut self) {
-        self.sources.default_to(Vec::new());
-        self.sources.apply_defaults();
-        self.observability.apply_defaults();
+    #[test]
+    fn the_field_name_is_no_longer_accepted() {
+        let error = toml::from_str::<PartialRenamed>("wire_name = 3").unwrap_err();
+
+        assert!(error.to_string().contains("unknown field `wire_name`"));
     }
-}
 
-impl Merge for PartialConfig {
-    fn merge(&mut self, incoming: Self, context: &mut MergeContext<'_>) -> Result<(), ConfigError> {
-        context.at("sources", |context| {
-            self.sources.merge(incoming.sources, context)
-        })?;
-        context.at("observability", |context| {
-            self.observability.merge(incoming.observability, context)
-        })
+    #[test]
+    fn diagnostics_name_the_key_the_document_uses() {
+        let mut partial = PartialRenamed::default();
+        partial.apply_defaults();
+
+        let error = partial.resolve(&mut ConfigPath::root()).unwrap_err();
+
+        let ConfigError::MissingRequiredValue { position } = error else {
+            panic!("expected a missing required value, got {error:?}");
+        };
+        assert_eq!(position.to_string(), "the-key");
     }
-}
 
-impl Resolve for PartialConfig {
-    type Resolved = Config;
+    #[test]
+    fn renaming_leaves_defaults_alone() {
+        let mut partial = PartialRenamed::default();
+        partial.apply_defaults();
 
-    fn resolve(self, path: &mut ConfigPath) -> Result<Config, ConfigError> {
-        Ok(Config {
-            sources: path.at("sources", |path| self.sources.resolve(path))?,
-            observability: path.at("observability", |path| self.observability.resolve(path))?,
-        })
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case", tag = "mode")]
-pub enum PartialSourceConfig {
-    Server(PartialServerSourceConfig),
-}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(default, rename_all = "kebab-case", deny_unknown_fields)]
-pub struct PartialServerSourceConfig {
-    #[serde(skip_serializing_if = "is_effectively_unset")]
-    pub url: Setting<String>,
-
-    #[serde(skip_serializing_if = "is_effectively_unset")]
-    pub ntp_version: Setting<u8>,
-}
-
-impl ApplyDefaults for PartialSourceConfig {
-    fn apply_defaults(&mut self) {
-        match self {
-            Self::Server(config) => config.apply_defaults(),
-        }
-    }
-}
-
-impl Attributable for PartialSourceConfig {
-    fn attribute(&mut self, origin: OriginId) {
-        match self {
-            Self::Server(config) => config.attribute(origin),
-        }
-    }
-}
-
-impl Resolve for PartialSourceConfig {
-    type Resolved = SourceConfig;
-
-    fn resolve(self, path: &mut ConfigPath) -> Result<SourceConfig, ConfigError> {
-        match self {
-            Self::Server(config) => Ok(SourceConfig::Server(config.resolve(path)?)),
-        }
-    }
-}
-
-impl Resolve for PartialServerSourceConfig {
-    type Resolved = ServerSourceConfig;
-
-    fn resolve(self, path: &mut ConfigPath) -> Result<ServerSourceConfig, ConfigError> {
-        Ok(ServerSourceConfig {
-            url: path.at("url", |path| self.url.resolve(path))?,
-            ntp_version: path.at("ntp-version", |path| self.ntp_version.resolve(path))?,
-        })
-    }
-}
-
-impl EffectivelyUnset for PartialServerSourceConfig {
-    fn is_effectively_unset(&self) -> bool {
-        self.url.is_effectively_unset() && self.ntp_version.is_effectively_unset()
-    }
-}
-
-impl ApplyDefaults for PartialServerSourceConfig {
-    fn apply_defaults(&mut self) {
-        // url is required, so it has no default
-        self.ntp_version.default_to(4);
-    }
-}
-
-impl Attributable for PartialServerSourceConfig {
-    fn attribute(&mut self, origin: OriginId) {
-        self.url.attribute(origin);
-        self.ntp_version.attribute(origin);
-    }
-}
-
-atomic_value!(LogLevel);
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(default, rename_all = "kebab-case", deny_unknown_fields)]
-pub struct PartialObservabilityConfig {
-    #[serde(skip_serializing_if = "is_effectively_unset")]
-    pub log_level: Setting<LogLevel>,
-}
-
-impl Resolve for PartialObservabilityConfig {
-    type Resolved = ObservabilityConfig;
-
-    fn resolve(self, path: &mut ConfigPath) -> Result<ObservabilityConfig, ConfigError> {
-        Ok(ObservabilityConfig {
-            log_level: path.at("log-level", |path| self.log_level.resolve(path))?,
-        })
-    }
-}
-
-impl EffectivelyUnset for PartialObservabilityConfig {
-    fn is_effectively_unset(&self) -> bool {
-        self.log_level.is_effectively_unset()
-    }
-}
-
-impl ApplyDefaults for PartialObservabilityConfig {
-    fn apply_defaults(&mut self) {
-        self.log_level.default_to(LogLevel::Info);
-    }
-}
-
-impl Attributable for PartialObservabilityConfig {
-    fn attribute(&mut self, origin: OriginId) {
-        self.log_level.attribute(origin);
-    }
-}
-
-impl Merge for PartialObservabilityConfig {
-    fn merge(&mut self, incoming: Self, context: &mut MergeContext<'_>) -> Result<(), ConfigError> {
-        context.at("log-level", |context| {
-            self.log_level.merge(incoming.log_level, context)
-        })
+        assert_eq!(partial.second.get(), Some(&7));
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tree::merge::{MergePolicy, Origin, ProvenanceTracker};
+    use crate::{
+        ConfigError, UseSystemConfig,
+        fixture::{
+            Fixture, Level, Logging, PartialFixture, PartialLogging, PartialServer, PartialSource,
+            Server, Source,
+        },
+        tree::{
+            merge::{MergePolicy, Origin, ProvenanceTracker},
+            setting::Setting,
+        },
+    };
 
     #[test]
     fn test_serialized_roundtrip() {
-        let config = PartialConfig {
+        let config = PartialFixture {
             use_system_config: Setting::default(),
-            sources: Setting::value(vec![PartialSourceConfig::Server(
-                PartialServerSourceConfig {
-                    url: Setting::default(),
-                    ntp_version: Setting::default(),
-                },
-            )]),
-            ..PartialConfig::default()
+            sources: Setting::value(vec![PartialSource::Server(PartialServer {
+                address: Setting::default(),
+                version: Setting::default(),
+            })]),
+            ..PartialFixture::default()
         };
         let serialized = toml::to_string(&config).unwrap();
         dbg!(&serialized);
-        let deserialized: PartialConfig = toml::from_str(&serialized).unwrap();
+        let deserialized: PartialFixture = toml::from_str(&serialized).unwrap();
         assert_eq!(config, deserialized);
     }
 
-    fn observability(log_level: Setting<LogLevel>) -> PartialConfig {
-        PartialConfig {
-            observability: Section::Set(PartialObservabilityConfig { log_level }),
-            ..PartialConfig::default()
+    fn logging(level: Setting<Level>) -> PartialFixture {
+        PartialFixture {
+            logging: Section::Set(PartialLogging { level }),
+            ..PartialFixture::default()
         }
     }
 
     #[test]
     fn a_set_but_empty_section_is_omitted() {
-        let config = observability(Setting::Unset);
+        let config = logging(Setting::Unset);
         assert!(config.is_effectively_unset());
 
         let serialized = toml::to_string(&config).unwrap();
         assert_eq!(serialized, "");
 
-        let deserialized: PartialConfig = toml::from_str(&serialized).unwrap();
-        assert_eq!(deserialized.observability, Section::Unset);
+        let deserialized: PartialFixture = toml::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.logging, Section::Unset);
         assert_ne!(deserialized, config);
     }
 
     #[test]
     fn an_explicitly_empty_vector_is_never_empty() {
-        let config = PartialConfig {
+        let config = PartialFixture {
             sources: Setting::value(vec![]),
-            ..PartialConfig::default()
+            ..PartialFixture::default()
         };
 
         assert!(!config.is_effectively_unset());
@@ -262,46 +134,40 @@ mod tests {
     #[test]
     fn attaching_an_origin_descends_into_vector_elements() {
         let mut tracker = ProvenanceTracker::new();
-        let origin = tracker.track(Origin::MainConfig("/etc/ntp.toml".into()));
+        let origin = tracker.track(Origin::MainConfig("/etc/main.toml".into()));
 
-        let mut config = PartialConfig {
-            sources: Setting::value(vec![PartialSourceConfig::Server(
-                PartialServerSourceConfig {
-                    url: Setting::value("example.com".to_owned()),
-                    ntp_version: Setting::default(),
-                },
-            )]),
-            ..observability(Setting::Unset)
+        let mut config = PartialFixture {
+            sources: Setting::value(vec![PartialSource::Server(PartialServer {
+                address: Setting::value("example.com".to_owned()),
+                version: Setting::default(),
+            })]),
+            ..logging(Setting::Unset)
         };
         config.attribute(origin);
 
-        let Section::Set(observability) = &config.observability else {
+        let Section::Set(logging) = &config.logging else {
             panic!("section should still be set");
         };
         // the vector is atomic when merging, but attribution reaches into it
         assert_eq!(config.sources.origin(), Some(origin));
-        let Some([PartialSourceConfig::Server(source)]) = config.sources.get().map(|v| &v[..])
-        else {
+        let Some([PartialSource::Server(source)]) = config.sources.get().map(|v| &v[..]) else {
             panic!("source should still be present");
         };
-        assert_eq!(source.url.origin(), Some(origin));
+        assert_eq!(source.address.origin(), Some(origin));
         // unset settings are never attributed
-        assert_eq!(observability.log_level.origin(), None);
+        assert_eq!(logging.level.origin(), None);
     }
 
     #[test]
     fn defaults_reach_an_absent_section() {
-        let mut config = PartialConfig::default();
+        let mut config = PartialFixture::default();
         config.apply_defaults();
 
-        let Section::Set(observability) = &config.observability else {
+        let Section::Set(logging) = &config.logging else {
             panic!("the section should have been materialized");
         };
-        assert_eq!(observability.log_level.get(), Some(&LogLevel::Info));
-        assert_eq!(
-            observability.log_level.origin(),
-            Some(OriginId::BUILT_IN_DEFAULT)
-        );
+        assert_eq!(logging.level.get(), Some(&Level::Info));
+        assert_eq!(logging.level.origin(), Some(OriginId::BUILT_IN_DEFAULT));
         // an empty vector is a meaningful default, not an absence
         assert_eq!(config.sources.get(), Some(&vec![]));
     }
@@ -309,103 +175,74 @@ mod tests {
     #[test]
     fn defaults_reach_inside_vector_elements() {
         let mut tracker = ProvenanceTracker::new();
-        let main = tracker.track(Origin::MainConfig("/etc/ntp.toml".into()));
+        let main = tracker.track(Origin::MainConfig("/etc/main.toml".into()));
 
-        let mut config = PartialConfig {
-            sources: Setting::value(vec![PartialSourceConfig::Server(
-                PartialServerSourceConfig {
-                    url: Setting::value("example.com".to_owned()),
-                    ntp_version: Setting::Unset,
-                },
-            )]),
-            ..PartialConfig::default()
+        let mut config = PartialFixture {
+            sources: Setting::value(vec![PartialSource::Server(PartialServer {
+                address: Setting::value("example.com".to_owned()),
+                version: Setting::Unset,
+            })]),
+            ..PartialFixture::default()
         };
         config.attribute(main);
         config.apply_defaults();
 
-        let Some([PartialSourceConfig::Server(source)]) = config.sources.get().map(|v| &v[..])
-        else {
+        let Some([PartialSource::Server(source)]) = config.sources.get().map(|v| &v[..]) else {
             panic!("source should still be present");
         };
-        // sources[0].url comes from the main config, sources[0].ntp-version
-        // from the built-in defaults
-        assert_eq!(source.url.origin(), Some(main));
-        assert_eq!(source.ntp_version.get(), Some(&4));
-        assert_eq!(
-            source.ntp_version.origin(),
-            Some(OriginId::BUILT_IN_DEFAULT)
-        );
+        // sources[0].address comes from the main config, sources[0].version from
+        // the built-in defaults
+        assert_eq!(source.address.origin(), Some(main));
+        assert_eq!(source.version.get(), Some(&4));
+        assert_eq!(source.version.origin(), Some(OriginId::BUILT_IN_DEFAULT));
     }
 
     #[test]
     fn defaults_never_replace_a_configured_value() {
-        let mut config = observability(Setting::value(LogLevel::Debug));
+        let mut config = logging(Setting::value(Level::Debug));
         config.apply_defaults();
 
-        let Section::Set(observability) = &config.observability else {
+        let Section::Set(logging) = &config.logging else {
             panic!("section should still be set");
         };
-        assert_eq!(observability.log_level.get(), Some(&LogLevel::Debug));
-        assert_eq!(observability.log_level.origin(), None);
+        assert_eq!(logging.level.get(), Some(&Level::Debug));
+        assert_eq!(logging.level.origin(), None);
     }
 
-    fn one_server(url: Setting<String>) -> PartialConfig {
-        PartialConfig {
-            sources: Setting::value(vec![PartialSourceConfig::Server(
-                PartialServerSourceConfig {
-                    url,
-                    ntp_version: Setting::default(),
-                },
-            )]),
-            ..PartialConfig::default()
+    fn one_source(address: Setting<String>) -> PartialFixture {
+        PartialFixture {
+            sources: Setting::value(vec![PartialSource::Server(PartialServer {
+                address,
+                version: Setting::default(),
+            })]),
+            ..PartialFixture::default()
         }
     }
 
     #[test]
     fn resolving_a_defaulted_tree_yields_the_runtime_config() {
-        let mut config = one_server(Setting::value("example.com".to_owned()));
+        let mut config = one_source(Setting::value("example.com".to_owned()));
         config.apply_defaults();
 
         let resolved = config.resolve(&mut ConfigPath::root()).unwrap();
 
         assert_eq!(
             resolved,
-            Config {
-                sources: vec![SourceConfig::Server(ServerSourceConfig {
-                    url: "example.com".to_owned(),
-                    // defaulted, so it is present without being configured
-                    ntp_version: 4,
+            Fixture {
+                // defaulted, so they are present without being configured
+                use_system_config: UseSystemConfig::Enabled(false),
+                sources: vec![Source::Server(Server {
+                    address: "example.com".to_owned(),
+                    version: 4,
                 })],
-                observability: ObservabilityConfig {
-                    log_level: LogLevel::Info,
-                },
+                logging: Logging { level: Level::Info },
             }
         );
     }
 
     #[test]
-    fn the_loader_directive_takes_no_part_in_the_traversals() {
-        let mut config = one_server(Setting::value("example.com".to_owned()));
-        config.use_system_config = Setting::value(UseSystemConfig::Enabled(true));
-        config.attribute(OriginId::BUILT_IN_DEFAULT);
-        config.apply_defaults();
-
-        // it is neither attributed nor defaulted, and resolving ignores it
-        assert_eq!(config.use_system_config.origin(), None);
-        config.clone().resolve(&mut ConfigPath::root()).unwrap();
-
-        // but it does survive a serialization roundtrip
-        let serialized = toml::to_string(&config).unwrap();
-        let deserialized: PartialConfig = toml::from_str(&serialized).unwrap();
-        assert_eq!(
-            deserialized.use_system_config.get(),
-            Some(&UseSystemConfig::Enabled(true))
-        );
-    }
-
-    #[test]
     fn a_missing_required_value_reports_its_path() {
-        let mut config = one_server(Setting::Unset);
+        let mut config = one_source(Setting::Unset);
         config.apply_defaults();
 
         let error = config.resolve(&mut ConfigPath::root()).unwrap_err();
@@ -413,25 +250,25 @@ mod tests {
         let ConfigError::MissingRequiredValue { position } = error else {
             panic!("expected a missing required value, got {error:?}");
         };
-        assert_eq!(position.to_string(), "sources[0].url");
+        assert_eq!(position.to_string(), "sources[0].address");
     }
 
     #[test]
     fn mentioning_the_same_section_is_not_a_conflict() {
-        let mut effective = observability(Setting::value(LogLevel::Info));
-        let incoming = observability(Setting::Unset);
+        let mut effective = logging(Setting::value(Level::Info));
+        let incoming = logging(Setting::Unset);
 
         let tracker = ProvenanceTracker::new();
         let mut context = MergeContext::new(MergePolicy::RejectOverlap, &tracker);
         effective.merge(incoming, &mut context).unwrap();
 
-        assert_eq!(effective, observability(Setting::value(LogLevel::Info)));
+        assert_eq!(effective, logging(Setting::value(Level::Info)));
     }
 
     #[test]
     fn conflicting_setting_in_a_section_reports_its_path() {
-        let mut effective = observability(Setting::value(LogLevel::Info));
-        let incoming = observability(Setting::value(LogLevel::Debug));
+        let mut effective = logging(Setting::value(Level::Info));
+        let incoming = logging(Setting::value(Level::Debug));
 
         let tracker = ProvenanceTracker::new();
         let mut context = MergeContext::new(MergePolicy::RejectOverlap, &tracker);
@@ -440,6 +277,6 @@ mod tests {
         let ConfigError::OverwriteNotAllowed { position, .. } = error else {
             panic!("expected an overwrite conflict, got {error:?}");
         };
-        assert_eq!(position.to_string(), "observability.log-level");
+        assert_eq!(position.to_string(), "logging.level");
     }
 }

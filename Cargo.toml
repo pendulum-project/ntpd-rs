@@ -6,6 +6,7 @@ members = [
     "statime-algo",
     "statime-base",
     "statime-config",
+    "statime-config-derive",
     "statime-csptp",
     "statime-netptp",
     "statime-wire",
@@ -186,6 +187,9 @@ serde = { version = "1.0.166", features = ["derive"] }
 serde_json = "1.0"
 tokio = "1.37"
 log = "0.4.34"
+proc-macro2 = "1.0.91"
+quote = "1.0.36"
+syn = { version = "2.0.90", features = ["full"] }
 toml = { version = ">=0.6.0,<0.9.0", default-features = false, features = ["parse", "display"] }
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.0", default-features = false, features = ["std", "fmt", "ansi", "tracing-log"] }
@@ -216,6 +220,7 @@ timestamped-socket = { version = "0.3.0", path = "./timestamped-socket" }
 # NOTE: keep this part at the bottom of the file, do not change this line
 ntp-proto = { version = "2.0.0-alpha.20260715", path = "./ntp-proto", default-features = false, features = ["__internal-api"] }
 statime-base = { version = "2.0.0-alpha.20260715", path = "./statime-base", default-features = false }
+statime-config-derive = { version = "2.0.0-alpha.20260715", path = "./statime-config-derive" }
 statime-algo = { version = "2.0.0-alpha.20260715", path = "./statime-algo", default-features = false }
 statime-csptp = { version = "2.0.0-alpha.20260715", path = "./statime-csptp" }
 statime-netptp = { version = "2.0.0-alpha.20260715", path = "./statime-netptp" }

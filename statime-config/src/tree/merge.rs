@@ -1,9 +1,6 @@
 use std::{collections::HashMap, path::PathBuf};
 
-use crate::{
-    ConfigError,
-    tree::path::{ConfigPath, PathSegment},
-};
+use crate::{ConfigError, tree::path::ConfigPath};
 
 /// Whether to merge by overriding values, or by rejecting any overlapping values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,33 +74,16 @@ impl Default for ProvenanceTracker {
     }
 }
 
-/// Recursively attributes (i.e. assigns an origin) the nodes of a document.
-/// This follows tree structure, independently of how a node merges: a vector
-/// is atomic when merging, but recursive here.
-pub trait Attributable {
-    fn attribute(&mut self, origin: OriginId);
-}
-
-impl<T> Attributable for Vec<T>
-where
-    T: Attributable,
-{
-    fn attribute(&mut self, origin: OriginId) {
-        for element in self {
-            element.attribute(origin);
-        }
-    }
-}
-
-/// The context within the current merge operation.
+/// The context within the current merge operation. Generated code only ever
+/// walks it with [`MergeContext::at`]; the rest is the loader's business.
 pub struct MergeContext<'a> {
-    pub policy: MergePolicy,
-    pub path: ConfigPath,
+    pub(crate) policy: MergePolicy,
+    pub(crate) path: ConfigPath,
     provenance: &'a ProvenanceTracker,
 }
 
 impl<'a> MergeContext<'a> {
-    pub fn new(policy: MergePolicy, provenance: &'a ProvenanceTracker) -> Self {
+    pub(crate) fn new(policy: MergePolicy, provenance: &'a ProvenanceTracker) -> Self {
         Self {
             policy,
             path: ConfigPath::root(),
@@ -111,15 +91,16 @@ impl<'a> MergeContext<'a> {
         }
     }
 
-    pub fn at<R>(&mut self, segment: impl Into<PathSegment>, f: impl FnOnce(&mut Self) -> R) -> R {
-        self.path.push(segment);
+    /// Run `f` with `field` appended to the path being merged.
+    pub fn at<R>(&mut self, field: &'static str, f: impl FnOnce(&mut Self) -> R) -> R {
+        self.path.push_field(field);
         let result = f(self);
         self.path.pop();
         result
     }
 
     /// The document an id stands for, for use in a diagnostic.
-    pub fn origin(&self, id: Option<OriginId>) -> Option<Origin> {
+    pub(crate) fn origin(&self, id: Option<OriginId>) -> Option<Origin> {
         id.and_then(|id| self.provenance.get_origin(id)).cloned()
     }
 }

@@ -3,10 +3,9 @@ use std::path::PathBuf;
 use crate::{
     ConfigError,
     tree::{
-        defaults::ApplyDefaults,
-        merge::{Attributable, Merge, MergeContext, MergePolicy, Origin, ProvenanceTracker},
+        merge::{Merge, MergeContext, MergePolicy, Origin, ProvenanceTracker},
+        partial_value::PartialValue,
         path::ConfigPath,
-        resolve::Resolve,
     },
 };
 
@@ -19,7 +18,7 @@ pub struct ConfigMerger<T> {
 
 impl<T> ConfigMerger<T>
 where
-    T: Default + Attributable + Merge + ApplyDefaults + Resolve,
+    T: Default + Merge + PartialValue,
 {
     pub fn new() -> Self {
         Self {
@@ -74,7 +73,7 @@ where
 
 impl<T> Default for ConfigMerger<T>
 where
-    T: Default + Attributable + Merge + ApplyDefaults + Resolve,
+    T: Default + Merge + PartialValue,
 {
     fn default() -> Self {
         Self::new()
@@ -84,9 +83,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{LogLevel, tree::PartialConfig};
+    use crate::fixture::{Level, PartialFixture};
 
-    fn document(contents: &str) -> PartialConfig {
+    fn document(contents: &str) -> PartialFixture {
         toml::from_str(contents).unwrap()
     }
 
@@ -95,41 +94,38 @@ mod tests {
         let mut merger = ConfigMerger::new();
         merger
             .add_system(
-                "/etc/ntp.d/a.toml".into(),
-                document("observability.log-level = 'warn'"),
+                "/etc/system.d/a.toml".into(),
+                document("logging.level = 'warn'"),
             )
             .unwrap();
         merger
-            .add_main(
-                "/etc/ntp.toml".into(),
-                document("observability.log-level = 'debug'"),
-            )
+            .add_main("/etc/main.toml".into(), document("logging.level = 'debug'"))
             .unwrap();
         merger.apply_defaults();
 
         let (config, _) = merger.finish().unwrap();
 
-        assert_eq!(config.observability.log_level, LogLevel::Debug);
+        assert_eq!(config.logging.level, Level::Debug);
         // untouched by either document, so it comes from the defaults
         assert_eq!(config.sources, vec![]);
     }
 
+    /// Two fragments both setting `logging.level`, which they may not.
+    fn conflicting_fragments() -> Result<(), ConfigError> {
+        let mut merger = ConfigMerger::<PartialFixture>::new();
+        merger.add_system(
+            "/etc/system.d/a.toml".into(),
+            document("logging.level = 'warn'"),
+        )?;
+        merger.add_system(
+            "/etc/system.d/b.toml".into(),
+            document("logging.level = 'error'"),
+        )
+    }
+
     #[test]
     fn two_fragments_may_not_define_the_same_setting() {
-        let mut merger = ConfigMerger::new();
-        merger
-            .add_system(
-                "/etc/ntp.d/a.toml".into(),
-                document("observability.log-level = 'warn'"),
-            )
-            .unwrap();
-
-        let error = merger
-            .add_system(
-                "/etc/ntp.d/b.toml".into(),
-                document("observability.log-level = 'error'"),
-            )
-            .unwrap_err();
+        let error = conflicting_fragments().unwrap_err();
 
         let ConfigError::OverwriteNotAllowed {
             position,
@@ -139,37 +135,22 @@ mod tests {
         else {
             panic!("expected an overwrite conflict, got {error:?}");
         };
-        assert_eq!(position.to_string(), "observability.log-level");
+        assert_eq!(position.to_string(), "logging.level");
         assert_eq!(
             current_origin,
-            Some(Origin::SystemConfig("/etc/ntp.d/a.toml".into()))
+            Some(Origin::SystemConfig("/etc/system.d/a.toml".into()))
         );
         assert_eq!(
             incoming_origin,
-            Some(Origin::SystemConfig("/etc/ntp.d/b.toml".into()))
+            Some(Origin::SystemConfig("/etc/system.d/b.toml".into()))
         );
     }
 
     #[test]
     fn a_conflict_names_both_documents() {
-        let mut merger = ConfigMerger::<PartialConfig>::new();
-        merger
-            .add_system(
-                "/etc/ntp.d/a.toml".into(),
-                document("observability.log-level = 'warn'"),
-            )
-            .unwrap();
-
-        let error = merger
-            .add_system(
-                "/etc/ntp.d/b.toml".into(),
-                document("observability.log-level = 'error'"),
-            )
-            .unwrap_err();
-
         assert_eq!(
-            error.to_string(),
-            "`observability.log-level` is set by both `/etc/ntp.d/a.toml` and `/etc/ntp.d/b.toml`"
+            conflicting_fragments().unwrap_err().to_string(),
+            "`logging.level` is set by both `/etc/system.d/a.toml` and `/etc/system.d/b.toml`"
         );
     }
 }
