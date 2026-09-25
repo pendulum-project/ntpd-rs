@@ -38,7 +38,7 @@ pub fn derive_configurable_atomic(input: TokenStream) -> TokenStream {
     let name = parse_macro_input!(input as DeriveInput).ident;
 
     quote! {
-        impl ::statime_config::__private::ConfigurableAtomic for #name {}
+        impl ::statime_config::ConfigurableAtomic for #name {}
     }
     .into()
 }
@@ -87,11 +87,11 @@ fn expand_struct(input: &DeriveInput, data: &DataStruct) -> syn::Result<TokenStr
     // only the root of a tree is something a document can be loaded into
     let root_impl = use_system_config_field(&fields, root, input)?.map(|field| {
         quote! {
-            impl #private::RootConfig for #name {
+            impl ::statime_config::RootConfig for #name {
                 fn use_system_config(
                     partial: &#partial,
-                ) -> &#private::Setting<#private::UseSystemConfig> {
-                    &partial.#field
+                ) -> ::core::option::Option<&::statime_config::UseSystemConfig> {
+                    partial.#field.get()
                 }
             }
         }
@@ -111,7 +111,7 @@ fn expand_struct(input: &DeriveInput, data: &DataStruct) -> syn::Result<TokenStr
         quote! {
             #rename
             #[serde(skip_serializing_if = "::statime_config::__private::is_effectively_unset")]
-            pub #name: <#ty as #private::Configurable>::Node
+            pub #name: <#ty as ::statime_config::Configurable>::Node
         }
     });
 
@@ -161,9 +161,9 @@ fn expand_struct(input: &DeriveInput, data: &DataStruct) -> syn::Result<TokenStr
             #(#declarations,)*
         }
 
-        impl #private::Configurable for #name {
+        impl ::statime_config::Configurable for #name {
             type Partial = #partial;
-            type Node = #private::Section<#partial>;
+            type Node = ::statime_config::Section<#partial>;
         }
 
         #root_impl
@@ -191,7 +191,7 @@ fn expand_struct(input: &DeriveInput, data: &DataStruct) -> syn::Result<TokenStr
                 &mut self,
                 incoming: Self,
                 context: &mut #private::MergeContext<'_>,
-            ) -> ::core::result::Result<(), #private::ConfigError> {
+            ) -> ::core::result::Result<(), ::statime_config::ConfigError> {
                 #(#merges)*
                 ::core::result::Result::Ok(())
             }
@@ -202,8 +202,8 @@ fn expand_struct(input: &DeriveInput, data: &DataStruct) -> syn::Result<TokenStr
 
             fn resolve(
                 self,
-                path: &mut #private::ConfigPath,
-            ) -> ::core::result::Result<#name, #private::ConfigError> {
+                path: &mut ::statime_config::ConfigPath,
+            ) -> ::core::result::Result<#name, ::statime_config::ConfigError> {
                 ::core::result::Result::Ok(#name {
                     #(#resolutions,)*
                 })
@@ -235,7 +235,7 @@ fn expand_enum(input: &DeriveInput, data: &DataEnum) -> syn::Result<TokenStream2
 
         quote! {
             #rename
-            #name(<#ty as #private::Configurable>::Partial)
+            #name(<#ty as ::statime_config::Configurable>::Partial)
         }
     });
 
@@ -269,9 +269,9 @@ fn expand_enum(input: &DeriveInput, data: &DataEnum) -> syn::Result<TokenStream2
             #(#declarations,)*
         }
 
-        impl #private::Configurable for #name {
+        impl ::statime_config::Configurable for #name {
             type Partial = #partial;
-            type Node = #private::Section<#partial>;
+            type Node = ::statime_config::Section<#partial>;
         }
 
         impl #private::Attributable for #partial {
@@ -295,8 +295,8 @@ fn expand_enum(input: &DeriveInput, data: &DataEnum) -> syn::Result<TokenStream2
 
             fn resolve(
                 self,
-                path: &mut #private::ConfigPath,
-            ) -> ::core::result::Result<#name, #private::ConfigError> {
+                path: &mut ::statime_config::ConfigPath,
+            ) -> ::core::result::Result<#name, ::statime_config::ConfigError> {
                 match self {
                     #(#resolutions)*
                 }
