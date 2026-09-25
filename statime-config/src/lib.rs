@@ -65,14 +65,17 @@ impl Default for UseSystemConfig {
 }
 
 /// A time source to synchronize with.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Configurable)]
+#[config(tag = "mode")]
 pub enum SourceConfig {
     Server(ServerSourceConfig),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Configurable)]
 pub struct ServerSourceConfig {
     pub url: String,
+
+    #[config(default = 4)]
     pub ntp_version: u8,
 }
 

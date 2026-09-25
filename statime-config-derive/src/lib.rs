@@ -4,8 +4,8 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::{
-    Data, DeriveInput, Expr, Fields, Ident, Token, Type, parse_macro_input, parse_quote,
-    spanned::Spanned,
+    Data, DataEnum, DataStruct, DeriveInput, Expr, Fields, Ident, LitStr, Token, Type, Variant,
+    parse_macro_input, parse_quote, spanned::Spanned,
 };
 
 /// Generate the partial counterpart of a configuration struct.
@@ -54,6 +54,19 @@ struct Field {
 }
 
 fn expand(input: DeriveInput) -> syn::Result<TokenStream2> {
+    match &input.data {
+        Data::Struct(data) => expand_struct(&input, data),
+        Data::Enum(data) => expand_enum(&input, data),
+        Data::Union(_) => Err(syn::Error::new(
+            input.span(),
+            "only structs and enums can be configurable",
+        )),
+    }
+}
+
+/// A struct becomes a section: one partial field per field, each of them a node
+/// whose shape the field's own type decides.
+fn expand_struct(input: &DeriveInput, data: &DataStruct) -> syn::Result<TokenStream2> {
     let name = &input.ident;
     let partial = format_ident!("Partial{}", name);
 
@@ -61,7 +74,7 @@ fn expand(input: DeriveInput) -> syn::Result<TokenStream2> {
     // collides with, nor depends on, whatever is in scope where it lands
     let private = quote!(::statime_config::__private);
 
-    let fields = collect_fields(&input)?;
+    let fields = collect_fields(data)?;
 
     let declarations = fields.iter().map(|field| {
         let Field { name, ty, .. } = field;
@@ -166,13 +179,138 @@ fn expand(input: DeriveInput) -> syn::Result<TokenStream2> {
     })
 }
 
-fn collect_fields(input: &DeriveInput) -> syn::Result<Vec<Field>> {
-    let Data::Struct(data) = &input.data else {
-        return Err(syn::Error::new(
+/// An enum becomes a choice between sections, told apart by a tag naming which
+/// one a document means.
+///
+/// It is neither merged nor tested for emptiness: a configurable enum lives in
+/// a vector, which is atomic, so two of them never meet.
+fn expand_enum(input: &DeriveInput, data: &DataEnum) -> syn::Result<TokenStream2> {
+    let name = &input.ident;
+    let partial = format_ident!("Partial{}", name);
+    let private = quote!(::statime_config::__private);
+
+    let tag = enum_tag(input)?;
+    let variants = data
+        .variants
+        .iter()
+        .map(collect_variant)
+        .collect::<syn::Result<Vec<_>>>()?;
+
+    let declarations = variants
+        .iter()
+        .map(|(variant, ty)| quote!(#variant(<#ty as #private::Configurable>::Partial)));
+
+    let attributions = variants.iter().map(|(variant, _)| {
+        quote!(Self::#variant(value) => #private::Attributable::attribute(value, origin),)
+    });
+
+    let defaults = variants.iter().map(|(variant, _)| {
+        quote!(Self::#variant(value) => #private::ApplyDefaults::apply_defaults(value),)
+    });
+
+    let resolutions = variants.iter().map(|(variant, _)| {
+        quote! {
+            Self::#variant(value) => ::core::result::Result::Ok(
+                #name::#variant(#private::Resolve::resolve(value, path)?)
+            ),
+        }
+    });
+
+    let visibility = &input.vis;
+
+    Ok(quote! {
+        /// The partial counterpart of a configuration enum, holding only what
+        /// the configuration documents actually said.
+        #[doc(hidden)]
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        #[derive(#private::Deserialize, #private::Serialize)]
+        #[serde(crate = "::statime_config::__private::serde")]
+        #[serde(rename_all = "kebab-case", tag = #tag)]
+        #visibility enum #partial {
+            #(#declarations,)*
+        }
+
+        impl #private::Configurable for #name {
+            type Partial = #partial;
+            type Node = #private::Section<#partial>;
+        }
+
+        impl #private::Attributable for #partial {
+            fn attribute(&mut self, origin: #private::OriginId) {
+                match self {
+                    #(#attributions)*
+                }
+            }
+        }
+
+        impl #private::ApplyDefaults for #partial {
+            fn apply_defaults(&mut self) {
+                match self {
+                    #(#defaults)*
+                }
+            }
+        }
+
+        impl #private::Resolve for #partial {
+            type Resolved = #name;
+
+            fn resolve(
+                self,
+                path: &mut #private::ConfigPath,
+            ) -> ::core::result::Result<#name, #private::ConfigError> {
+                match self {
+                    #(#resolutions)*
+                }
+            }
+        }
+    })
+}
+
+/// The key that says which variant a document means.
+fn enum_tag(input: &DeriveInput) -> syn::Result<String> {
+    let mut tag = None;
+
+    for attribute in &input.attrs {
+        if !attribute.path().is_ident("config") {
+            continue;
+        }
+
+        attribute.parse_nested_meta(|meta| {
+            if meta.path.is_ident("tag") {
+                tag = Some(meta.value()?.parse::<LitStr>()?.value());
+                return Ok(());
+            }
+
+            Err(meta.error("unrecognised configuration attribute"))
+        })?;
+    }
+
+    tag.ok_or_else(|| {
+        syn::Error::new(
             input.span(),
-            "only structs can be configurable",
-        ));
+            "a configurable enum needs `#[config(tag = \"...\")]`, naming the key \
+             a document uses to say which variant it means",
+        )
+    })
+}
+
+/// A variant, and the configuration struct it holds.
+fn collect_variant(variant: &Variant) -> syn::Result<(Ident, Type)> {
+    let unnamed = match &variant.fields {
+        Fields::Unnamed(unnamed) if unnamed.unnamed.len() == 1 => &unnamed.unnamed[0],
+        _ => {
+            return Err(syn::Error::new(
+                variant.span(),
+                "a configurable enum variant holds exactly one configuration struct; \
+                 an enum that is itself a single value wants `ConfigurableAtomic` instead",
+            ));
+        }
     };
+
+    Ok((variant.ident.clone(), unnamed.ty.clone()))
+}
+
+fn collect_fields(data: &DataStruct) -> syn::Result<Vec<Field>> {
     let Fields::Named(named) = &data.fields else {
         return Err(syn::Error::new(
             data.fields.span(),
