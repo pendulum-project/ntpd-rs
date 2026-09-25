@@ -81,7 +81,10 @@ mod tests {
         Config, ConfigError, LogLevel, ObservabilityConfig, PartialConfig,
         PartialObservabilityConfig, PartialServerSourceConfig, PartialSourceConfig,
         ServerSourceConfig, SourceConfig, UseSystemConfig,
-        tree::merge::{MergePolicy, Origin, ProvenanceTracker},
+        tree::{
+            merge::{MergePolicy, Origin, ProvenanceTracker},
+            setting::Setting,
+        },
     };
 
     #[test]

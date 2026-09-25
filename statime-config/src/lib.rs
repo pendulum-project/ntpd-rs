@@ -12,23 +12,23 @@ mod load;
 mod tree;
 
 pub use error::ConfigError;
-pub use load::{RootConfig, load};
+pub use load::{PartialTree, RootConfig};
+// the traits and the derives that implement them share their names, so that
+// one import brings both, as serde does
 pub use statime_config_derive::{Configurable, ConfigurableAtomic};
-pub use tree::{ConfigPath, Origin};
+// `Setting` and `Section` are what `Configurable::Node` resolves to, so they
+// are part of the interface whether or not anyone names them directly
+pub use tree::{ConfigPath, Configurable, ConfigurableAtomic, Origin, Section, Setting};
 
-/// Everything the derive macro's generated code reaches for. Not a stable
-/// interface: refer to these through the macro, not by hand.
+/// The machinery the derive macro's generated code reaches for, which is
+/// everything it needs that is not already public. Not a stable interface.
 #[doc(hidden)]
 pub mod __private {
     pub use serde::{self, Deserialize, Serialize};
 
-    pub use crate::{
-        ConfigError, RootConfig, UseSystemConfig,
-        tree::{
-            ApplyDefaults, Attributable, ConfigPath, Configurable, ConfigurableAtomic,
-            EffectivelyUnset, Merge, MergeContext, OriginId, Resolve, Section, Setting,
-            is_effectively_unset,
-        },
+    pub use crate::tree::{
+        ApplyDefaults, Attributable, EffectivelyUnset, Merge, MergeContext, OriginId, Resolve,
+        is_effectively_unset,
     };
 }
 
