@@ -1,4 +1,63 @@
 //! Configuration parsing
+//!
+//! This crate provides a configuration parsing library and associated derive
+//! macros for parsing configuration from multiple TOML files.
+//!
+//! As a user of this crate, you will typically define a set of structs, enums
+//! and 'atomic' values that represent individual configuration settings. To
+//! these you then apply the [`Configurable`] and [`ConfigurableAtomic`] derives.
+//!
+//! The root of the configuration tree is represented by the [`RootConfig`] type,
+//! which is a [`Configurable`] struct that holds the configuration for the entire
+//! application, but has an additional [`RootConfig::load`] method that loads
+//! the configuration from TOML files.
+//!
+//! ```no_run
+//! # use serde::{Deserialize, Serialize};
+//! use statime_config::{Configurable, ConfigurableAtomic, RootConfig, UseSystemConfig};
+//!
+//! /// The root configuration needs to be a [`Configurable`] struct with the
+//! /// `root` attribute, which is used to load the configuration from TOML files.
+//! /// It also needs to have a field that holds the UseSystemConfig value, identified
+//! /// by the `use_system_config` attribute.
+//! #[derive(Debug, Clone, PartialEq, Eq, Configurable)]
+//! #[config(root)]
+//! pub struct Config {
+//!     /// Whether to use the system configuration files, note the default
+//!     /// attribute calls Default::default()
+//!     #[config(use_system_config, default)]
+//!     pub use_system_config: UseSystemConfig,
+//!
+//!     /// This section has no default value, if any value within it is not
+//!     /// specified and has no default, that will be an error.
+//!     pub observability: ObservabilityConfig,
+//! }
+//!
+//! /// Only the Configurable derive is needed here, as this is not the root struct.
+//! #[derive(Debug, Clone, PartialEq, Eq, Configurable)]
+//! pub struct ObservabilityConfig {
+//!     /// Example of using a custom enum as an atomic value, note how the
+//!     /// default can also be any expression that evaluates to the type of
+//!     /// the field.
+//!     #[config(default = LogLevel::Info)]
+//!     pub level: LogLevel,
+//! }
+//!
+//! /// Example of a custom enum that is used as an atomic value, by deriving
+//! /// the ConfigurableAtomic trait.
+//! #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ConfigurableAtomic)]
+//! #[serde(rename_all = "kebab-case")]
+//! pub enum LogLevel {
+//!     Debug,
+//!     Info,
+//!     Warn,
+//!     Error,
+//! }
+//!
+//! fn main() {
+//!     let config = Config::load("/path/to/config.toml").unwrap();
+//! }
+//! ```
 
 use std::path::PathBuf;
 
