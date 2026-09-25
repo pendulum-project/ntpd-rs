@@ -207,15 +207,16 @@ openssl = "0.10.79"
 # development
 serde_test = { version = "1.0.176" }
 
-# Internal crates with their own version numbers
-clock-steering = { version = "0.2.1", path = "./clock-steering" }
-timestamped-socket = { version = "0.3.0", path = "./timestamped-socket" }
+# Internal crates with their own version numbers. Version MUST be the first element in the
+# dependency, and path must be the second.
+clock-steering = { version = "0.3.0", path = "./clock-steering" }
+timestamped-socket = { version = "0.4.0", path = "./timestamped-socket" }
+statime-base = { version = "0.1.0", path = "./statime-base", default-features = false }
+statime-algo = { version = "0.1.0", path = "./statime-algo", default-features = false }
+statime-csptp = { version = "0.1.0", path = "./statime-csptp" }
+statime-netptp = { version = "0.1.0", path = "./statime-netptp" }
+statime-wire = { version = "0.1.0", path = "./statime-wire", default-features = false }
 
 # our own crates used as dependencies, same version as the workspace version
 # NOTE: keep this part at the bottom of the file, do not change this line
 ntp-proto = { version = "2.0.0-alpha.20260715", path = "./ntp-proto", default-features = false, features = ["__internal-api"] }
-statime-base = { version = "2.0.0-alpha.20260715", path = "./statime-base", default-features = false }
-statime-algo = { version = "2.0.0-alpha.20260715", path = "./statime-algo", default-features = false }
-statime-csptp = { version = "2.0.0-alpha.20260715", path = "./statime-csptp" }
-statime-netptp = { version = "2.0.0-alpha.20260715", path = "./statime-netptp" }
-statime-wire = { version = "2.0.0-alpha.20260715", path = "./statime-wire", default-features = false }
