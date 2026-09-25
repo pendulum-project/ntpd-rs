@@ -16,6 +16,26 @@ pub fn derive_configurable(input: TokenStream) -> TokenStream {
     }
 }
 
+/// Mark a type as a configuration value the tree does not look inside.
+///
+/// Every traversal stops at it, so this is all a leaf type needs: enums,
+/// newtypes around a duration or an address, and anything else that is a single
+/// value as far as a configuration document is concerned.
+///
+/// ```ignore
+/// #[derive(ConfigurableAtomic)]
+/// pub enum LogLevel { Debug, Info, Warn, Error }
+/// ```
+#[proc_macro_derive(ConfigurableAtomic)]
+pub fn derive_configurable_atomic(input: TokenStream) -> TokenStream {
+    let name = parse_macro_input!(input as DeriveInput).ident;
+
+    quote! {
+        impl ::statime_config::__private::ConfigurableAtomic for #name {}
+    }
+    .into()
+}
+
 /// One field of the configuration struct, and what the traversals need to know
 /// about it.
 struct Field {
@@ -55,7 +75,7 @@ fn expand(input: DeriveInput) -> syn::Result<TokenStream2> {
     let defaults = fields.iter().map(|Field { name, default, .. }| {
         let supply = default
             .as_ref()
-            .map(|default| quote!(self.#name.default_to(#default);));
+            .map(|default| quote!(self.#name.default_to(|| #default);));
         quote! {
             #supply
             #private::ApplyDefaults::apply_defaults(&mut self.#name);

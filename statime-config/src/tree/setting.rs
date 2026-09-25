@@ -67,9 +67,11 @@ impl<T> Setting<T> {
 
     /// Set this setting to its built-in default if no document supplied a
     /// value.
-    pub fn default_to(&mut self, value: T) {
+    /// The default is only produced when it is needed, so a setting a document
+    /// supplied never pays for computing one it will not use.
+    pub fn default_to(&mut self, value: impl FnOnce() -> T) {
         if self.is_unset() {
-            *self = Self::value_from(value, OriginId::BUILT_IN_DEFAULT);
+            *self = Self::value_from(value(), OriginId::BUILT_IN_DEFAULT);
         }
     }
 

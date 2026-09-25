@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 // these are reachable outside the crate only through the hidden module the
 // derive macro's generated code uses, since `tree` itself is private
-pub(crate) use atomic::atomic_value;
+pub use atomic::ConfigurableAtomic;
 pub use configurable::Configurable;
 pub use defaults::ApplyDefaults;
 pub use empty::{EffectivelyUnset, is_effectively_unset};
@@ -66,7 +66,7 @@ impl Attributable for PartialConfig {
 
 impl ApplyDefaults for PartialConfig {
     fn apply_defaults(&mut self) {
-        self.sources.default_to(Vec::new());
+        self.sources.default_to(Vec::new);
         self.sources.apply_defaults();
         self.observability.apply_defaults();
     }
@@ -166,7 +166,7 @@ impl EffectivelyUnset for PartialServerSourceConfig {
 impl ApplyDefaults for PartialServerSourceConfig {
     fn apply_defaults(&mut self) {
         // url is required, so it has no default
-        self.ntp_version.default_to(4);
+        self.ntp_version.default_to(|| 4);
     }
 }
 
