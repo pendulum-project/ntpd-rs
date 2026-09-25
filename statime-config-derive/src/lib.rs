@@ -119,9 +119,9 @@ fn expand_struct(input: &DeriveInput, data: &DataStruct) -> syn::Result<TokenStr
         |Field { name, .. }| quote!(#private::EffectivelyUnset::is_effectively_unset(&self.#name)),
     );
 
-    let attributions = fields.iter().map(
-        |Field { name, .. }| quote!(#private::Attributable::attribute(&mut self.#name, origin);),
-    );
+    let attributions = fields.iter().map(|Field { name, .. }| {
+        quote!(::statime_config::PartialValue::attribute(&mut self.#name, origin);)
+    });
 
     let defaults = fields.iter().map(|Field { name, default, .. }| {
         let supply = default
@@ -129,21 +129,21 @@ fn expand_struct(input: &DeriveInput, data: &DataStruct) -> syn::Result<TokenStr
             .map(|default| quote!(self.#name.default_to(|| #default);));
         quote! {
             #supply
-            #private::ApplyDefaults::apply_defaults(&mut self.#name);
+            ::statime_config::PartialValue::apply_defaults(&mut self.#name);
         }
     });
 
     let merges = fields.iter().map(|Field { name, key, .. }| {
         quote! {
             context.at(#key, |context| {
-                #private::Merge::merge(&mut self.#name, incoming.#name, context)
+                ::statime_config::Merge::merge(&mut self.#name, incoming.#name, context)
             })?;
         }
     });
 
     let resolutions = fields.iter().map(|Field { name, key, .. }| {
         quote! {
-            #name: path.at(#key, |path| #private::Resolve::resolve(self.#name, path))?
+            #name: path.at(#key, |path| ::statime_config::PartialValue::resolve(self.#name, path))?
         }
     });
 
@@ -174,31 +174,16 @@ fn expand_struct(input: &DeriveInput, data: &DataStruct) -> syn::Result<TokenStr
             }
         }
 
-        impl #private::Attributable for #partial {
-            fn attribute(&mut self, origin: #private::OriginId) {
+        impl ::statime_config::PartialValue for #partial {
+            type Resolved = #name;
+
+            fn attribute(&mut self, origin: ::statime_config::OriginId) {
                 #(#attributions)*
             }
-        }
 
-        impl #private::ApplyDefaults for #partial {
             fn apply_defaults(&mut self) {
                 #(#defaults)*
             }
-        }
-
-        impl #private::Merge for #partial {
-            fn merge(
-                &mut self,
-                incoming: Self,
-                context: &mut #private::MergeContext<'_>,
-            ) -> ::core::result::Result<(), ::statime_config::ConfigError> {
-                #(#merges)*
-                ::core::result::Result::Ok(())
-            }
-        }
-
-        impl #private::Resolve for #partial {
-            type Resolved = #name;
 
             fn resolve(
                 self,
@@ -207,6 +192,17 @@ fn expand_struct(input: &DeriveInput, data: &DataStruct) -> syn::Result<TokenStr
                 ::core::result::Result::Ok(#name {
                     #(#resolutions,)*
                 })
+            }
+        }
+
+        impl ::statime_config::Merge for #partial {
+            fn merge(
+                &mut self,
+                incoming: Self,
+                context: &mut ::statime_config::MergeContext<'_>,
+            ) -> ::core::result::Result<(), ::statime_config::ConfigError> {
+                #(#merges)*
+                ::core::result::Result::Ok(())
             }
         }
     })
@@ -240,17 +236,17 @@ fn expand_enum(input: &DeriveInput, data: &DataEnum) -> syn::Result<TokenStream2
     });
 
     let attributions = variants.iter().map(|EnumVariant { name, .. }| {
-        quote!(Self::#name(value) => #private::Attributable::attribute(value, origin),)
+        quote!(Self::#name(value) => ::statime_config::PartialValue::attribute(value, origin),)
     });
 
     let defaults = variants.iter().map(|EnumVariant { name, .. }| {
-        quote!(Self::#name(value) => #private::ApplyDefaults::apply_defaults(value),)
+        quote!(Self::#name(value) => ::statime_config::PartialValue::apply_defaults(value),)
     });
 
     let resolutions = variants.iter().map(|EnumVariant { name: variant, .. }| {
         quote! {
             Self::#variant(value) => ::core::result::Result::Ok(
-                #name::#variant(#private::Resolve::resolve(value, path)?)
+                #name::#variant(::statime_config::PartialValue::resolve(value, path)?)
             ),
         }
     });
@@ -274,24 +270,20 @@ fn expand_enum(input: &DeriveInput, data: &DataEnum) -> syn::Result<TokenStream2
             type Node = ::statime_config::Section<#partial>;
         }
 
-        impl #private::Attributable for #partial {
-            fn attribute(&mut self, origin: #private::OriginId) {
+        impl ::statime_config::PartialValue for #partial {
+            type Resolved = #name;
+
+            fn attribute(&mut self, origin: ::statime_config::OriginId) {
                 match self {
                     #(#attributions)*
                 }
             }
-        }
 
-        impl #private::ApplyDefaults for #partial {
             fn apply_defaults(&mut self) {
                 match self {
                     #(#defaults)*
                 }
             }
-        }
-
-        impl #private::Resolve for #partial {
-            type Resolved = #name;
 
             fn resolve(
                 self,

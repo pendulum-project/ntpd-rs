@@ -3,14 +3,14 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::{
     ConfigError,
     tree::{
-        defaults::ApplyDefaults,
         empty::EffectivelyUnset,
-        merge::{Attributable, Merge, MergeContext, OriginId},
+        merge::{Merge, MergeContext, OriginId},
+        partial_value::PartialValue,
         path::ConfigPath,
-        resolve::Resolve,
     },
 };
 
+/// Sections are merge-able partial values within a configuration tree.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Section<T> {
     #[default]
@@ -66,24 +66,22 @@ where
     }
 }
 
-/// A section records no origin of its own, and visits its children.
-impl<T> Attributable for Section<T>
+impl<T> PartialValue for Section<T>
 where
-    T: Attributable,
+    T: PartialValue + Default,
 {
+    type Resolved = T::Resolved;
+
+    /// A section records no origin of its own, and visits its children.
     fn attribute(&mut self, origin: OriginId) {
         if let Section::Set(value) = self {
             value.attribute(origin);
         }
     }
-}
 
-/// An absent section still has to be visited: a document that never mentions
-/// a section should still get the defaults of everything inside it.
-impl<T> ApplyDefaults for Section<T>
-where
-    T: ApplyDefaults + Default,
-{
+    /// An absent section still has to be visited: a document that never
+    /// mentions a section should still get the defaults of everything inside
+    /// it.
     fn apply_defaults(&mut self) {
         if self.is_unset() {
             *self = Section::Set(T::default());
@@ -93,15 +91,10 @@ where
             value.apply_defaults();
         }
     }
-}
 
-/// A section resolves to whatever its contents resolve to.
-impl<T> Resolve for Section<T>
-where
-    T: Resolve + Default,
-{
-    type Resolved = T::Resolved;
-
+    /// A section resolves to whatever its contents resolve to. An unset one
+    /// only reaches this point when resolving without defaulting first, and
+    /// resolving the empty struct still reports any required value it misses.
     fn resolve(self, path: &mut ConfigPath) -> Result<Self::Resolved, ConfigError> {
         match self {
             Section::Set(value) => value.resolve(path),

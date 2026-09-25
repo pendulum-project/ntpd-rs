@@ -3,10 +3,9 @@ use std::path::PathBuf;
 use crate::{
     ConfigError,
     tree::{
-        defaults::ApplyDefaults,
-        merge::{Attributable, Merge, MergeContext, MergePolicy, Origin, ProvenanceTracker},
+        merge::{Merge, MergeContext, MergePolicy, Origin, ProvenanceTracker},
+        partial_value::PartialValue,
         path::ConfigPath,
-        resolve::Resolve,
     },
 };
 
@@ -19,7 +18,7 @@ pub struct ConfigMerger<T> {
 
 impl<T> ConfigMerger<T>
 where
-    T: Default + Attributable + Merge + ApplyDefaults + Resolve,
+    T: Default + Merge + PartialValue,
 {
     pub fn new() -> Self {
         Self {
@@ -74,7 +73,7 @@ where
 
 impl<T> Default for ConfigMerger<T>
 where
-    T: Default + Attributable + Merge + ApplyDefaults + Resolve,
+    T: Default + Merge + PartialValue,
 {
     fn default() -> Self {
         Self::new()

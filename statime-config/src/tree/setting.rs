@@ -3,11 +3,10 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::{
     ConfigError,
     tree::{
-        defaults::ApplyDefaults,
         empty::EffectivelyUnset,
-        merge::{Attributable, Merge, MergeContext, MergePolicy, OriginId},
+        merge::{Merge, MergeContext, MergePolicy, OriginId},
+        partial_value::PartialValue,
         path::ConfigPath,
-        resolve::Resolve,
     },
 };
 
@@ -117,11 +116,13 @@ impl<T> EffectivelyUnset for Setting<T> {
     }
 }
 
-/// A setting records its own origin, and visits its nested values.
-impl<T> Attributable for Setting<T>
+impl<T> PartialValue for Setting<T>
 where
-    T: Attributable,
+    T: PartialValue,
 {
+    type Resolved = T::Resolved;
+
+    /// A setting records its own origin, and visits its nested values.
     fn attribute(&mut self, origin: OriginId) {
         if let Self::Set {
             value,
@@ -132,28 +133,19 @@ where
             value.attribute(origin);
         }
     }
-}
 
-/// A setting holds no default of its own; it only lets the defaults of any
-/// nested values be applied.
-impl<T> ApplyDefaults for Setting<T>
-where
-    T: ApplyDefaults,
-{
+    /// A setting holds no default of its own, since the field it belongs to
+    /// supplies that; it only lets nested values be defaulted. Note that if
+    /// this setting itself should have been defaulted, that should have
+    /// happened at the parent level.
     fn apply_defaults(&mut self) {
         if let Self::Set { value, .. } = self {
             value.apply_defaults();
         }
     }
-}
 
-/// A setting resolves to whatever its value is.
-impl<T> Resolve for Setting<T>
-where
-    T: Resolve,
-{
-    type Resolved = T::Resolved;
-
+    /// A setting resolves to whatever its value is, and is missing if no
+    /// document and no default supplied one.
     fn resolve(self, path: &mut ConfigPath) -> Result<Self::Resolved, ConfigError> {
         self.require(path)?.resolve(path)
     }

@@ -5,21 +5,15 @@ use serde::de::DeserializeOwned;
 use crate::{
     ConfigError, UseSystemConfig,
     load::files::{Files, Filesystem},
-    tree::{ApplyDefaults, Attributable, ConfigMerger, Configurable, Merge, Resolve},
+    tree::{ConfigMerger, Configurable, Merge, PartialValue},
 };
 
 mod files;
 
 /// Everything the loader needs of a partial configuration tree
-pub trait PartialTree:
-    DeserializeOwned + Default + Attributable + Merge + ApplyDefaults + Resolve
-{
-}
+pub trait PartialTree: DeserializeOwned + Default + Merge + PartialValue {}
 
-impl<T> PartialTree for T where
-    T: DeserializeOwned + Default + Attributable + Merge + ApplyDefaults + Resolve
-{
-}
+impl<T> PartialTree for T where T: DeserializeOwned + Default + Merge + PartialValue {}
 
 /// A configuration that a document can be loaded into.
 ///
