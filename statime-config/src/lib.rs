@@ -10,10 +10,8 @@ mod load;
 mod tree;
 
 pub use error::ConfigError;
-pub use statime_config_derive::Configurable;
+pub use statime_config_derive::{Configurable, ConfigurableAtomic};
 pub use tree::{ConfigPath, Origin};
-
-use crate::tree::atomic_value;
 
 /// Everything the derive macro's generated code reaches for. Not a stable
 /// interface: refer to these through the macro, not by hand.
@@ -24,8 +22,9 @@ pub mod __private {
     pub use crate::{
         ConfigError,
         tree::{
-            ApplyDefaults, Attributable, ConfigPath, Configurable, EffectivelyUnset, Merge,
-            MergeContext, OriginId, Resolve, Section, Setting, is_effectively_unset,
+            ApplyDefaults, Attributable, ConfigPath, Configurable, ConfigurableAtomic,
+            EffectivelyUnset, Merge, MergeContext, OriginId, Resolve, Section, Setting,
+            is_effectively_unset,
         },
     };
 }
@@ -55,7 +54,7 @@ pub struct ObservabilityConfig {
     pub log_level: LogLevel,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ConfigurableAtomic)]
 #[serde(rename_all = "kebab-case")]
 pub enum LogLevel {
     Debug,
@@ -63,5 +62,3 @@ pub enum LogLevel {
     Warn,
     Error,
 }
-
-atomic_value!(LogLevel);

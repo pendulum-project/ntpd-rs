@@ -1,42 +1,72 @@
-//! Registration of the leaf types of the tree.
+//! The leaf types of the tree.
 
 use std::path::PathBuf;
 
-/// Implements the tree traversals for types that have no nested values to
-/// visit.
-macro_rules! atomic_value {
-    ($($type:ty),+ $(,)?) => {$(
-        impl $crate::__private::Attributable for $type {
-            fn attribute(&mut self, _origin: $crate::__private::OriginId) {}
-        }
+use crate::{
+    ConfigError,
+    tree::{
+        configurable::Configurable, defaults::ApplyDefaults, merge::Attributable, merge::OriginId,
+        path::ConfigPath, resolve::Resolve, setting::Setting,
+    },
+};
 
-        impl $crate::__private::ApplyDefaults for $type {
-            fn apply_defaults(&mut self) {}
-        }
+/// Marks a type as a value the tree does not look inside.
+///
+/// Every traversal stops at such a type, so implementing this is all it takes
+/// to make a type usable as a configuration value. The traversals themselves
+/// follow from it, rather than being written out once per trait.
+pub trait ConfigurableAtomic {}
 
-        impl $crate::__private::Configurable for $type {
-            type Partial = Self;
-            type Node = $crate::__private::Setting<Self>;
-        }
-
-        impl $crate::__private::Resolve for $type {
-            type Resolved = Self;
-
-            fn resolve(
-                self,
-                _path: &mut $crate::__private::ConfigPath,
-            ) -> Result<Self::Resolved, $crate::ConfigError> {
-                Ok(self)
-            }
-        }
-    )+};
+/// An atomic value is its own partial representation, and a field holding one
+/// is a setting.
+impl<T> Configurable for T
+where
+    T: ConfigurableAtomic,
+{
+    type Partial = Self;
+    type Node = Setting<Self>;
 }
-pub(crate) use atomic_value;
 
-atomic_value!(
-    bool, u8, i8, u16, i16, u32, i32, u64, i64, f64, String, PathBuf
-);
+/// There is nothing inside to attribute; the setting holding it records the
+/// origin.
+impl<T> Attributable for T
+where
+    T: ConfigurableAtomic,
+{
+    fn attribute(&mut self, _origin: OriginId) {}
+}
 
-// `Option<T>` is an ordinary leaf value: a field is optional because its
-// built-in default is `None`, not because of the type it holds.
-atomic_value!(Option<bool>);
+/// There is nothing inside to default; the field supplies the default of the
+/// setting holding it.
+impl<T> ApplyDefaults for T
+where
+    T: ConfigurableAtomic,
+{
+    fn apply_defaults(&mut self) {}
+}
+
+/// An atomic value resolves to itself, which is where the recursion stops.
+impl<T> Resolve for T
+where
+    T: ConfigurableAtomic,
+{
+    type Resolved = Self;
+
+    fn resolve(self, _path: &mut ConfigPath) -> Result<Self::Resolved, ConfigError> {
+        Ok(self)
+    }
+}
+
+impl ConfigurableAtomic for bool {}
+impl ConfigurableAtomic for u8 {}
+impl ConfigurableAtomic for i8 {}
+impl ConfigurableAtomic for u16 {}
+impl ConfigurableAtomic for i16 {}
+impl ConfigurableAtomic for u32 {}
+impl ConfigurableAtomic for i32 {}
+impl ConfigurableAtomic for u64 {}
+impl ConfigurableAtomic for i64 {}
+impl ConfigurableAtomic for f64 {}
+impl ConfigurableAtomic for String {}
+impl ConfigurableAtomic for PathBuf {}
+impl<T> ConfigurableAtomic for Option<T> where T: ConfigurableAtomic {}
