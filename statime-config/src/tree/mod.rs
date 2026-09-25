@@ -9,8 +9,6 @@ mod resolve;
 mod section;
 mod setting;
 
-use serde::{Deserialize, Serialize};
-
 // these are reachable outside the crate only through the hidden module the
 // derive macro's generated code uses, since `tree` itself is private
 pub use atomic::ConfigurableAtomic;
@@ -21,102 +19,18 @@ pub use merge::{Attributable, Merge, MergeContext};
 pub use resolve::Resolve;
 pub use section::Section;
 
-use crate::{ServerSourceConfig, SourceConfig, error::ConfigError};
-
 pub(crate) use config_merger::ConfigMerger;
 pub use merge::{Origin, OriginId};
 pub use path::ConfigPath;
 pub use setting::Setting;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case", tag = "mode")]
-pub enum PartialSourceConfig {
-    Server(PartialServerSourceConfig),
-}
-
-impl Configurable for SourceConfig {
-    type Partial = PartialSourceConfig;
-    type Node = Section<PartialSourceConfig>;
-}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(default, rename_all = "kebab-case", deny_unknown_fields)]
-pub struct PartialServerSourceConfig {
-    #[serde(skip_serializing_if = "is_effectively_unset")]
-    pub url: <String as Configurable>::Node,
-
-    #[serde(skip_serializing_if = "is_effectively_unset")]
-    pub ntp_version: <u8 as Configurable>::Node,
-}
-
-impl Configurable for ServerSourceConfig {
-    type Partial = PartialServerSourceConfig;
-    type Node = Section<PartialServerSourceConfig>;
-}
-
-impl ApplyDefaults for PartialSourceConfig {
-    fn apply_defaults(&mut self) {
-        match self {
-            Self::Server(config) => config.apply_defaults(),
-        }
-    }
-}
-
-impl Attributable for PartialSourceConfig {
-    fn attribute(&mut self, origin: OriginId) {
-        match self {
-            Self::Server(config) => config.attribute(origin),
-        }
-    }
-}
-
-impl Resolve for PartialSourceConfig {
-    type Resolved = SourceConfig;
-
-    fn resolve(self, path: &mut ConfigPath) -> Result<SourceConfig, ConfigError> {
-        match self {
-            Self::Server(config) => Ok(SourceConfig::Server(config.resolve(path)?)),
-        }
-    }
-}
-
-impl Resolve for PartialServerSourceConfig {
-    type Resolved = ServerSourceConfig;
-
-    fn resolve(self, path: &mut ConfigPath) -> Result<ServerSourceConfig, ConfigError> {
-        Ok(ServerSourceConfig {
-            url: path.at("url", |path| self.url.resolve(path))?,
-            ntp_version: path.at("ntp-version", |path| self.ntp_version.resolve(path))?,
-        })
-    }
-}
-
-impl EffectivelyUnset for PartialServerSourceConfig {
-    fn is_effectively_unset(&self) -> bool {
-        self.url.is_effectively_unset() && self.ntp_version.is_effectively_unset()
-    }
-}
-
-impl ApplyDefaults for PartialServerSourceConfig {
-    fn apply_defaults(&mut self) {
-        // url is required, so it has no default
-        self.ntp_version.default_to(|| 4);
-    }
-}
-
-impl Attributable for PartialServerSourceConfig {
-    fn attribute(&mut self, origin: OriginId) {
-        self.url.attribute(origin);
-        self.ntp_version.attribute(origin);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
-        Config, LogLevel, ObservabilityConfig, PartialConfig, PartialObservabilityConfig,
-        UseSystemConfig,
+        Config, ConfigError, LogLevel, ObservabilityConfig, PartialConfig,
+        PartialObservabilityConfig, PartialServerSourceConfig, PartialSourceConfig,
+        ServerSourceConfig, SourceConfig, UseSystemConfig,
         tree::merge::{MergePolicy, Origin, ProvenanceTracker},
     };
 
