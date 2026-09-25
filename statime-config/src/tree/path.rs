@@ -1,25 +1,12 @@
 //! Paths into the configuration tree, used to point at a setting in
 //! diagnostics.
 
-/// A segment of a path in the tree.
+/// A segment of a path in the tree. Field names are static schema data, while
+/// vector indexes are only known while walking a document.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PathSegment {
+enum PathSegment {
     Field(&'static str),
     Index(usize),
-}
-
-/// Converts a `&'static str` to a [`PathSegment::Field`].
-impl From<&'static str> for PathSegment {
-    fn from(value: &'static str) -> Self {
-        PathSegment::Field(value)
-    }
-}
-
-/// Converts a `usize` to a [`PathSegment::Index`].
-impl From<usize> for PathSegment {
-    fn from(value: usize) -> Self {
-        PathSegment::Index(value)
-    }
 }
 
 /// A path in the tree, such as `observability.log-level` or
@@ -28,23 +15,31 @@ impl From<usize> for PathSegment {
 pub struct ConfigPath(Vec<PathSegment>);
 
 impl ConfigPath {
-    pub fn root() -> Self {
+    pub(crate) fn root() -> Self {
         Self(vec![])
     }
 
-    /// Run `f` with `segment` appended to this path.
-    pub fn at<R>(&mut self, segment: impl Into<PathSegment>, f: impl FnOnce(&mut Self) -> R) -> R {
-        self.push(segment);
+    /// Run `f` with `field` appended to this path.
+    pub fn at<R>(&mut self, field: &'static str, f: impl FnOnce(&mut Self) -> R) -> R {
+        self.push_field(field);
         let result = f(self);
         self.pop();
         result
     }
 
-    pub fn push(&mut self, segment: impl Into<PathSegment>) {
-        self.0.push(segment.into());
+    /// Run `f` with an element of a vector appended to this path.
+    pub(crate) fn at_index<R>(&mut self, index: usize, f: impl FnOnce(&mut Self) -> R) -> R {
+        self.0.push(PathSegment::Index(index));
+        let result = f(self);
+        self.pop();
+        result
     }
 
-    pub fn pop(&mut self) {
+    pub(crate) fn push_field(&mut self, field: &'static str) {
+        self.0.push(PathSegment::Field(field));
+    }
+
+    pub(crate) fn pop(&mut self) {
         self.0.pop();
     }
 }

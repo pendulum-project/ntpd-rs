@@ -18,7 +18,10 @@ pub use load::{PartialTree, RootConfig};
 pub use statime_config_derive::{Configurable, ConfigurableAtomic};
 // `Setting` and `Section` are what `Configurable::Node` resolves to, so they
 // are part of the interface whether or not anyone names them directly
-pub use tree::{ConfigPath, Configurable, ConfigurableAtomic, Origin, Section, Setting};
+pub use tree::{
+    ConfigPath, Configurable, ConfigurableAtomic, Merge, MergeContext, Origin, OriginId,
+    PartialValue, Section, Setting,
+};
 
 /// The machinery the derive macro's generated code reaches for, which is
 /// everything it needs that is not already public. Not a stable interface.
@@ -26,10 +29,7 @@ pub use tree::{ConfigPath, Configurable, ConfigurableAtomic, Origin, Section, Se
 pub mod __private {
     pub use serde::{self, Deserialize, Serialize};
 
-    pub use crate::tree::{
-        ApplyDefaults, Attributable, EffectivelyUnset, Merge, MergeContext, OriginId, Resolve,
-        is_effectively_unset,
-    };
+    pub use crate::tree::{EffectivelyUnset, is_effectively_unset};
 }
 
 /// The configuration of a statime instance.

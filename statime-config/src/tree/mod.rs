@@ -1,28 +1,23 @@
 mod atomic;
 mod config_merger;
 mod configurable;
-mod defaults;
 mod empty;
 mod merge;
+mod partial_value;
 mod path;
-mod resolve;
 mod section;
 mod setting;
 
-// these are reachable outside the crate only through the hidden module the
-// derive macro's generated code uses, since `tree` itself is private
 pub use atomic::ConfigurableAtomic;
 pub use configurable::Configurable;
-pub use defaults::ApplyDefaults;
 pub use empty::{EffectivelyUnset, is_effectively_unset};
-pub use merge::{Attributable, Merge, MergeContext};
-pub use resolve::Resolve;
+pub use merge::{Merge, MergeContext, Origin, OriginId};
+pub use partial_value::PartialValue;
+pub use path::ConfigPath;
 pub use section::Section;
+pub use setting::Setting;
 
 pub(crate) use config_merger::ConfigMerger;
-pub use merge::{Origin, OriginId};
-pub use path::ConfigPath;
-pub use setting::Setting;
 
 #[cfg(test)]
 mod renaming {
