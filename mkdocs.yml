@@ -23,6 +23,7 @@ theme:
 docs_dir: docs
 site_name: ntpd-rs documentation
 site_dir: target/docs/site
+site_url: 'https://docs.ntpd-rs.pendulum-project.org/'
 exclude_docs: |
   /precompiled  # Precompiled assets
   /includes     # Only included indirectly
@@ -42,6 +43,17 @@ markdown_extensions:
   - pymdownx.inlinehilite
   - pymdownx.details
   - pymdownx.superfences
+plugins:
+  - mike:
+      alias_type: symlink
+      deploy_prefix: ''
+      canonical_version: 'latest'
+      version_selector: true
+      css_dir: css
+      javascript_dir: js
+extra:
+  version:
+    provider: mike
 nav:
   - Home: index.md
   - Guide:
