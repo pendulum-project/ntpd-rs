@@ -14,30 +14,64 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout sources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          persist-credentials: false
+          persist-credentials: true
 
-      - name: Build site
-        run: utils/mkdocs.sh --no-bind-port build
+      - name: Setup git for modifying docs
+        run: |
+          git fetch origin gh-pages --depth=1
+          git config user.name ci-bot
+          git config user.email no-reply@trifectatech.org
 
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
+      - name: Install python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 #v7.0.0
         with:
-          path: target/docs/site
+          python-version: '3.14'
+
+      - name: Install docs platform
+        run: python -m pip install --upgrade mike mkdocs-material
+
+      - name: Generate docs
+        run: mike deploy main
+
+      - name: Generate patch for docs
+        run: |
+          git checkout gh-pages
+          git format-patch --stdout origin/gh-pages > docs.patch
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: docs-patch
+          path: docs.patch
+          if-no-files-found: error
 
   deploy:
     permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      contents: write
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346
+      - name: Checkout sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: gh-pages
+          persist-credentials: true
+      
+      - name: Download artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: docs-patch
+
+      - name: Apply patch
+        run: |
+          git config user.name ci-bot
+          git config user.email no-reply@trifectatech.org
+          test ! -s doc.patch || git am docs.patch
+          git push origin gh-pages
+
