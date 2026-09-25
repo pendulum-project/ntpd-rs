@@ -94,6 +94,12 @@ jobs:
             runs_on: ubuntu-latest
             features: "--features all-portable"
             target: "x86_64-unknown-linux-gnu"
+
+          # Stable on x86_64 Linux gnu/musl with seccomp filtering
+          - rust: stable
+            runs_on: ubuntu-latest
+            features: "--all-features"
+            target: "x86_64-unknown-linux-gnu"
     steps:
       - name: Checkout sources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
