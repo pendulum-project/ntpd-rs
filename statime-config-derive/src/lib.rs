@@ -47,8 +47,12 @@ pub fn derive_configurable_atomic(input: TokenStream) -> TokenStream {
 /// about it.
 struct Field {
     name: Ident,
-    /// The name this field has in a configuration document.
+    /// The name this field has in a configuration document. The same string
+    /// reaches serde and the paths in diagnostics, so the two cannot disagree
+    /// about what a document is supposed to say.
     key: String,
+    /// Set when the key was chosen rather than derived from the field name.
+    renamed: bool,
     ty: Type,
     default: Option<Expr>,
 }
@@ -77,8 +81,18 @@ fn expand_struct(input: &DeriveInput, data: &DataStruct) -> syn::Result<TokenStr
     let fields = collect_fields(data)?;
 
     let declarations = fields.iter().map(|field| {
-        let Field { name, ty, .. } = field;
+        let Field {
+            name,
+            key,
+            renamed,
+            ty,
+            ..
+        } = field;
+        // otherwise the container's `rename_all` already produces this key
+        let rename = renamed.then(|| quote!(#[serde(rename = #key)]));
+
         quote! {
+            #rename
             #[serde(skip_serializing_if = "::statime_config::__private::is_effectively_unset")]
             pub #name: <#ty as #private::Configurable>::Node
         }
@@ -196,19 +210,25 @@ fn expand_enum(input: &DeriveInput, data: &DataEnum) -> syn::Result<TokenStream2
         .map(collect_variant)
         .collect::<syn::Result<Vec<_>>>()?;
 
-    let declarations = variants
-        .iter()
-        .map(|(variant, ty)| quote!(#variant(<#ty as #private::Configurable>::Partial)));
+    let declarations = variants.iter().map(|EnumVariant { name, ty, rename }| {
+        // otherwise the container's `rename_all` already names this variant
+        let rename = rename.as_ref().map(|key| quote!(#[serde(rename = #key)]));
 
-    let attributions = variants.iter().map(|(variant, _)| {
-        quote!(Self::#variant(value) => #private::Attributable::attribute(value, origin),)
+        quote! {
+            #rename
+            #name(<#ty as #private::Configurable>::Partial)
+        }
     });
 
-    let defaults = variants.iter().map(|(variant, _)| {
-        quote!(Self::#variant(value) => #private::ApplyDefaults::apply_defaults(value),)
+    let attributions = variants.iter().map(|EnumVariant { name, .. }| {
+        quote!(Self::#name(value) => #private::Attributable::attribute(value, origin),)
     });
 
-    let resolutions = variants.iter().map(|(variant, _)| {
+    let defaults = variants.iter().map(|EnumVariant { name, .. }| {
+        quote!(Self::#name(value) => #private::ApplyDefaults::apply_defaults(value),)
+    });
+
+    let resolutions = variants.iter().map(|EnumVariant { name: variant, .. }| {
         quote! {
             Self::#variant(value) => ::core::result::Result::Ok(
                 #name::#variant(#private::Resolve::resolve(value, path)?)
@@ -294,8 +314,15 @@ fn enum_tag(input: &DeriveInput) -> syn::Result<String> {
     })
 }
 
-/// A variant, and the configuration struct it holds.
-fn collect_variant(variant: &Variant) -> syn::Result<(Ident, Type)> {
+/// One variant of the configuration enum, and the configuration struct it
+/// holds.
+struct EnumVariant {
+    name: Ident,
+    ty: Type,
+    rename: Option<String>,
+}
+
+fn collect_variant(variant: &Variant) -> syn::Result<EnumVariant> {
     let unnamed = match &variant.fields {
         Fields::Unnamed(unnamed) if unnamed.unnamed.len() == 1 => &unnamed.unnamed[0],
         _ => {
@@ -307,7 +334,11 @@ fn collect_variant(variant: &Variant) -> syn::Result<(Ident, Type)> {
         }
     };
 
-    Ok((variant.ident.clone(), unnamed.ty.clone()))
+    Ok(EnumVariant {
+        name: variant.ident.clone(),
+        ty: unnamed.ty.clone(),
+        rename: variant_rename(variant)?,
+    })
 }
 
 fn collect_fields(data: &DataStruct) -> syn::Result<Vec<Field>> {
@@ -323,20 +354,28 @@ fn collect_fields(data: &DataStruct) -> syn::Result<Vec<Field>> {
         .iter()
         .map(|field| {
             let name = field.ident.clone().expect("named fields have a name");
+            let FieldConfig { default, rename } = field_config(field)?;
 
             Ok(Field {
-                key: name.to_string().replace('_', "-"),
+                renamed: rename.is_some(),
+                key: rename.unwrap_or_else(|| name.to_string().replace('_', "-")),
                 name,
                 ty: field.ty.clone(),
-                default: field_default(field)?,
+                default,
             })
         })
         .collect()
 }
 
-/// The built-in default a field names, if it names one.
-fn field_default(field: &syn::Field) -> syn::Result<Option<Expr>> {
-    let mut default = None;
+/// What the `#[config(...)]` attributes on a field say.
+#[derive(Default)]
+struct FieldConfig {
+    default: Option<Expr>,
+    rename: Option<String>,
+}
+
+fn field_config(field: &syn::Field) -> syn::Result<FieldConfig> {
+    let mut config = FieldConfig::default();
 
     for attribute in &field.attrs {
         if !attribute.path().is_ident("config") {
@@ -346,7 +385,7 @@ fn field_default(field: &syn::Field) -> syn::Result<Option<Expr>> {
         attribute.parse_nested_meta(|meta| {
             if meta.path.is_ident("default") {
                 // a bare `default` means the type's own `Default`
-                default = Some(if meta.input.peek(Token![=]) {
+                config.default = Some(if meta.input.peek(Token![=]) {
                     meta.value()?.parse()?
                 } else {
                     parse_quote!(::core::default::Default::default())
@@ -354,9 +393,37 @@ fn field_default(field: &syn::Field) -> syn::Result<Option<Expr>> {
                 return Ok(());
             }
 
+            if meta.path.is_ident("rename") {
+                config.rename = Some(meta.value()?.parse::<LitStr>()?.value());
+                return Ok(());
+            }
+
             Err(meta.error("unrecognised configuration attribute"))
         })?;
     }
 
-    Ok(default)
+    Ok(config)
+}
+
+/// The name a variant is known by in a document, when it is not the one the
+/// container's `rename_all` would produce.
+fn variant_rename(variant: &Variant) -> syn::Result<Option<String>> {
+    let mut rename = None;
+
+    for attribute in &variant.attrs {
+        if !attribute.path().is_ident("config") {
+            continue;
+        }
+
+        attribute.parse_nested_meta(|meta| {
+            if meta.path.is_ident("rename") {
+                rename = Some(meta.value()?.parse::<LitStr>()?.value());
+                return Ok(());
+            }
+
+            Err(meta.error("unrecognised configuration attribute"))
+        })?;
+    }
+
+    Ok(rename)
 }

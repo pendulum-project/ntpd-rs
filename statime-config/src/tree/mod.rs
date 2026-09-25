@@ -25,6 +25,56 @@ pub use path::ConfigPath;
 pub use setting::Setting;
 
 #[cfg(test)]
+mod renaming {
+    use super::*;
+    use crate::{ConfigError, Configurable};
+
+    #[derive(Debug, Clone, PartialEq, Eq, Configurable)]
+    struct Renamed {
+        #[config(rename = "the-key")]
+        wire_name: u8,
+
+        #[config(rename = "and-another", default = 7)]
+        second: u8,
+    }
+
+    #[test]
+    fn a_renamed_field_is_read_under_its_new_name() {
+        let partial: PartialRenamed = toml::from_str("the-key = 3").unwrap();
+
+        assert_eq!(partial.wire_name.get(), Some(&3));
+    }
+
+    #[test]
+    fn the_field_name_is_no_longer_accepted() {
+        let error = toml::from_str::<PartialRenamed>("wire_name = 3").unwrap_err();
+
+        assert!(error.to_string().contains("unknown field `wire_name`"));
+    }
+
+    #[test]
+    fn diagnostics_name_the_key_the_document_uses() {
+        let mut partial = PartialRenamed::default();
+        partial.apply_defaults();
+
+        let error = partial.resolve(&mut ConfigPath::root()).unwrap_err();
+
+        let ConfigError::MissingRequiredValue { position } = error else {
+            panic!("expected a missing required value, got {error:?}");
+        };
+        assert_eq!(position.to_string(), "the-key");
+    }
+
+    #[test]
+    fn renaming_leaves_defaults_alone() {
+        let mut partial = PartialRenamed::default();
+        partial.apply_defaults();
+
+        assert_eq!(partial.second.get(), Some(&7));
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
