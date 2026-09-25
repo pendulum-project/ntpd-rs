@@ -128,36 +128,35 @@ fn system_fragments(
 mod tests {
     use super::*;
     use crate::{
-        Config, ConfigError, LogLevel, ServerSourceConfig, SourceConfig, load::files::Memory,
+        ConfigError,
+        fixture::{Fixture, Level, Server, Source},
+        load::files::Memory,
     };
 
-    fn load(documents: Memory) -> Result<Config, ConfigError> {
-        load_from::<Config>(&documents, Path::new("/etc/ntp.toml"))
+    fn load(documents: Memory) -> Result<Fixture, ConfigError> {
+        load_from::<Fixture>(&documents, Path::new("/etc/main.toml"))
     }
 
     #[test]
     fn fragments_contribute_to_the_configuration() {
         let documents = Memory::new()
-            .document("/etc/ntp.toml", "use-system-config = '/etc/ntp.d'")
+            .document("/etc/main.toml", "use-system-config = '/etc/system.d'")
+            .document("/etc/system.d/10-logging.toml", "logging.level = 'warn'")
             .document(
-                "/etc/ntp.d/10-logging.toml",
-                "observability.log-level = 'warn'",
-            )
-            .document(
-                "/etc/ntp.d/20-sources.toml",
-                "[[sources]]\nmode = 'server'\nurl = 'example.com'",
+                "/etc/system.d/20-sources.toml",
+                "[[sources]]\nkind = 'server'\naddress = 'example.com'",
             )
             // only TOML documents are read
-            .document("/etc/ntp.d/README.md", "not a configuration");
+            .document("/etc/system.d/README.md", "not a configuration");
 
         let config = load(documents).unwrap();
 
-        assert_eq!(config.observability.log_level, LogLevel::Warn);
+        assert_eq!(config.logging.level, Level::Warn);
         assert_eq!(
             config.sources,
-            vec![SourceConfig::Server(ServerSourceConfig {
-                url: "example.com".to_owned(),
-                ntp_version: 4,
+            vec![Source::Server(Server {
+                address: "example.com".to_owned(),
+                version: 4,
             })]
         );
     }
@@ -166,77 +165,74 @@ mod tests {
     fn the_main_config_overrides_a_fragment() {
         let documents = Memory::new()
             .document(
-                "/etc/ntp.toml",
-                "use-system-config = '/etc/ntp.d'\nobservability.log-level = 'debug'",
+                "/etc/main.toml",
+                "use-system-config = '/etc/system.d'\nlogging.level = 'debug'",
             )
-            .document(
-                "/etc/ntp.d/10-logging.toml",
-                "observability.log-level = 'warn'",
-            );
+            .document("/etc/system.d/10-logging.toml", "logging.level = 'warn'");
 
         let config = load(documents).unwrap();
 
-        assert_eq!(config.observability.log_level, LogLevel::Debug);
+        assert_eq!(config.logging.level, Level::Debug);
     }
 
     #[test]
     fn a_fragment_may_not_steer_the_loader() {
         let documents = Memory::new()
-            .document("/etc/ntp.toml", "use-system-config = '/etc/ntp.d'")
-            .document("/etc/ntp.d/10-logging.toml", "use-system-config = true");
+            .document("/etc/main.toml", "use-system-config = '/etc/system.d'")
+            .document("/etc/system.d/10-logging.toml", "use-system-config = true");
 
         let error = load(documents).unwrap_err();
 
         let ConfigError::DirectiveNotAllowed { path } = error else {
             panic!("expected a rejected directive, got {error:?}");
         };
-        assert_eq!(path, PathBuf::from("/etc/ntp.d/10-logging.toml"));
+        assert_eq!(path, PathBuf::from("/etc/system.d/10-logging.toml"));
     }
 
     #[test]
     fn the_default_directory_is_read_when_enabled() {
         let documents = Memory::new()
-            .document("/etc/ntp.toml", "use-system-config = true")
+            .document("/etc/main.toml", "use-system-config = true")
             .document(
                 "/usr/lib/ntpd-rs/system-config/10-logging.toml",
-                "observability.log-level = 'warn'",
+                "logging.level = 'warn'",
             );
 
         let config = load(documents).unwrap();
 
-        assert_eq!(config.observability.log_level, LogLevel::Warn);
+        assert_eq!(config.logging.level, Level::Warn);
     }
 
     #[test]
     fn an_unset_setting_means_no_system_configuration() {
         let documents = Memory::new()
-            .document("/etc/ntp.toml", "")
+            .document("/etc/main.toml", "")
             // the same fragment the setting would have reached
             .document(
                 "/usr/lib/ntpd-rs/system-config/10-logging.toml",
-                "observability.log-level = 'warn'",
+                "logging.level = 'warn'",
             );
 
         let config = load(documents).unwrap();
 
-        assert_eq!(config.observability.log_level, LogLevel::Info);
+        assert_eq!(config.logging.level, Level::Info);
     }
 
     #[test]
     fn the_system_config_setting_is_part_of_the_configuration() {
         let documents = Memory::new()
-            .document("/etc/ntp.toml", "use-system-config = '/etc/ntp.d'")
-            .directory("/etc/ntp.d");
+            .document("/etc/main.toml", "use-system-config = '/etc/system.d'")
+            .directory("/etc/system.d");
 
         let config = load(documents).unwrap();
 
         assert_eq!(
             config.use_system_config,
-            UseSystemConfig::Directory("/etc/ntp.d".into())
+            UseSystemConfig::Directory("/etc/system.d".into())
         );
 
         // and it takes its default like any other setting
-        let unset = Memory::new().document("/etc/ntp.toml", "");
+        let unset = Memory::new().document("/etc/main.toml", "");
         assert_eq!(
             load(unset).unwrap().use_system_config,
             UseSystemConfig::Enabled(false)
@@ -246,49 +242,50 @@ mod tests {
     #[test]
     fn an_empty_fragment_directory_is_not_an_error() {
         let documents = Memory::new()
-            .document("/etc/ntp.toml", "use-system-config = '/etc/ntp.d'")
-            .directory("/etc/ntp.d");
+            .document("/etc/main.toml", "use-system-config = '/etc/system.d'")
+            .directory("/etc/system.d");
 
         let config = load(documents).unwrap();
 
-        assert_eq!(config.observability.log_level, LogLevel::Info);
+        assert_eq!(config.logging.level, Level::Info);
     }
 
     #[test]
     fn a_named_directory_that_is_missing_is_an_error() {
-        let documents = Memory::new().document("/etc/ntp.toml", "use-system-config = '/etc/ntp.d'");
+        let documents =
+            Memory::new().document("/etc/main.toml", "use-system-config = '/etc/system.d'");
 
         let error = load(documents).unwrap_err();
 
         let ConfigError::CouldNotRead { path, .. } = error else {
             panic!("expected a read failure, got {error:?}");
         };
-        assert_eq!(path, PathBuf::from("/etc/ntp.d"));
+        assert_eq!(path, PathBuf::from("/etc/system.d"));
     }
 
     #[test]
     fn errors_describe_themselves() {
         let missing_value = Memory::new().document(
-            "/etc/ntp.toml",
-            "[[sources]]\nmode = 'server'\nntp-version = 5",
+            "/etc/main.toml",
+            "[[sources]]\nkind = 'server'\nversion = 5",
         );
         assert_eq!(
             load(missing_value).unwrap_err().to_string(),
-            "`sources[0].url` is required, but was never set"
+            "`sources[0].address` is required, but was never set"
         );
 
         let unreadable = Memory::new();
         assert_eq!(
             load(unreadable).unwrap_err().to_string(),
-            "could not read `/etc/ntp.toml`: no such document"
+            "could not read `/etc/main.toml`: no such document"
         );
 
         let set_in_fragment = Memory::new()
-            .document("/etc/ntp.toml", "use-system-config = '/etc/ntp.d'")
-            .document("/etc/ntp.d/10-logging.toml", "use-system-config = true");
+            .document("/etc/main.toml", "use-system-config = '/etc/system.d'")
+            .document("/etc/system.d/10-logging.toml", "use-system-config = true");
         assert_eq!(
             load(set_in_fragment).unwrap_err().to_string(),
-            "`/etc/ntp.d/10-logging.toml` sets `use-system-config`, \
+            "`/etc/system.d/10-logging.toml` sets `use-system-config`, \
              which only the main configuration may do"
         );
     }
@@ -296,7 +293,7 @@ mod tests {
     /// Assert that a document is rejected while parsing, by a complaint that
     /// points at `offender`.
     fn rejects(document: &str, offender: &str) {
-        let documents = Memory::new().document("/etc/ntp.toml", document);
+        let documents = Memory::new().document("/etc/main.toml", document);
         let error = load(documents).unwrap_err();
 
         assert!(
@@ -311,21 +308,21 @@ mod tests {
 
     #[test]
     fn an_unknown_key_is_rejected_wherever_it_appears() {
-        rejects("log-levle = 'warn'", "log-levle");
-        rejects("[observability]\nlog-levle = 'warn'", "log-levle");
+        rejects("loggign = 'warn'", "loggign");
+        rejects("[logging]\nlevle = 'warn'", "levle");
         rejects(
-            "[[sources]]\nmode = 'server'\nurl = 'a'\nurll = 'b'",
-            "urll",
+            "[[sources]]\nkind = 'server'\naddress = 'a'\naddres = 'b'",
+            "addres",
         );
-        rejects("[[sources]]\nmode = 'nonsense'", "nonsense");
+        rejects("[[sources]]\nkind = 'nonsense'", "nonsense");
     }
 
     #[test]
     fn the_default_directory_need_not_exist() {
-        let documents = Memory::new().document("/etc/ntp.toml", "use-system-config = true");
+        let documents = Memory::new().document("/etc/main.toml", "use-system-config = true");
 
         let config = load(documents).unwrap();
 
-        assert_eq!(config.observability.log_level, LogLevel::Info);
+        assert_eq!(config.logging.level, Level::Info);
     }
 }
