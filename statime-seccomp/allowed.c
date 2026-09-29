@@ -81,7 +81,6 @@
 	SCMP_SYS(setsid),
 	SCMP_SYS(setsockopt),	/* not in old kernels */
 	SCMP_SYS(socket),
-	SCMP_SYS(socketcall),	/* old kernels */
 	SCMP_SYS(stat),
 	SCMP_SYS(statfs64),	/* from getaddrinfo after lid open */
 	SCMP_SYS(time),		/* not in ARM */
