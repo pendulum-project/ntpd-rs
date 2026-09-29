@@ -163,3 +163,17 @@
 	SCMP_SYS(pread64),
 	SCMP_SYS(set_tid_address),
 	SCMP_SYS(tgkill),
+
+// These have not been observed but are logical given the list above, and
+// do not add capabilities not given above.
+
+	SCMP_SYS(settimeofday),
+	SCMP_SYS(fstatat64),
+	SCMP_SYS(lstat64),
+	SCMP_SYS(mremap),
+	SCMP_SYS(renameat2),
+	SCMP_SYS(recv),
+	SCMP_SYS(recvmmsg),
+	SCMP_SYS(recvmmsg_time64),
+	SCMP_SYS(pselect6_time64),
+	SCMP_SYS(futex_time64),
