@@ -73,9 +73,23 @@ jobs:
 
   checks:
     uses: '$/.github/workflows/checks.yaml'
+  
+  validate-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup tools for compilation
+        run: |
+          sudo apt update
+          sudo apt -y install libseccomp-dev
+      - name: Check we use what we expect
+        run: utils/check-crates-are-published.sh
 
   release:
-    needs: [gather, checks]
+    needs: [gather, checks, validate-dependencies]
     runs-on: ubuntu-latest
     if: ${{ startsWith(github.ref, 'refs/heads/release/') }}
     permissions:
