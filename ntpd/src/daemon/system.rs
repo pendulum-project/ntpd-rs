@@ -6,11 +6,11 @@ use std::{
 use std::{
     collections::HashMap,
     pin::Pin,
-    sync::{Arc, Mutex, RwLock, atomic::AtomicU64},
+    sync::{Arc, Mutex, RwLock},
     task::{Context, Poll, Waker},
 };
 
-use ntp_proto::{KeySet, NtpConfig, NtpManager};
+use ntp_proto::{NtpConfig, NtpManager};
 use statime_base::{ActiveLinkData, ClockId, Link, LinkId, SourceType, StdController};
 #[cfg(target_os = "linux")]
 use statime_csptp::CsptpConfig;
@@ -21,7 +21,7 @@ use tokio::{
 
 use crate::daemon::{
     clock::NtpClockWrapper,
-    observer::ObservableSpawnerState,
+    observer::{ObservableDrivenLink, ObservableSpawnerState},
     nts_key_provider::{self, KeysetConfig},
     spawn::{
         CreationParameters, LinkTerminationReason, SpawnFailureReason, Spawner, SpawnerId,
@@ -455,7 +455,27 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
             .iter()
             .map(|(id, data)| ObservableSpawnerState {
                 id: *id,
+                spawn_state: match data.spawn_state {
+                    SpawnState::TryingSpawn(_) => "Trying spawn".to_string(),
+                    SpawnState::Inactive => "Inactive".to_string(),
+                    SpawnState::Timeout(_) => "Timeout".to_string(),
+                },
                 current_timeout: data.current_timeout,
+                last_spawn: data.last_spawn.elapsed(),
+                driven_links: state
+                    .driven_links
+                    .iter()
+                    .filter_map(|(link_id, driven_link)| {
+                        if driven_link.spawner == *id {
+                            Some(ObservableDrivenLink {
+                                link_id: *link_id,
+                                source_type: driven_link.stype.to_string(),
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect(),
             })
             .collect()
     }
