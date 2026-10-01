@@ -77,7 +77,8 @@ impl Default for ProvenanceTracker {
 /// The context within the current merge operation. Generated code only ever
 /// walks it with [`MergeContext::at`]; the rest is the loader's business.
 pub struct MergeContext<'a> {
-    pub(crate) policy: MergePolicy,
+    #[doc(hidden)]
+    pub policy: MergePolicy,
     pub(crate) path: ConfigPath,
     provenance: &'a ProvenanceTracker,
 }
@@ -113,6 +114,11 @@ pub trait Merge {
 
 #[cfg(test)]
 mod tests {
+    use crate::{
+        Setting,
+        fixture::{PartialPool, PartialServer, PartialSource},
+    };
+
     use super::*;
 
     #[test]
@@ -140,5 +146,153 @@ mod tests {
             tracker.get_origin(first),
             Some(&Origin::MainConfig("/etc/ntp.toml".into()))
         );
+    }
+
+    #[test]
+    fn merge_of_enum_merges_identical() {
+        let mut left = PartialSource::Server(PartialServer {
+            address: Setting::Unset,
+            version: Setting::Set {
+                value: 5,
+                origin: None,
+            },
+        });
+
+        let right = PartialSource::Server(PartialServer {
+            address: Setting::Set {
+                value: "hello".into(),
+                origin: None,
+            },
+            version: Setting::Unset,
+        });
+
+        left.merge(
+            right,
+            &mut MergeContext {
+                policy: MergePolicy::RejectOverlap,
+                path: ConfigPath::root(),
+                provenance: &ProvenanceTracker::new(),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            left,
+            PartialSource::Server(PartialServer {
+                address: Setting::Set {
+                    value: "hello".into(),
+                    origin: None,
+                },
+                version: Setting::Set {
+                    value: 5,
+                    origin: None,
+                },
+            })
+        );
+
+        let third = PartialSource::Server(PartialServer {
+            address: Setting::Set {
+                value: "bla".into(),
+                origin: None,
+            },
+            version: Setting::Unset,
+        });
+
+        left.merge(
+            third,
+            &mut MergeContext {
+                policy: MergePolicy::Override,
+                path: ConfigPath::root(),
+                provenance: &ProvenanceTracker::new(),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            left,
+            PartialSource::Server(PartialServer {
+                address: Setting::Set {
+                    value: "bla".into(),
+                    origin: None,
+                },
+                version: Setting::Set {
+                    value: 5,
+                    origin: None,
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn merge_of_enum_overrides_when_allowed() {
+        let mut left = PartialSource::Server(PartialServer {
+            address: Setting::Unset,
+            version: Setting::Set {
+                value: 5,
+                origin: None,
+            },
+        });
+
+        let right = PartialSource::Pool(PartialPool {
+            address: Setting::Set {
+                value: "hello".into(),
+                origin: None,
+            },
+            count: Setting::Unset,
+        });
+
+        left.merge(
+            right,
+            &mut MergeContext {
+                policy: MergePolicy::Override,
+                path: ConfigPath::root(),
+                provenance: &ProvenanceTracker::new(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            left,
+            PartialSource::Pool(PartialPool {
+                address: Setting::Set {
+                    value: "hello".into(),
+                    origin: None,
+                },
+                count: Setting::Unset,
+            })
+        );
+    }
+
+    #[test]
+    fn merge_of_enum_rejects_different_variants_when_not_overriding() {
+        let mut left = PartialSource::Server(PartialServer {
+            address: Setting::Unset,
+            version: Setting::Set {
+                value: 5,
+                origin: None,
+            },
+        });
+
+        let right = PartialSource::Pool(PartialPool {
+            address: Setting::Set {
+                value: "hello".into(),
+                origin: None,
+            },
+            count: Setting::Unset,
+        });
+
+        assert!(matches!(
+            left.merge(
+                right,
+                &mut MergeContext {
+                    policy: MergePolicy::RejectOverlap,
+                    path: ConfigPath::root(),
+                    provenance: &ProvenanceTracker::new()
+                }
+            ),
+            Err(ConfigError::MismatchedVariants {
+                current: "server",
+                incoming: "Pool",
+                ..
+            })
+        ));
     }
 }

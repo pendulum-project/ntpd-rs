@@ -1,4 +1,7 @@
-use crate::tree::setting::Setting;
+use crate::{
+    Merge, PartialValue,
+    tree::{EffectivelyUnset, setting::Setting},
+};
 
 /// Relates a configuration type to how it is represented while a configuration
 /// is still being loaded.
@@ -8,12 +11,12 @@ use crate::tree::setting::Setting;
 /// holds an atomic value or a nested struct: the type itself answers that.
 pub trait Configurable {
     /// How this type is represented before defaults are applied.
-    type Partial;
+    type Partial: PartialValue<Resolved = Self>;
 
     /// How a field of this type is stored in the partial struct holding it.
     /// Atomic values are stored in a [`Setting`], nested structs in a
     /// [`Section`](crate::tree::section::Section).
-    type Node;
+    type Node: PartialValue + Default + EffectivelyUnset + Merge;
 }
 
 /// A vector is atomic for merging, so it is stored in a single setting, while

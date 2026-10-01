@@ -11,7 +11,7 @@ mod setting;
 pub use atomic::ConfigurableAtomic;
 pub use configurable::Configurable;
 pub use empty::{EffectivelyUnset, is_effectively_unset};
-pub use merge::{Merge, MergeContext, Origin, OriginId};
+pub use merge::{Merge, MergeContext, MergePolicy, Origin, OriginId};
 pub use partial_value::PartialValue;
 pub use path::ConfigPath;
 pub use section::Section;

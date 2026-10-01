@@ -243,6 +243,15 @@ fn expand_enum(input: &DeriveInput, data: &DataEnum) -> syn::Result<TokenStream2
         quote!(Self::#name(value) => ::statime_config::PartialValue::apply_defaults(value),)
     });
 
+    let variant_names = variants.iter().map(|EnumVariant { name, rename, .. }| {
+        let string_name = rename.clone().unwrap_or_else(|| name.to_string());
+        quote!(Self::#name(value) => #string_name,)
+    });
+
+    let variant_merges = variants.iter().map(|EnumVariant { name, .. }| {
+        quote!((Self::#name(this), Self::#name(incoming)) => ::statime_config::Merge::merge(this, incoming, context),)
+    });
+
     let resolutions = variants.iter().map(|EnumVariant { name: variant, .. }| {
         quote! {
             Self::#variant(value) => ::core::result::Result::Ok(
@@ -291,6 +300,72 @@ fn expand_enum(input: &DeriveInput, data: &DataEnum) -> syn::Result<TokenStream2
             ) -> ::core::result::Result<#name, ::statime_config::ConfigError> {
                 match self {
                     #(#resolutions)*
+                }
+            }
+        }
+
+        impl #partial {
+            fn variant_name(&self) -> &'static str {
+                match self {
+                    #(#variant_names)*
+                }
+            }
+        }
+
+        impl ::statime_config::Merge for #partial {
+            fn merge(
+                &mut self,
+                incoming: Self,
+                context: &mut ::statime_config::MergeContext<'_>,
+            ) -> ::core::result::Result<(), ::statime_config::ConfigError> {
+                match (self, incoming) {
+                    #(#variant_merges)*
+                    (this, incoming) => match context.policy {
+                        ::statime_config::__private::MergePolicy::RejectOverlap => Err(::statime_config::ConfigError::MismatchedVariants { position: context.path.clone(), current: this.variant_name(), incoming: incoming.variant_name() }),
+                        ::statime_config::__private::MergePolicy::Override => {
+                            *this = incoming;
+                            ::core::result::Result::Ok(())
+                        },
+                    },
+                }
+            }
+        }
+
+        impl ::statime_config::PartialValue for ::statime_config::Section<#partial> {
+            type Resolved = #name;
+
+            /// A section records no origin of its own, and visits its children.
+            fn attribute(&mut self, origin: ::statime_config::OriginId) {
+                if let ::statime_config::Section::Set(value) = self {
+                    value.attribute(origin);
+                }
+            }
+
+            /// An absent section still has to be visited: a document that never
+            /// mentions a section should still get the defaults of everything inside
+            /// it.
+            fn apply_defaults(&mut self) {
+                if let ::statime_config::Section::Set(value) = self {
+                    value.apply_defaults();
+                }
+            }
+
+            /// A section resolves to whatever its contents resolve to. An unset one
+            /// only reaches this point when resolving without defaulting first, and
+            /// resolving the empty struct still reports any required value it misses.
+            fn resolve(self, path: &mut ::statime_config::ConfigPath) -> ::core::result::Result<Self::Resolved, ::statime_config::ConfigError> {
+                match self {
+                    ::statime_config::Section::Set(value) => value.resolve(path),
+                    ::statime_config::Section::Unset => ::core::result::Result::Err(::statime_config::ConfigError::MissingRequiredValue { position: path.clone() }),
+                }
+            }
+        }
+
+        impl ::statime_config::__private::EffectivelyUnset for ::statime_config::Section<#partial> {
+            fn is_effectively_unset(&self) -> bool {
+                match self {
+                    ::statime_config::Section::Set(_) => true,
+                    ::statime_config::Section::Unset => false,
                 }
             }
         }
