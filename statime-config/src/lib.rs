@@ -14,23 +14,33 @@
 //!
 //! ```no_run
 //! # use serde::{Deserialize, Serialize};
-//! use statime_config::{Configurable, ConfigurableAtomic, RootConfig, UseSystemConfig};
+//! use statime_config::{Configurable, ConfigurableAtomic, RootConfig, UseSystemConfig, SystemConfigSetting};
 //!
-//! /// The root configuration needs to be a [`Configurable`] struct with the
-//! /// `root` attribute, which is used to load the configuration from TOML files.
-//! /// It also needs to have a field that holds the UseSystemConfig value, identified
-//! /// by the `use_system_config` attribute.
+//! /// The root configuration needs to be a [`Configurable`] struct with [`RootConfig`]
+//! /// implemented, which is used to load the configuration from TOML files.
+//! /// It also needs to contain information which can identify whether and which
+//! /// system configuration is to be used when loading the configuration.
 //! #[derive(Debug, Clone, PartialEq, Eq, Configurable)]
-//! #[config(root)]
 //! pub struct Config {
 //!     /// Whether to use the system configuration files, note the default
 //!     /// attribute calls Default::default()
-//!     #[config(use_system_config, default)]
+//!     #[config(default)]
 //!     pub use_system_config: UseSystemConfig,
 //!
 //!     /// This section has no default value, if any value within it is not
 //!     /// specified and has no default, that will be an error.
 //!     pub observability: ObservabilityConfig,
+//! }
+//!
+//! impl RootConfig for Config {
+//!     fn use_system_config(partial: &Self::Partial) -> SystemConfigSetting {
+//!         match partial.use_system_config.clone().into_option() {
+//!             Some(UseSystemConfig::Enabled(false)) => SystemConfigSetting::None,
+//!             Some(UseSystemConfig::Enabled(true)) => SystemConfigSetting::DefaultPath(UseSystemConfig::DEFAULT_SYSTEM_CONFIG.into()),
+//!             Some(UseSystemConfig::Directory(path)) => SystemConfigSetting::UserSpecifiedPath(path),
+//!             None => SystemConfigSetting::Unset,
+//!         }
+//!     }
 //! }
 //!
 //! /// Only the Configurable derive is needed here, as this is not the root struct.
@@ -72,7 +82,7 @@ mod tree;
 mod use_system_config;
 
 pub use error::ConfigError;
-pub use load::{PartialTree, RootConfig};
+pub use load::{PartialTree, RootConfig, SystemConfigSetting};
 pub use use_system_config::UseSystemConfig;
 // the traits and the derives that implement them share their names, so that
 // one import brings both, as serde does
@@ -95,17 +105,29 @@ pub mod __private {
 
 /// The configuration of a statime instance.
 #[derive(Debug, Clone, PartialEq, Eq, Configurable)]
-#[config(root)]
 pub struct Config {
     /// Only the main configuration may set this: a system configuration
     /// fragment cannot decide which fragments get read.
-    #[config(use_system_config, default)]
+    #[config(default)]
     pub use_system_config: UseSystemConfig,
 
     #[config(default)]
     pub sources: Vec<SourceConfig>,
 
     pub observability: ObservabilityConfig,
+}
+
+impl RootConfig for Config {
+    fn use_system_config(partial: &Self::Partial) -> SystemConfigSetting {
+        match partial.use_system_config.clone().into_option() {
+            Some(UseSystemConfig::Enabled(false)) => SystemConfigSetting::None,
+            Some(UseSystemConfig::Enabled(true)) => {
+                SystemConfigSetting::DefaultPath(UseSystemConfig::DEFAULT_SYSTEM_CONFIG.into())
+            }
+            Some(UseSystemConfig::Directory(path)) => SystemConfigSetting::UserSpecifiedPath(path),
+            None => SystemConfigSetting::Unset,
+        }
+    }
 }
 
 /// A time source to synchronize with.
