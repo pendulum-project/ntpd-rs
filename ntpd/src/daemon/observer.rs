@@ -6,7 +6,7 @@ use super::server::ServerStats;
 use super::sockets::create_unix_socket_with_permissions;
 use libc::{ECONNABORTED, EMFILE, ENFILE, ENOBUFS, ENOMEM};
 use ntp_proto::{ClockId, ObservableSourceState, SystemSnapshot};
-use statime_base::{Clock, StdController, TAI, Timestamp};
+use statime_base::{Clock, LinkId, StdController, TAI, Timestamp};
 use std::collections::HashMap;
 use std::convert::Into;
 use std::net::Ipv4Addr;
@@ -81,8 +81,16 @@ impl From<&ServerData> for ObservableServerState {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ObservableSpawnerState {
     pub id: SpawnerId,
+    pub spawn_state: String,
     pub current_timeout: Duration,
-    //pub last_spawn: Instant,
+    pub last_spawn: Duration,
+    pub driven_links: Vec<ObservableDrivenLink>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ObservableDrivenLink {
+    pub link_id: LinkId,
+    pub source_type: String,
 }
 
 #[instrument(level = tracing::Level::ERROR, skip_all, name = "Observer", fields(path = debug(config.observation_path.clone())))]
