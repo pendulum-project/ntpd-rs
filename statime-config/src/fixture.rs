@@ -5,18 +5,32 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Configurable, ConfigurableAtomic, UseSystemConfig};
+use crate::{
+    Configurable, ConfigurableAtomic, RootConfig, UseSystemConfig, load::SystemConfigSetting,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Configurable)]
-#[config(root)]
 pub struct Fixture {
-    #[config(use_system_config, default)]
+    #[config(default)]
     pub use_system_config: UseSystemConfig,
 
     #[config(default)]
     pub sources: Vec<Source>,
 
     pub logging: Logging,
+}
+
+impl RootConfig for Fixture {
+    fn use_system_config(partial: &Self::Partial) -> SystemConfigSetting {
+        match partial.use_system_config.clone().into_option() {
+            Some(UseSystemConfig::Enabled(false)) => SystemConfigSetting::None,
+            Some(UseSystemConfig::Enabled(true)) => {
+                SystemConfigSetting::DefaultPath(UseSystemConfig::DEFAULT_SYSTEM_CONFIG.into())
+            }
+            Some(UseSystemConfig::Directory(path)) => SystemConfigSetting::UserSpecifiedPath(path),
+            None => SystemConfigSetting::Unset,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Configurable)]
