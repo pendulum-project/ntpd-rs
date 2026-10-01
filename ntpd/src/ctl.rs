@@ -476,6 +476,7 @@ mod tests {
             system: SystemSnapshot::default(),
             sources: vec![],
             servers: vec![],
+            spawners: vec![],
         };
         let result = write_socket_helper(Format::Plain, value).await?;
 
@@ -494,6 +495,7 @@ mod tests {
             system: SystemSnapshot::default(),
             sources: vec![],
             servers: vec![],
+            spawners: vec![],
         };
         let result = write_socket_helper(Format::Prometheus, value).await?;
 
