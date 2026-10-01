@@ -34,6 +34,13 @@ pub enum ConfigError {
     /// A system configuration fragment set `use-system-config`. Only the main
     /// configuration may do so.
     DirectiveNotAllowed { path: PathBuf },
+
+    /// Documents provide different variants for an enum during a merge.
+    MismatchedVariants {
+        position: ConfigPath,
+        current: &'static str,
+        incoming: &'static str,
+    },
 }
 
 impl fmt::Display for ConfigError {
@@ -62,6 +69,14 @@ impl fmt::Display for ConfigError {
                 f,
                 "`{}` sets `use-system-config`, which only the main configuration may do",
                 path.display()
+            ),
+            Self::MismatchedVariants {
+                position,
+                current,
+                incoming,
+            } => write!(
+                f,
+                "At {position}, trying to merge {current} with differen variant {incoming}, which is not possible",
             ),
         }
     }
