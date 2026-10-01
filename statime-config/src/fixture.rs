@@ -22,7 +22,9 @@ pub struct Fixture {
 #[derive(Debug, Clone, PartialEq, Eq, Configurable)]
 #[config(tag = "kind")]
 pub enum Source {
+    #[config(rename = "server")]
     Server(Server),
+    Pool(Pool),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Configurable)]
@@ -32,6 +34,14 @@ pub struct Server {
 
     #[config(default = 4)]
     pub version: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Configurable)]
+pub struct Pool {
+    pub address: String,
+
+    #[config(default = 4)]
+    pub count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Configurable)]

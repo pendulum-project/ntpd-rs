@@ -9,7 +9,7 @@ use crate::{
 /// documents to a finished configuration, in the order they happen: recording
 /// which document a value came from, filling in what no document supplied, and
 /// producing the final value.
-pub trait PartialValue {
+pub trait PartialValue: std::fmt::Debug + Clone + PartialEq {
     /// What this becomes once the configuration is complete.
     type Resolved;
 
