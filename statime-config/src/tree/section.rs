@@ -11,11 +11,18 @@ use crate::{
 };
 
 /// Sections are merge-able partial values within a configuration tree.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Section<T> {
-    #[default]
     Unset,
     Set(T),
+}
+
+// Ensure default is always implemented for section<T>, even if T does not implement default.
+#[allow(clippy::derivable_impls, reason = "Want this even when T not Default")]
+impl<T> Default for Section<T> {
+    fn default() -> Self {
+        Self::Unset
+    }
 }
 
 impl<T> Section<T> {

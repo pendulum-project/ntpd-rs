@@ -90,7 +90,7 @@ pub use tree::{
 pub mod __private {
     pub use serde::{self, Deserialize, Serialize};
 
-    pub use crate::tree::{EffectivelyUnset, is_effectively_unset};
+    pub use crate::tree::{EffectivelyUnset, MergePolicy, is_effectively_unset};
 }
 
 /// The configuration of a statime instance.
