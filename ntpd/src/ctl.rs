@@ -242,10 +242,7 @@ pub fn main() -> std::io::Result<ExitCode> {
             Builder::new_current_thread()
                 .enable_all()
                 .build()?
-                .block_on(async {
-                    print_spawners(observation).await.unwrap();
-                });
-            Ok(ExitCode::SUCCESS)
+                .block_on(async { print_spawners(observation).await })
         }
     }
 }
@@ -407,7 +404,20 @@ async fn print_spawners(observe_socket: PathBuf) -> Result<ExitCode, std::io::Er
         };
 
     for spawner in output.spawners {
-        println!("{:?}: {:?}", spawner.id, spawner.current_timeout);
+        println!("{:?}", spawner.id);
+        println!("\tSpawn state: {:?}", spawner.spawn_state);
+
+        println!("\tCurrent timeout: {:?}", spawner.current_timeout);
+
+        println!("\tLast spawn: {:?}", spawner.last_spawn);
+
+        if !spawner.driven_links.is_empty() {
+            println!("\tLinks:");
+            for link in spawner.driven_links {
+                println!("\t\t{}: {:?}", link.source_type, link.link_id);
+            }
+        }
+        println!();
     }
 
     Ok(ExitCode::SUCCESS)
