@@ -238,10 +238,7 @@ pub fn main() -> std::io::Result<ExitCode> {
             Builder::new_current_thread()
                 .enable_all()
                 .build()?
-                .block_on(async {
-                    print_spawners(observation).await.unwrap();
-                });
-            Ok(ExitCode::SUCCESS)
+                .block_on(async { print_spawners(observation).await })
         }
     }
 }
@@ -462,6 +459,7 @@ mod tests {
             system: SystemSnapshot::default(),
             sources: vec![],
             servers: vec![],
+            spawners: vec![],
         };
         let result = write_socket_helper(Format::Plain, value).await?;
 
@@ -480,6 +478,7 @@ mod tests {
             system: SystemSnapshot::default(),
             sources: vec![],
             servers: vec![],
+            spawners: vec![],
         };
         let result = write_socket_helper(Format::Prometheus, value).await?;
 

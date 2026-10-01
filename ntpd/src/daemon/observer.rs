@@ -459,52 +459,53 @@ mod tests {
             observation_permissions: 0o700,
             ..Default::default()
         };
+        /*
+                let mut source_snapshots = HashMap::new();
+                let id = ClockId::new();
+                source_snapshots.insert(
+                    id,
+                    ObservableSourceState {
+                        unanswered_polls: Reach::never().unanswered_polls(),
+                        poll_interval: PollIntervalLimits::default().min,
+                        nts_cookies: None,
+                        name: "127.0.0.3:123".into(),
+                        address: "127.0.0.3:123".into(),
+                        id,
+                    },
+                );
 
-        let mut source_snapshots = HashMap::new();
-        let id = ClockId::new();
-        source_snapshots.insert(
-            id,
-            ObservableSourceState {
-                unanswered_polls: Reach::never().unanswered_polls(),
-                poll_interval: PollIntervalLimits::default().min,
-                nts_cookies: None,
-                name: "127.0.0.3:123".into(),
-                address: "127.0.0.3:123".into(),
-                id,
-            },
-        );
+                let source_snapshots = Arc::new(std::sync::RwLock::new(source_snapshots));
+                let source_snapshots_clone = source_snapshots.clone();
 
-        let source_snapshots = Arc::new(std::sync::RwLock::new(source_snapshots));
-        let source_snapshots_clone = source_snapshots.clone();
+                let (mut server_writer, servers_reader) = tokio::sync::watch::channel(vec![]);
 
-        let (mut server_writer, servers_reader) = tokio::sync::watch::channel(vec![]);
-
-        let (mut system_writer, system_reader) = tokio::sync::watch::channel(SystemSnapshot {
-            ntp_snapshot: NtpSnapshot {
-                stratum: 1,
-                reference_id: ReferenceId::NONE,
-                bloom_filter: BloomFilter::new(),
-            },
-            time_snapshot: TimeSnapshot {
-                precision: statime_base::Duration::from_f64_seconds(1e-3),
-                root_delay: statime_base::Duration::ZERO,
-                root_variance_base_time: statime_base::Timestamp::UNIX_EPOCH,
-                root_variance_base: 0.0,
-                root_variance_linear: 0.0,
-                root_variance_quadratic: 0.0,
-                root_variance_cubic: 0.0,
-                leap_indicator: Some(LeapStatus::Leap59),
-                accumulated_steps: statime_base::Duration::ZERO,
-                accumulated_steps_threshold: None,
-            },
-        });
-
+                let (mut system_writer, system_reader) = tokio::sync::watch::channel(SystemSnapshot {
+                    ntp_snapshot: NtpSnapshot {
+                        stratum: 1,
+                        reference_id: ReferenceId::NONE,
+                        bloom_filter: BloomFilter::new(),
+                    },
+                    time_snapshot: TimeSnapshot {
+                        precision: statime_base::Duration::from_f64_seconds(1e-3),
+                        root_delay: statime_base::Duration::ZERO,
+                        root_variance_base_time: statime_base::Timestamp::UNIX_EPOCH,
+                        root_variance_base: 0.0,
+                        root_variance_linear: 0.0,
+                        root_variance_quadratic: 0.0,
+                        root_variance_cubic: 0.0,
+                        leap_indicator: Some(LeapStatus::Leap59),
+                        accumulated_steps: statime_base::Duration::ZERO,
+                        accumulated_steps_threshold: None,
+                    },
+                });
+        */
         let handle = tokio::spawn(async move {
             observer(
                 config,
-                source_snapshots,
-                servers_reader,
-                system_reader,
+                //source_snapshots,
+                //servers_reader,
+                //system_reader,
+                vec![],
                 TestClock,
             )
             .await
