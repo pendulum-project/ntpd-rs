@@ -2,6 +2,7 @@ use core::sync::atomic::AtomicUsize;
 
 /// Unique identifier for a clock
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ClockId(usize);
 
 impl ClockId {
@@ -23,6 +24,7 @@ impl ClockId {
 /// element, the unique identifier, is used to distinguish between multiple links between the same
 /// two clocks.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct LinkId(ClockId, ClockId, usize);
 
 impl LinkId {
@@ -169,4 +171,15 @@ pub enum SourceType {
     Ntp,
     /// A CSPTP source.
     Csptp,
+}
+
+impl core::fmt::Display for SourceType {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            SourceType::Pps => write!(f, "PPS"),
+            SourceType::Sock => write!(f, "Socket"),
+            SourceType::Ntp => write!(f, "NTP"),
+            SourceType::Csptp => write!(f, "CSPTP"),
+        }
+    }
 }
