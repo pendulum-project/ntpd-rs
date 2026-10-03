@@ -1,0 +1,61 @@
+#!/sbin/openrc-run
+# https://github.com/OpenRC/openrc/blob/master/service-script-guide.md
+
+supervisor=supervise-daemon
+
+name=ntpd-rs
+description="Network Time Protocol (ntpd-rs)"
+command=/usr/bin/ntp-daemon
+command_args="-c $CONFIG"
+# log the stderror and stdout to /var/log/ntpd-rs.log
+output_log=/var/log/${RC_SVCNAME}.log
+error_log=/var/log/${RC_SVCNAME}.log
+
+if [ $RC_UNAME = "Linux" ]; then
+    # on linux ntpd-rs can run unprivileged due to the capbilities below
+    command_user="${USER}:${GROUP}"
+    capabilities="^cap_net_bind_service,^cap_sys_time"
+    no_new_privs=1
+fi
+
+extra_started_commands="reload"
+
+depend() {
+    after net
+}
+
+# https://github.com/OpenRC/openrc/blob/master/service-script-guide.md#dont-restartreload-with-a-broken-config
+checkconfig() {
+    ntp-ctl validate || return $?
+}
+
+start_pre() {
+    if [ "$RC_CMD" != "restart" ]; then
+        checkconfig || return $?
+    fi
+
+    if [ $RC_UNAME = "Linux" ]; then
+        checkpath -d --owner ${USER}:${GROUP} -m 770 /var/lib/$RC_SVCNAME
+        checkpath -D --owner ${USER}:${GROUP} -m 755 /run/$RC_SVCNAME
+        checkpath -f --owner ${USER}:${GROUP} -m 660 /var/log/${RC_SVCNAME}.log
+    else
+        checkpath -d -m 770 /var/lib/$RC_SVCNAME
+        checkpath -D -m 755 /run/$RC_SVCNAME
+        checkpath -f -m 660 /var/log/${RC_SVCNAME}.log
+    fi
+}
+
+stop_pre() {
+    if [ "$RC_CMD" = "restart" ]; then
+        checkconfig || return $?
+    fi
+
+    return 0
+}
+    
+reload() {
+    checkconfig || return $?
+    ebegin "Reloading $RC_SVCNAME"
+    supervise-daemon $RC_SVCNAME --signal SIGHUP
+    eend $?
+}
