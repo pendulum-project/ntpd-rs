@@ -3,11 +3,11 @@
 //! The tests describe the machinery, not any particular configuration, so they
 //! use this rather than whatever configuration the crate happens to define.
 
+use std::path::PathBuf;
+
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    Configurable, ConfigurableAtomic, RootConfig, UseSystemConfig, load::SystemConfigSetting,
-};
+use crate::{Configurable, ConfigurableAtomic, RootConfig, load::SystemConfigSetting};
 
 #[derive(Debug, Clone, PartialEq, Eq, Configurable)]
 pub struct Fixture {
@@ -71,4 +71,27 @@ pub enum Level {
     Info,
     Warn,
     Error,
+}
+
+/// Which system configuration to layer underneath the main configuration, if
+/// any.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ConfigurableAtomic)]
+#[serde(untagged)]
+pub enum UseSystemConfig {
+    /// `true` reads the fragments supplied by the distribution, `false` uses no
+    /// system configuration at all.
+    Enabled(bool),
+
+    /// A directory to read the fragments from, instead of the default one.
+    Directory(PathBuf),
+}
+
+impl UseSystemConfig {
+    pub const DEFAULT_SYSTEM_CONFIG: &str = "/usr/lib/ntpd-rs/system-config";
+}
+
+impl Default for UseSystemConfig {
+    fn default() -> Self {
+        Self::Enabled(false)
+    }
 }
