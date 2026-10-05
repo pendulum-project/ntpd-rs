@@ -1,5 +1,6 @@
 use std::{
     io,
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
 };
 
@@ -17,10 +18,28 @@ pub struct Filesystem;
 
 impl Files for Filesystem {
     fn read(&self, path: &Path) -> io::Result<String> {
+        let meta = std::fs::metadata(path)?;
+        let perm = meta.permissions();
+
+        if perm.mode() as libc::mode_t & libc::S_IWOTH != 0 {
+            warn!(
+                "Unrestricted config file permissions on {}: Others can write.",
+                path.display()
+            );
+        }
         std::fs::read_to_string(path)
     }
 
     fn list(&self, directory: &Path) -> io::Result<Vec<PathBuf>> {
+        let meta = std::fs::metadata(directory)?;
+        let perm = meta.permissions();
+
+        if perm.mode() as libc::mode_t & libc::S_IWOTH != 0 {
+            warn!(
+                "Unrestricted config directory permissions on {}: Others can write.",
+                directory.display()
+            );
+        }
         std::fs::read_dir(directory)?
             .map(|entry| entry.map(|entry| entry.path()))
             .collect()
@@ -29,6 +48,7 @@ impl Files for Filesystem {
 
 #[cfg(test)]
 pub use memory::Memory;
+use tracing::warn;
 
 #[cfg(test)]
 mod memory {
