@@ -135,8 +135,8 @@ fn system_fragments(
 mod tests {
     use super::*;
     use crate::{
-        ConfigError, UseSystemConfig,
-        fixture::{Fixture, Level, Server, Source},
+        ConfigError,
+        fixture::{Fixture, Level, Server, Source, UseSystemConfig},
         load::files::Memory,
     };
 

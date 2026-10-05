@@ -13,8 +13,9 @@
 //! the configuration from TOML files.
 //!
 //! ```no_run
+//! # use std::path::PathBuf;
 //! # use serde::{Deserialize, Serialize};
-//! use statime_config::{Configurable, ConfigurableAtomic, RootConfig, UseSystemConfig, SystemConfigSetting};
+//! use statime_config::{Configurable, ConfigurableAtomic, RootConfig, SystemConfigSetting};
 //!
 //! /// The root configuration needs to be a [`Configurable`] struct with [`RootConfig`]
 //! /// implemented, which is used to load the configuration from TOML files.
@@ -64,12 +65,34 @@
 //!     Error,
 //! }
 //!
+//!
+//! /// Which system configuration to layer underneath the main configuration, if
+//! /// any.
+//! #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ConfigurableAtomic)]
+//! #[serde(untagged)]
+//! pub enum UseSystemConfig {
+//!     /// `true` reads the fragments supplied by the distribution, `false` uses no
+//!     /// system configuration at all.
+//!     Enabled(bool),
+//!
+//!     /// A directory to read the fragments from, instead of the default one.
+//!     Directory(PathBuf),
+//! }
+//!
+//! impl UseSystemConfig {
+//!     pub const DEFAULT_SYSTEM_CONFIG: &str = "/usr/lib/ntpd-rs/system-config";
+//! }
+//!
+//! impl Default for UseSystemConfig {
+//!     fn default() -> Self {
+//!         Self::Enabled(false)
+//!     }
+//! }
+//!
 //! fn main() {
 //!     let config = Config::load("/path/to/config.toml").unwrap();
 //! }
 //! ```
-
-use serde::{Deserialize, Serialize};
 
 // so that the derive macro can name this crate even from inside it
 extern crate self as statime_config;
@@ -79,11 +102,9 @@ mod error;
 mod fixture;
 mod load;
 mod tree;
-mod use_system_config;
 
 pub use error::ConfigError;
 pub use load::{PartialTree, RootConfig, SystemConfigSetting};
-pub use use_system_config::UseSystemConfig;
 // the traits and the derives that implement them share their names, so that
 // one import brings both, as serde does
 pub use statime_config_derive::{Configurable, ConfigurableAtomic};
@@ -101,61 +122,4 @@ pub mod __private {
     pub use serde::{self, Deserialize, Serialize};
 
     pub use crate::tree::{EffectivelyUnset, MergePolicy, is_effectively_unset};
-}
-
-/// The configuration of a statime instance.
-#[derive(Debug, Clone, PartialEq, Eq, Configurable)]
-pub struct Config {
-    /// Only the main configuration may set this: a system configuration
-    /// fragment cannot decide which fragments get read.
-    #[config(default)]
-    pub use_system_config: UseSystemConfig,
-
-    #[config(default)]
-    pub sources: Vec<SourceConfig>,
-
-    pub observability: ObservabilityConfig,
-}
-
-impl RootConfig for Config {
-    fn use_system_config(partial: &Self::Partial) -> SystemConfigSetting {
-        match partial.use_system_config.clone().into_option() {
-            Some(UseSystemConfig::Enabled(false)) => SystemConfigSetting::None,
-            Some(UseSystemConfig::Enabled(true)) => {
-                SystemConfigSetting::DefaultPath(UseSystemConfig::DEFAULT_SYSTEM_CONFIG.into())
-            }
-            Some(UseSystemConfig::Directory(path)) => SystemConfigSetting::UserSpecifiedPath(path),
-            None => SystemConfigSetting::Unset,
-        }
-    }
-}
-
-/// A time source to synchronize with.
-#[derive(Debug, Clone, PartialEq, Eq, Configurable)]
-#[config(tag = "mode")]
-pub enum SourceConfig {
-    Server(ServerSourceConfig),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Configurable)]
-pub struct ServerSourceConfig {
-    pub url: String,
-
-    #[config(default = 4)]
-    pub ntp_version: u8,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Configurable)]
-pub struct ObservabilityConfig {
-    #[config(default = LogLevel::Info)]
-    pub log_level: LogLevel,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ConfigurableAtomic)]
-#[serde(rename_all = "kebab-case")]
-pub enum LogLevel {
-    Debug,
-    Info,
-    Warn,
-    Error,
 }
