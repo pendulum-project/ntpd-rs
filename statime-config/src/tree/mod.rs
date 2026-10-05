@@ -73,10 +73,10 @@ mod renaming {
 mod tests {
     use super::*;
     use crate::{
-        ConfigError, UseSystemConfig,
+        ConfigError,
         fixture::{
             Fixture, Level, Logging, PartialFixture, PartialLogging, PartialServer, PartialSource,
-            Server, Source,
+            Server, Source, UseSystemConfig,
         },
         tree::{
             merge::{MergePolicy, Origin, ProvenanceTracker},
