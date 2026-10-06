@@ -64,7 +64,7 @@ jobs:
       - name: Install nightly toolchain
         run: rustup toolchain install "$NIGHTLY_RUST_VERSION" --component llvm-tools-preview && rustup override set "$NIGHTLY_RUST_VERSION"
       - name: Install cargo fuzz & rustfilt
-        uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab # v2.87.13
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
         with:
           tool: cargo-fuzz,rustfilt
       - name: Run `cargo fuzz`
@@ -83,7 +83,7 @@ jobs:
               --format=lcov \
               -ignore-filename-regex="\.cargo|\.rustup" > lcov.info
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@0b35c9ecc4f0529d0eb674914510c22f85b196b4 # v7.1.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: ./lcov.info
           fail_ci_if_error: false
