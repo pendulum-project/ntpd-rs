@@ -137,7 +137,7 @@ fn expand_struct(input: &DeriveInput, data: &DataStruct) -> syn::Result<TokenStr
         /// The partial counterpart of a configuration struct, holding only what
         /// the configuration documents actually said.
         #[doc(hidden)]
-        #[derive(Debug, Default, Clone, PartialEq, Eq)]
+        #[derive(Debug, Default, Clone, PartialEq)]
         #[derive(#private::Deserialize, #private::Serialize)]
         #[serde(crate = "::statime_config::__private::serde")]
         #[serde(default, rename_all = "kebab-case", deny_unknown_fields)]
@@ -248,7 +248,7 @@ fn expand_enum(input: &DeriveInput, data: &DataEnum) -> syn::Result<TokenStream2
         /// The partial counterpart of a configuration enum, holding only what
         /// the configuration documents actually said.
         #[doc(hidden)]
-        #[derive(Debug, Clone, PartialEq, Eq)]
+        #[derive(Debug, Clone, PartialEq)]
         #[derive(#private::Deserialize, #private::Serialize)]
         #[serde(crate = "::statime_config::__private::serde")]
         #[serde(rename_all = "kebab-case", tag = #tag)]
