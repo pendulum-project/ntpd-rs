@@ -13,9 +13,11 @@ use std::{
 use ntp_proto::{PollInterval, PollIntervalLimits, SourceConfig};
 use ntp_proto::{ProtocolVersion, tls_utils::Certificate};
 use serde::{
-    Deserialize, Deserializer,
+    Deserialize, Deserializer, Serialize, Serializer,
     de::{self, Visitor},
+    ser::SerializeStruct,
 };
+use statime_config::{Configurable, ConfigurableAtomic};
 
 use super::super::keyexchange::certificates_from_file;
 
@@ -64,22 +66,39 @@ where
     deserializer.deserialize_any(ProtocolVersionVisitor)
 }
 
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "Required by api of serde."
+)]
+fn serialize_ntp_version<S: Serializer>(
+    version: &ProtocolVersion,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    match version {
+        ProtocolVersion::V4 => serializer.serialize_u64(4),
+        ProtocolVersion::V4UpgradingToV5 { tries_left } => serializer.serialize_str("auto"),
+        ProtocolVersion::UpgradedToV5 => serializer.serialize_str("auto"),
+        ProtocolVersion::V5 => serializer.serialize_u64(5),
+    }
+}
+
 fn default_ntp_version() -> ProtocolVersion {
     ProtocolVersion::V4
 }
 
-#[derive(Deserialize, Debug, PartialEq, Clone)]
+#[derive(Deserialize, Serialize, Debug, PartialEq, Clone)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct StandardSource {
     pub address: NtpAddress,
     #[serde(
         default = "default_ntp_version",
-        deserialize_with = "deserialize_ntp_version"
+        deserialize_with = "deserialize_ntp_version",
+        serialize_with = "serialize_ntp_version"
     )]
     pub ntp_version: ProtocolVersion,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Clone)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct NtsSourceConfig {
     pub address: NtsKeAddress,
@@ -87,13 +106,15 @@ pub struct NtsSourceConfig {
     pub enable_srv_resolution: bool,
     #[serde(
         deserialize_with = "deserialize_certificate_authorities",
+        serialize_with = "serialize_certificate_authorities",
         default = "default_certificate_authorities",
         rename = "certificate-authority"
     )]
     pub certificate_authorities: Arc<[Certificate]>,
     #[serde(
         default = "default_ntp_version",
-        deserialize_with = "deserialize_ntp_version"
+        deserialize_with = "deserialize_ntp_version",
+        serialize_with = "serialize_ntp_version"
     )]
     pub ntp_version: ProtocolVersion,
 }
@@ -118,11 +139,18 @@ where
     }
 }
 
+fn serialize_certificate_authorities<S: Serializer>(
+    _value: &Arc<[Certificate]>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str("<PATH TO CERTIFICATES NOT REMEMBERED>")
+}
+
 fn default_certificate_authorities() -> Arc<[Certificate]> {
     Arc::from([])
 }
 
-#[derive(Deserialize, Debug, PartialEq, Clone)]
+#[derive(Deserialize, Serialize, Debug, PartialEq, Clone)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct PoolSourceConfig {
     #[serde(rename = "address")]
@@ -133,7 +161,8 @@ pub struct PoolSourceConfig {
     pub ignore: Vec<IpAddr>,
     #[serde(
         default = "default_ntp_version",
-        deserialize_with = "deserialize_ntp_version"
+        deserialize_with = "deserialize_ntp_version",
+        serialize_with = "serialize_ntp_version"
     )]
     pub ntp_version: ProtocolVersion,
 }
@@ -142,7 +171,7 @@ fn max_sources_default() -> usize {
     4
 }
 
-#[derive(Deserialize, Debug, PartialEq, Clone)]
+#[derive(Deserialize, Serialize, Debug, PartialEq, Clone)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct NtsPoolSourceConfig {
     #[serde(rename = "address")]
@@ -151,6 +180,7 @@ pub struct NtsPoolSourceConfig {
     pub enable_srv_resolution: bool,
     #[serde(
         deserialize_with = "deserialize_certificate_authorities",
+        serialize_with = "serialize_certificate_authorities",
         default = "default_certificate_authorities",
         rename = "certificate-authority"
     )]
@@ -159,12 +189,13 @@ pub struct NtsPoolSourceConfig {
     pub count: usize,
     #[serde(
         default = "default_ntp_version",
-        deserialize_with = "deserialize_ntp_version"
+        deserialize_with = "deserialize_ntp_version",
+        serialize_with = "serialize_ntp_version"
     )]
     pub ntp_version: ProtocolVersion,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Serialize, Debug, PartialEq, Clone)]
 pub struct SockSourceConfig {
     pub path: PathBuf,
     pub precision: f64,
@@ -279,14 +310,14 @@ impl<'de> Deserialize<'de> for SockSourceConfig {
     }
 }
 
-#[derive(Deserialize, Debug, PartialEq, Eq, Clone, Default)]
+#[derive(Deserialize, Serialize, Debug, PartialEq, Eq, Clone, Default, ConfigurableAtomic)]
 #[serde(deny_unknown_fields)]
 pub struct PartialPollIntervalLimits {
     pub min: Option<PollInterval>,
     pub max: Option<PollInterval>,
 }
 
-#[derive(Deserialize, Debug, PartialEq, Eq, Clone, Default)]
+#[derive(Deserialize, Serialize, Debug, PartialEq, Eq, Clone, Default)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct PartialSourceConfig {
     /// Minima and maxima for the poll interval of clients
@@ -317,7 +348,7 @@ impl PartialSourceConfig {
     }
 }
 
-#[derive(Deserialize, Debug, PartialEq, Clone, Default)]
+#[derive(Deserialize, Serialize, Debug, PartialEq, Clone, Default)]
 #[serde(deny_unknown_fields)]
 pub struct FlattenedPair<T, U> {
     #[serde(flatten)]
@@ -437,12 +468,27 @@ impl<'de> Deserialize<'de> for CsptpSourceConfig {
             }
         }
 
-        const FIELDS: &[&str] = &["path", "precision", "measurement_noise_estimate"];
+        const FIELDS: &[&str] = &["address", "domain", "poll_interval", "response_interval"];
         deserializer.deserialize_struct("CsptpSourceConfig", FIELDS, CsptpSourceConfigVisitor)
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[cfg(target_os = "linux")]
+impl Serialize for CsptpSourceConfig {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut struct_serializer = serializer.serialize_struct("CsptpSourceConfig", 4)?;
+        struct_serializer.serialize_field("address", &self.address)?;
+        struct_serializer.serialize_field("domain", &self.domain)?;
+        struct_serializer.serialize_field("poll_interval", &self.poll_interval)?;
+        struct_serializer.serialize_field("response_interval", &self.response_interval)?;
+        struct_serializer.end()
+    }
+}
+
+#[derive(Serialize, Debug, PartialEq, Clone)]
 pub struct PpsSourceConfig {
     pub path: PathBuf,
     pub precision: f64,
@@ -571,7 +617,7 @@ impl<'de> Deserialize<'de> for PpsSourceConfig {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq, Clone)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone, ConfigurableAtomic)]
 #[serde(tag = "mode")]
 pub enum NtpSourceConfig {
     #[serde(rename = "server")]
@@ -664,6 +710,15 @@ impl<'de> Deserialize<'de> for NtpAddress {
     }
 }
 
+impl Serialize for NtpAddress {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&format!("{}:{}", self.server_name, self.port))
+    }
+}
+
 impl<'de> Deserialize<'de> for NtsKeAddress {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -673,6 +728,15 @@ impl<'de> Deserialize<'de> for NtsKeAddress {
         Ok(NtsKeAddress(
             NormalizedAddress::from_string_nts_ke(s).map_err(serde::de::Error::custom)?,
         ))
+    }
+}
+
+impl Serialize for NtsKeAddress {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&format!("{}:{}", self.server_name, self.port))
     }
 }
 
