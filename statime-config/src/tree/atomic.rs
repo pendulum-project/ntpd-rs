@@ -55,6 +55,9 @@ impl ConfigurableAtomic for u32 {}
 impl ConfigurableAtomic for i32 {}
 impl ConfigurableAtomic for u64 {}
 impl ConfigurableAtomic for i64 {}
+impl ConfigurableAtomic for usize {}
+impl ConfigurableAtomic for isize {}
+impl ConfigurableAtomic for f32 {}
 impl ConfigurableAtomic for f64 {}
 impl ConfigurableAtomic for String {}
 impl ConfigurableAtomic for PathBuf {}
