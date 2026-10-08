@@ -1,6 +1,6 @@
 //! The leaf types of the tree.
 
-use std::path::PathBuf;
+use std::{net::SocketAddr, path::PathBuf};
 
 use crate::{
     ConfigError,
@@ -61,4 +61,5 @@ impl ConfigurableAtomic for f32 {}
 impl ConfigurableAtomic for f64 {}
 impl ConfigurableAtomic for String {}
 impl ConfigurableAtomic for PathBuf {}
+impl ConfigurableAtomic for SocketAddr {}
 impl<T> ConfigurableAtomic for Option<T> where T: ConfigurableAtomic {}
