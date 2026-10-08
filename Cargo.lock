@@ -930,6 +930,7 @@ dependencies = [
  "serde_json",
  "statime-algo",
  "statime-base",
+ "statime-config",
  "statime-csptp",
  "statime-netptp",
  "statime-seccomp",
