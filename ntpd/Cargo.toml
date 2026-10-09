@@ -18,6 +18,7 @@ workspace = true
 ntp-proto.workspace = true
 statime-base = { workspace = true, features = ["std"] }
 statime-algo = { workspace = true, features = ["std"] }
+statime-config.workspace = true
 statime-seccomp = { workspace = true, optional = true }
 
 hickory-resolver = { workspace = true, optional = true }
@@ -48,8 +49,7 @@ tokio-rustls.workspace = true
 
 [features]
 default = [ "aws-lc", "rustcrypto", "pps", "srv" ]
-all-portable = [ "hardware-timestamping", "pps", "srv", "aws-lc", "rustcrypto", "openssl-vendored" ]
-hardware-timestamping = []
+all-portable = [ "pps", "srv", "aws-lc", "rustcrypto", "openssl-vendored" ]
 pps = [ "dep:pps-time" ]
 srv = [ "dep:hickory-resolver" ]
 aws-lc = ["rustls23/aws-lc-rs", "rustls23/prefer-post-quantum"] # the latter also turns on aws-lc-rs

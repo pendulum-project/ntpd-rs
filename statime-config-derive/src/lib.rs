@@ -1,7 +1,7 @@
 //! Derive macro for `statime-config`.
 
 use proc_macro::TokenStream;
-use proc_macro2::{Span, TokenStream as TokenStream2};
+use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::{
     Data, DataEnum, DataStruct, DeriveInput, Expr, Fields, Ident, LitStr, Token, Type, Variant,
@@ -55,9 +55,6 @@ struct Field {
     renamed: bool,
     ty: Type,
     default: Option<Expr>,
-    /// The field the loader reads before it merges anything.
-    use_system_config: bool,
-    span: Span,
 }
 
 fn expand(input: DeriveInput) -> syn::Result<TokenStream2> {
@@ -82,20 +79,7 @@ fn expand_struct(input: &DeriveInput, data: &DataStruct) -> syn::Result<TokenStr
     let private = quote!(::statime_config::__private);
 
     let fields = collect_fields(data)?;
-    let root = is_root(input)?;
-
-    // only the root of a tree is something a document can be loaded into
-    let root_impl = use_system_config_field(&fields, root, input)?.map(|field| {
-        quote! {
-            impl ::statime_config::RootConfig for #name {
-                fn use_system_config(
-                    partial: &#partial,
-                ) -> ::core::option::Option<&::statime_config::UseSystemConfig> {
-                    partial.#field.get()
-                }
-            }
-        }
-    });
+    check_attributes(input)?;
 
     let declarations = fields.iter().map(|field| {
         let Field {
@@ -153,7 +137,7 @@ fn expand_struct(input: &DeriveInput, data: &DataStruct) -> syn::Result<TokenStr
         /// The partial counterpart of a configuration struct, holding only what
         /// the configuration documents actually said.
         #[doc(hidden)]
-        #[derive(Debug, Default, Clone, PartialEq, Eq)]
+        #[derive(Debug, Default, Clone, PartialEq)]
         #[derive(#private::Deserialize, #private::Serialize)]
         #[serde(crate = "::statime_config::__private::serde")]
         #[serde(default, rename_all = "kebab-case", deny_unknown_fields)]
@@ -165,8 +149,6 @@ fn expand_struct(input: &DeriveInput, data: &DataStruct) -> syn::Result<TokenStr
             type Partial = #partial;
             type Node = ::statime_config::Section<#partial>;
         }
-
-        #root_impl
 
         impl #private::EffectivelyUnset for #partial {
             fn is_effectively_unset(&self) -> bool {
@@ -243,6 +225,15 @@ fn expand_enum(input: &DeriveInput, data: &DataEnum) -> syn::Result<TokenStream2
         quote!(Self::#name(value) => ::statime_config::PartialValue::apply_defaults(value),)
     });
 
+    let variant_names = variants.iter().map(|EnumVariant { name, rename, .. }| {
+        let string_name = rename.clone().unwrap_or_else(|| name.to_string());
+        quote!(Self::#name(value) => #string_name,)
+    });
+
+    let variant_merges = variants.iter().map(|EnumVariant { name, .. }| {
+        quote!((Self::#name(this), Self::#name(incoming)) => ::statime_config::Merge::merge(this, incoming, context),)
+    });
+
     let resolutions = variants.iter().map(|EnumVariant { name: variant, .. }| {
         quote! {
             Self::#variant(value) => ::core::result::Result::Ok(
@@ -257,7 +248,7 @@ fn expand_enum(input: &DeriveInput, data: &DataEnum) -> syn::Result<TokenStream2
         /// The partial counterpart of a configuration enum, holding only what
         /// the configuration documents actually said.
         #[doc(hidden)]
-        #[derive(Debug, Clone, PartialEq, Eq)]
+        #[derive(Debug, Clone, PartialEq)]
         #[derive(#private::Deserialize, #private::Serialize)]
         #[serde(crate = "::statime_config::__private::serde")]
         #[serde(rename_all = "kebab-case", tag = #tag)]
@@ -291,6 +282,72 @@ fn expand_enum(input: &DeriveInput, data: &DataEnum) -> syn::Result<TokenStream2
             ) -> ::core::result::Result<#name, ::statime_config::ConfigError> {
                 match self {
                     #(#resolutions)*
+                }
+            }
+        }
+
+        impl #partial {
+            fn variant_name(&self) -> &'static str {
+                match self {
+                    #(#variant_names)*
+                }
+            }
+        }
+
+        impl ::statime_config::Merge for #partial {
+            fn merge(
+                &mut self,
+                incoming: Self,
+                context: &mut ::statime_config::MergeContext<'_>,
+            ) -> ::core::result::Result<(), ::statime_config::ConfigError> {
+                match (self, incoming) {
+                    #(#variant_merges)*
+                    (this, incoming) => match context.policy {
+                        ::statime_config::__private::MergePolicy::RejectOverlap => Err(::statime_config::ConfigError::MismatchedVariants { position: context.path.clone(), current: this.variant_name(), incoming: incoming.variant_name() }),
+                        ::statime_config::__private::MergePolicy::Override => {
+                            *this = incoming;
+                            ::core::result::Result::Ok(())
+                        },
+                    },
+                }
+            }
+        }
+
+        impl ::statime_config::PartialValue for ::statime_config::Section<#partial> {
+            type Resolved = #name;
+
+            /// A section records no origin of its own, and visits its children.
+            fn attribute(&mut self, origin: ::statime_config::OriginId) {
+                if let ::statime_config::Section::Set(value) = self {
+                    value.attribute(origin);
+                }
+            }
+
+            /// An absent section still has to be visited: a document that never
+            /// mentions a section should still get the defaults of everything inside
+            /// it.
+            fn apply_defaults(&mut self) {
+                if let ::statime_config::Section::Set(value) = self {
+                    value.apply_defaults();
+                }
+            }
+
+            /// A section resolves to whatever its contents resolve to. An unset one
+            /// only reaches this point when resolving without defaulting first, and
+            /// resolving the empty struct still reports any required value it misses.
+            fn resolve(self, path: &mut ::statime_config::ConfigPath) -> ::core::result::Result<Self::Resolved, ::statime_config::ConfigError> {
+                match self {
+                    ::statime_config::Section::Set(value) => value.resolve(path),
+                    ::statime_config::Section::Unset => ::core::result::Result::Err(::statime_config::ConfigError::MissingRequiredValue { position: path.clone() }),
+                }
+            }
+        }
+
+        impl ::statime_config::__private::EffectivelyUnset for ::statime_config::Section<#partial> {
+            fn is_effectively_unset(&self) -> bool {
+                match self {
+                    ::statime_config::Section::Set(_) => true,
+                    ::statime_config::Section::Unset => false,
                 }
             }
         }
@@ -365,11 +422,7 @@ fn collect_fields(data: &DataStruct) -> syn::Result<Vec<Field>> {
         .iter()
         .map(|field| {
             let name = field.ident.clone().expect("named fields have a name");
-            let FieldConfig {
-                default,
-                rename,
-                use_system_config,
-            } = field_config(field)?;
+            let FieldConfig { default, rename } = field_config(field)?;
 
             Ok(Field {
                 renamed: rename.is_some(),
@@ -377,65 +430,23 @@ fn collect_fields(data: &DataStruct) -> syn::Result<Vec<Field>> {
                 name,
                 ty: field.ty.clone(),
                 default,
-                use_system_config,
-                span: field.span(),
             })
         })
         .collect()
 }
 
 /// Whether this struct is the root of a configuration tree
-fn is_root(input: &DeriveInput) -> syn::Result<bool> {
-    let mut root = false;
-
+fn check_attributes(input: &DeriveInput) -> syn::Result<()> {
     for attribute in &input.attrs {
         if !attribute.path().is_ident("config") {
             continue;
         }
 
-        attribute.parse_nested_meta(|meta| {
-            if meta.path.is_ident("root") {
-                root = true;
-                return Ok(());
-            }
-
-            Err(meta.error("unrecognised configuration attribute"))
-        })?;
+        attribute
+            .parse_nested_meta(|meta| Err(meta.error("unrecognised configuration attribute")))?;
     }
 
-    Ok(root)
-}
-
-/// The field a root reads to decide whether, and from where, to layer a system
-/// configuration underneath it.
-fn use_system_config_field<'a>(
-    fields: &'a [Field],
-    root: bool,
-    input: &DeriveInput,
-) -> syn::Result<Option<&'a Ident>> {
-    let mut marked = fields.iter().filter(|field| field.use_system_config);
-    let first = marked.next();
-
-    if let Some(second) = marked.next() {
-        return Err(syn::Error::new(
-            second.span,
-            "a configuration reads at most one `use_system_config` setting",
-        ));
-    }
-
-    match (root, first) {
-        (true, Some(field)) => Ok(Some(&field.name)),
-        (true, None) => Err(syn::Error::new(
-            input.span(),
-            "a `#[config(root)]` configuration needs a field marked \
-             `#[config(use_system_config)]`, holding a `UseSystemConfig`",
-        )),
-        (false, Some(field)) => Err(syn::Error::new(
-            field.span,
-            "only a `#[config(root)]` configuration reads a `use_system_config` setting",
-        )),
-        (false, None) => Ok(None),
-    }
+    Ok(())
 }
 
 /// What the `#[config(...)]` attributes on a field say.
@@ -443,9 +454,6 @@ fn use_system_config_field<'a>(
 struct FieldConfig {
     default: Option<Expr>,
     rename: Option<String>,
-    /// Whether this is the field the loader reads to decide whether, and from
-    /// where, to layer a system configuration underneath the document.
-    use_system_config: bool,
 }
 
 fn field_config(field: &syn::Field) -> syn::Result<FieldConfig> {
@@ -469,11 +477,6 @@ fn field_config(field: &syn::Field) -> syn::Result<FieldConfig> {
 
             if meta.path.is_ident("rename") {
                 config.rename = Some(meta.value()?.parse::<LitStr>()?.value());
-                return Ok(());
-            }
-
-            if meta.path.is_ident("use_system_config") {
-                config.use_system_config = true;
                 return Ok(());
             }
 
