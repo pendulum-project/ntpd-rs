@@ -276,10 +276,10 @@ impl<A: NetworkAddress, S> Socket<A, S> {
             {
                 unreachable!("Should not be able to create send timestamping sockets on platforms other than linux")
             }
-        } else {
-            send_call()?;
-            Ok(None)
         }
+
+        send_call()?;
+        Ok(None)
     }
 
     /// Wait for the next send timestamp to be returned.
@@ -319,9 +319,9 @@ impl<A: NetworkAddress, S> Socket<A, S> {
                     let _ = socket;
                     unreachable!("Should not be able to create send timestamping sockets on platforms other than linux")
                 }
-            } else {
-                Err(std::io::ErrorKind::Unsupported.into())
             }
+
+            Err(std::io::ErrorKind::Unsupported.into())
         }
     }
 
