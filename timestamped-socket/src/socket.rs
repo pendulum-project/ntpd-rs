@@ -232,15 +232,20 @@ impl<A: NetworkAddress, S> Socket<A, S> {
         buf: &mut [u8],
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<std::io::Result<RecvResult<A>>> {
-        match self.raw.poll_read_ready(cx) {
-            std::task::Poll::Ready(Ok(mut guard)) => {
-                match guard.try_io(|inner| self.inner_recv(buf, inner.get_ref())) {
-                    Ok(result) => std::task::Poll::Ready(result),
-                    Err(_) => std::task::Poll::Pending,
+        // Assumes the socket will not be endlessly marked ready when it is
+        // isn't. This is an assumption on tokio and the underlying OS behaving
+        // somewhat reasonable.
+        loop {
+            match self.raw.poll_read_ready(cx) {
+                std::task::Poll::Ready(Ok(mut guard)) => {
+                    if let Ok(result) = guard.try_io(|inner| self.inner_recv(buf, inner.get_ref()))
+                    {
+                        break std::task::Poll::Ready(result);
+                    }
                 }
+                std::task::Poll::Ready(Err(e)) => break std::task::Poll::Ready(Err(e)),
+                std::task::Poll::Pending => break std::task::Poll::Pending,
             }
-            std::task::Poll::Ready(Err(e)) => std::task::Poll::Ready(Err(e)),
-            std::task::Poll::Pending => std::task::Poll::Pending,
         }
     }
 
@@ -364,15 +369,21 @@ impl<A: NetworkAddress> Socket<A, Open> {
     ) -> std::task::Poll<std::io::Result<Option<SendTimestampToken>>> {
         let addr = addr.to_sockaddr(PrivateToken);
 
-        match self.raw.poll_write_ready(cx) {
-            std::task::Poll::Ready(Ok(mut guard)) => {
-                match guard.try_io(|inner| self.send_inner(|| inner.get_ref().send_to(buf, addr))) {
-                    Ok(result) => std::task::Poll::Ready(result),
-                    Err(_) => std::task::Poll::Pending,
+        // Assumes the socket will not be endlessly marked ready when it is
+        // isn't. This is an assumption on tokio and the underlying OS behaving
+        // somewhat reasonable.
+        loop {
+            match self.raw.poll_write_ready(cx) {
+                std::task::Poll::Ready(Ok(mut guard)) => {
+                    if let Ok(result) =
+                        guard.try_io(|inner| self.send_inner(|| inner.get_ref().send_to(buf, addr)))
+                    {
+                        break std::task::Poll::Ready(result);
+                    }
                 }
+                std::task::Poll::Ready(Err(e)) => break std::task::Poll::Ready(Err(e)),
+                std::task::Poll::Pending => break std::task::Poll::Pending,
             }
-            std::task::Poll::Ready(Err(e)) => std::task::Poll::Ready(Err(e)),
-            std::task::Poll::Pending => std::task::Poll::Pending,
         }
     }
 
@@ -415,15 +426,21 @@ impl<A: NetworkAddress> Socket<A, Open> {
         let from = from.to_sockaddr(PrivateToken);
         let to = to.to_sockaddr(PrivateToken);
 
-        match self.raw.poll_write_ready(cx) {
-            std::task::Poll::Ready(Ok(mut guard)) => match guard
-                .try_io(|inner| self.send_inner(|| inner.get_ref().send_from_to(buf, from, to)))
-            {
-                Ok(result) => std::task::Poll::Ready(result),
-                Err(_) => std::task::Poll::Pending,
-            },
-            std::task::Poll::Ready(Err(e)) => std::task::Poll::Ready(Err(e)),
-            std::task::Poll::Pending => std::task::Poll::Pending,
+        // Assumes the socket will not be endlessly marked ready when it is
+        // isn't. This is an assumption on tokio and the underlying OS behaving
+        // somewhat reasonable.
+        loop {
+            match self.raw.poll_write_ready(cx) {
+                std::task::Poll::Ready(Ok(mut guard)) => {
+                    if let Ok(result) = guard.try_io(|inner| {
+                        self.send_inner(|| inner.get_ref().send_from_to(buf, from, to))
+                    }) {
+                        break std::task::Poll::Ready(result);
+                    }
+                }
+                std::task::Poll::Ready(Err(e)) => break std::task::Poll::Ready(Err(e)),
+                std::task::Poll::Pending => break std::task::Poll::Pending,
+            }
         }
     }
 
@@ -497,15 +514,21 @@ impl<A: NetworkAddress> Socket<A, Connected> {
         buf: &[u8],
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<std::io::Result<Option<SendTimestampToken>>> {
-        match self.raw.poll_write_ready(cx) {
-            std::task::Poll::Ready(Ok(mut guard)) => {
-                match guard.try_io(|inner| self.send_inner(|| inner.get_ref().send(buf))) {
-                    Ok(result) => std::task::Poll::Ready(result),
-                    Err(_) => std::task::Poll::Pending,
+        // Assumes the socket will not be endlessly marked ready when it is
+        // isn't. This is an assumption on tokio and the underlying OS behaving
+        // somewhat reasonable.
+        loop {
+            match self.raw.poll_write_ready(cx) {
+                std::task::Poll::Ready(Ok(mut guard)) => {
+                    if let Ok(result) =
+                        guard.try_io(|inner| self.send_inner(|| inner.get_ref().send(buf)))
+                    {
+                        break std::task::Poll::Ready(result);
+                    }
                 }
+                std::task::Poll::Ready(Err(e)) => break std::task::Poll::Ready(Err(e)),
+                std::task::Poll::Pending => break std::task::Poll::Pending,
             }
-            std::task::Poll::Ready(Err(e)) => std::task::Poll::Ready(Err(e)),
-            std::task::Poll::Pending => std::task::Poll::Pending,
         }
     }
 
@@ -545,15 +568,21 @@ impl<A: NetworkAddress> Socket<A, Connected> {
     ) -> std::task::Poll<std::io::Result<Option<SendTimestampToken>>> {
         let from = from.to_sockaddr(PrivateToken);
 
-        match self.raw.poll_write_ready(cx) {
-            std::task::Poll::Ready(Ok(mut guard)) => match guard
-                .try_io(|inner| self.send_inner(|| inner.get_ref().send_from(buf, from)))
-            {
-                Ok(result) => std::task::Poll::Ready(result),
-                Err(_) => std::task::Poll::Pending,
-            },
-            std::task::Poll::Ready(Err(e)) => std::task::Poll::Ready(Err(e)),
-            std::task::Poll::Pending => std::task::Poll::Pending,
+        // Assumes the socket will not be endlessly marked ready when it is
+        // isn't. This is an assumption on tokio and the underlying OS behaving
+        // somewhat reasonable.
+        loop {
+            match self.raw.poll_write_ready(cx) {
+                std::task::Poll::Ready(Ok(mut guard)) => {
+                    if let Ok(result) = guard
+                        .try_io(|inner| self.send_inner(|| inner.get_ref().send_from(buf, from)))
+                    {
+                        break std::task::Poll::Ready(result);
+                    }
+                }
+                std::task::Poll::Ready(Err(e)) => break std::task::Poll::Ready(Err(e)),
+                std::task::Poll::Pending => break std::task::Poll::Pending,
+            }
         }
     }
 
