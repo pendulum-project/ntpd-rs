@@ -10,7 +10,7 @@ fn main() {
     if let Err(err) = ntpd::daemon_main() {
         eprintln!("{err}");
         process::exit(1);
-    } else {
-        process::exit(0);
     }
+
+    process::exit(0);
 }
