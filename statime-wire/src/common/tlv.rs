@@ -302,9 +302,9 @@ impl TlvType {
             Self::CumulativeRateRatio => 0x8007,
             Self::Pad => 0x8008,
             Self::Authentication => 0x8009,
-            Self::CsptpStatus => 0xf002,
             Self::CsptpRequest => 0xff00,
             Self::CsptpResponse => 0xff01,
+            Self::CsptpStatus => 0xff02,
             Self::Reserved(value) | Self::Legacy(value) | Self::Experimental(value) => value,
         }
     }
@@ -316,9 +316,8 @@ impl TlvType {
             | 0x000a..=0x1fff
             | 0x2030..=0x3fff
             | 0x4002..=0x7eff
-            | 0x800a..=0xf001
-            | 0xf003..=0xfeff
-            | 0xff02..=0xffef
+            | 0x800a..=0xfeff
+            | 0xff03..=0xffef
             | 0xfff0..=0xffff => Self::Reserved(value),
             0x2000..=0x2003 => Self::Legacy(value),
             0x2004..=0x202f | 0x7f00..=0x7fff => Self::Experimental(value),
@@ -343,9 +342,9 @@ impl TlvType {
             0x8007 => Self::CumulativeRateRatio,
             0x8008 => Self::Pad,
             0x8009 => Self::Authentication,
-            0xf002 => Self::CsptpStatus,
             0xff00 => Self::CsptpRequest,
             0xff01 => Self::CsptpResponse,
+            0xff02 => Self::CsptpStatus,
         }
     }
 
