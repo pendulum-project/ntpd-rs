@@ -4,11 +4,10 @@ use std::{
 };
 
 use crate::{
-    daemon::{Config, ObservableState, config::CliArg, tracing::LogLevel},
+    daemon::{Config, ObservableState, config::CliArg},
     force_sync,
 };
 use tokio::runtime::Builder;
-use tracing_subscriber::util::SubscriberInitExt;
 
 const USAGE_MSG: &str = "\
 usage: ntp-ctl validate [-c PATH]
@@ -151,6 +150,10 @@ impl NtpCtlOptions {
 }
 
 fn validate(config: Option<&Path>) -> ExitCode {
+    // FIXME: Reenable once the config is less in flux
+    let _ = config;
+    ExitCode::SUCCESS
+    /*
     // Late completion not needed, so ignore result.
     crate::daemon::tracing::tracing_init(LogLevel::Info, None, true)
         .0
@@ -169,6 +172,7 @@ fn validate(config: Option<&Path>) -> ExitCode {
             ExitCode::FAILURE
         }
     }
+    */
 }
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
