@@ -1,0 +1,11 @@
+# The configuration file path for the ntpd-daemon where settings for the
+# configuration of ntpd-rs are stored
+CONFIG="/etc/ntpd-rs/ntp.toml"
+
+# Change which log messages are logged to stdout
+LOG_LEVEL="info"
+
+# The unprivileged user and group to run as
+# do not change unless you know what you're doing
+USER=ntpd-rs
+GROUP=ntpd-rs

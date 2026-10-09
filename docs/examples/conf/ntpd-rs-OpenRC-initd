@@ -1,0 +1,56 @@
+#!/sbin/openrc-run
+# https://github.com/OpenRC/openrc/blob/master/service-script-guide.md
+
+RUST_LOG=info
+
+supervisor=supervise-daemon
+
+description="Network Time Protocol (ntpd-rs)"
+command=/usr/bin/ntp-daemon
+command_args="-c $CONFIG -l $LOG_LEVEL"
+# log the stderror and stdout to /var/log/ntpd-rs.log
+output_log=/var/log/${RC_SVCNAME}.log
+error_log=/var/log/${RC_SVCNAME}.log
+# the unprivileged user to run as
+command_user="${USER}:${GROUP}"
+
+[ $RC_UNAME = "Linux" ] && {
+    capabilities="^cap_net_bind_service,^cap_sys_time"
+    no_new_privs=1
+}
+
+extra_started_commands="reload"
+
+depend() {
+    want net
+}
+
+# https://github.com/OpenRC/openrc/blob/master/service-script-guide.md#dont-restartreload-with-a-broken-config
+checkconfig() {
+    ntpd-ctl validate || return $?
+}
+
+start_pre() {
+    [ "$RC_CMD" != "restart" ] && {
+        checkconfig || return $?
+    }
+
+    checkpath -d --owner ${USER}:${GROUP} /var/lib/$RC_SVCNAME
+    checkpath -D --owner ${USER}:${GROUP} /run/$RC_SVCNAME
+    checkpath -d --owner ${USER}:${GROUP} /var/log/${RC_SVCNAME}.log
+}
+
+stop_pre() {
+    [ "$RC_CMD" = "restart" ] && {
+        checkconfig || return $?
+    }
+
+    return 0
+}
+    
+reload() {
+    checkconfig || return $?
+    ebegin "Reloading $RC_SVCNAME"
+    supervise-daemon $RC_SVCNAME --signal SIGHUP
+    eend $?
+}
