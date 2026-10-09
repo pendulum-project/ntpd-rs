@@ -159,10 +159,6 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
         // FIXME: set up configuration of keyset.
         let keyset = nts_key_provider::spawn(KeysetConfig::default()).await;
 
-        #[cfg(feature = "hardware-timestamping")]
-        let clock_config = config.clock;
-
-        #[cfg(not(feature = "hardware-timestamping"))]
         let clock_config = config::ClockConfig::default();
 
         ::tracing::debug!("Configuration loaded, spawning daemon jobs");
