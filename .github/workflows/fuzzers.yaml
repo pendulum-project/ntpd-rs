@@ -64,7 +64,7 @@ jobs:
       - name: Install nightly toolchain
         run: rustup toolchain install "$NIGHTLY_RUST_VERSION" --component llvm-tools-preview && rustup override set "$NIGHTLY_RUST_VERSION"
       - name: Install cargo fuzz & rustfilt
-        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+        uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
         with:
           tool: cargo-fuzz,rustfilt
       - name: Run `cargo fuzz`
@@ -93,7 +93,7 @@ jobs:
 
       - name: Upload crash artifacts on failure
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fuzz-crash-artifacts-${{ matrix.fuzz_target }}
           path: fuzz/artifacts/
