@@ -269,17 +269,16 @@ impl<A: NetworkAddress, S> Socket<A, S> {
                 send_call()?;
                 let token = SendTimestampToken(*counter);
                 *counter = counter.wrapping_add(1);
-                Ok(Some(token))
+                return Ok(Some(token));
             }
 
             #[cfg(not(target_os = "linux"))]
             {
                 unreachable!("Should not be able to create send timestamping sockets on platforms other than linux")
             }
-        } else {
-            send_call()?;
-            Ok(None)
         }
+        send_call()?;
+        Ok(None)
     }
 
     /// Wait for the next send timestamp to be returned.
@@ -308,10 +307,10 @@ impl<A: NetworkAddress, S> Socket<A, S> {
                 #[cfg(target_os = "linux")]
                 {
                     let (counter, timestamp) = Self::fetch_send_timestamp(socket).await?;
-                    Ok((
+                    return Ok((
                         SendTimestampToken(counter),
                         timestamp.with_timestamp_mode(timestamp_mode),
-                    ))
+                    ));
                 }
 
                 #[cfg(not(target_os = "linux"))]
@@ -319,9 +318,8 @@ impl<A: NetworkAddress, S> Socket<A, S> {
                     let _ = socket;
                     unreachable!("Should not be able to create send timestamping sockets on platforms other than linux")
                 }
-            } else {
-                Err(std::io::ErrorKind::Unsupported.into())
             }
+            Err(std::io::ErrorKind::Unsupported.into())
         }
     }
 
