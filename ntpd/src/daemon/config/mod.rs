@@ -223,13 +223,12 @@ where
         panic!("Custom clock paths not supported on this platform");
 
         #[cfg(target_os = "linux")]
-        Ok(NtpClockWrapper::from(
+        return Ok(NtpClockWrapper::from(
             UnixClock::open(path).map_err(|e| serde::de::Error::custom(e.to_string()))?,
-        ))
-    } else {
-        tracing::debug!("using REALTIME clock");
-        Ok(NtpClockWrapper::from(UnixClock::CLOCK_REALTIME))
+        ));
     }
+    tracing::debug!("using REALTIME clock");
+    Ok(NtpClockWrapper::from(UnixClock::CLOCK_REALTIME))
 }
 
 fn deserialize_interface<'de, D>(deserializer: D) -> Result<Option<InterfaceName>, D::Error>
