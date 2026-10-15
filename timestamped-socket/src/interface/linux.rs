@@ -132,8 +132,10 @@ impl ChangeDetector {
         // Safety: nonblocking lives for the duration of the call, and is 4 bytes long as expected for FIONBIO
         cerr(unsafe { libc::ioctl(fd, libc::FIONBIO, &nonblocking) })?;
 
+        // Safety: We own the file descriptor and so can transfer it, and it is
+        // guaranteed to be open by the earlier error checking.
         Ok(ChangeDetector {
-            fd: AsyncFd::new(fd)?,
+            fd: unsafe { AsyncFd::register(fd) }?,
         })
     }
 

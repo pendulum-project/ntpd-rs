@@ -197,9 +197,11 @@ pub fn open_interface_udp(
     let local_addr = SocketAddr::from_sockaddr(socket.getsockname()?, PrivateToken)
         .ok_or::<std::io::Error>(std::io::ErrorKind::Other.into())?;
 
+    // Safety: We own the file descriptor and so can transfer it, and it is
+    // guaranteed to be open by the earlier error checking.
     Ok(Socket {
         timestamp_mode: timestamping,
-        raw: Arc::new(AsyncFd::new(socket)?),
+        raw: Arc::new(unsafe { AsyncFd::register(socket) }?),
         send_counter: std::sync::Mutex::new(0),
         local_addr,
         _state: PhantomData,
@@ -246,9 +248,11 @@ pub fn open_interface_udp4(
     let local_addr = SocketAddrV4::from_sockaddr(socket.getsockname()?, PrivateToken)
         .ok_or::<std::io::Error>(std::io::ErrorKind::Other.into())?;
 
+    // Safety: We own the file descriptor and so can transfer it, and it is
+    // guaranteed to be open by the earlier error checking.
     Ok(Socket {
         timestamp_mode: timestamping,
-        raw: Arc::new(AsyncFd::new(socket)?),
+        raw: Arc::new(unsafe { AsyncFd::register(socket) }?),
         send_counter: std::sync::Mutex::new(0),
         local_addr,
         _state: PhantomData,
@@ -296,9 +300,11 @@ pub fn open_interface_udp6(
     let local_addr = SocketAddrV6::from_sockaddr(socket.getsockname()?, PrivateToken)
         .ok_or::<std::io::Error>(std::io::ErrorKind::Other.into())?;
 
+    // Safety: We own the file descriptor and so can transfer it, and it is
+    // guaranteed to be open by the earlier error checking.
     Ok(Socket {
         timestamp_mode: timestamping,
-        raw: Arc::new(AsyncFd::new(socket)?),
+        raw: Arc::new(unsafe { AsyncFd::register(socket) }?),
         send_counter: std::sync::Mutex::new(0),
         local_addr,
         _state: PhantomData,
@@ -353,9 +359,11 @@ pub fn open_interface_ethernet(
     let local_addr = EthernetAddress::from_sockaddr(socket.getsockname()?, PrivateToken)
         .ok_or::<std::io::Error>(std::io::ErrorKind::Other.into())?;
 
+    // Safety: We own the file descriptor and so can transfer it, and it is
+    // guaranteed to be open by the earlier error checking.
     Ok(Socket {
         timestamp_mode: timestamping,
-        raw: Arc::new(AsyncFd::new(socket)?),
+        raw: Arc::new(unsafe { AsyncFd::register(socket) }?),
         send_counter: std::sync::Mutex::new(0),
         local_addr,
         _state: PhantomData,
