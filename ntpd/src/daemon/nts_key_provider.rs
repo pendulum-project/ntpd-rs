@@ -8,7 +8,24 @@ use ntp_proto::{KeySet, KeySetProvider};
 use tokio::sync::watch;
 use tracing::{Span, instrument, warn};
 
-use super::config::KeysetConfig;
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct KeysetConfig {
+    /// Number of old keys to keep around
+    pub stale_key_count: usize,
+    /// How often to rotate keys (seconds between rotations)
+    pub key_rotation_interval: usize,
+    pub key_storage_path: Option<String>,
+}
+
+impl Default for KeysetConfig {
+    fn default() -> Self {
+        Self {
+            stale_key_count: 7,
+            key_rotation_interval: 86400,
+            key_storage_path: None,
+        }
+    }
+}
 
 #[instrument(level = tracing::Level::ERROR, name = "KeySet Provider", skip_all, fields(path = debug(config.key_storage_path.clone())))]
 pub async fn spawn(config: KeysetConfig) -> watch::Receiver<Arc<KeySet>> {
