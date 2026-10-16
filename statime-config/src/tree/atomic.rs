@@ -16,7 +16,10 @@ use crate::{
 /// stops at such a type, so implementing this is all it takes to make a type
 /// usable as a configuration value. It can be derived automatically using
 /// `#[derive(ConfigurableAtomic)]`.
-pub trait ConfigurableAtomic: std::fmt::Debug + Clone + PartialEq {}
+pub trait ConfigurableAtomic:
+    std::fmt::Debug + Clone + PartialEq + serde::Serialize + for<'a> serde::Deserialize<'a>
+{
+}
 
 /// An atomic value is its own partial representation, and a field holding one
 /// is a setting.
