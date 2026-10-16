@@ -35,7 +35,8 @@ use tracing_subscriber::util::SubscriberInitExt;
 
 use config::NtpDaemonOptions;
 
-use crate::daemon::config::KeysetConfig;
+use crate::daemon::clock::NtpClockWrapper;
+use crate::daemon::nts_key_provider::KeysetConfig;
 use crate::daemon::spawn::pool::PoolSpawner;
 use crate::daemon::spawn::standard::StandardSpawner;
 use crate::daemon::system::{System, SystemConfig};
@@ -159,10 +160,8 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
         // FIXME: set up configuration of keyset.
         let keyset = nts_key_provider::spawn(KeysetConfig::default()).await;
 
-        let clock_config = config::ClockConfig::default();
-
         ::tracing::debug!("Configuration loaded, spawning daemon jobs");
-        let clock = clock_config.clock;
+        let clock = NtpClockWrapper::default();
         // FIXME: Implement proper configuration of controllers.
         let (controller, system_clock_id) =
             statime_algo::KalmanController::<StdKalmanStorage<_>, _>::new(

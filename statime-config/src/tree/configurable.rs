@@ -16,7 +16,12 @@ pub trait Configurable {
     /// How a field of this type is stored in the partial struct holding it.
     /// Atomic values are stored in a [`Setting`], nested structs in a
     /// [`Section`](crate::tree::section::Section).
-    type Node: PartialValue + Default + EffectivelyUnset + Merge;
+    type Node: PartialValue
+        + Default
+        + EffectivelyUnset
+        + Merge
+        + serde::Serialize
+        + for<'a> serde::Deserialize<'a>;
 }
 
 /// A vector is atomic for merging, so it is stored in a single setting, while
@@ -24,6 +29,7 @@ pub trait Configurable {
 impl<T> Configurable for Vec<T>
 where
     T: Configurable,
+    <T as Configurable>::Partial: serde::Serialize + for<'a> serde::Deserialize<'a>,
 {
     type Partial = Vec<T::Partial>;
     type Node = Setting<Vec<T::Partial>>;

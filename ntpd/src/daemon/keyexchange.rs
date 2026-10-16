@@ -1,17 +1,31 @@
 use std::{
     io::{BufRead, BufReader},
-    path::Path,
+    net::SocketAddr,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 
 use libc::{ECONNABORTED, EMFILE, ENFILE, ENOBUFS, ENOMEM};
-use ntp_proto::{KeyExchangeServer, KeySet};
+use ntp_proto::{KeyExchangeServer, KeySet, NtpVersion};
 use ntp_proto::{NtsServerConfig, tls_utils::Certificate};
 use tokio::{net::TcpListener, task::JoinHandle};
 use tracing::{Instrument, Span, debug, error, instrument};
 
-use super::config::NtsKeConfig;
 use super::exitcode;
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct NtsKeConfig {
+    pub certificate_chain_path: PathBuf,
+    pub private_key_path: PathBuf,
+    pub accepted_pool_authentication_tokens: Vec<String>,
+    pub key_exchange_timeout_ms: u64,
+    pub concurrent_connections: usize,
+    pub longlived_connections: usize,
+    pub listen: SocketAddr,
+    pub ntp_port: Option<u16>,
+    pub ntp_server: Option<String>,
+    pub accept_ntp_versions: Vec<NtpVersion>,
+}
 
 #[instrument(level = tracing::Level::ERROR, name = "Nts Server", skip_all, fields(address = debug(nts_ke_config.listen)))]
 pub fn spawn(
