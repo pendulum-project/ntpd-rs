@@ -36,7 +36,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 use config::NtpDaemonOptions;
 
 use crate::daemon::clock::NtpClockWrapper;
-use crate::daemon::config::KeysetConfig;
+use crate::daemon::nts_key_provider::KeysetConfig;
 use crate::daemon::spawn::pool::PoolSpawner;
 use crate::daemon::spawn::standard::StandardSpawner;
 use crate::daemon::system::{System, SystemConfig};
