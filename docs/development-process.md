@@ -46,6 +46,10 @@ To determine what version to release we keep to semantic versioning:
 - [ ] Go to the releases page on GitHub and find the draft release, edit the
       draft release and make it public, this should also create a tag on the
       repository.
+- [ ] Go to the pull request page and find the pull request for the
+      documentation and merge it. If this is not a release that should be marked
+      as latest, update the latest alias with `mike alias -u <latest version> latest`,
+      and then pushing the resulting commit on the gh-pages branch.
 - [ ] On your local computer, checkout the specific commit that was tagged by
       GitHub (i.e. `git fetch && git switch --detach v[version]`)
 - [ ] Run `utils/release.sh` to publish the crates.io packages
