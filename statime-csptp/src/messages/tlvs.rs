@@ -96,7 +96,9 @@ impl CsptpStatusTlv {
     }
 
     pub(crate) fn add_to(self, builder: &mut TlvSetBuilder<'_>) -> Result<(), statime_wire::Error> {
-        let mut content = [0u8; 18];
+        // The final four bytes are never written, but form dummy ipv4 address to ensure we
+        // properly conform to the D0.6 draft.
+        let mut content = [0u8; 22];
         content[0] = self.grandmaster_priority1;
         self.grandmaster_clock_quality
             .serialize(&mut content[1..5])?;
@@ -273,7 +275,7 @@ mod tests {
             ClockIdentity([1, 2, 3, 4, 5, 6, 7, 8])
         );
 
-        let mut buffer = [0; 22];
+        let mut buffer = [0; 26];
         let mut builder = TlvSetBuilder::new(&mut buffer);
         CsptpStatusTlv {
             grandmaster_priority1: 15,
@@ -296,7 +298,7 @@ mod tests {
         assert_eq!(
             tlv.value,
             [
-                15, 248, 41, 128, 0, 16, 0, 4, 255, 254, 9, 10, 11, 12, 13, 14, 15, 16
+                15, 248, 41, 128, 0, 16, 0, 4, 255, 254, 9, 10, 11, 12, 13, 14, 15, 16, 0, 0, 0, 0
             ]
             .as_slice()
         );
