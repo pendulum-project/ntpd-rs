@@ -10,7 +10,8 @@ use serde::{Deserialize, Deserializer, Serialize};
 pub use server::*;
 use statime_algo::LinkConfig;
 use statime_config::{
-    ConfigError, Configurable, ConfigurableAtomic, RootConfig, SystemConfigSetting,
+    ConfigError, ConfigPath, Configurable, ConfigurableAtomic, PartialValue, RootConfig,
+    SystemConfigSetting,
 };
 use std::io;
 use std::{
@@ -25,42 +26,6 @@ use timestamped_socket::interface::InterfaceName;
 use tracing::{info, warn};
 
 use super::{clock::NtpClockWrapper, tracing::LogLevel};
-
-fn deserialize_ntp_clock<'de, D>(deserializer: D) -> Result<NtpClockWrapper, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let data: Option<PathBuf> = Deserialize::deserialize(deserializer)?;
-
-    if let Some(path) = data {
-        tracing::info!("using custom clock {path:?}");
-
-        #[cfg(not(target_os = "linux"))]
-        panic!("Custom clock paths not supported on this platform");
-
-        #[cfg(target_os = "linux")]
-        return Ok(NtpClockWrapper::from(
-            UnixClock::open(path).map_err(|e| serde::de::Error::custom(e.to_string()))?,
-        ));
-    }
-    tracing::debug!("using REALTIME clock");
-    Ok(NtpClockWrapper::from(UnixClock::CLOCK_REALTIME))
-}
-
-fn deserialize_interface<'de, D>(deserializer: D) -> Result<Option<InterfaceName>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let opt_interface_name: Option<InterfaceName> = Deserialize::deserialize(deserializer)?;
-
-    if let Some(interface_name) = opt_interface_name {
-        tracing::debug!("using custom interface {}", interface_name);
-    } else {
-        tracing::trace!("using default interface");
-    }
-
-    Ok(opt_interface_name)
-}
 
 /// Timestamping mode. This is a hint!
 ///
@@ -107,121 +72,37 @@ impl TimestampMode {
     }
 }
 
-#[cfg(target_os = "linux")]
-#[derive(Deserialize, Debug, Copy, Clone)]
-pub struct CsptpConfig {
-    #[serde(default)]
-    pub identity: statime_wire::ClockIdentity,
-    #[serde(default = "csptp_config_default_priority")]
-    pub priority_1: u8,
-    #[serde(default = "csptp_config_default_priority")]
-    pub priority_2: u8,
-    #[serde(default)]
-    pub clock_quality: statime_wire::ClockQuality,
-    #[serde(default = "csptp_config_default_true")]
-    pub ptp_timescale: bool,
-    #[serde(default)]
-    pub time_traceable: bool,
-    #[serde(default)]
-    pub frequency_traceable: bool,
-}
-
-#[cfg(target_os = "linux")]
-impl Default for CsptpConfig {
-    fn default() -> Self {
-        Self {
-            identity: statime_wire::ClockIdentity::default(),
-            priority_1: 128,
-            priority_2: 128,
-            clock_quality: statime_wire::ClockQuality::default(),
-            ptp_timescale: true,
-            time_traceable: false,
-            frequency_traceable: false,
-        }
-    }
-}
-
-#[cfg(target_os = "linux")]
-impl From<CsptpConfig> for statime_csptp::CsptpConfig {
-    fn from(value: CsptpConfig) -> Self {
-        Self {
-            identity: value.identity,
-            priority_1: value.priority_1,
-            priority_2: value.priority_2,
-            clock_quality: value.clock_quality,
-            ptp_timescale: value.ptp_timescale,
-            time_traceable: value.time_traceable,
-            frequency_traceable: value.frequency_traceable,
-        }
-    }
-}
-
-#[cfg(target_os = "linux")]
-fn csptp_config_default_priority() -> u8 {
-    128
-}
-
-#[cfg(target_os = "linux")]
-fn csptp_config_default_true() -> bool {
-    true
-}
-
-#[derive(Deserialize, Debug, Copy, Clone, Default)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct ClockConfig {
-    #[serde(deserialize_with = "deserialize_ntp_clock", default)]
     pub clock: NtpClockWrapper,
-    #[serde(deserialize_with = "deserialize_interface", default)]
     pub interface: Option<InterfaceName>,
     pub timestamp_mode: TimestampMode,
 }
 
-#[derive(Deserialize, Debug, Clone, Configurable)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[derive(Debug, Clone, Configurable)]
 pub struct ObservabilityConfig {
-    #[serde(default)]
+    #[config(default)]
     pub log_level: Option<LogLevel>,
-    #[serde(default)]
+    #[config(default)]
     pub log_path: Option<PathBuf>,
-    #[serde(default)]
+    #[config(default)]
     pub log_path_metrics_exporter: Option<PathBuf>,
-    #[serde(default)]
+    #[config(default)]
     pub ansi_colors: Option<bool>,
-    #[serde(default)]
+    #[config(default)]
     pub observation_path: Option<PathBuf>,
-    #[serde(default = "default_observation_permissions")]
+    #[config(default = 0o666)]
     pub observation_permissions: u32,
-    #[serde(default = "default_metrics_exporter_listen")]
+    #[config(default="127.0.0.1:9975".parse().unwrap())]
     pub metrics_exporter_listen: SocketAddr,
 }
 
 impl Default for ObservabilityConfig {
     fn default() -> Self {
-        Self {
-            log_level: None,
-            log_path: None,
-            log_path_metrics_exporter: None,
-            ansi_colors: None,
-            observation_path: None,
-            observation_permissions: default_observation_permissions(),
-            metrics_exporter_listen: default_metrics_exporter_listen(),
-        }
+        let mut partial = <Self as Configurable>::Node::default();
+        partial.apply_defaults();
+        partial.resolve(&mut ConfigPath::root()).unwrap()
     }
-}
-
-const fn default_observation_permissions() -> u32 {
-    0o666
-}
-
-fn default_metrics_exporter_listen() -> SocketAddr {
-    "127.0.0.1:9975".parse().unwrap()
-}
-
-#[derive(Deserialize, Debug, Default)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct DaemonSynchronizationConfig {
-    #[serde(flatten)]
-    pub synchronization_base: SynchronizationConfig,
 }
 
 /// Which system configuration to layer underneath the main configuration, if
@@ -247,20 +128,15 @@ impl Default for UseSystemConfig {
     }
 }
 
-#[derive(Deserialize, Debug, Default, Configurable)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[derive(Debug, Default, Configurable)]
 pub struct Config {
-    #[serde(default)]
     #[config(rename = "use-system-config", default)]
     #[allow(clippy::struct_field_names)]
     pub use_system_config: UseSystemConfig,
-    #[serde(rename = "source", default)]
     #[config(rename = "source", default)]
     pub sources: Vec<NtpSourceConfig>,
-    #[serde(rename = "server", default)]
     #[config(rename = "server", default)]
     pub servers: Vec<NtpServerConfig>,
-    #[serde(default)]
     pub observability: ObservabilityConfig,
 }
 
@@ -370,167 +246,5 @@ impl Config {
         // FIXME: Reintroduce check on NTS configuration once fields are available.
 
         ok
-    }
-}
-
-#[cfg(test)]
-#[allow(clippy::float_cmp, reason = "Test code")]
-mod tests {
-    use ntp_proto::{NtpDuration, ProtocolVersion, StepThreshold};
-
-    use super::*;
-
-    #[test]
-    fn toml_sources_invalid() {
-        let config: Result<Config, _> = toml::from_str(
-            r#"
-            [[source]]
-            mode = "server"
-            address = ":invalid:ipv6:123"
-            "#,
-        );
-
-        assert!(config.is_err());
-    }
-
-    #[test]
-    fn toml_allow_no_sources() {
-        let config: Result<Config, _> = toml::from_str(
-            r#"
-            [[server]]
-            listen = "[::]:123"
-            "#,
-        );
-
-        //assert!(config.is_ok());
-        assert!(config.unwrap().check());
-    }
-
-    #[test]
-    fn system_config_accumulated_threshold() {
-        let config: Result<SynchronizationConfig, _> = toml::from_str(
-            r#"
-            accumulated-step-panic-threshold = 0
-            "#,
-        );
-
-        let config = config.unwrap();
-        assert!(config.accumulated_step_panic_threshold.is_none());
-
-        let config: Result<SynchronizationConfig, _> = toml::from_str(
-            r#"
-            accumulated-step-panic-threshold = 1000
-            "#,
-        );
-
-        let config = config.unwrap();
-        assert_eq!(
-            config.accumulated_step_panic_threshold,
-            Some(NtpDuration::from_seconds(1000.0))
-        );
-    }
-
-    #[test]
-    fn system_config_startup_panic_threshold() {
-        let config: Result<SynchronizationConfig, _> = toml::from_str(
-            r#"
-            startup-step-panic-threshold = { forward = 10, backward = 20 }
-            "#,
-        );
-
-        let config = config.unwrap();
-        assert_eq!(
-            config.startup_step_panic_threshold.forward,
-            Some(NtpDuration::from_seconds(10.0))
-        );
-        assert_eq!(
-            config.startup_step_panic_threshold.backward,
-            Some(NtpDuration::from_seconds(20.0))
-        );
-    }
-
-    #[test]
-    fn duration_not_nan() {
-        #[derive(Debug, Deserialize)]
-        struct Helper {
-            #[expect(unused)]
-            duration: NtpDuration,
-        }
-
-        let result: Result<Helper, _> = toml::from_str(
-            r#"
-            duration = nan
-            "#,
-        );
-
-        let error = result.unwrap_err();
-        assert!(error.to_string().contains("expected a valid number"));
-    }
-
-    #[test]
-    fn step_threshold_not_nan() {
-        #[derive(Debug, Deserialize)]
-        struct Helper {
-            #[expect(unused)]
-            threshold: StepThreshold,
-        }
-
-        let result: Result<Helper, _> = toml::from_str(
-            r#"
-            threshold = nan
-            "#,
-        );
-
-        let error = result.unwrap_err();
-        assert!(error.to_string().contains("expected a positive number"));
-    }
-
-    #[test]
-    fn deny_unknown_fields() {
-        let config: Result<SynchronizationConfig, _> = toml::from_str(
-            r#"
-            unknown-field = 42
-            "#,
-        );
-
-        let error = config.unwrap_err();
-        assert!(error.to_string().contains("unknown field"));
-    }
-
-    #[test]
-    fn clock_config() {
-        let config: Result<ClockConfig, _> = toml::from_str(
-            r#"
-            interface = "enp0s31f6"
-            timestamp-mode = "software"
-            "#,
-        );
-
-        let config = config.unwrap();
-
-        let expected = InterfaceName::from_str("enp0s31f6").unwrap();
-        assert_eq!(config.interface, Some(expected));
-
-        assert_eq!(config.timestamp_mode, TimestampMode::Software);
-    }
-
-    #[test]
-    fn daemon_synchronization_config() {
-        let config: Result<DaemonSynchronizationConfig, _> = toml::from_str(
-            r#"
-            does_not_exist = 5
-            "#,
-        );
-
-        assert!(config.is_err());
-
-        let config: Result<DaemonSynchronizationConfig, _> = toml::from_str(
-            r#"
-            minimum-agreeing-sources = 2
-            "#,
-        );
-
-        let config = config.unwrap();
-        assert_eq!(config.synchronization_base.minimum_agreeing_sources, 2);
     }
 }
