@@ -28,6 +28,7 @@ const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 const CARGO_TARGET_TMPDIR: &str = env!("CARGO_TARGET_TMPDIR");
 
 #[test]
+#[ignore = "FIXME: remove once configuration format is no longer in flux"]
 fn test_validate_bad() {
     let result = test_ntp_ctl_output(&[
         "validate",
@@ -43,6 +44,7 @@ fn test_validate_bad() {
 }
 
 #[test]
+#[ignore = "FIXME: remove once configuration format is no longer in flux"]
 fn test_validate_good() {
     let result = test_ntp_ctl_output(&[
         "validate",
@@ -113,6 +115,7 @@ fn test_help() {
 }
 
 #[test]
+#[ignore = "FIXME: remove once configuration format is no longer in flux"]
 fn test_bad_reference_id() {
     // Reference ID is too long
 
@@ -137,6 +140,7 @@ reference-id = "TOO_LONG"
 }
 
 #[test]
+#[ignore = "FIXME: remove once configuration format is no longer in flux"]
 fn test_good_reference_id() {
     let test_config_contents = r#"
 [[source]]

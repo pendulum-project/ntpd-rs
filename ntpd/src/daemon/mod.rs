@@ -27,6 +27,7 @@ use std::{error::Error, io::IsTerminal, path::Path};
 
 use ::tracing::info;
 pub use config::Config;
+use ntp_proto::{SourceConfig, SynchronizationConfig};
 pub use observer::ObservableState;
 use statime_algo::{ClockConfig, ControllerConfig, StdKalmanStorage};
 use tokio::runtime::Builder;
@@ -34,6 +35,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 
 use config::NtpDaemonOptions;
 
+use crate::daemon::config::KeysetConfig;
 use crate::daemon::spawn::pool::PoolSpawner;
 use crate::daemon::spawn::standard::StandardSpawner;
 use crate::daemon::system::{System, SystemConfig};
@@ -133,7 +135,7 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
         Application::Deamon,
     );
 
-    let runtime = if config.servers.is_empty() && config.nts_ke.is_empty() {
+    let runtime = if config.servers.is_empty() {
         Builder::new_current_thread().enable_all().build()?
     } else {
         Builder::new_multi_thread().enable_all().build()?
@@ -154,25 +156,20 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
         config.check();
 
         // we always generate the keyset (even if NTS is not used)
-        let keyset = nts_key_provider::spawn(config.keyset).await;
+        // FIXME: set up configuration of keyset.
+        let keyset = nts_key_provider::spawn(KeysetConfig::default()).await;
 
-        #[cfg(feature = "hardware-timestamping")]
-        let clock_config = config.clock;
-
-        #[cfg(not(feature = "hardware-timestamping"))]
         let clock_config = config::ClockConfig::default();
 
         ::tracing::debug!("Configuration loaded, spawning daemon jobs");
         let clock = clock_config.clock;
+        // FIXME: Implement proper configuration of controllers.
         let (controller, system_clock_id) =
             statime_algo::KalmanController::<StdKalmanStorage<_>, _>::new(
                 clock,
                 ClockConfig::default(),
                 ControllerConfig {
-                    minimum_agreeing_sources: config
-                        .synchronization
-                        .synchronization_base
-                        .minimum_agreeing_sources,
+                    minimum_agreeing_sources: 3.min(config.sources.len()),
                     select_offset_uncertainty_window: 1.0,
                     select_link_uncertainty_window: 2.0,
                     select_delay_uncertainty_window: 0.5,
@@ -188,9 +185,11 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
                 minimum_retry_timeout: std::time::Duration::from_secs(1),
                 maximum_retry_timeout: std::time::Duration::from_mins(10),
             },
-            config.synchronization.synchronization_base,
+            // FIXME: Add ntp configuration back in.
+            SynchronizationConfig::default(),
             #[cfg(target_os = "linux")]
-            config.csptp.into(),
+            // FIXME: Add csptp configuration back in.
+            statime_csptp::CsptpConfig::default(),
         ));
 
         let system_clone = system.clone();
@@ -201,14 +200,14 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
                 config::NtpSourceConfig::Standard(flattened_pair) => {
                     system.add_spawner(Box::new(StandardSpawner::new(
                         flattened_pair.first,
-                        flattened_pair.second.with_defaults(config.source_defaults),
+                        flattened_pair.second.with_defaults(SourceConfig::default()),
                     )));
                 }
                 config::NtpSourceConfig::Nts(flattened_pair) => todo!(),
                 config::NtpSourceConfig::Pool(flattened_pair) => {
                     system.add_spawner(Box::new(PoolSpawner::new(
                         flattened_pair.first,
-                        flattened_pair.second.with_defaults(config.source_defaults),
+                        flattened_pair.second.with_defaults(SourceConfig::default()),
                     )));
                 }
                 config::NtpSourceConfig::NtsPool(flattened_pair) => todo!(),
@@ -220,9 +219,10 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
             }
         }
 
-        for nts_ke_config in config.nts_ke {
+        // FIXME: Replace with nts ke server code once present.
+        /*for nts_ke_config in config.nts_ke {
             let _join_handle = keyexchange::spawn(nts_ke_config, keyset.clone());
-        }
+        }*/
 
         // FIXME: Replace with proper new observer code once available.
         /*observer::spawn(

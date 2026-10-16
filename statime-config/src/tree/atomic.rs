@@ -1,6 +1,6 @@
 //! The leaf types of the tree.
 
-use std::path::PathBuf;
+use std::{net::SocketAddr, path::PathBuf};
 
 use crate::{
     ConfigError,
@@ -16,7 +16,7 @@ use crate::{
 /// stops at such a type, so implementing this is all it takes to make a type
 /// usable as a configuration value. It can be derived automatically using
 /// `#[derive(ConfigurableAtomic)]`.
-pub trait ConfigurableAtomic {}
+pub trait ConfigurableAtomic: std::fmt::Debug + Clone + PartialEq {}
 
 /// An atomic value is its own partial representation, and a field holding one
 /// is a setting.
@@ -55,7 +55,11 @@ impl ConfigurableAtomic for u32 {}
 impl ConfigurableAtomic for i32 {}
 impl ConfigurableAtomic for u64 {}
 impl ConfigurableAtomic for i64 {}
+impl ConfigurableAtomic for usize {}
+impl ConfigurableAtomic for isize {}
+impl ConfigurableAtomic for f32 {}
 impl ConfigurableAtomic for f64 {}
 impl ConfigurableAtomic for String {}
 impl ConfigurableAtomic for PathBuf {}
+impl ConfigurableAtomic for SocketAddr {}
 impl<T> ConfigurableAtomic for Option<T> where T: ConfigurableAtomic {}

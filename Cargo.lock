@@ -930,6 +930,7 @@ dependencies = [
  "serde_json",
  "statime-algo",
  "statime-base",
+ "statime-config",
  "statime-csptp",
  "statime-netptp",
  "statime-seccomp",
@@ -1529,9 +1530,11 @@ dependencies = [
 name = "statime-config"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "serde",
  "statime-config-derive",
  "toml",
+ "tracing",
 ]
 
 [[package]]

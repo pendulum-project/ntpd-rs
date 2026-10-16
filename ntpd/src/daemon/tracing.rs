@@ -4,10 +4,13 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use statime_config::ConfigurableAtomic;
 use tracing::metadata::LevelFilter;
 
-#[derive(Debug, Default, Copy, Clone, Deserialize, PartialEq, Eq)]
+#[derive(
+    Debug, Default, Copy, Clone, Deserialize, Serialize, PartialEq, Eq, ConfigurableAtomic,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel {
     /// The "trace" level.

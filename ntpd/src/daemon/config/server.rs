@@ -7,6 +7,7 @@ use std::{
 
 use ntp_proto::{FilterAction, FilterList, NtpVersion};
 use serde::{Deserialize, Deserializer};
+use statime_config::Configurable;
 
 #[derive(Debug, PartialEq, Eq, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -58,6 +59,9 @@ pub enum Interface {
 pub struct CsptpServerConfig {
     pub interface: Interface,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Configurable)]
+pub struct NtpServerConfig {}
 
 #[derive(Debug, PartialEq, Eq, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
