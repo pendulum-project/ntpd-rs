@@ -9,23 +9,6 @@ use ntp_proto::{FilterAction, FilterList, NtpVersion};
 use serde::{Deserialize, Deserializer};
 use statime_config::Configurable;
 
-// FIXME: This enum is temporary, to encode that we are listening on all interfaces
-// We need to implement better binding for CSPTP servers, both to addresses and
-// specific interfaces, once we are further with the algorithm stuff.
-#[cfg(target_os = "linux")]
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Interface {
-    #[default]
-    Any,
-}
-
-#[cfg(target_os = "linux")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CsptpServerConfig {
-    pub interface: Interface,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Configurable)]
 pub struct NtpServerConfig {}
 
