@@ -72,13 +72,6 @@ impl TimestampMode {
     }
 }
 
-#[derive(Debug, Copy, Clone, Default)]
-pub struct ClockConfig {
-    pub clock: NtpClockWrapper,
-    pub interface: Option<InterfaceName>,
-    pub timestamp_mode: TimestampMode,
-}
-
 #[derive(Debug, Clone, Configurable)]
 pub struct ObservabilityConfig {
     #[config(default)]
