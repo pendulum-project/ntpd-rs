@@ -9,25 +9,6 @@ use ntp_proto::{FilterAction, FilterList, NtpVersion};
 use serde::{Deserialize, Deserializer};
 use statime_config::Configurable;
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct KeysetConfig {
-    /// Number of old keys to keep around
-    pub stale_key_count: usize,
-    /// How often to rotate keys (seconds between rotations)
-    pub key_rotation_interval: usize,
-    pub key_storage_path: Option<String>,
-}
-
-impl Default for KeysetConfig {
-    fn default() -> Self {
-        Self {
-            stale_key_count: 7,
-            key_rotation_interval: 86400,
-            key_storage_path: None,
-        }
-    }
-}
-
 // FIXME: This enum is temporary, to encode that we are listening on all interfaces
 // We need to implement better binding for CSPTP servers, both to addresses and
 // specific interfaces, once we are further with the algorithm stuff.
