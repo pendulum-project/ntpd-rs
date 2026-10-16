@@ -8,7 +8,7 @@ use statime_algo::{LinkConfig, TrackedLinkConfig};
 use statime_base::{Link, SourceType, StdController};
 use tokio::sync::mpsc;
 
-use crate::daemon::config::{NtpAddress, TimestampMode};
+use crate::daemon::config::NtpAddress;
 use crate::daemon::ntp_source::SourceTask;
 use crate::daemon::spawn::CreationParameters;
 
@@ -117,9 +117,7 @@ where
                             link_id,
                             config.address.to_string(),
                             addr,
-                            None,
                             clock,
-                            TimestampMode::Software,
                             source,
                             initial_actions,
                         )

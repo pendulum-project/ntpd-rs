@@ -8,7 +8,6 @@ use statime_base::{Link, LinkId, SourceType, StdController};
 use tokio::sync::mpsc;
 use tracing::warn;
 
-use crate::daemon::config::TimestampMode;
 use crate::daemon::ntp_source::SourceTask;
 use crate::daemon::spawn::CreationParameters;
 use crate::daemon::spawn::SpawnFailureReason::{self, RetryableFailure};
@@ -144,9 +143,7 @@ where
                                 link_id,
                                 config.addr.to_string(),
                                 addr,
-                                None,
                                 clock,
-                                TimestampMode::Software,
                                 source,
                                 initial_actions,
                             )
