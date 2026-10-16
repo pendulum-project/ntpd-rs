@@ -8,7 +8,7 @@ use statime_base::{Clock, Link, LinkId, TAI, Timestamp};
 use timestamped_socket::socket::open_interface_udp;
 use timestamped_socket::{
     interface::InterfaceName,
-    socket::{Connected, RecvResult, Socket, connect_address},
+    socket::{Connected, GeneralTimestampMode, RecvResult, Socket, connect_address},
 };
 use tracing::{Instrument, Span, debug, error, instrument, warn};
 
@@ -16,7 +16,7 @@ use tokio::time::{Instant, Sleep};
 
 use crate::daemon::spawn::LinkTerminationReason;
 
-use super::{config::TimestampMode, exitcode};
+use super::exitcode;
 
 /// Trait needed to allow injecting of futures other than `tokio::time::Sleep` for testing
 pub trait Wait: Future<Output = ()> {
@@ -49,8 +49,6 @@ pub(crate) struct SourceTask<C: 'static + Clock<TAI> + Send, Controller: Link, T
     _wait: PhantomData<T>,
     link_id: LinkId,
     clock: C,
-    interface: Option<InterfaceName>,
-    timestamp_mode: TimestampMode,
     name: String,
     source_addr: SocketAddr,
     socket: Option<Socket<SocketAddr, Connected>>,
@@ -71,27 +69,21 @@ enum SocketResult {
     Abort,
 }
 
+// FIXME: Make this configurable again when implementing better hardware timestamping.
+#[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+const TIMESTAMP_MODE: GeneralTimestampMode = GeneralTimestampMode::None;
+#[cfg(target_os = "freebsd")]
+const TIMESTAMP_MODE: GeneralTimestampMode = GeneralTimestampMode::SoftwareRecv;
+#[cfg(target_os = "linux")]
+const TIMESTAMP_MODE: GeneralTimestampMode = GeneralTimestampMode::SoftwareAll;
+
 impl<C, Controller: Link, T> SourceTask<C, Controller, T>
 where
     C: 'static + Clock<TAI> + Send + Sync,
     T: Wait,
 {
     fn setup_socket(&mut self) -> SocketResult {
-        let socket_res = match self.interface {
-            #[cfg(target_os = "linux")]
-            Some(interface) => {
-                open_interface_udp(
-                    interface,
-                    0, /*lets os choose*/
-                    self.timestamp_mode.as_interface_mode(),
-                    None,
-                )
-                .and_then(|socket| socket.connect(self.source_addr))
-            }
-            _ => connect_address(self.source_addr, self.timestamp_mode.as_general_mode()),
-        };
-
-        self.socket = match socket_res {
+        self.socket = match connect_address(self.source_addr, TIMESTAMP_MODE) {
             Ok(socket) => Some(socket),
             Err(error) => {
                 warn!(?error, "Could not open socket");
@@ -210,15 +202,12 @@ impl<C, Controller: Link + Send + 'static> SourceTask<C, Controller, Sleep>
 where
     C: 'static + Clock<TAI> + Send + Sync,
 {
-    #[expect(clippy::too_many_arguments)]
-    #[instrument(level = tracing::Level::ERROR, name = "Ntp Source", skip(timestamp_mode, clock, source, initial_actions))]
+    #[instrument(level = tracing::Level::ERROR, name = "Ntp Source", skip(clock, source, initial_actions))]
     pub fn spawn(
         link_id: LinkId,
         name: String,
         source_addr: SocketAddr,
-        interface: Option<InterfaceName>,
         clock: C,
-        timestamp_mode: TimestampMode,
         source: NtpSource<Controller>,
         initial_actions: NtpSourceActionIterator,
     ) -> tokio::task::JoinHandle<LinkTerminationReason> {
@@ -249,8 +238,6 @@ where
                     link_id,
                     name,
                     clock,
-                    interface,
-                    timestamp_mode,
                     source_addr,
                     socket: None,
                     source,
@@ -535,8 +522,6 @@ mod tests {
             name: "test".into(),
             clock: TestClock {},
             source_addr: SocketAddr::from((Ipv4Addr::LOCALHOST, port_base)),
-            interface: None,
-            timestamp_mode: TimestampMode::KernelRecv,
             socket: None,
             source,
             last_send_timestamp: None,

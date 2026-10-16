@@ -22,55 +22,9 @@ use std::{
     path::{Path, PathBuf},
     str::FromStr,
 };
-use timestamped_socket::interface::InterfaceName;
 use tracing::{info, warn};
 
 use super::{clock::NtpClockWrapper, tracing::LogLevel};
-
-/// Timestamping mode. This is a hint!
-///
-/// Your OS or hardware might not actually support some timestamping modes.
-/// Unsupported timestamping modes are ignored.
-#[derive(Default, Debug, Clone, Copy, Deserialize, PartialEq, Eq, Hash)]
-#[serde(rename_all = "kebab-case")]
-pub enum TimestampMode {
-    #[cfg_attr(not(any(target_os = "linux", target_os = "freebsd")), default)]
-    Software,
-    #[cfg_attr(target_os = "freebsd", default)]
-    KernelRecv,
-    #[cfg_attr(target_os = "linux", default)]
-    KernelAll,
-    Hardware,
-}
-
-impl TimestampMode {
-    #[cfg(target_os = "linux")]
-    pub(crate) fn as_interface_mode(self) -> timestamped_socket::socket::InterfaceTimestampMode {
-        use timestamped_socket::socket::InterfaceTimestampMode::*;
-        match self {
-            TimestampMode::Software => None,
-            TimestampMode::KernelRecv => SoftwareRecv,
-            TimestampMode::KernelAll => SoftwareAll,
-            TimestampMode::Hardware => HardwareAll,
-        }
-    }
-
-    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-    pub(crate) fn as_general_mode(self) -> timestamped_socket::socket::GeneralTimestampMode {
-        use timestamped_socket::socket::GeneralTimestampMode::*;
-        match self {
-            TimestampMode::Software => None,
-            TimestampMode::KernelRecv => SoftwareRecv,
-            TimestampMode::KernelAll | TimestampMode::Hardware => SoftwareAll,
-        }
-    }
-
-    #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
-    pub(crate) fn as_general_mode(self) -> timestamped_socket::socket::GeneralTimestampMode {
-        use timestamped_socket::socket::GeneralTimestampMode::*;
-        None
-    }
-}
 
 #[derive(Debug, Clone, Configurable)]
 pub struct ObservabilityConfig {
