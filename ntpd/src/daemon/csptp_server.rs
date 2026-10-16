@@ -4,7 +4,9 @@ use statime_csptp::{CsptpManager, InternalState, ServerRecvResult, ServerSocket,
 use statime_netptp::{NetworkManager, OpenSocket, PtpAddressFamily};
 use tokio::task::JoinHandle;
 
-use crate::daemon::config::CsptpServerConfig;
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CsptpServerConfig {}
 
 struct ServerSocketWrapper<A: PtpAddressFamily>(OpenSocket<A>);
 
