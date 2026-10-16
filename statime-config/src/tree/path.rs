@@ -15,7 +15,7 @@ enum PathSegment {
 pub struct ConfigPath(Vec<PathSegment>);
 
 impl ConfigPath {
-    pub(crate) fn root() -> Self {
+    pub fn root() -> Self {
         Self(vec![])
     }
 
