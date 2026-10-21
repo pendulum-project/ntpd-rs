@@ -258,7 +258,7 @@ fn expand_enum(input: &DeriveInput, data: &DataEnum) -> syn::Result<TokenStream2
 
         impl ::statime_config::Configurable for #name {
             type Partial = #partial;
-            type Node = ::statime_config::Section<#partial>;
+            type Node = ::statime_config::EnumSection<#partial>;
         }
 
         impl ::statime_config::PartialValue for #partial {
@@ -309,45 +309,6 @@ fn expand_enum(input: &DeriveInput, data: &DataEnum) -> syn::Result<TokenStream2
                             ::core::result::Result::Ok(())
                         },
                     },
-                }
-            }
-        }
-
-        impl ::statime_config::PartialValue for ::statime_config::Section<#partial> {
-            type Resolved = #name;
-
-            /// A section records no origin of its own, and visits its children.
-            fn attribute(&mut self, origin: ::statime_config::OriginId) {
-                if let ::statime_config::Section::Set(value) = self {
-                    value.attribute(origin);
-                }
-            }
-
-            /// An absent section still has to be visited: a document that never
-            /// mentions a section should still get the defaults of everything inside
-            /// it.
-            fn apply_defaults(&mut self) {
-                if let ::statime_config::Section::Set(value) = self {
-                    value.apply_defaults();
-                }
-            }
-
-            /// A section resolves to whatever its contents resolve to. An unset one
-            /// only reaches this point when resolving without defaulting first, and
-            /// resolving the empty struct still reports any required value it misses.
-            fn resolve(self, path: &mut ::statime_config::ConfigPath) -> ::core::result::Result<Self::Resolved, ::statime_config::ConfigError> {
-                match self {
-                    ::statime_config::Section::Set(value) => value.resolve(path),
-                    ::statime_config::Section::Unset => ::core::result::Result::Err(::statime_config::ConfigError::MissingRequiredValue { position: path.clone() }),
-                }
-            }
-        }
-
-        impl ::statime_config::__private::EffectivelyUnset for ::statime_config::Section<#partial> {
-            fn is_effectively_unset(&self) -> bool {
-                match self {
-                    ::statime_config::Section::Set(_) => true,
-                    ::statime_config::Section::Unset => false,
                 }
             }
         }
