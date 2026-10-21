@@ -72,6 +72,5 @@ jobs:
         run: |
           git config user.name ci-bot
           git config user.email no-reply@trifectatech.org
-          test ! -s doc.patch || git am docs.patch
+          test ! -s docs.patch || git am docs.patch
           git push origin gh-pages
-
