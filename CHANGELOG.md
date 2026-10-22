@@ -9,7 +9,7 @@
 
 ### Changed
 - Started on a large rework of the internals of the time synchronization daemon.
-- Updated dependencies.
+- Updated dependencies. Includes fixes for RUSTSEC-2026-0382.
 
 ### Removed
 - Because of the refactorings, the force-sync command is temporarily disabled.
