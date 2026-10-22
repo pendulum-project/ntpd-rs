@@ -1,0 +1,49 @@
+[observability]
+# You can configure ntpd-rs with different output levels of logging information
+# Basic values for this are `trace`, `debug`, `info`, `warn` and `error`.
+log-level = "info"
+## Using the observe socket you can retrieve statistical information about the
+## daemon while it is running. You can use the `ntp-ctl` or prometheus based
+## `ntp-metrics-exporter` binaries for some default options to read from the
+## observe socket.
+observation-path = "/var/run/ntpd-rs/observe"
+
+## The sources section allows configuring sources, you may configure multiple of
+## these blocks to add more sources to your configuration.
+## Our default configuration spawns a pool of sources (by default this attempts
+## to discover 4 distinct sources).
+[[source]]
+mode = "pool"
+address = "ntpd-rs.pool.ntp.org"
+count = 4
+
+## If you have an NTS server, you can configure a source that connects using NTS
+## by adding a configuration such as the one below
+#[[source]]
+#mode = "nts"
+# NTS service from NETNOD: https://www.netnod.se/nts/network-time-security
+#address = "nts.netnod.se"
+
+## A source in server mode will only create a single source in contrast to the
+## multiple sources of a pool. This is the recommended source mode if you only
+## have an IP address for your source.
+#[[source]]
+#mode = "server"
+#address = "ntpd-rs.pool.ntp.org"
+
+## If you want to provide time to other machines, the configuration below
+## enables serving time on port 123 of all network interfaces.
+#[[server]]
+#listen = "[::]:123"
+
+## Below are configured various thresholds beyond which ntpd-rs will not
+## change the system clock. CHANGE THESE TO MATCH YOUR SECURITY NEEDS!
+[synchronization]
+# The maximum step size (in seconds) of a single step during normal operation
+single-step-panic-threshold = 1800
+# On startup a larger jump may occur, this sets limits for that initial jump
+startup-step-panic-threshold = { forward="inf", backward = 86400 }
+# If, during the lifetime of the ntp-daemon the combined time of time jumps
+# exceeds this value, then the NTP daemon will stop, this is disabled by default
+#accumulated-threshold = 1800
+#minimum-agreeing-sources = 3

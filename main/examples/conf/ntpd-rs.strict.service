@@ -1,0 +1,72 @@
+[Unit]
+Description=Network Time Service (ntpd-rs)
+Documentation=https://github.com/pendulum-project/ntpd-rs
+After=network-online.target
+Wants=network-online.target
+Conflicts=systemd-timesyncd.service ntp.service chrony.service
+
+[Service]
+Type=notify
+Restart=no
+ExecStart=/usr/bin/ntp-daemon
+Environment="RUST_LOG=info"
+User=ntpd-rs
+Group=ntpd-rs
+
+NoNewPrivileges=yes
+AmbientCapabilities=CAP_SYS_TIME
+CapabilityBoundingSet=CAP_SYS_TIME
+
+## Sockets live in the runtime directory
+RuntimeDirectory=ntpd-rs
+RuntimeDirectoryMode=0755
+
+## Configuration directory is read by both ntpd-rs and ntpd-rs-metrics
+## No keys should be stored here
+ConfigurationDirectory=ntpd-rs
+ConfigurationDirectoryMode=0555
+
+## (optional) When running as server
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+## (optional) When preserving NTS key materials storage
+## Requires setting state in /var/lib/ntpd-rs subfolder
+StateDirectory=ntpd-rs
+StateDirectoryMode=0700
+
+## Device management
+### (optional) When using PPS
+# DevicePolicy=closed
+# DeviceAllow=/dev/pps
+
+### (default) No access to any /dev
+DevicePolicy=closed
+PrivateDevices=yes
+
+## Standard minimal systemd lockdown
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+PrivateTmp=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectProc=invisible
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+RemoveIPC=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+SystemCallFilter=@basic-io @clock @file-system @io-event @network-io @process @signal ioctl madvise
+UMask=0077
+
+## (do not use) This breaks setting the time.
+# PrivateUsers=yes
+
+[Install]
+WantedBy=multi-user.target
