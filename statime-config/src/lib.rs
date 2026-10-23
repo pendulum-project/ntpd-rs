@@ -112,7 +112,7 @@ pub use statime_config_derive::{Configurable, ConfigurableAtomic};
 // are part of the interface whether or not anyone names them directly
 pub use tree::{
     ConfigPath, Configurable, ConfigurableAtomic, EnumSection, Merge, MergeContext, Origin,
-    OriginId, PartialValue, Section, Setting,
+    OriginId, PartialValue, Section, Setting, MergePolicy
 };
 
 /// The machinery the derive macro's generated code reaches for, which is
@@ -121,5 +121,5 @@ pub use tree::{
 pub mod __private {
     pub use serde::{self, Deserialize, Serialize};
 
-    pub use crate::tree::{EffectivelyUnset, MergePolicy, is_effectively_unset};
+    pub use crate::tree::{EffectivelyUnset, is_effectively_unset};
 }

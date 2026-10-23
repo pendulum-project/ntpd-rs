@@ -303,8 +303,8 @@ fn expand_enum(input: &DeriveInput, data: &DataEnum) -> syn::Result<TokenStream2
                 match (self, incoming) {
                     #(#variant_merges)*
                     (this, incoming) => match context.policy {
-                        ::statime_config::__private::MergePolicy::RejectOverlap => Err(::statime_config::ConfigError::MismatchedVariants { position: context.path.clone(), current: this.variant_name(), incoming: incoming.variant_name() }),
-                        ::statime_config::__private::MergePolicy::Override => {
+                        ::statime_config::MergePolicy::RejectOverlap => Err(::statime_config::ConfigError::MismatchedVariants { position: context.path.clone(), current: this.variant_name(), incoming: incoming.variant_name() }),
+                        ::statime_config::MergePolicy::Override => {
                             *this = incoming;
                             ::core::result::Result::Ok(())
                         },
