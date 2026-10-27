@@ -1,12 +1,22 @@
+use std::path::PathBuf;
+
 use ntp_proto::{ClockId, ObservableSourceState, PollInterval};
 use pps_time::PpsDevice;
 use statime_base::{Direction, Duration, Link, Measurement, Timestamp};
 use tokio::sync::mpsc;
 use tracing::{Instrument, Span, debug, error, instrument, warn};
 
-use crate::daemon::{clock::utc_to_tai, config::PpsSourceConfig};
+use crate::daemon::clock::utc_to_tai;
 
 use super::ntp_source::SourceChannels;
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct PpsSourceConfig {
+    pub path: PathBuf,
+    pub precision: f64,
+    pub accuracy: f64,
+    pub period: f64,
+}
 
 struct PpsDeviceFetchTask {
     pps: PpsDevice,
