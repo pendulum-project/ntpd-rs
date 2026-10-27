@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 
+use crate::daemon::spawn::NormalizedAddress;
 #[cfg(feature = "srv")]
 use hickory_resolver::{
     TokioResolver,
@@ -7,8 +8,6 @@ use hickory_resolver::{
     proto::rr::{IntoName, Name},
 };
 use tokio::net::lookup_host;
-
-use crate::daemon::config::NormalizedAddress;
 
 // We keep the resolver globally to avoid reloading its configuration constantly.
 #[cfg(feature = "srv")]

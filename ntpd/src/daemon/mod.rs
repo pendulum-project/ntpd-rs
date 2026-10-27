@@ -37,8 +37,8 @@ use config::NtpDaemonOptions;
 
 use crate::daemon::clock::NtpClockWrapper;
 use crate::daemon::nts_key_provider::KeysetConfig;
-use crate::daemon::spawn::pool::PoolSpawner;
-use crate::daemon::spawn::standard::StandardSpawner;
+use crate::daemon::spawn::pool::{PoolSourceConfig, PoolSpawner};
+use crate::daemon::spawn::standard::{StandardSource, StandardSpawner};
 use crate::daemon::system::{System, SystemConfig};
 use crate::daemon::tracing::LogReloadTaskStarter;
 use crate::notify::notify_ready;
@@ -196,25 +196,33 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
 
         for source in config.sources {
             match source {
-                config::NtpSourceConfig::Standard(flattened_pair) => {
+                config::SourceConfig::NtpServer(config) => {
                     system.add_spawner(Box::new(StandardSpawner::new(
-                        flattened_pair.first,
-                        flattened_pair.second.with_defaults(SourceConfig::default()),
+                        StandardSource {
+                            address: config.address.into(),
+                            ntp_version: config.ntp_version.into(),
+                        },
+                        SourceConfig::default(),
                     )));
                 }
-                config::NtpSourceConfig::Nts(flattened_pair) => todo!(),
-                config::NtpSourceConfig::Pool(flattened_pair) => {
+                config::SourceConfig::NtpNtsServer(config) => todo!(),
+                config::SourceConfig::NtpPool(config) => {
                     system.add_spawner(Box::new(PoolSpawner::new(
-                        flattened_pair.first,
-                        flattened_pair.second.with_defaults(SourceConfig::default()),
+                        PoolSourceConfig {
+                            addr: config.address.into(),
+                            count: config.count,
+                            ignore: vec![],
+                            ntp_version: config.ntp_version.into(),
+                        },
+                        SourceConfig::default(),
                     )));
                 }
-                config::NtpSourceConfig::NtsPool(flattened_pair) => todo!(),
-                config::NtpSourceConfig::Sock(sock_source_config) => todo!(),
+                config::SourceConfig::NtpNtsPool(config) => todo!(),
+                config::SourceConfig::Sock(config) => todo!(),
                 #[cfg(feature = "pps")]
-                config::NtpSourceConfig::Pps(pps_source_config) => todo!(),
+                config::SourceConfig::Pps(config) => todo!(),
                 #[cfg(target_os = "linux")]
-                config::NtpSourceConfig::Csptp(csptp_source_config) => todo!(),
+                config::SourceConfig::Csptp(config) => todo!(),
             }
         }
 

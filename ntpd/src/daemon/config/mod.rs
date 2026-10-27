@@ -1,13 +1,15 @@
 mod cli;
-mod ntp_source;
+mod primitives;
 mod server;
+mod source;
 
 pub use cli::*;
 use clock_steering::unix::UnixClock;
-use ntp_proto::{NtpVersion, ProtocolVersion, SourceConfig, SynchronizationConfig};
-pub use ntp_source::*;
+use ntp_proto::{NtpVersion, ProtocolVersion, SynchronizationConfig};
+pub use primitives::*;
 use serde::{Deserialize, Deserializer, Serialize};
 pub use server::*;
+pub use source::*;
 use statime_algo::LinkConfig;
 use statime_config::{
     ConfigError, ConfigPath, Configurable, ConfigurableAtomic, PartialValue, RootConfig,
@@ -81,7 +83,7 @@ pub struct Config {
     #[allow(clippy::struct_field_names)]
     pub use_system_config: UseSystemConfig,
     #[config(rename = "source", default)]
-    pub sources: Vec<NtpSourceConfig>,
+    pub sources: Vec<SourceConfig>,
     #[config(rename = "server", default)]
     pub servers: Vec<NtpServerConfig>,
     pub observability: ObservabilityConfig,
@@ -132,7 +134,7 @@ impl Config {
 
     pub fn from_args(
         file: Option<&impl AsRef<Path>>,
-        sources: Vec<NtpSourceConfig>,
+        sources: Vec<SourceConfig>,
         servers: Vec<NtpServerConfig>,
     ) -> Result<Config, ConfigError> {
         let mut config = Config::from_first_file(file.as_ref())?;
@@ -159,15 +161,16 @@ impl Config {
         let mut count = 0;
         for source in &self.sources {
             match source {
-                NtpSourceConfig::Standard(_) => count += 1,
-                NtpSourceConfig::Nts(_) => count += 1,
-                NtpSourceConfig::Pool(config) => count += config.first.count,
-                NtpSourceConfig::NtsPool(config) => count += config.first.count,
-                NtpSourceConfig::Sock(_) => count += 1,
+                SourceConfig::NtpServer(_) => count += 1,
+                SourceConfig::NtpNtsServer(_) => count += 1,
+                // FIXME: Do actual count when the configs are in place.
+                SourceConfig::NtpPool(_) => count += 1,
+                SourceConfig::NtpNtsPool(_) => count += 1,
+                SourceConfig::Sock(_) => count += 1,
                 #[cfg(feature = "pps")]
-                NtpSourceConfig::Pps(_) => {} // PPS sources don't count
+                SourceConfig::Pps(_) => {} // PPS sources don't count
                 #[cfg(target_os = "linux")]
-                NtpSourceConfig::Csptp(_) => count += 1,
+                SourceConfig::Csptp(_) => count += 1,
             }
         }
         count

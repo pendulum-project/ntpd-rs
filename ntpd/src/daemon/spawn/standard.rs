@@ -2,17 +2,21 @@ use std::fmt::Display;
 use std::sync::{Arc, Mutex};
 use std::{net::SocketAddr, ops::Deref};
 
-use ntp_proto::SourceConfig;
+use ntp_proto::{ProtocolVersion, SourceConfig};
 use rustls23::pki_types::ServerName::IpAddress;
 use statime_algo::{LinkConfig, TrackedLinkConfig};
 use statime_base::{Link, SourceType, StdController};
 use tokio::sync::mpsc;
 
-use crate::daemon::config::NtpAddress;
 use crate::daemon::ntp_source::SourceTask;
-use crate::daemon::spawn::CreationParameters;
+use crate::daemon::spawn::{CreationParameters, NtpAddress};
 
-use super::super::config::StandardSource;
+#[derive(Debug, PartialEq, Clone)]
+
+pub struct StandardSource {
+    pub address: NtpAddress,
+    pub ntp_version: ProtocolVersion,
+}
 
 use super::{
     ClockId, LinkTerminationReason, SpawnFailureReason, Spawner, SpawnerId,
@@ -157,12 +161,11 @@ mod tests {
     use crate::daemon::clock::NtpClockWrapper;
     use crate::daemon::spawn::CreationParameters;
     use crate::daemon::spawn::LinkTerminationReason;
+    use crate::daemon::spawn::NormalizedAddress;
     use crate::daemon::spawn::TestController;
+    use crate::daemon::spawn::standard::StandardSource;
+    use crate::daemon::spawn::{Spawner, standard::StandardSpawner};
     use crate::daemon::system::SystemManagers;
-    use crate::daemon::{
-        config::{NormalizedAddress, StandardSource},
-        spawn::{Spawner, standard::StandardSpawner},
-    };
 
     const MESSAGE_BUFFER_SIZE: usize = 2;
 
