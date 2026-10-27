@@ -1,10 +1,16 @@
-use std::{future::pending, sync::RwLock};
+use std::{future::pending, sync::RwLock, time::Duration};
 
 use statime_base::{Link, TAI, Timestamp};
 use statime_csptp::{ClientRecvResult, ClientSocket, CsptpManager, CsptpSource, InternalState};
 use statime_netptp::{NetworkManager, PtpAddressFamily};
 
-use crate::daemon::config::CsptpSourceConfig;
+#[derive(Debug, PartialEq, Clone)]
+pub struct CsptpSourceConfig {
+    pub address: String,
+    pub domain: u8,
+    pub poll_interval: Duration,
+    pub response_interval: Duration,
+}
 
 struct SocketWrapper<A: PtpAddressFamily>(statime_netptp::ConnectedSocket<A>);
 

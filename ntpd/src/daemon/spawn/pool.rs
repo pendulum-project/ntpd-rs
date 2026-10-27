@@ -1,20 +1,27 @@
 use std::fmt::Display;
+use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use std::{net::SocketAddr, ops::Deref};
 
-use ntp_proto::SourceConfig;
+use ntp_proto::{ProtocolVersion, SourceConfig};
 use statime_algo::LinkConfig;
 use statime_base::{Link, LinkId, SourceType, StdController};
 use tokio::sync::mpsc;
 use tracing::warn;
 
 use crate::daemon::ntp_source::SourceTask;
-use crate::daemon::spawn::CreationParameters;
 use crate::daemon::spawn::SpawnFailureReason::{self, RetryableFailure};
-
-use super::super::config::PoolSourceConfig;
+use crate::daemon::spawn::{CreationParameters, NtpAddress};
 
 use super::{Spawner, SpawnerId};
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct PoolSourceConfig {
+    pub addr: NtpAddress,
+    pub count: usize,
+    pub ignore: Vec<IpAddr>,
+    pub ntp_version: ProtocolVersion,
+}
 
 struct PoolSource {
     id: LinkId,
@@ -180,12 +187,11 @@ mod tests {
     use crate::daemon::clock::NtpClockWrapper;
     use crate::daemon::spawn::CreationParameters;
     use crate::daemon::spawn::LinkTerminationReason;
+    use crate::daemon::spawn::NormalizedAddress;
     use crate::daemon::spawn::TestController;
+    use crate::daemon::spawn::pool::PoolSourceConfig;
+    use crate::daemon::spawn::{Spawner, pool::PoolSpawner};
     use crate::daemon::system::SystemManagers;
-    use crate::daemon::{
-        config::{NormalizedAddress, PoolSourceConfig},
-        spawn::{Spawner, pool::PoolSpawner},
-    };
 
     const MESSAGE_BUFFER_SIZE: usize = 2;
 
