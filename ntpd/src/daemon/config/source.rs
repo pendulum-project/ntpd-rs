@@ -5,7 +5,9 @@ use serde::{
     Deserialize, Serialize,
     de::{self, Visitor},
 };
-use statime_config::{Configurable, ConfigurableAtomic};
+use statime_config::{Configurable, ConfigurableAtomic, Positive};
+
+use crate::daemon::config::{ConfigurableDuration, Unit};
 
 use super::NetworkAddress;
 
@@ -37,6 +39,15 @@ pub(crate) struct NtpSourceConfig {
     pub(crate) address: NetworkAddress,
     #[config(rename = "ntp-version")]
     pub(crate) ntp_version: RequestedNtpVersion,
+    #[config(rename = "minimum-poll-interval", default)]
+    pub(crate) minimum_poll_interval: Option<Positive<ConfigurableDuration>>,
+    #[config(rename = "maximum-poll-interval", default)]
+    pub(crate) maximum_poll_interval: Option<Positive<ConfigurableDuration>>,
+    #[config(rename = "desired-error", default = Positive::unchecked_new(ConfigurableDuration {unit: Unit::Millisecond, duration: 1.0}))]
+    pub(crate) desired_error: Positive<ConfigurableDuration>,
+    // Experimental
+    #[config(rename = "delay-decay-rate", default = Positive::unchecked_new(1.0/86400.0))]
+    pub(crate) delay_decay_rate: Positive<f64>,
 }
 
 #[derive(Debug, PartialEq, Clone, Configurable)]
@@ -45,6 +56,15 @@ pub(crate) struct NtpPoolSourceConfig {
     #[config(rename = "ntp-version")]
     pub(crate) ntp_version: RequestedNtpVersion,
     pub(crate) count: usize,
+    #[config(rename = "minimum-poll-interval")]
+    pub(crate) minimum_poll_interval: Option<Positive<ConfigurableDuration>>,
+    #[config(rename = "maximum-poll-interval")]
+    pub(crate) maximum_poll_interval: Option<Positive<ConfigurableDuration>>,
+    #[config(rename = "desired-error", default = Positive::unchecked_new(ConfigurableDuration {unit: Unit::Millisecond, duration: 1.0}))]
+    pub(crate) desired_error: Positive<ConfigurableDuration>,
+    // Experimental
+    #[config(rename = "delay-decay-rate", default = Positive::unchecked_new(1.0/86400.0))]
+    pub(crate) delay_decay_rate: Positive<f64>,
 }
 
 #[derive(Debug, PartialEq, Clone, Configurable)]
