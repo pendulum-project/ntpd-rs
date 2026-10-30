@@ -3,7 +3,7 @@ use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use std::{net::SocketAddr, ops::Deref};
 
-use ntp_proto::{ProtocolVersion, SourceConfig};
+use ntp_proto::{PollIntervalLimits, ProtocolVersion, SourceConfig};
 use statime_algo::LinkConfig;
 use statime_base::{Link, LinkId, SourceType, StdController};
 use tokio::sync::mpsc;
@@ -21,6 +21,9 @@ pub struct PoolSourceConfig {
     pub count: usize,
     pub ignore: Vec<IpAddr>,
     pub ntp_version: ProtocolVersion,
+    pub poll_interval_limits: PollIntervalLimits,
+    pub desired_error_bound: statime_base::Duration,
+    pub delay_decay_rate: f64,
 }
 
 struct PoolSource {
@@ -30,7 +33,6 @@ struct PoolSource {
 
 pub struct PoolSpawner {
     config: PoolSourceConfig,
-    source_config: SourceConfig,
     state: Arc<Mutex<PoolSpawnerState>>,
 }
 
@@ -52,10 +54,9 @@ impl Display for PoolSpawnError {
 impl std::error::Error for PoolSpawnError {}
 
 impl PoolSpawner {
-    pub fn new(config: PoolSourceConfig, source_config: SourceConfig) -> PoolSpawner {
+    pub fn new(config: PoolSourceConfig) -> PoolSpawner {
         PoolSpawner {
             config,
-            source_config,
             state: Arc::default(),
         }
     }
@@ -69,7 +70,6 @@ where
 {
     fn try_spawn(&mut self) -> super::TrySpawnFuture<TimeController> {
         let config = self.config.clone();
-        let source_config = self.source_config;
         let state = self.state.clone();
 
         Box::new(async move {
@@ -113,15 +113,13 @@ where
                 Ok(CreationParameters {
                     stype: SourceType::Ntp,
                     link_config: LinkConfig {
-                        desired_error_bound: statime_base::Duration::from_seconds_nanos(
-                            0, 1_000_000,
-                        ),
+                        desired_error_bound: config.desired_error_bound,
                         period: None,
                     }
                     .into(),
                     tracked_link_config: Some(
                         statime_algo::TrackedLinkConfig {
-                            decay_rate: 1. / 86400f64.sqrt(),
+                            decay_rate: config.delay_decay_rate,
                             longest_interval_for_delay_estimation:
                                 statime_base::Duration::from_seconds_nanos(1, 0),
                         }
@@ -134,7 +132,10 @@ where
                             let link_id = controller.id();
                             let (source, initial_actions) = managers.ntp_manager().new_source(
                                 addr,
-                                source_config,
+                                SourceConfig {
+                                    poll_interval_limits: config.poll_interval_limits,
+                                    initial_poll_interval: config.poll_interval_limits.min,
+                                },
                                 config.ntp_version,
                                 controller,
                                 None,
@@ -201,16 +202,16 @@ mod tests {
         let address_strings = ["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
         let addresses = address_strings.map(|addr| addr.parse().unwrap());
 
-        let mut pool = PoolSpawner::new(
-            PoolSourceConfig {
-                addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
-                    .into(),
-                count: 2,
-                ignore: vec![],
-                ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
-            },
-            SourceConfig::default(),
-        );
+        let mut pool = PoolSpawner::new(PoolSourceConfig {
+            addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
+                .into(),
+            count: 2,
+            ignore: vec![],
+            ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            poll_interval_limits: ntp_proto::PollIntervalLimits::default(),
+            desired_error_bound: statime_base::Duration::from_seconds_nanos(0, 1_000_000),
+            delay_decay_rate: 1.0 / 86400f64.sqrt(),
+        });
 
         assert!(<PoolSpawner as Spawner<TestController>>::needs_spawn(&pool));
         let params: CreationParameters<TestController> =
@@ -263,16 +264,16 @@ mod tests {
         let addresses = address_strings.map(|addr| addr.parse().unwrap());
         let ignores = vec!["127.0.0.1".parse().unwrap()];
 
-        let mut pool = PoolSpawner::new(
-            PoolSourceConfig {
-                addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
-                    .into(),
-                count: 3,
-                ignore: ignores.clone(),
-                ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
-            },
-            SourceConfig::default(),
-        );
+        let mut pool = PoolSpawner::new(PoolSourceConfig {
+            addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
+                .into(),
+            count: 3,
+            ignore: ignores.clone(),
+            ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            poll_interval_limits: ntp_proto::PollIntervalLimits::default(),
+            desired_error_bound: statime_base::Duration::from_seconds_nanos(0, 1_000_000),
+            delay_decay_rate: 1.0 / 86400f64.sqrt(),
+        });
 
         assert!(<PoolSpawner as Spawner<TestController>>::needs_spawn(&pool));
         let params: CreationParameters<TestController> =
@@ -327,16 +328,16 @@ mod tests {
         let address_strings = ["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
         let addresses = address_strings.map(|addr| addr.parse().unwrap());
 
-        let mut pool = PoolSpawner::new(
-            PoolSourceConfig {
-                addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
-                    .into(),
-                count: 2,
-                ignore: vec![],
-                ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
-            },
-            SourceConfig::default(),
-        );
+        let mut pool = PoolSpawner::new(PoolSourceConfig {
+            addr: NormalizedAddress::with_hardcoded_dns("example.com", 123, addresses.to_vec())
+                .into(),
+            count: 2,
+            ignore: vec![],
+            ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            poll_interval_limits: ntp_proto::PollIntervalLimits::default(),
+            desired_error_bound: statime_base::Duration::from_seconds_nanos(0, 1_000_000),
+            delay_decay_rate: 1.0 / 86400f64.sqrt(),
+        });
 
         assert!(<PoolSpawner as Spawner<TestController>>::needs_spawn(&pool));
         let params: CreationParameters<TestController> =
@@ -413,15 +414,15 @@ mod tests {
 
     #[tokio::test]
     async fn works_if_address_does_not_resolve() {
-        let mut pool = PoolSpawner::new(
-            PoolSourceConfig {
-                addr: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![]).into(),
-                count: 2,
-                ignore: vec![],
-                ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
-            },
-            SourceConfig::default(),
-        );
+        let mut pool = PoolSpawner::new(PoolSourceConfig {
+            addr: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![]).into(),
+            count: 2,
+            ignore: vec![],
+            ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            poll_interval_limits: ntp_proto::PollIntervalLimits::default(),
+            desired_error_bound: statime_base::Duration::from_seconds_nanos(0, 1_000_000),
+            delay_decay_rate: 1.0 / 86400f64.sqrt(),
+        });
 
         assert!(<PoolSpawner as Spawner<TestController>>::needs_spawn(&pool));
 

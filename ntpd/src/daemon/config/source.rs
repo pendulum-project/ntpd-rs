@@ -10,7 +10,7 @@ use statime_config::{Configurable, ConfigurableAtomic, Positive};
 use crate::daemon::{
     Config,
     config::{ConfigurableDuration, Unit},
-    spawn::standard::StandardSource,
+    spawn::{pool::PoolSourceConfig, standard::StandardSource},
 };
 
 use super::NetworkAddress;
@@ -102,6 +102,41 @@ pub(crate) struct NtpPoolSourceConfig {
     // Experimental
     #[config(rename = "delay-decay-rate", default)]
     pub(crate) delay_decay_rate: Option<Positive<f64>>,
+}
+
+impl NtpPoolSourceConfig {
+    pub fn generate_spawner_config(&self, config: &Config) -> PoolSourceConfig {
+        let poll_low = ConfigurableDuration::into_larger_poll_interval(
+            self.minimum_poll_interval
+                .unwrap_or(config.ntp_source_defaults.minimum_poll_interval),
+        );
+
+        let poll_high = ConfigurableDuration::into_smaller_poll_interval(
+            self.maximum_poll_interval
+                .unwrap_or(config.ntp_source_defaults.maximum_poll_interval),
+        )
+        .max(poll_low);
+
+        PoolSourceConfig {
+            addr: self.address.clone().into(),
+            count: self.count,
+            ignore: vec![],
+            ntp_version: self.ntp_version.into(),
+            poll_interval_limits: PollIntervalLimits {
+                min: poll_low,
+                max: poll_high,
+            },
+            desired_error_bound: self
+                .desired_error
+                .unwrap_or(config.ntp_source_defaults.desired_error)
+                .into_inner()
+                .into(),
+            delay_decay_rate: self
+                .delay_decay_rate
+                .unwrap_or(config.ntp_source_defaults.delay_decay_rate)
+                .into_inner(),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Configurable)]
