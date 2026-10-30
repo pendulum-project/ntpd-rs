@@ -1,6 +1,10 @@
+#[cfg(test)]
+use std::sync::Mutex;
 use std::{
+    fmt,
     future::Future,
     net::SocketAddr,
+    ops::Deref,
     sync::{Arc, atomic::AtomicU64},
 };
 
@@ -17,23 +21,17 @@ use tracing::warn;
 use crate::daemon::config::CsptpSourceConfig;
 #[cfg(feature = "pps")]
 use crate::daemon::config::PpsSourceConfig;
-use crate::daemon::{
-    clock::NtpClockWrapper,
-    config::{NtpAddress, SockSourceConfig},
-    system::SystemManagers,
-};
-
-use super::config::NormalizedAddress;
+use crate::daemon::{clock::NtpClockWrapper, config::NetworkAddress, system::SystemManagers};
 
 //#[cfg(target_os = "linux")]
 //pub mod csptp;
 //pub mod nts;
 //pub mod nts_pool;
-pub mod pool;
+pub mod ntp_pool;
 //#[cfg(feature = "pps")]
 //pub mod pps;
 //pub mod sock;
-pub mod standard;
+pub mod ntp;
 
 const NTS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
@@ -130,6 +128,237 @@ pub(super) async fn resolve_single_ntp_server(address: NtpAddress) -> Option<Soc
         Err(e) => {
             warn!(error = ?e, "error while resolving {}, retrying", address.server_name);
             None
+        }
+    }
+}
+
+/// A normalized address has a host and a port part. However, the host may be
+/// invalid, we didn't yet perform a DNS lookup.
+#[derive(Debug, Clone)]
+pub struct NormalizedAddress {
+    pub(crate) server_name: String,
+    pub(crate) port: u16,
+
+    /// Used to inject socket address into the DNS lookup result
+    #[cfg(test)]
+    hardcoded_dns_resolve: Option<HardcodedDnsResolve>,
+}
+
+impl Eq for NormalizedAddress {}
+
+impl PartialEq for NormalizedAddress {
+    fn eq(&self, other: &Self) -> bool {
+        self.server_name == other.server_name && self.port == other.port
+    }
+}
+
+#[cfg(test)]
+#[derive(Debug, Clone, Default)]
+struct HardcodedDnsResolve {
+    addresses: Arc<Mutex<Vec<SocketAddr>>>,
+}
+
+#[cfg(test)]
+impl From<Vec<SocketAddr>> for HardcodedDnsResolve {
+    fn from(value: Vec<SocketAddr>) -> Self {
+        Self {
+            addresses: Arc::new(Mutex::new(value)),
+        }
+    }
+}
+
+#[cfg(test)]
+impl HardcodedDnsResolve {
+    fn lookup_host(&self) -> std::vec::IntoIter<SocketAddr> {
+        // We don't want to spam a real DNS server during testing. This is an attempt to randomize
+        // the returned addresses somewhat.
+        let mut addresses = self.addresses.lock().unwrap();
+
+        if let Some(last) = addresses.pop() {
+            addresses.insert(0, last);
+        }
+
+        let addresses = addresses.to_vec();
+
+        addresses.into_iter()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NtpAddress(pub NormalizedAddress);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NtsKeAddress(pub NormalizedAddress);
+
+impl From<NormalizedAddress> for NtpAddress {
+    fn from(addr: NormalizedAddress) -> Self {
+        Self(addr)
+    }
+}
+
+impl From<NetworkAddress> for NtpAddress {
+    fn from(value: NetworkAddress) -> Self {
+        Self(NormalizedAddress {
+            server_name: value.server,
+            port: value.port.unwrap_or(123),
+            #[cfg(test)]
+            hardcoded_dns_resolve: None,
+        })
+    }
+}
+
+impl From<NormalizedAddress> for NtsKeAddress {
+    fn from(addr: NormalizedAddress) -> Self {
+        Self(addr)
+    }
+}
+
+impl From<NetworkAddress> for NtsKeAddress {
+    fn from(value: NetworkAddress) -> Self {
+        Self(NormalizedAddress {
+            server_name: value.server,
+            port: value.port.unwrap_or(4460),
+            #[cfg(test)]
+            hardcoded_dns_resolve: None,
+        })
+    }
+}
+
+impl Deref for NtsKeAddress {
+    type Target = NormalizedAddress;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Deref for NtpAddress {
+    type Target = NormalizedAddress;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl NormalizedAddress {
+    const NTP_DEFAULT_PORT: u16 = 123;
+    const NTS_KE_DEFAULT_PORT: u16 = 4460;
+
+    /// Specifically, this adds the `:123` port if no port is specified
+    pub(crate) fn from_string_ntp(address: String) -> std::io::Result<Self> {
+        let (server_name, port) = Self::from_string_help(address, Self::NTP_DEFAULT_PORT)?;
+
+        Ok(Self {
+            server_name,
+            port,
+
+            #[cfg(test)]
+            hardcoded_dns_resolve: None,
+        })
+    }
+
+    /// Specifically, this adds the `:4460` port if no port is specified
+    fn from_string_nts_ke(address: String) -> std::io::Result<Self> {
+        let (server_name, port) = Self::from_string_help(address, Self::NTS_KE_DEFAULT_PORT)?;
+
+        Ok(Self {
+            server_name,
+            port,
+
+            #[cfg(test)]
+            hardcoded_dns_resolve: None,
+        })
+    }
+
+    fn from_string_help(address: String, default_port: u16) -> std::io::Result<(String, u16)> {
+        if address.split(':').count() > 2 {
+            // IPv6, try to parse it as such
+            match address.parse::<SocketAddr>() {
+                Ok(socket_addr) => Ok((socket_addr.ip().to_string(), socket_addr.port())),
+                Err(e) => {
+                    // Could be because of no port, add one and see
+                    let address_with_port = format!("[{address}]:{default_port}");
+                    if let Ok(socket_addr) = address_with_port.parse::<SocketAddr>() {
+                        Ok((socket_addr.ip().to_string(), socket_addr.port()))
+                    } else {
+                        Err(std::io::Error::other(e))
+                    }
+                }
+            }
+        } else if let Some((server_name, port)) = address.split_once(':') {
+            // Not ipv6, and we seem to have a port. We cant reasonably
+            // check whether the host is valid, but at least check that
+            // the port is.
+            match port.parse::<u16>() {
+                Ok(port) => Ok((server_name.to_string(), port)),
+                Err(e) => Err(std::io::Error::other(e)),
+            }
+        } else {
+            // Not ipv6 and no port. As we cant reasonably check host
+            // so just append a port
+            Ok((address, default_port))
+        }
+    }
+
+    pub(crate) fn new_from_parts(server_name: &str, port: u16) -> Self {
+        Self {
+            server_name: server_name.to_string(),
+            port,
+
+            #[cfg(test)]
+            hardcoded_dns_resolve: None,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_hardcoded_dns(
+        server_name: &str,
+        port: u16,
+        hardcoded_dns_resolve: Vec<SocketAddr>,
+    ) -> Self {
+        Self {
+            server_name: server_name.to_string(),
+            port,
+            hardcoded_dns_resolve: Some(HardcodedDnsResolve::from(hardcoded_dns_resolve)),
+        }
+    }
+
+    pub async fn lookup_host(&self) -> std::io::Result<impl Iterator<Item = SocketAddr> + '_> {
+        enum Either<T> {
+            Lookup(T),
+            #[cfg(test)]
+            Hardcoded(std::vec::IntoIter<SocketAddr>),
+        }
+
+        impl<T: Iterator<Item = SocketAddr>> Iterator for Either<T> {
+            type Item = SocketAddr;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                match self {
+                    Either::Lookup(lookup) => lookup.next(),
+                    #[cfg(test)]
+                    Either::Hardcoded(hardcoded) => hardcoded.next(),
+                }
+            }
+        }
+
+        #[cfg(test)]
+        if let Some(hardcoded_dns_resolve) = &self.hardcoded_dns_resolve {
+            return Ok(Either::Hardcoded(hardcoded_dns_resolve.lookup_host()));
+        }
+
+        tokio::net::lookup_host((self.server_name.as_str(), self.port))
+            .await
+            .map(Either::Lookup)
+    }
+}
+
+impl std::fmt::Display for NormalizedAddress {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.server_name.contains(':') {
+            write!(f, "[{}]:{}", self.server_name, self.port)
+        } else {
+            write!(f, "{}:{}", self.server_name, self.port)
         }
     }
 }

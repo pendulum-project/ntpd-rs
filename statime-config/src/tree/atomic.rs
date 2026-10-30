@@ -1,6 +1,11 @@
 //! The leaf types of the tree.
 
-use std::{net::SocketAddr, path::PathBuf};
+use std::{
+    net::{IpAddr, SocketAddr},
+    path::PathBuf,
+};
+
+use serde::{Deserialize, Serialize, de};
 
 use crate::{
     ConfigError,
@@ -60,9 +65,102 @@ impl ConfigurableAtomic for u64 {}
 impl ConfigurableAtomic for i64 {}
 impl ConfigurableAtomic for usize {}
 impl ConfigurableAtomic for isize {}
-impl ConfigurableAtomic for f32 {}
-impl ConfigurableAtomic for f64 {}
 impl ConfigurableAtomic for String {}
 impl ConfigurableAtomic for PathBuf {}
+impl ConfigurableAtomic for IpAddr {}
 impl ConfigurableAtomic for SocketAddr {}
 impl<T> ConfigurableAtomic for Option<T> where T: ConfigurableAtomic {}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub struct PartialF32(f32);
+
+impl<'de> Deserialize<'de> for PartialF32 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = f32::deserialize(deserializer)?;
+        if value.is_nan() || value.is_infinite() {
+            Err(de::Error::custom(
+                "Invalid float value, should not be NaN or infinite",
+            ))
+        } else {
+            Ok(PartialF32(value))
+        }
+    }
+}
+
+impl Serialize for PartialF32 {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_f32(self.0)
+    }
+}
+
+impl PartialValue for PartialF32 {
+    type Resolved = f32;
+
+    fn attribute(&mut self, _origin: OriginId) {}
+
+    fn apply_defaults(&mut self) {}
+
+    fn resolve(self, _path: &mut ConfigPath) -> Result<Self::Resolved, ConfigError> {
+        Ok(self.0)
+    }
+}
+
+impl Configurable for f32 {
+    type Partial = PartialF32;
+    type Node = Setting<PartialF32>;
+}
+
+impl ConfigurableAtomic for Option<f32> {}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub struct PartialF64(f64);
+
+impl<'de> Deserialize<'de> for PartialF64 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = f64::deserialize(deserializer)?;
+        if value.is_nan() || value.is_infinite() {
+            Err(de::Error::custom(
+                "Invalid float value, should not be NaN or infinite",
+            ))
+        } else {
+            Ok(PartialF64(value))
+        }
+    }
+}
+
+impl Serialize for PartialF64 {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_f64(self.0)
+    }
+}
+
+impl PartialValue for PartialF64 {
+    type Resolved = f64;
+
+    fn attribute(&mut self, _origin: OriginId) {}
+
+    fn apply_defaults(&mut self) {}
+
+    fn resolve(self, _path: &mut ConfigPath) -> Result<Self::Resolved, ConfigError> {
+        Ok(self.0)
+    }
+}
+
+impl Configurable for f64 {
+    type Partial = PartialF64;
+    type Node = Setting<PartialF64>;
+}
+
+impl ConfigurableAtomic for Option<f64> {}

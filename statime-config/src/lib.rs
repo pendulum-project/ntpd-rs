@@ -111,8 +111,8 @@ pub use statime_config_derive::{Configurable, ConfigurableAtomic};
 // `Setting` and `Section` are what `Configurable::Node` resolves to, so they
 // are part of the interface whether or not anyone names them directly
 pub use tree::{
-    ConfigPath, Configurable, ConfigurableAtomic, Merge, MergeContext, Origin, OriginId,
-    PartialValue, Section, Setting,
+    ConfigPath, Configurable, ConfigurableAtomic, EnumSection, IsPositive, Merge, MergeContext,
+    MergePolicy, Origin, OriginId, PartialValue, Positive, Section, Setting,
 };
 
 /// The machinery the derive macro's generated code reaches for, which is
@@ -121,5 +121,5 @@ pub use tree::{
 pub mod __private {
     pub use serde::{self, Deserialize, Serialize};
 
-    pub use crate::tree::{EffectivelyUnset, MergePolicy, is_effectively_unset};
+    pub use crate::tree::{EffectivelyUnset, is_effectively_unset};
 }

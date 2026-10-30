@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::{fmt::Display, path::Path};
 
 use ntp_proto::{ClockId, ObservableSourceState, PollInterval};
@@ -7,10 +8,16 @@ use tracing::{Instrument, Span, error, instrument};
 
 use tokio::net::UnixDatagram;
 
-use crate::daemon::config::SockSourceConfig;
 use crate::daemon::exitcode;
 
 use super::ntp_source::SourceChannels;
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct SockSourceConfig {
+    pub path: PathBuf,
+    pub precision: f64,
+    pub accuracy: f64,
+}
 
 // Based on https://gitlab.com/gpsd/gpsd/-/blob/master/gpsd/timehint.c#L268
 #[derive(Debug)]
@@ -217,9 +224,10 @@ mod tests {
 
     use crate::{
         daemon::{
-            config::SockSourceConfig,
             ntp_source::SourceChannels,
-            sock_source::{SOCK_MAGIC, SampleError, SockSourceTask, create_socket},
+            sock_source::{
+                SOCK_MAGIC, SampleError, SockSourceConfig, SockSourceTask, create_socket,
+            },
         },
         test::alloc_port,
     };

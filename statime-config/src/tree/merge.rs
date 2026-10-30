@@ -79,7 +79,7 @@ impl Default for ProvenanceTracker {
 pub struct MergeContext<'a> {
     #[doc(hidden)]
     pub policy: MergePolicy,
-    pub(crate) path: ConfigPath,
+    pub path: ConfigPath,
     provenance: &'a ProvenanceTracker,
 }
 

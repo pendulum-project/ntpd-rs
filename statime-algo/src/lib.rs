@@ -652,11 +652,6 @@ impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<
 {
     type Error = AlgoError;
 
-    /// Process a measurement on a connection.
-    ///
-    /// # Errors
-    /// Fails if there are any issues processing the measurement, mostly resulting
-    /// from unexpected behavior of the underlying clock.
     fn measurement(&self, measurement: Measurement, direction: Direction) -> Result<(), AlgoError> {
         self.controller.as_ref().state.with_mut(|state| {
             log::debug!(
@@ -682,10 +677,6 @@ impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<
         })
     }
 
-    /// Update additional time keeping information provided by the remote for this link.
-    ///
-    /// # Errors
-    /// Fails if the link does not contain an external clock.
     fn external_data_update(
         &self,
         root_delay: Duration,
@@ -703,11 +694,6 @@ impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<
         })
     }
 
-    /// Returns whether the link actively contributed to the current time estimates on
-    /// the last measurement.
-    ///
-    /// # Errors
-    /// Fails only when something is bugged in the library.
     fn active(&self) -> Result<bool, AlgoError> {
         self.controller
             .as_ref()
@@ -715,10 +701,6 @@ impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<
             .with_ref(|state| state.filter.link_active(self.link_id))
     }
 
-    /// Returns the poll rate needed to get the desired accuracy from this link.
-    ///
-    /// # Errors
-    /// Fails only when something is bugged in the library.
     fn desired_poll_interval(&self) -> Result<Duration, AlgoError> {
         self.controller
             .as_ref()
@@ -726,14 +708,6 @@ impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<
             .with_ref(|state| state.filter.link_desired_poll_interval(self.link_id))
     }
 
-    /// Importance of the links contribution to the phase of the system clock, assuming it
-    /// is an external clock. This is the same number provided in
-    /// [`StdController::active_links`], which has arbitrary units and shouldn't be
-    /// assumed to be of a certain order of magnitude. A link with twice the importance will
-    /// have roughly twice as much impact on the phase of the system clock.
-    ///
-    /// # Errors
-    /// May fail when the link is not external
     fn importance(&self) -> Result<Option<f64>, Self::Error> {
         self.controller
             .as_ref()
