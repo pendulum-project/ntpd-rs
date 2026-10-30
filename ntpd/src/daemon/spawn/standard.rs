@@ -2,7 +2,7 @@ use std::fmt::Display;
 use std::sync::{Arc, Mutex};
 use std::{net::SocketAddr, ops::Deref};
 
-use ntp_proto::{ProtocolVersion, SourceConfig};
+use ntp_proto::{PollInterval, PollIntervalLimits, ProtocolVersion, SourceConfig};
 use rustls23::pki_types::ServerName::IpAddress;
 use statime_algo::{LinkConfig, TrackedLinkConfig};
 use statime_base::{Link, SourceType, StdController};
@@ -16,6 +16,9 @@ use crate::daemon::spawn::{CreationParameters, NtpAddress};
 pub struct StandardSource {
     pub address: NtpAddress,
     pub ntp_version: ProtocolVersion,
+    pub poll_interval_limits: PollIntervalLimits,
+    pub desired_error_bound: statime_base::Duration,
+    pub delay_decay_rate: f64,
 }
 
 use super::{
@@ -25,7 +28,6 @@ use super::{
 
 pub struct StandardSpawner {
     config: StandardSource,
-    source_config: SourceConfig,
     state: Arc<Mutex<StandardSpawnerState>>,
 }
 
@@ -36,10 +38,9 @@ struct StandardSpawnerState {
 }
 
 impl StandardSpawner {
-    pub fn new(config: StandardSource, source_config: SourceConfig) -> StandardSpawner {
+    pub fn new(config: StandardSource) -> StandardSpawner {
         StandardSpawner {
             config,
-            source_config,
             state: Arc::default(),
         }
     }
@@ -81,7 +82,6 @@ where
     fn try_spawn(&mut self) -> super::TrySpawnFuture<TimeController> {
         let state = self.state.clone();
         let config = self.config.clone();
-        let source_config = self.source_config;
         Box::new(async move {
             let Some(addr) = Self::do_resolve(&state, false, &config).await else {
                 return Err(SpawnFailureReason::RetryableFailure);
@@ -90,13 +90,13 @@ where
             Ok(CreationParameters {
                 stype: SourceType::Ntp,
                 link_config: LinkConfig {
-                    desired_error_bound: statime_base::Duration::from_seconds_nanos(0, 1_000_000),
+                    desired_error_bound: config.desired_error_bound,
                     period: None,
                 }
                 .into(),
                 tracked_link_config: Some(
                     statime_algo::TrackedLinkConfig {
-                        decay_rate: 1. / 86400f64.sqrt(),
+                        decay_rate: config.delay_decay_rate,
                         longest_interval_for_delay_estimation:
                             statime_base::Duration::from_seconds_nanos(1, 0),
                     }
@@ -109,7 +109,10 @@ where
                         let link_id = controller.id();
                         let (source, initial_actions) = managers.ntp_manager().new_source(
                             addr,
-                            source_config,
+                            SourceConfig {
+                                poll_interval_limits: config.poll_interval_limits,
+                                initial_poll_interval: config.poll_interval_limits.min,
+                            },
                             config.ntp_version,
                             controller,
                             None,
@@ -171,18 +174,18 @@ mod tests {
 
     #[tokio::test]
     async fn creates_a_source() {
-        let mut spawner = StandardSpawner::new(
-            StandardSource {
-                address: NormalizedAddress::with_hardcoded_dns(
-                    "example.com",
-                    123,
-                    vec!["127.0.0.1:123".parse().unwrap()],
-                )
-                .into(),
-                ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
-            },
-            SourceConfig::default(),
-        );
+        let mut spawner = StandardSpawner::new(StandardSource {
+            address: NormalizedAddress::with_hardcoded_dns(
+                "example.com",
+                123,
+                vec!["127.0.0.1:123".parse().unwrap()],
+            )
+            .into(),
+            ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            poll_interval_limits: ntp_proto::PollIntervalLimits::default(),
+            desired_error_bound: statime_base::Duration::from_seconds_nanos(0, 1_000_000),
+            delay_decay_rate: 1.0 / 86400f64.sqrt(),
+        });
 
         let managers = SystemManagers::test_managers();
 
@@ -213,18 +216,18 @@ mod tests {
 
     #[tokio::test]
     async fn recreates_a_source() {
-        let mut spawner = StandardSpawner::new(
-            StandardSource {
-                address: NormalizedAddress::with_hardcoded_dns(
-                    "example.com",
-                    123,
-                    vec!["127.0.0.1:123".parse().unwrap()],
-                )
-                .into(),
-                ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
-            },
-            SourceConfig::default(),
-        );
+        let mut spawner = StandardSpawner::new(StandardSource {
+            address: NormalizedAddress::with_hardcoded_dns(
+                "example.com",
+                123,
+                vec!["127.0.0.1:123".parse().unwrap()],
+            )
+            .into(),
+            ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            poll_interval_limits: ntp_proto::PollIntervalLimits::default(),
+            desired_error_bound: statime_base::Duration::from_seconds_nanos(0, 1_000_000),
+            delay_decay_rate: 1.0 / 86400f64.sqrt(),
+        });
 
         let managers = SystemManagers::test_managers();
 
@@ -289,18 +292,18 @@ mod tests {
         let address_strings = ["127.0.0.1:123", "127.0.0.2:123", "127.0.0.3:123"];
         let addresses = address_strings.map(|addr| addr.parse().unwrap());
 
-        let mut spawner = StandardSpawner::new(
-            StandardSource {
-                address: NormalizedAddress::with_hardcoded_dns(
-                    "europe.pool.ntp.org",
-                    123,
-                    addresses.to_vec(),
-                )
-                .into(),
-                ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
-            },
-            SourceConfig::default(),
-        );
+        let mut spawner = StandardSpawner::new(StandardSource {
+            address: NormalizedAddress::with_hardcoded_dns(
+                "europe.pool.ntp.org",
+                123,
+                addresses.to_vec(),
+            )
+            .into(),
+            ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            poll_interval_limits: ntp_proto::PollIntervalLimits::default(),
+            desired_error_bound: statime_base::Duration::from_seconds_nanos(0, 1_000_000),
+            delay_decay_rate: 1.0 / 86400f64.sqrt(),
+        });
 
         let managers = SystemManagers::test_managers();
 
@@ -343,14 +346,13 @@ mod tests {
 
     #[tokio::test]
     async fn works_if_address_does_not_resolve() {
-        let mut spawner = StandardSpawner::new(
-            StandardSource {
-                address: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![])
-                    .into(),
-                ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
-            },
-            SourceConfig::default(),
-        );
+        let mut spawner = StandardSpawner::new(StandardSource {
+            address: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![]).into(),
+            ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
+            poll_interval_limits: ntp_proto::PollIntervalLimits::default(),
+            desired_error_bound: statime_base::Duration::from_seconds_nanos(0, 1_000_000),
+            delay_decay_rate: 1.0 / 86400f64.sqrt(),
+        });
 
         assert!(
             Box::into_pin(<StandardSpawner as Spawner<TestController>>::try_spawn(

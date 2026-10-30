@@ -1,13 +1,17 @@
-use std::{fmt, net::SocketAddr, time::Duration};
+use std::{fmt, net::SocketAddr, task::Poll, time::Duration};
 
-use ntp_proto::ProtocolVersion;
+use ntp_proto::{PollIntervalLimits, ProtocolVersion};
 use serde::{
     Deserialize, Serialize,
     de::{self, Visitor},
 };
 use statime_config::{Configurable, ConfigurableAtomic, Positive};
 
-use crate::daemon::config::{ConfigurableDuration, Unit};
+use crate::daemon::{
+    Config,
+    config::{ConfigurableDuration, Unit},
+    spawn::standard::StandardSource,
+};
 
 use super::NetworkAddress;
 
@@ -50,6 +54,39 @@ pub(crate) struct NtpSourceConfig {
     pub(crate) delay_decay_rate: Option<Positive<f64>>,
 }
 
+impl NtpSourceConfig {
+    pub fn generate_spawner_config(&self, config: &Config) -> StandardSource {
+        let poll_low = ConfigurableDuration::into_larger_poll_interval(
+            self.minimum_poll_interval
+                .unwrap_or(config.ntp_source_defaults.minimum_poll_interval),
+        );
+
+        let poll_high = ConfigurableDuration::into_smaller_poll_interval(
+            self.maximum_poll_interval
+                .unwrap_or(config.ntp_source_defaults.maximum_poll_interval),
+        )
+        .max(poll_low);
+
+        StandardSource {
+            address: self.address.clone().into(),
+            ntp_version: self.ntp_version.into(),
+            poll_interval_limits: PollIntervalLimits {
+                min: poll_low,
+                max: poll_high,
+            },
+            desired_error_bound: self
+                .desired_error
+                .unwrap_or(config.ntp_source_defaults.desired_error)
+                .into_inner()
+                .into(),
+            delay_decay_rate: self
+                .delay_decay_rate
+                .unwrap_or(config.ntp_source_defaults.delay_decay_rate)
+                .into_inner(),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone, Configurable)]
 pub(crate) struct NtpPoolSourceConfig {
     pub(crate) address: NetworkAddress,
@@ -84,7 +121,7 @@ pub(crate) struct PpsSourceConfig {}
 #[derive(Debug, PartialEq, Clone, Configurable)]
 pub(crate) struct CsptpSourceConfig {}
 
-#[derive(Debug, Default, PartialEq, Clone, ConfigurableAtomic)]
+#[derive(Debug, Default, PartialEq, Clone, Copy, ConfigurableAtomic)]
 pub(crate) enum RequestedNtpVersion {
     Auto,
     #[default]

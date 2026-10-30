@@ -194,22 +194,18 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
         let system_clone = system.clone();
         let main_loop_handle = tokio::spawn(async move { system_clone.run().await });
 
-        for source in config.sources {
+        for source in &config.sources {
             match source {
-                config::SourceConfig::NtpServer(config) => {
+                config::SourceConfig::NtpServer(source_config) => {
                     system.add_spawner(Box::new(StandardSpawner::new(
-                        StandardSource {
-                            address: config.address.into(),
-                            ntp_version: config.ntp_version.into(),
-                        },
-                        SourceConfig::default(),
+                        source_config.generate_spawner_config(&config),
                     )));
                 }
                 config::SourceConfig::NtpNtsServer(config) => todo!(),
                 config::SourceConfig::NtpPool(config) => {
                     system.add_spawner(Box::new(PoolSpawner::new(
                         PoolSourceConfig {
-                            addr: config.address.into(),
+                            addr: config.address.clone().into(),
                             count: config.count,
                             ignore: vec![],
                             ntp_version: config.ntp_version.into(),
