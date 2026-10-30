@@ -194,16 +194,16 @@ impl From<ConfigurableDuration> for statime_base::Duration {
 }
 
 impl ConfigurableDuration {
-    fn into_std_duration(value: Positive<ConfigurableDuration>) -> std::time::Duration {
+    pub(crate) fn into_std_duration(value: Positive<ConfigurableDuration>) -> std::time::Duration {
         std::time::Duration::from_secs_f64(value.into_inner().seconds())
     }
 
-    fn into_larger_poll_interval(this: Positive<ConfigurableDuration>) -> PollInterval {
+    pub(crate) fn into_larger_poll_interval(this: Positive<ConfigurableDuration>) -> PollInterval {
         let v = (this.into_inner().seconds().log2() - 0.01f64.log2()).ceil() as i8;
         PollInterval::from_byte(v.cast_unsigned())
     }
 
-    fn into_smaller_poll_interval(this: Positive<ConfigurableDuration>) -> PollInterval {
+    pub(crate) fn into_smaller_poll_interval(this: Positive<ConfigurableDuration>) -> PollInterval {
         let v = (this.into_inner().seconds().log2() + 0.01f64.log2()).floor() as i8;
         PollInterval::from_byte(v.cast_unsigned())
     }
