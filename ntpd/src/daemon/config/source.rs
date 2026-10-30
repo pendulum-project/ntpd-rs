@@ -1,4 +1,9 @@
-use std::{fmt, net::SocketAddr, task::Poll, time::Duration};
+use std::{
+    fmt,
+    net::{IpAddr, SocketAddr},
+    task::Poll,
+    time::Duration,
+};
 
 use ntp_proto::{PollIntervalLimits, ProtocolVersion};
 use serde::{
@@ -94,6 +99,8 @@ pub(crate) struct NtpPoolSourceConfig {
     pub(crate) ntp_version: RequestedNtpVersion,
     #[config(default = 4)]
     pub(crate) count: usize,
+    #[config(default)]
+    pub(crate) ignore: Vec<IpAddr>,
     #[config(rename = "minimum-poll-interval")]
     pub(crate) minimum_poll_interval: Option<Positive<ConfigurableDuration>>,
     #[config(rename = "maximum-poll-interval", default)]
@@ -121,7 +128,7 @@ impl NtpPoolSourceConfig {
         PoolSourceConfig {
             addr: self.address.clone().into(),
             count: self.count,
-            ignore: vec![],
+            ignore: self.ignore.clone(),
             ntp_version: self.ntp_version.into(),
             poll_interval_limits: PollIntervalLimits {
                 min: poll_low,
