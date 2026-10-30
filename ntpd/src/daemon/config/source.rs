@@ -41,7 +41,7 @@ enum PartialSourceConfigEnum {
 #[derive(Debug, PartialEq, Clone, Configurable)]
 pub(crate) struct NtpSourceConfig {
     pub(crate) address: NetworkAddress,
-    #[config(rename = "ntp-version")]
+    #[config(rename = "ntp-version", default)]
     pub(crate) ntp_version: RequestedNtpVersion,
     #[config(rename = "minimum-poll-interval", default)]
     pub(crate) minimum_poll_interval: Option<Positive<ConfigurableDuration>>,
@@ -90,8 +90,9 @@ impl NtpSourceConfig {
 #[derive(Debug, PartialEq, Clone, Configurable)]
 pub(crate) struct NtpPoolSourceConfig {
     pub(crate) address: NetworkAddress,
-    #[config(rename = "ntp-version")]
+    #[config(rename = "ntp-version", default)]
     pub(crate) ntp_version: RequestedNtpVersion,
+    #[config(default = 4)]
     pub(crate) count: usize,
     #[config(rename = "minimum-poll-interval")]
     pub(crate) minimum_poll_interval: Option<Positive<ConfigurableDuration>>,
