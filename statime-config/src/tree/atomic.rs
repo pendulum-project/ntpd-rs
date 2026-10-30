@@ -1,6 +1,9 @@
 //! The leaf types of the tree.
 
-use std::{net::SocketAddr, path::PathBuf};
+use std::{
+    net::{IpAddr, SocketAddr},
+    path::PathBuf,
+};
 
 use serde::{Deserialize, Serialize, de};
 
@@ -64,6 +67,7 @@ impl ConfigurableAtomic for usize {}
 impl ConfigurableAtomic for isize {}
 impl ConfigurableAtomic for String {}
 impl ConfigurableAtomic for PathBuf {}
+impl ConfigurableAtomic for IpAddr {}
 impl ConfigurableAtomic for SocketAddr {}
 impl<T> ConfigurableAtomic for Option<T> where T: ConfigurableAtomic {}
 
