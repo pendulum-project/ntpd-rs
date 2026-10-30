@@ -12,7 +12,7 @@ pub use server::*;
 pub use source::*;
 use statime_algo::LinkConfig;
 use statime_config::{
-    ConfigError, ConfigPath, Configurable, ConfigurableAtomic, PartialValue, RootConfig,
+    ConfigError, ConfigPath, Configurable, ConfigurableAtomic, PartialValue, Positive, RootConfig,
     SystemConfigSetting,
 };
 use std::io;
@@ -54,6 +54,27 @@ impl Default for ObservabilityConfig {
     }
 }
 
+#[derive(Debug, Clone, Configurable)]
+pub struct NtpSourceDefaults {
+    #[config(rename = "minimum-poll-interval", default = Positive::unchecked_new(ConfigurableDuration {unit: Unit::Second, duration: 16.0}))]
+    pub(crate) minimum_poll_interval: Positive<ConfigurableDuration>,
+    #[config(rename = "minimum-poll-interval", default = Positive::unchecked_new(ConfigurableDuration {unit: Unit::Second, duration: 1024.0}))]
+    pub(crate) maximum_poll_interval: Positive<ConfigurableDuration>,
+    #[config(rename = "desired-error", default = Positive::unchecked_new(ConfigurableDuration {unit: Unit::Millisecond, duration: 1.0}))]
+    pub(crate) desired_error: Positive<ConfigurableDuration>,
+    // Experimental
+    #[config(rename = "delay-decay-rate", default = Positive::unchecked_new(1.0/86400.0f64.sqrt()))]
+    pub(crate) delay_decay_rate: Positive<f64>,
+}
+
+impl Default for NtpSourceDefaults {
+    fn default() -> Self {
+        let mut partial = <Self as Configurable>::Node::default();
+        partial.apply_defaults();
+        partial.resolve(&mut ConfigPath::root()).unwrap()
+    }
+}
+
 /// Which system configuration to layer underneath the main configuration, if
 /// any.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ConfigurableAtomic)]
@@ -86,6 +107,7 @@ pub struct Config {
     pub sources: Vec<SourceConfig>,
     #[config(rename = "server", default)]
     pub servers: Vec<NtpServerConfig>,
+    pub ntp_source_defaults: NtpSourceDefaults,
     pub observability: ObservabilityConfig,
 }
 

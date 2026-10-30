@@ -43,11 +43,11 @@ pub(crate) struct NtpSourceConfig {
     pub(crate) minimum_poll_interval: Option<Positive<ConfigurableDuration>>,
     #[config(rename = "maximum-poll-interval", default)]
     pub(crate) maximum_poll_interval: Option<Positive<ConfigurableDuration>>,
-    #[config(rename = "desired-error", default = Positive::unchecked_new(ConfigurableDuration {unit: Unit::Millisecond, duration: 1.0}))]
-    pub(crate) desired_error: Positive<ConfigurableDuration>,
+    #[config(rename = "desired-error", default)]
+    pub(crate) desired_error: Option<Positive<ConfigurableDuration>>,
     // Experimental
-    #[config(rename = "delay-decay-rate", default = Positive::unchecked_new(1.0/86400.0))]
-    pub(crate) delay_decay_rate: Positive<f64>,
+    #[config(rename = "delay-decay-rate", default)]
+    pub(crate) delay_decay_rate: Option<Positive<f64>>,
 }
 
 #[derive(Debug, PartialEq, Clone, Configurable)]
@@ -58,13 +58,13 @@ pub(crate) struct NtpPoolSourceConfig {
     pub(crate) count: usize,
     #[config(rename = "minimum-poll-interval")]
     pub(crate) minimum_poll_interval: Option<Positive<ConfigurableDuration>>,
-    #[config(rename = "maximum-poll-interval")]
+    #[config(rename = "maximum-poll-interval", default)]
     pub(crate) maximum_poll_interval: Option<Positive<ConfigurableDuration>>,
-    #[config(rename = "desired-error", default = Positive::unchecked_new(ConfigurableDuration {unit: Unit::Millisecond, duration: 1.0}))]
-    pub(crate) desired_error: Positive<ConfigurableDuration>,
+    #[config(rename = "desired-error", default)]
+    pub(crate) desired_error: Option<Positive<ConfigurableDuration>>,
     // Experimental
-    #[config(rename = "delay-decay-rate", default = Positive::unchecked_new(1.0/86400.0))]
-    pub(crate) delay_decay_rate: Positive<f64>,
+    #[config(rename = "delay-decay-rate", default)]
+    pub(crate) delay_decay_rate: Option<Positive<f64>>,
 }
 
 #[derive(Debug, PartialEq, Clone, Configurable)]
