@@ -27,11 +27,11 @@ use crate::daemon::{clock::NtpClockWrapper, config::NetworkAddress, system::Syst
 //pub mod csptp;
 //pub mod nts;
 //pub mod nts_pool;
-pub mod pool;
+pub mod ntp_pool;
 //#[cfg(feature = "pps")]
 //pub mod pps;
 //pub mod sock;
-pub mod standard;
+pub mod ntp;
 
 const NTS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 

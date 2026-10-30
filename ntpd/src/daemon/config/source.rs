@@ -15,7 +15,7 @@ use statime_config::{Configurable, ConfigurableAtomic, Positive};
 use crate::daemon::{
     Config,
     config::{ConfigurableDuration, Unit},
-    spawn::{pool::PoolSourceConfig, standard::StandardSource},
+    spawn::{ntp::NtpSpawnerConfig, ntp_pool::NtpPoolSpawnerConfig},
 };
 
 use super::NetworkAddress;
@@ -60,7 +60,7 @@ pub(crate) struct NtpSourceConfig {
 }
 
 impl NtpSourceConfig {
-    pub fn generate_spawner_config(&self, config: &Config) -> StandardSource {
+    pub fn generate_spawner_config(&self, config: &Config) -> NtpSpawnerConfig {
         let poll_low = ConfigurableDuration::into_larger_poll_interval(
             self.minimum_poll_interval
                 .unwrap_or(config.ntp_source_defaults.minimum_poll_interval),
@@ -72,7 +72,7 @@ impl NtpSourceConfig {
         )
         .max(poll_low);
 
-        StandardSource {
+        NtpSpawnerConfig {
             address: self.address.clone().into(),
             ntp_version: self.ntp_version.into(),
             poll_interval_limits: PollIntervalLimits {
@@ -113,7 +113,7 @@ pub(crate) struct NtpPoolSourceConfig {
 }
 
 impl NtpPoolSourceConfig {
-    pub fn generate_spawner_config(&self, config: &Config) -> PoolSourceConfig {
+    pub fn generate_spawner_config(&self, config: &Config) -> NtpPoolSpawnerConfig {
         let poll_low = ConfigurableDuration::into_larger_poll_interval(
             self.minimum_poll_interval
                 .unwrap_or(config.ntp_source_defaults.minimum_poll_interval),
@@ -125,7 +125,7 @@ impl NtpPoolSourceConfig {
         )
         .max(poll_low);
 
-        PoolSourceConfig {
+        NtpPoolSpawnerConfig {
             addr: self.address.clone().into(),
             count: self.count,
             ignore: self.ignore.clone(),
