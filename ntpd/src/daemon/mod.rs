@@ -202,15 +202,9 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
                     )));
                 }
                 config::SourceConfig::NtpNtsServer(config) => todo!(),
-                config::SourceConfig::NtpPool(config) => {
+                config::SourceConfig::NtpPool(source_config) => {
                     system.add_spawner(Box::new(PoolSpawner::new(
-                        PoolSourceConfig {
-                            addr: config.address.clone().into(),
-                            count: config.count,
-                            ignore: vec![],
-                            ntp_version: config.ntp_version.into(),
-                        },
-                        SourceConfig::default(),
+                        source_config.generate_spawner_config(&config),
                     )));
                 }
                 config::SourceConfig::NtpNtsPool(config) => todo!(),
