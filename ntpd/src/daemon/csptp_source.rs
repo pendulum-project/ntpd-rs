@@ -4,6 +4,8 @@ use statime_base::{Link, TAI, Timestamp};
 use statime_csptp::{ClientRecvResult, ClientSocket, CsptpManager, CsptpSource, InternalState};
 use statime_netptp::{NetworkManager, PtpAddressFamily};
 
+use crate::daemon::spawn::LinkTerminationReason;
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct CsptpSourceConfig {
     pub address: String,
@@ -53,7 +55,7 @@ impl CsptpSourceTask {
         controller: Controller,
         manager: &'static CsptpManager<RwLock<InternalState>>,
         network: NetworkManager<A>,
-    ) {
+    ) -> tokio::task::JoinHandle<LinkTerminationReason> {
         tokio::spawn(async move {
             let interface = network.open_general();
             let mut source = CsptpSource::new(
@@ -67,7 +69,7 @@ impl CsptpSourceTask {
                 controller,
             );
 
-            source
+            if let Err(e) = source
                 .run(
                     pending(),
                     || {
@@ -79,7 +81,11 @@ impl CsptpSourceTask {
                     rand::thread_rng,
                 )
                 .await
-                .expect("Unexpected controller failure in csptp source.");
-        });
+            {
+                LinkTerminationReason::Failed
+            } else {
+                LinkTerminationReason::MustDemobilize
+            }
+        })
     }
 }

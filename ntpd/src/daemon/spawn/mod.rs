@@ -23,8 +23,8 @@ use crate::daemon::config::CsptpSourceConfig;
 use crate::daemon::config::PpsSourceConfig;
 use crate::daemon::{clock::NtpClockWrapper, config::NetworkAddress, system::SystemManagers};
 
-//#[cfg(target_os = "linux")]
-//pub mod csptp;
+#[cfg(target_os = "linux")]
+pub mod csptp;
 //pub mod nts;
 //pub mod nts_pool;
 pub mod ntp_pool;

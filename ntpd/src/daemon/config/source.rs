@@ -12,6 +12,8 @@ use serde::{
 };
 use statime_config::{Configurable, ConfigurableAtomic, Positive};
 
+#[cfg(target_os = "linux")]
+use crate::daemon::spawn::csptp::CsptpSpawnerConfig;
 use crate::daemon::{
     Config,
     config::{ConfigurableDuration, Unit},
@@ -154,7 +156,40 @@ pub(crate) struct PpsSourceConfig {}
 
 #[cfg(target_os = "linux")]
 #[derive(Debug, PartialEq, Clone, Configurable)]
-pub(crate) struct CsptpSourceConfig {}
+pub(crate) struct CsptpSourceConfig {
+    pub(crate) address: String,
+    #[config(default)]
+    pub(crate) domain: Option<u8>,
+    #[config(rename = "poll-interval", default)]
+    pub(crate) poll_interval: Option<Positive<ConfigurableDuration>>,
+    #[config(rename = "response-interval", default)]
+    pub(crate) response_interval: Option<Positive<ConfigurableDuration>>,
+    // Experimental
+    #[config(rename = "delay-decay-rate", default)]
+    pub(crate) delay_decay_rate: Option<Positive<f64>>,
+}
+
+#[cfg(target_os = "linux")]
+impl CsptpSourceConfig {
+    pub fn generate_spawner_config(&self, config: &Config) -> CsptpSpawnerConfig {
+        CsptpSpawnerConfig {
+            address: self.address.clone(),
+            domain: self.domain.unwrap_or(config.csptp_source_defaults.domain),
+            poll_interval: ConfigurableDuration::into_std_duration(
+                self.poll_interval
+                    .unwrap_or(config.csptp_source_defaults.poll_interval),
+            ),
+            response_interval: ConfigurableDuration::into_std_duration(
+                self.response_interval
+                    .unwrap_or(config.csptp_source_defaults.response_interval),
+            ),
+            delay_decay_rate: self
+                .delay_decay_rate
+                .unwrap_or(config.csptp_source_defaults.delay_decay_rate)
+                .into_inner(),
+        }
+    }
+}
 
 #[derive(Debug, Default, PartialEq, Clone, Copy, ConfigurableAtomic)]
 pub(crate) enum RequestedNtpVersion {

@@ -75,6 +75,27 @@ impl Default for NtpSourceDefaults {
     }
 }
 
+#[derive(Debug, Clone, Configurable)]
+pub struct CsptpSourceDefaults {
+    #[config(default = 128)]
+    pub(crate) domain: u8,
+    #[config(rename = "poll-interval", default = Positive::unchecked_new(ConfigurableDuration {unit: Unit::Second, duration: 1.0}))]
+    pub(crate) poll_interval: Positive<ConfigurableDuration>,
+    #[config(rename = "response-interval", default = Positive::unchecked_new(ConfigurableDuration {unit: Unit::Second, duration: 1.0}))]
+    pub(crate) response_interval: Positive<ConfigurableDuration>,
+    // Experimental
+    #[config(rename = "delay-decay-rate", default = Positive::unchecked_new(1.0/86400.0f64.sqrt()))]
+    pub(crate) delay_decay_rate: Positive<f64>,
+}
+
+impl Default for CsptpSourceDefaults {
+    fn default() -> Self {
+        let mut partial = <Self as Configurable>::Node::default();
+        partial.apply_defaults();
+        partial.resolve(&mut ConfigPath::root()).unwrap()
+    }
+}
+
 /// Which system configuration to layer underneath the main configuration, if
 /// any.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ConfigurableAtomic)]
@@ -108,6 +129,8 @@ pub struct Config {
     #[config(rename = "server", default)]
     pub servers: Vec<NtpServerConfig>,
     pub ntp_source_defaults: NtpSourceDefaults,
+    #[config(rename = "csptp-source-defaults")]
+    pub csptp_source_defaults: CsptpSourceDefaults,
     pub observability: ObservabilityConfig,
 }
 
