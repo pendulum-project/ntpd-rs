@@ -25,7 +25,7 @@ use crate::daemon::{clock::NtpClockWrapper, config::NetworkAddress, system::Syst
 
 #[cfg(target_os = "linux")]
 pub mod csptp;
-//pub mod nts;
+pub mod nts;
 //pub mod nts_pool;
 pub mod ntp_pool;
 //#[cfg(feature = "pps")]
@@ -70,7 +70,6 @@ pub enum SpawnFailureReason {
 
 pub type TrySpawnFuture<TimeController> = Box<
     dyn Future<Output = Result<CreationParameters<TimeController>, SpawnFailureReason>>
-        + Sync
         + Send
         + 'static,
 >;
@@ -88,7 +87,6 @@ pub type SourceCreator<LinkController> = Box<
             NtpClockWrapper,
             &SystemManagers,
         ) -> JoinHandle<LinkTerminationReason>
-        + Sync
         + Send
         + 'static,
 >;
