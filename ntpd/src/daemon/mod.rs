@@ -38,8 +38,8 @@ use config::NtpDaemonOptions;
 use crate::daemon::clock::NtpClockWrapper;
 use crate::daemon::nts_key_provider::KeysetConfig;
 use crate::daemon::spawn::ntp::{NtpSpawner, NtpSpawnerConfig};
+use crate::daemon::spawn::ntp_nts::NtpNtsSpawner;
 use crate::daemon::spawn::ntp_pool::{NtpPoolSpawner, NtpPoolSpawnerConfig};
-use crate::daemon::spawn::nts::NtsSpawner;
 use crate::daemon::system::{System, SystemConfig};
 use crate::daemon::tracing::LogReloadTaskStarter;
 use crate::notify::notify_ready;
@@ -203,7 +203,7 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
                     )));
                 }
                 config::SourceConfig::NtpNtsServer(source_config) => {
-                    system.add_spawner(Box::new(NtsSpawner::new(
+                    system.add_spawner(Box::new(NtpNtsSpawner::new(
                         source_config.generate_spawner_config(&config)?,
                     )?));
                 }

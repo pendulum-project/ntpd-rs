@@ -25,7 +25,7 @@ use crate::daemon::{clock::NtpClockWrapper, config::NetworkAddress, system::Syst
 
 #[cfg(target_os = "linux")]
 pub mod csptp;
-pub mod nts;
+pub mod ntp_nts;
 //pub mod nts_pool;
 pub mod ntp_pool;
 //#[cfg(feature = "pps")]
