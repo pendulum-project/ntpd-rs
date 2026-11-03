@@ -317,8 +317,7 @@ mod tests {
     };
 
     use ntp_proto::{
-        NoCipher, NtpManager, NtpPacket, NtpServerInfo, ProtocolVersion, SourceConfig,
-        SynchronizationConfig,
+        NoCipher, NtpConfig, NtpManager, NtpPacket, NtpServerInfo, ProtocolVersion, SourceConfig,
     };
     use statime_base::{ClockError, LeapStatus, TimeSnapshot};
     use timestamped_socket::socket::{GeneralTimestampMode, Open, open_ip};
@@ -503,7 +502,7 @@ mod tests {
         .unwrap();
 
         let index = ClockId::new();
-        let ntp_manager = NtpManager::new(SynchronizationConfig::default(), Arc::new([]));
+        let ntp_manager = NtpManager::new(NtpConfig::default(), Arc::new([]));
 
         let link_id =
             LinkId::new(statime_base::ClockId::new(), statime_base::ClockId::new()).unwrap();

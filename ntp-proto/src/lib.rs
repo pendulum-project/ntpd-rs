@@ -131,7 +131,7 @@ impl std::fmt::Display for ClockId {
 }
 
 mod exports {
-    pub use super::config::{SourceConfig, StepThreshold, SynchronizationConfig};
+    pub use super::config::{NtpConfig, SourceConfig, StepThreshold};
     pub use super::identifiers::ReferenceId;
     #[cfg(feature = "__internal-fuzz")]
     pub use super::ipfilter::fuzz::fuzz_ipfilter;
