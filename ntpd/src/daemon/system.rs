@@ -2,12 +2,11 @@
 use std::{
     cell::OnceCell,
     net::{Ipv4Addr, Ipv6Addr},
-    sync::Mutex,
 };
 use std::{
     collections::HashMap,
     pin::Pin,
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex, RwLock},
     task::{Context, Poll, Waker},
 };
 
@@ -34,7 +33,7 @@ pub struct SystemConfig {
 }
 
 pub struct System<TimeController: StdController> {
-    state: RwLock<SystemState<TimeController>>,
+    state: Mutex<SystemState<TimeController>>,
     managers: SystemManagers,
     controller: Arc<TimeController>,
     #[expect(
@@ -228,7 +227,7 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
         let csptp_manager = Box::leak(Box::new(statime_csptp::CsptpManager::new(csptp_config)));
 
         Self {
-            state: RwLock::default(),
+            state: Mutex::default(),
             managers: SystemManagers {
                 ntp_manager,
                 #[cfg(target_os = "linux")]
@@ -247,7 +246,7 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
 
     fn run_self(&self) -> impl Future<Output = Result<(), Box<dyn std::error::Error + Send>>> {
         std::future::poll_fn(|cx| {
-            let mut state = self.state.write().unwrap();
+            let mut state = self.state.lock().unwrap();
             // Making the mutable reference explicit here makes the borrow
             // checker able to separate mutable borrows of the driven links
             // and spawner lists.
@@ -339,7 +338,7 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
                         .ntp_manager
                         .update_time_snapshot(time_snapshot);
 
-                    let state = self.state.read().unwrap();
+                    let state = self.state.lock().unwrap();
 
                     if let Some(used_sources) = used_sources
                         .into_iter()
@@ -381,7 +380,7 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
     }
 
     pub fn add_spawner(&self, spawner: Box<dyn Spawner<TimeController> + Sync + Send>) {
-        let mut state = self.state.write().unwrap();
+        let mut state = self.state.lock().unwrap();
         state.spawners.insert(
             SpawnerId::new(),
             SpawnerData {
