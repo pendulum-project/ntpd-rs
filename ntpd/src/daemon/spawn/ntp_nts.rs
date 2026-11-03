@@ -32,7 +32,7 @@ pub struct NtpNtsSpawnerConfig {
     pub delay_decay_rate: f64,
 }
 
-pub struct NtsSpawner {
+pub struct NtpNtsSpawner {
     config: NtpNtsSpawnerConfig,
     key_exchange_client: Arc<KeyExchangeClient>,
     state: Arc<Mutex<NtsNtpSpawnerState>>,
@@ -43,14 +43,14 @@ struct NtsNtpSpawnerState {
     has_spawned: bool,
 }
 
-impl NtsSpawner {
-    pub fn new(config: NtpNtsSpawnerConfig) -> Result<NtsSpawner, NtsError> {
+impl NtpNtsSpawner {
+    pub fn new(config: NtpNtsSpawnerConfig) -> Result<NtpNtsSpawner, NtsError> {
         let key_exchange_client = Arc::new(KeyExchangeClient::new(&NtsClientConfig {
             certificates: config.certificate_authorities.clone(),
             protocol_version: config.ntp_version,
         })?);
 
-        Ok(NtsSpawner {
+        Ok(NtpNtsSpawner {
             config,
             key_exchange_client,
             state: Arc::default(),
@@ -112,7 +112,7 @@ impl NtsSpawner {
     }
 }
 
-impl<TimeController: StdController> Spawner<TimeController> for NtsSpawner
+impl<TimeController: StdController> Spawner<TimeController> for NtpNtsSpawner
 where
     TimeController::LinkConfig: From<statime_algo::LinkConfig>,
     TimeController::TrackedLinkConfig: From<statime_algo::TrackedLinkConfig>,
@@ -229,7 +229,7 @@ mod tests {
         clock::NtpClockWrapper,
         spawn::{
             NormalizedAddress, NtsKeAddress, Spawner,
-            nts::{NtpNtsSpawnerConfig, NtsSpawner},
+            ntp_nts::{NtpNtsSpawner, NtpNtsSpawnerConfig},
         },
     };
 
@@ -246,7 +246,7 @@ mod tests {
             let _ = socket.read(&mut buf).await.unwrap();
         });
 
-        let mut spawner = NtsSpawner::new(NtpNtsSpawnerConfig {
+        let mut spawner = NtpNtsSpawner::new(NtpNtsSpawnerConfig {
             address: NtsKeAddress(NormalizedAddress::new_from_parts("localhost", addr.port())),
             enable_srv_resolution: false,
             certificate_authorities: Arc::default(),
@@ -284,7 +284,7 @@ mod tests {
             let _ = socket.read(&mut buf).await.unwrap();
         });
 
-        let mut spawner = NtsSpawner::new(NtpNtsSpawnerConfig {
+        let mut spawner = NtpNtsSpawner::new(NtpNtsSpawnerConfig {
             address: NtsKeAddress(NormalizedAddress::new_from_parts("localhost", addr.port())),
             enable_srv_resolution: true,
             certificate_authorities: Arc::default(),

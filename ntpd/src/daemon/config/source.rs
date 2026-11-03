@@ -20,7 +20,7 @@ use crate::daemon::{
     Config,
     config::{ConfigurableDuration, Unit},
     keyexchange::certificates_from_file,
-    spawn::{ntp::NtpSpawnerConfig, ntp_pool::NtpPoolSpawnerConfig, nts::NtpNtsSpawnerConfig},
+    spawn::{ntp::NtpSpawnerConfig, ntp_nts::NtpNtsSpawnerConfig, ntp_pool::NtpPoolSpawnerConfig},
 };
 
 use super::NetworkAddress;
