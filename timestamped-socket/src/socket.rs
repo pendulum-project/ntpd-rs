@@ -266,7 +266,9 @@ impl<A: NetworkAddress, S> Socket<A, S> {
     ) -> std::io::Result<Option<SendTimestampToken>> {
         if matches!(
             self.timestamp_mode,
-            InterfaceTimestampMode::HardwarePTPAll | InterfaceTimestampMode::SoftwareAll
+            InterfaceTimestampMode::HardwareAll
+                | InterfaceTimestampMode::HardwarePTPAll
+                | InterfaceTimestampMode::SoftwareAll
         ) {
             #[cfg(target_os = "linux")]
             {
@@ -307,7 +309,9 @@ impl<A: NetworkAddress, S> Socket<A, S> {
         async move {
             if matches!(
                 timestamp_mode,
-                InterfaceTimestampMode::HardwarePTPAll | InterfaceTimestampMode::SoftwareAll
+                InterfaceTimestampMode::HardwareAll
+                    | InterfaceTimestampMode::HardwarePTPAll
+                    | InterfaceTimestampMode::SoftwareAll
             ) {
                 #[cfg(target_os = "linux")]
                 {
