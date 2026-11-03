@@ -26,6 +26,7 @@ use std::sync::Arc;
 use std::{error::Error, io::IsTerminal, path::Path};
 
 use ::tracing::info;
+use clock_steering::unix::UnixClock;
 pub use config::Config;
 use ntp_proto::{NtpConfig, SourceConfig};
 pub use observer::ObservableState;
@@ -162,11 +163,11 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
         let keyset = nts_key_provider::spawn(KeysetConfig::default()).await;
 
         ::tracing::debug!("Configuration loaded, spawning daemon jobs");
-        let clock = NtpClockWrapper::default();
+        let clock: NtpClockWrapper = UnixClock::CLOCK_REALTIME.into();
         // FIXME: Implement proper configuration of controllers.
         let (controller, system_clock_id) =
             statime_algo::KalmanController::<StdKalmanStorage<_>, _>::new(
-                clock,
+                clock.clone(),
                 ClockConfig::default(),
                 ControllerConfig {
                     minimum_agreeing_sources: 3.min(config.sources.len()),

@@ -1,7 +1,7 @@
 use clock_steering::unix::UnixClock;
 use statime_base::{Clock, ClockError, Duration, LeapStatus, TAI, UTC};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct NtpClockWrapper(NtpClockWrapperInner);
 
 pub(crate) fn utc_to_tai(ts: statime_base::Timestamp<UTC>) -> statime_base::Timestamp<TAI> {
@@ -10,7 +10,7 @@ pub(crate) fn utc_to_tai(ts: statime_base::Timestamp<UTC>) -> statime_base::Time
         + Duration::from_seconds_nanos(37, 0)
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum NtpClockWrapperInner {
     Utc(UnixClock<UTC>),
     Tai(UnixClock<TAI>),
@@ -25,12 +25,6 @@ impl From<UnixClock<TAI>> for NtpClockWrapper {
 impl From<UnixClock<UTC>> for NtpClockWrapper {
     fn from(value: UnixClock<UTC>) -> Self {
         Self(NtpClockWrapperInner::Utc(value))
-    }
-}
-
-impl Default for NtpClockWrapper {
-    fn default() -> Self {
-        NtpClockWrapper(NtpClockWrapperInner::Utc(UnixClock::CLOCK_REALTIME))
     }
 }
 

@@ -303,7 +303,7 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
                         };
                         let link_id = link.id();
                         let driven_link =
-                            (parameters.creator)(link, self.system_clock, &self.managers);
+                            (parameters.creator)(link, self.system_clock.clone(), &self.managers);
                         state.driven_links.insert(
                             link_id,
                             LinkData {
