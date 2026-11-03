@@ -9,7 +9,7 @@ use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
 use crate::source::SourceSnapshot;
 use crate::{KeySet, NtpSourceSnapshot, Server, ServerConfig};
 use crate::{
-    config::{SourceConfig, SynchronizationConfig},
+    config::{NtpConfig, SourceConfig},
     identifiers::ReferenceId,
     source::{NtpSource, NtpSourceActionIterator, ProtocolVersion, SourceNtsData},
 };
@@ -99,7 +99,7 @@ pub(crate) struct NtpSourceInfo {
 }
 
 pub struct NtpManager {
-    synchronization_config: SynchronizationConfig,
+    synchronization_config: NtpConfig,
     server_id: ServerId,
     source_snapshots: Arc<Mutex<HashMap<LinkId, NtpSourceSnapshot>>>,
 
@@ -108,7 +108,7 @@ pub struct NtpManager {
 }
 
 impl NtpManager {
-    pub fn new(synchronization_config: SynchronizationConfig, ip_list: Arc<[IpAddr]>) -> Self {
+    pub fn new(synchronization_config: NtpConfig, ip_list: Arc<[IpAddr]>) -> Self {
         let server_id = ServerId::default();
         let source_info = NtpSourceInfo {
             ip_list,

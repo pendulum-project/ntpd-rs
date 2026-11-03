@@ -5,7 +5,7 @@ mod source;
 
 pub use cli::*;
 use clock_steering::unix::UnixClock;
-use ntp_proto::{NtpVersion, ProtocolVersion, SynchronizationConfig};
+use ntp_proto::{NtpVersion, ProtocolVersion};
 pub use primitives::*;
 use serde::{Deserialize, Deserializer, Serialize};
 pub use server::*;

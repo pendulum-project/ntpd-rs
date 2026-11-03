@@ -7,20 +7,6 @@ use serde::{
 
 use crate::time_types::{NtpDuration, PollInterval, PollIntervalLimits};
 
-fn deserialize_option_accumulated_step_panic_threshold<'de, D>(
-    deserializer: D,
-) -> Result<Option<NtpDuration>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let duration: NtpDuration = Deserialize::deserialize(deserializer)?;
-    Ok(if duration == NtpDuration::ZERO {
-        None
-    } else {
-        Some(duration)
-    })
-}
-
 #[derive(Debug, Default, Copy, Clone)]
 pub struct ReferenceIdConfig {
     id: u32,
@@ -271,42 +257,7 @@ fn default_initial_poll_interval() -> PollInterval {
 
 #[derive(Deserialize, Debug, Clone, Copy)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct SynchronizationConfig {
-    /// Minimum number of survivors needed to be able to discipline the system clock.
-    /// More survivors (so more servers from which to get the time) means a more accurate time.
-    ///
-    /// The spec notes (CMIN was renamed to MIN_INTERSECTION_SURVIVORS in our implementation):
-    ///
-    /// > CMIN defines the minimum number of servers consistent with the correctness requirements.
-    /// > Suspicious operators would set CMIN to ensure multiple redundant servers are available for the
-    /// > algorithms to mitigate properly. However, for historic reasons the default value for CMIN is one.
-    #[serde(default = "default_minimum_agreeing_sources")]
-    pub minimum_agreeing_sources: usize,
-
-    /// The maximum amount the system clock is allowed to change in a single go
-    /// before we conclude something is seriously wrong. This is used to limit
-    /// the changes to the clock to reasonable amounts, and stop issues with
-    /// remote servers from causing us to drift too far.
-    ///
-    /// Note that this is not used during startup. To limit system clock changes
-    /// during startup, use startup_panic_threshold
-    #[serde(default = "default_single_step_panic_threshold")]
-    pub single_step_panic_threshold: StepThreshold,
-
-    /// The maximum amount the system clock is allowed to change during startup.
-    /// This can be used to limit the impact of bad servers if the system clock
-    /// is known to be reasonable on startup
-    #[serde(default = "default_startup_step_panic_threshold")]
-    pub startup_step_panic_threshold: StepThreshold,
-
-    /// The maximum amount distributed amongst all steps except at startup the
-    /// daemon is allowed to step the system clock.
-    #[serde(
-        deserialize_with = "deserialize_option_accumulated_step_panic_threshold",
-        default
-    )]
-    pub accumulated_step_panic_threshold: Option<NtpDuration>,
-
+pub struct NtpConfig {
     /// Stratum of the local clock, when not synchronized through ntp. This
     /// can be used in servers to indicate that there are external mechanisms
     /// synchronizing the clock
@@ -352,31 +303,15 @@ pub struct SynchronizationConfig {
     ///
     #[serde(default = "default_reference_id")]
     pub reference_id: ReferenceIdConfig,
-
-    /// Should a warning be emitted on jumps in the clock
-    #[serde(default = "default_warn_on_jump")]
-    pub warn_on_jump: bool,
 }
 
-impl Default for SynchronizationConfig {
+impl Default for NtpConfig {
     fn default() -> Self {
         Self {
-            minimum_agreeing_sources: default_minimum_agreeing_sources(),
-
-            single_step_panic_threshold: default_single_step_panic_threshold(),
-            startup_step_panic_threshold: default_startup_step_panic_threshold(),
-            accumulated_step_panic_threshold: None,
-
             local_stratum: default_local_stratum(),
             reference_id: default_reference_id(),
-
-            warn_on_jump: default_warn_on_jump(),
         }
     }
-}
-
-fn default_minimum_agreeing_sources() -> usize {
-    3
 }
 
 fn default_reference_id() -> ReferenceIdConfig {
@@ -387,26 +322,6 @@ fn default_reference_id() -> ReferenceIdConfig {
     }
 }
 
-fn default_single_step_panic_threshold() -> StepThreshold {
-    let raw = NtpDuration::from_seconds(1000.);
-    StepThreshold {
-        forward: Some(raw),
-        backward: Some(raw),
-    }
-}
-
-fn default_startup_step_panic_threshold() -> StepThreshold {
-    // No forward limit, backwards max. 1 day
-    StepThreshold {
-        forward: None,
-        backward: Some(NtpDuration::from_seconds(86400.)),
-    }
-}
-
 fn default_local_stratum() -> u8 {
     16
-}
-
-fn default_warn_on_jump() -> bool {
-    true
 }

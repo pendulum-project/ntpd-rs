@@ -27,7 +27,7 @@ use std::{error::Error, io::IsTerminal, path::Path};
 
 use ::tracing::info;
 pub use config::Config;
-use ntp_proto::{SourceConfig, SynchronizationConfig};
+use ntp_proto::{NtpConfig, SourceConfig};
 pub use observer::ObservableState;
 use statime_algo::{ClockConfig, ControllerConfig, StdKalmanStorage};
 use tokio::runtime::Builder;
@@ -185,7 +185,7 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
                 maximum_retry_timeout: std::time::Duration::from_mins(10),
             },
             // FIXME: Add ntp configuration back in.
-            SynchronizationConfig::default(),
+            NtpConfig::default(),
             #[cfg(target_os = "linux")]
             // FIXME: Add csptp configuration back in.
             statime_csptp::CsptpConfig::default(),

@@ -11,7 +11,7 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
-use ntp_proto::{NtpManager, SynchronizationConfig};
+use ntp_proto::{NtpConfig, NtpManager};
 use statime_base::{ActiveLinkData, ClockId, Link, LinkId, SourceType, StdController};
 #[cfg(target_os = "linux")]
 use statime_csptp::CsptpConfig;
@@ -163,10 +163,7 @@ impl SystemManagers {
     #[cfg(test)]
     pub fn test_managers() -> Self {
         SystemManagers {
-            ntp_manager: Arc::new(NtpManager::new(
-                SynchronizationConfig::default(),
-                Arc::default(),
-            )),
+            ntp_manager: Arc::new(NtpManager::new(NtpConfig::default(), Arc::default())),
             #[cfg(target_os = "linux")]
             ptp_networking_ipv4: Mutex::new(None),
             #[cfg(target_os = "linux")]
@@ -222,7 +219,7 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
         controller: TimeController,
         system_clock_id: ClockId,
         system_config: SystemConfig,
-        ntp_config: SynchronizationConfig,
+        ntp_config: NtpConfig,
         #[cfg(target_os = "linux")] csptp_config: CsptpConfig,
     ) -> Self {
         let ntp_manager = Arc::new(NtpManager::new(ntp_config, Arc::default()));
