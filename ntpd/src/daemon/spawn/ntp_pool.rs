@@ -177,6 +177,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use clock_steering::unix::UnixClock;
     use ntp_proto::ProtocolVersion;
 
     use ntp_proto::SourceConfig;
@@ -230,7 +231,7 @@ mod tests {
         )
         .unwrap();
 
-        let handle1 = (params.creator)(link, NtpClockWrapper::default(), &managers);
+        let handle1 = (params.creator)(link, UnixClock::CLOCK_REALTIME.into(), &managers);
 
         assert!(<NtpPoolSpawner as Spawner<TestController>>::needs_spawn(
             &pool
@@ -249,7 +250,7 @@ mod tests {
         )
         .unwrap();
 
-        let handle2 = (params.creator)(link, NtpClockWrapper::default(), &managers);
+        let handle2 = (params.creator)(link, UnixClock::CLOCK_REALTIME.into(), &managers);
 
         assert!(!<NtpPoolSpawner as Spawner<TestController>>::needs_spawn(
             &pool
@@ -296,7 +297,7 @@ mod tests {
         )
         .unwrap();
 
-        let handle1 = (params.creator)(link, NtpClockWrapper::default(), &managers);
+        let handle1 = (params.creator)(link, UnixClock::CLOCK_REALTIME.into(), &managers);
 
         assert!(<NtpPoolSpawner as Spawner<TestController>>::needs_spawn(
             &pool
@@ -315,7 +316,7 @@ mod tests {
         )
         .unwrap();
 
-        let handle2 = (params.creator)(link, NtpClockWrapper::default(), &managers);
+        let handle2 = (params.creator)(link, UnixClock::CLOCK_REALTIME.into(), &managers);
 
         assert!(<NtpPoolSpawner as Spawner<TestController>>::needs_spawn(
             &pool
@@ -367,7 +368,7 @@ mod tests {
         .unwrap();
         let id_1 = link.id();
 
-        let handle1 = (params.creator)(link, NtpClockWrapper::default(), &managers);
+        let handle1 = (params.creator)(link, UnixClock::CLOCK_REALTIME.into(), &managers);
 
         assert!(<NtpPoolSpawner as Spawner<TestController>>::needs_spawn(
             &pool
@@ -386,7 +387,7 @@ mod tests {
         )
         .unwrap();
 
-        let handle2 = (params.creator)(link, NtpClockWrapper::default(), &managers);
+        let handle2 = (params.creator)(link, UnixClock::CLOCK_REALTIME.into(), &managers);
 
         assert!(!<NtpPoolSpawner as Spawner<TestController>>::needs_spawn(
             &pool
@@ -416,7 +417,7 @@ mod tests {
         )
         .unwrap();
 
-        let handle3 = (params.creator)(link, NtpClockWrapper::default(), &managers);
+        let handle3 = (params.creator)(link, UnixClock::CLOCK_REALTIME.into(), &managers);
 
         assert!(!<NtpPoolSpawner as Spawner<TestController>>::needs_spawn(
             &pool

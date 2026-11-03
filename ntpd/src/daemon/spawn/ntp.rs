@@ -153,6 +153,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use clock_steering::unix::UnixClock;
     use ntp_proto::ProtocolVersion;
 
     use ntp_proto::SourceConfig;
@@ -206,7 +207,7 @@ mod tests {
         )
         .unwrap();
 
-        let handle = (params.creator)(link, NtpClockWrapper::default(), &managers);
+        let handle = (params.creator)(link, UnixClock::CLOCK_REALTIME.into(), &managers);
         assert!(!<NtpSpawner as Spawner<TestController>>::needs_spawn(
             &spawner
         ));
@@ -249,7 +250,7 @@ mod tests {
         .unwrap();
         let link_id = link.id();
 
-        let handle = (params.creator)(link, NtpClockWrapper::default(), &managers);
+        let handle = (params.creator)(link, UnixClock::CLOCK_REALTIME.into(), &managers);
         assert!(!<NtpSpawner as Spawner<TestController>>::needs_spawn(
             &spawner
         ));
@@ -279,7 +280,7 @@ mod tests {
         )
         .unwrap();
 
-        let handle = (params.creator)(link, NtpClockWrapper::default(), &managers);
+        let handle = (params.creator)(link, UnixClock::CLOCK_REALTIME.into(), &managers);
         assert!(!<NtpSpawner as Spawner<TestController>>::needs_spawn(
             &spawner
         ));
@@ -325,7 +326,7 @@ mod tests {
         .unwrap();
         let link_id = link.id();
 
-        let handle = (params.creator)(link, NtpClockWrapper::default(), &managers);
+        let handle = (params.creator)(link, UnixClock::CLOCK_REALTIME.into(), &managers);
         assert!(!<NtpSpawner as Spawner<TestController>>::needs_spawn(
             &spawner
         ));
