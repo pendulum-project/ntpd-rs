@@ -12,6 +12,7 @@ const DESCRIPTOR: &str = "ntp-daemon - synchronize system time";
 const HELP_MSG: &str = "Options:
   -c, --config=PATH             change the config .toml file
   -l, --log-level=LOG_LEVEL     change the log level
+  -x, --no-clock-steering       disable steering of the system clock
   -h, --help                    display this help text
   -v, --version                 display version information";
 
@@ -25,6 +26,8 @@ pub(crate) struct NtpDaemonOptions {
     pub config: Option<PathBuf>,
     /// Level for messages to display in logs
     pub log_level: Option<LogLevel>,
+    /// Disable system clock steering
+    pub no_clock_steering: bool,
     help: bool,
     version: bool,
     pub action: NtpDaemonAction,
@@ -149,6 +152,9 @@ impl NtpDaemonOptions {
                     }
                     "-v" | "--version" => {
                         options.version = true;
+                    }
+                    "-x" | "--no-clock-steering" => {
+                        options.no_clock_steering = true;
                     }
                     option => {
                         Err(format!("invalid option provided: {option}"))?;

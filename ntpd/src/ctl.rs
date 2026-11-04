@@ -195,7 +195,7 @@ pub fn main() -> std::io::Result<ExitCode> {
         NtpCtlAction::Validate => Ok(validate(options.config.as_deref())),
         NtpCtlAction::ForceSync => Ok(force_sync::force_sync(options.config.as_deref())),
         NtpCtlAction::Status => {
-            let config = Config::from_args(options.config.as_ref(), vec![], vec![]);
+            let config = Config::from_args(options.config.as_ref(), false, vec![], vec![]);
 
             if let Err(ref e) = config {
                 println!("Warning: Unable to load configuration file: {e}");

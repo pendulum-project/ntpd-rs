@@ -96,6 +96,20 @@ impl Default for CsptpSourceDefaults {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Configurable)]
+pub struct SystemClockConfig {
+    #[config(default = true)]
+    pub(crate) steered: bool,
+}
+
+impl Default for SystemClockConfig {
+    fn default() -> Self {
+        let mut partial = <Self as Configurable>::Node::default();
+        partial.apply_defaults();
+        partial.resolve(&mut ConfigPath::root()).unwrap()
+    }
+}
+
 /// Which system configuration to layer underneath the main configuration, if
 /// any.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ConfigurableAtomic)]
@@ -131,6 +145,8 @@ pub struct Config {
     pub ntp_source_defaults: NtpSourceDefaults,
     #[config(rename = "csptp-source-defaults")]
     pub csptp_source_defaults: CsptpSourceDefaults,
+    #[config(rename = "system-clock")]
+    pub system_clock: SystemClockConfig,
     pub observability: ObservabilityConfig,
 }
 
@@ -179,10 +195,15 @@ impl Config {
 
     pub fn from_args(
         file: Option<&impl AsRef<Path>>,
+        no_clock_steering: bool,
         sources: Vec<SourceConfig>,
         servers: Vec<NtpServerConfig>,
     ) -> Result<Config, ConfigError> {
         let mut config = Config::from_first_file(file.as_ref())?;
+
+        if no_clock_steering {
+            config.system_clock.steered = false;
+        }
 
         if !sources.is_empty() {
             if !config.sources.is_empty() {
