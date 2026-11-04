@@ -83,6 +83,7 @@ pub(crate) enum Application {
 pub(crate) fn initialize_logging_parse_config(
     initial_log_level: Option<LogLevel>,
     config_path: Option<&Path>,
+    no_clock_steering: bool,
     app: Application,
 ) -> (Config, Option<LogReloadTaskStarter>) {
     let mut log_level = initial_log_level.unwrap_or_default();
@@ -90,14 +91,15 @@ pub(crate) fn initialize_logging_parse_config(
     let (config_tracing, _) = crate::daemon::tracing::tracing_init(log_level, None, true);
     let (config, tracing_inst, task_starter) =
         ::tracing::subscriber::with_default(config_tracing, || {
-            let config = match Config::from_args(config_path.as_ref(), vec![], vec![]) {
-                Ok(c) => c,
-                Err(e) => {
-                    // print to stderr because tracing is not yet setup
-                    eprintln!("There was an error loading the config: {e}");
-                    std::process::exit(exitcode::CONFIG);
-                }
-            };
+            let config =
+                match Config::from_args(config_path.as_ref(), no_clock_steering, vec![], vec![]) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        // print to stderr because tracing is not yet setup
+                        eprintln!("There was an error loading the config: {e}");
+                        std::process::exit(exitcode::CONFIG);
+                    }
+                };
 
             if let Some(config_log_level) = config.observability.log_level
                 && initial_log_level.is_none()
@@ -135,6 +137,7 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
     let (config, task_starter) = initialize_logging_parse_config(
         options.log_level,
         options.config.as_deref(),
+        options.no_clock_steering,
         Application::Deamon,
     );
 
@@ -163,7 +166,11 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
         let keyset = nts_key_provider::spawn(KeysetConfig::default()).await;
 
         ::tracing::debug!("Configuration loaded, spawning daemon jobs");
-        let clock: NtpClockWrapper = NtpClockWrapper::new_utc(UnixClock::CLOCK_REALTIME);
+        let clock: NtpClockWrapper = if config.system_clock.steered {
+            NtpClockWrapper::new_utc(UnixClock::CLOCK_REALTIME)
+        } else {
+            NtpClockWrapper::new_unsteered_utc(UnixClock::CLOCK_REALTIME)?
+        };
         // FIXME: Implement proper configuration of controllers.
         let (controller, system_clock_id) =
             statime_algo::KalmanController::<StdKalmanStorage<_>, _>::new(
