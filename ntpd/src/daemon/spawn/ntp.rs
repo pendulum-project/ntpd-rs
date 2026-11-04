@@ -207,7 +207,11 @@ mod tests {
         )
         .unwrap();
 
-        let handle = (params.creator)(link, UnixClock::CLOCK_REALTIME.into(), &managers);
+        let handle = (params.creator)(
+            link,
+            NtpClockWrapper::new_utc(UnixClock::CLOCK_REALTIME),
+            &managers,
+        );
         assert!(!<NtpSpawner as Spawner<TestController>>::needs_spawn(
             &spawner
         ));
@@ -250,7 +254,11 @@ mod tests {
         .unwrap();
         let link_id = link.id();
 
-        let handle = (params.creator)(link, UnixClock::CLOCK_REALTIME.into(), &managers);
+        let handle = (params.creator)(
+            link,
+            NtpClockWrapper::new_utc(UnixClock::CLOCK_REALTIME),
+            &managers,
+        );
         assert!(!<NtpSpawner as Spawner<TestController>>::needs_spawn(
             &spawner
         ));
@@ -280,7 +288,11 @@ mod tests {
         )
         .unwrap();
 
-        let handle = (params.creator)(link, UnixClock::CLOCK_REALTIME.into(), &managers);
+        let handle = (params.creator)(
+            link,
+            NtpClockWrapper::new_utc(UnixClock::CLOCK_REALTIME),
+            &managers,
+        );
         assert!(!<NtpSpawner as Spawner<TestController>>::needs_spawn(
             &spawner
         ));
@@ -326,7 +338,11 @@ mod tests {
         .unwrap();
         let link_id = link.id();
 
-        let handle = (params.creator)(link, UnixClock::CLOCK_REALTIME.into(), &managers);
+        let handle = (params.creator)(
+            link,
+            NtpClockWrapper::new_utc(UnixClock::CLOCK_REALTIME),
+            &managers,
+        );
         assert!(!<NtpSpawner as Spawner<TestController>>::needs_spawn(
             &spawner
         ));
