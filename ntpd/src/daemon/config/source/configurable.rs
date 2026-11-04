@@ -7,7 +7,9 @@ use std::marker::PhantomData;
 
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
-    de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor},
+    de::{
+        self, DeserializeSeed, EnumAccess, MapAccess, SeqAccess, Unexpected, VariantAccess, Visitor,
+    },
     forward_to_deserialize_any,
     ser::{self, SerializeMap, SerializeStruct},
 };
@@ -673,6 +675,36 @@ enum Content<'de> {
     Map(Vec<(Content<'de>, Content<'de>)>),
 }
 
+impl Content<'_> {
+    fn as_unexpected(&self) -> Unexpected<'_> {
+        match self {
+            Content::Bool(b) => Unexpected::Bool(*b),
+            Content::I8(v) => Unexpected::Signed((*v).into()),
+            Content::I16(v) => Unexpected::Signed((*v).into()),
+            Content::I32(v) => Unexpected::Signed((*v).into()),
+            Content::I64(v) => Unexpected::Signed(*v),
+            Content::I128(v) => Unexpected::Signed(*v as i64),
+            Content::U8(v) => Unexpected::Unsigned((*v).into()),
+            Content::U16(v) => Unexpected::Unsigned((*v).into()),
+            Content::U32(v) => Unexpected::Unsigned((*v).into()),
+            Content::U64(v) => Unexpected::Unsigned(*v),
+            Content::U128(v) => Unexpected::Unsigned(*v as u64),
+            Content::F32(v) => Unexpected::Float((*v).into()),
+            Content::F64(v) => Unexpected::Float(*v),
+            Content::Char(v) => Unexpected::Char(*v),
+            Content::String(v) => Unexpected::Str(v),
+            Content::BorrowedString(v) => Unexpected::Str(v),
+            Content::Bytes(v) => Unexpected::Bytes(v),
+            Content::BorrowedBytes(v) => Unexpected::Bytes(v),
+            Content::None | Content::Some(_) => Unexpected::Option,
+            Content::Unit => Unexpected::Unit,
+            Content::NewtypeStruct(v) => Unexpected::NewtypeStruct,
+            Content::Sequence(v) => Unexpected::Seq,
+            Content::Map(v) => Unexpected::Map,
+        }
+    }
+}
+
 struct ContentVisitor<'de>(PhantomData<Content<'de>>);
 
 impl<'de> Visitor<'de> for ContentVisitor<'de> {
@@ -963,14 +995,213 @@ impl<'de, E: de::Error> Deserializer<'de> for ContentDeserializer<'de, E> {
         }
     }
 
+    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        match self.content {
+            Content::None => visitor.visit_none(),
+            Content::Some(v) => visitor.visit_some(ContentDeserializer {
+                content: *v,
+                phantom: PhantomData,
+                is_human_readable: self.is_human_readable,
+            }),
+            _ => visitor.visit_some(self),
+        }
+    }
+
+    fn deserialize_enum<V>(
+        self,
+        name: &'static str,
+        variants: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        match self.content {
+            Content::Map(value) if value.len() == 1 => {
+                let (variant, value) = value.into_iter().next().unwrap();
+                visitor.visit_enum(ContentEnumAccess {
+                    variant,
+                    value: Some(value),
+                    phantom: PhantomData,
+                    is_human_readable: self.is_human_readable,
+                })
+            }
+            s @ (Content::String(_) | Content::BorrowedString(_)) => {
+                visitor.visit_enum(ContentEnumAccess {
+                    variant: s,
+                    value: None,
+                    phantom: PhantomData,
+                    is_human_readable: self.is_human_readable,
+                })
+            }
+            other => Err(de::Error::invalid_type(
+                other.as_unexpected(),
+                &"tuple variant",
+            )),
+        }
+    }
+
+    fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        match self.content {
+            // Allow tagged enums containing unit to work properly.
+            Content::Map(ref v) if v.is_empty() => visitor.visit_unit(),
+            _ => self.deserialize_any(visitor),
+        }
+    }
+
+    fn deserialize_unit_struct<V>(
+        self,
+        name: &'static str,
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        match self.content {
+            // Allow tagged enums containing unit structs to work properly.
+            Content::Map(ref v) if v.is_empty() => visitor.visit_unit(),
+            Content::Sequence(ref v) if v.is_empty() => visitor.visit_unit(),
+            _ => self.deserialize_any(visitor),
+        }
+    }
+
     forward_to_deserialize_any! {
         bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
-        bytes byte_buf option unit unit_struct newtype_struct seq tuple
-        tuple_struct map struct enum identifier ignored_any
+        bytes byte_buf newtype_struct seq tuple
+        tuple_struct map struct identifier ignored_any
     }
 
     fn is_human_readable(&self) -> bool {
         self.is_human_readable
+    }
+}
+
+struct ContentEnumAccess<'de, E> {
+    variant: Content<'de>,
+    value: Option<Content<'de>>,
+    phantom: PhantomData<E>,
+    is_human_readable: bool,
+}
+
+impl<'de, E: de::Error> EnumAccess<'de> for ContentEnumAccess<'de, E> {
+    type Error = E;
+    type Variant = ContentVariantAccess<'de, E>;
+
+    fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant), Self::Error>
+    where
+        V: DeserializeSeed<'de>,
+    {
+        seed.deserialize(ContentDeserializer {
+            content: self.variant,
+            phantom: PhantomData,
+            is_human_readable: self.is_human_readable,
+        })
+        .map(|v| {
+            (
+                v,
+                ContentVariantAccess {
+                    value: self.value,
+                    phantom: PhantomData,
+                    is_human_readable: self.is_human_readable,
+                },
+            )
+        })
+    }
+}
+
+struct ContentVariantAccess<'de, E> {
+    value: Option<Content<'de>>,
+    phantom: PhantomData<E>,
+    is_human_readable: bool,
+}
+
+impl<'de, E: de::Error> VariantAccess<'de> for ContentVariantAccess<'de, E> {
+    type Error = E;
+
+    fn unit_variant(self) -> Result<(), Self::Error> {
+        match self.value {
+            Some(value) => Deserialize::deserialize(ContentDeserializer {
+                content: value,
+                phantom: PhantomData,
+                is_human_readable: self.is_human_readable,
+            }),
+            None => Ok(()),
+        }
+    }
+
+    fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value, Self::Error>
+    where
+        T: DeserializeSeed<'de>,
+    {
+        match self.value {
+            Some(value) => seed.deserialize(ContentDeserializer {
+                content: value,
+                phantom: PhantomData,
+                is_human_readable: self.is_human_readable,
+            }),
+            None => Err(de::Error::invalid_type(
+                de::Unexpected::UnitVariant,
+                &"newtype variant",
+            )),
+        }
+    }
+
+    fn tuple_variant<V>(self, len: usize, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        match self.value {
+            Some(Content::Sequence(v)) => visitor.visit_seq(ContentSequenceAccess {
+                elements: v.into_iter(),
+                phantom: PhantomData,
+                is_human_readable: self.is_human_readable,
+            }),
+            Some(other) => Err(de::Error::invalid_type(
+                other.as_unexpected(),
+                &"tuple variant",
+            )),
+            _ => Err(de::Error::invalid_type(
+                de::Unexpected::UnitVariant,
+                &"tuple variant",
+            )),
+        }
+    }
+
+    fn struct_variant<V>(
+        self,
+        fields: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        match self.value {
+            Some(Content::Map(v)) => visitor.visit_map(ContentMapAccess {
+                value: None,
+                entries: v.into_iter(),
+                phantom: PhantomData,
+                is_human_readable: self.is_human_readable,
+            }),
+            Some(Content::Sequence(v)) => visitor.visit_seq(ContentSequenceAccess {
+                elements: v.into_iter(),
+                phantom: PhantomData,
+                is_human_readable: self.is_human_readable,
+            }),
+            Some(other) => Err(de::Error::invalid_type(
+                other.as_unexpected(),
+                &"struct variant",
+            )),
+            _ => Err(de::Error::invalid_type(
+                de::Unexpected::UnitVariant,
+                &"struct variant",
+            )),
+        }
     }
 }
 

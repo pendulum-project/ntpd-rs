@@ -98,7 +98,7 @@ pub(crate) struct NtpPoolSourceConfig {
     pub(crate) count: usize,
     #[config(default)]
     pub(crate) ignore: Vec<IpAddr>,
-    #[config(rename = "minimum-poll-interval")]
+    #[config(rename = "minimum-poll-interval", default)]
     pub(crate) minimum_poll_interval: Option<Positive<ConfigurableDuration>>,
     #[config(rename = "maximum-poll-interval", default)]
     pub(crate) maximum_poll_interval: Option<Positive<ConfigurableDuration>>,
@@ -341,5 +341,76 @@ impl From<RequestedNtpVersion> for ProtocolVersion {
             RequestedNtpVersion::V4 => Self::V4,
             RequestedNtpVersion::V5 => Self::V5,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use statime_config::{ConfigPath, Configurable, PartialValue};
+
+    use crate::daemon::config::{NetworkAddress, SourceConfig};
+
+    #[test]
+    fn test_ntp_source_deserialize() {
+        let mut config = toml::from_str::<<SourceConfig as Configurable>::Node>(
+            r#"
+            type = "ntp"
+            address = "example.com"
+            "#,
+        )
+        .unwrap();
+        config.apply_defaults();
+        let config = config.resolve(&mut ConfigPath::root()).unwrap();
+        let SourceConfig::NtpServer(config) = config else {
+            panic!("Unexpected configuration variant.")
+        };
+        assert_eq!(
+            config.address,
+            NetworkAddress {
+                server: "example.com".into(),
+                port: None
+            }
+        );
+    }
+
+    #[test]
+    fn test_ntp_pool_source_deserialize() {
+        let mut config = toml::from_str::<<SourceConfig as Configurable>::Node>(
+            r#"
+            type = "ntp-pool"
+            address = "example.com"
+            "#,
+        )
+        .unwrap();
+        config.apply_defaults();
+        let config = config.resolve(&mut ConfigPath::root()).unwrap();
+        let SourceConfig::NtpPool(config) = config else {
+            panic!("Unexpected configuration variant.")
+        };
+        assert_eq!(
+            config.address,
+            NetworkAddress {
+                server: "example.com".into(),
+                port: None
+            }
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_csptp_source_deserialize() {
+        let mut config = toml::from_str::<<SourceConfig as Configurable>::Node>(
+            r#"
+            type = "csptp"
+            address = "example.com"
+            "#,
+        )
+        .unwrap();
+        config.apply_defaults();
+        let config = config.resolve(&mut ConfigPath::root()).unwrap();
+        let SourceConfig::Csptp(config) = config else {
+            panic!("Unexpected configuration variant.")
+        };
+        assert_eq!(config.address, "example.com");
     }
 }
