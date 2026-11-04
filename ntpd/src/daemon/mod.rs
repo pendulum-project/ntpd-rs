@@ -163,7 +163,7 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
         let keyset = nts_key_provider::spawn(KeysetConfig::default()).await;
 
         ::tracing::debug!("Configuration loaded, spawning daemon jobs");
-        let clock: NtpClockWrapper = UnixClock::CLOCK_REALTIME.into();
+        let clock: NtpClockWrapper = NtpClockWrapper::new_utc(UnixClock::CLOCK_REALTIME);
         // FIXME: Implement proper configuration of controllers.
         let (controller, system_clock_id) =
             statime_algo::KalmanController::<StdKalmanStorage<_>, _>::new(
