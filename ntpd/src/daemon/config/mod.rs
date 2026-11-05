@@ -12,8 +12,8 @@ pub use server::*;
 pub use source::*;
 use statime_algo::LinkConfig;
 use statime_config::{
-    ConfigError, ConfigPath, Configurable, ConfigurableAtomic, InfiniteOr, PartialValue, Positive,
-    RootConfig, SystemConfigSetting,
+    ConfigError, ConfigPath, Configurable, ConfigurableAtomic, InfiniteOr, NonNegative,
+    PartialValue, Positive, RootConfig, SystemConfigSetting,
 };
 use std::io;
 use std::{
@@ -102,23 +102,23 @@ pub struct SystemClockConfig {
     #[config(default = true)]
     pub(crate) steered: bool,
     /// Threshold for a step at startup to trigger a warning.
-    #[config(rename = "startup-jump-warning-threshold", default = PotentiallyAsymetricThreshold::Symmetric(InfiniteOr::Finite(Positive::unchecked_new(ConfigurableDuration { unit: Unit::Second, duration: 10.0 }))))]
+    #[config(rename = "startup-jump-warning-threshold", default = PotentiallyAsymetricThreshold::Symmetric(InfiniteOr::Finite(NonNegative::unchecked_new(ConfigurableDuration { unit: Unit::Second, duration: 0.0 }))))]
     pub startup_jump_warning_threshold: PotentiallyAsymetricThreshold,
     /// Threshold for a step at startup to trigger an abort.
-    #[config(rename = "startump-jump-abort-threshold", default = PotentiallyAsymetricThreshold::Asymmetric { forward: InfiniteOr::Infinite, backward: InfiniteOr::Finite(Positive::unchecked_new(ConfigurableDuration { unit: Unit::Day, duration: 1.0 }))})]
+    #[config(rename = "startump-jump-abort-threshold", default = PotentiallyAsymetricThreshold::Asymmetric { forward: InfiniteOr::Infinite, backward: InfiniteOr::Finite(NonNegative::unchecked_new(ConfigurableDuration { unit: Unit::Day, duration: 1.0 }))})]
     pub startup_jump_abort_threshold: PotentiallyAsymetricThreshold,
     /// Threshold for a single step during normal operation to trigger a warning.
-    #[config(rename = "single-jump-warning-threshold", default = PotentiallyAsymetricThreshold::Symmetric(InfiniteOr::Finite(Positive::unchecked_new(ConfigurableDuration { unit: Unit::Second, duration: 10.0 }))))]
+    #[config(rename = "single-jump-warning-threshold", default = PotentiallyAsymetricThreshold::Symmetric(InfiniteOr::Finite(NonNegative::unchecked_new(ConfigurableDuration { unit: Unit::Second, duration: 0.0 }))))]
     pub single_jump_warning_threshold: PotentiallyAsymetricThreshold,
     /// Threshold for a single step during normal operation to trigger an abort.
-    #[config(rename = "single-jump-abort-threshold", default = PotentiallyAsymetricThreshold::Symmetric(InfiniteOr::Finite(Positive::unchecked_new(ConfigurableDuration { unit: Unit::Second, duration: 1000.0 }))))]
+    #[config(rename = "single-jump-abort-threshold", default = PotentiallyAsymetricThreshold::Symmetric(InfiniteOr::Finite(NonNegative::unchecked_new(ConfigurableDuration { unit: Unit::Second, duration: 1000.0 }))))]
     pub single_jump_abort_threshold: PotentiallyAsymetricThreshold,
     /// Threshold for accumulated steps to trigger a warning.
     #[config(rename = "accumulated-jump-warning-threshold", default = InfiniteOr::Infinite)]
-    pub accumulated_jump_warning_threshold: InfiniteOr<Positive<ConfigurableDuration>>,
+    pub accumulated_jump_warning_threshold: InfiniteOr<NonNegative<ConfigurableDuration>>,
     /// Threshold for accumulated steps to trigger an abort.
     #[config(rename = "accumulated-jump-abort-threshold", default = InfiniteOr::Infinite)]
-    pub accumulated_jump_abort_threshold: InfiniteOr<Positive<ConfigurableDuration>>,
+    pub accumulated_jump_abort_threshold: InfiniteOr<NonNegative<ConfigurableDuration>>,
     /// Threshold on offset uncertainty after which a clock is considered out of startup (experimental)
     #[config(rename = "startup-end-threshold", default = Positive::unchecked_new(ConfigurableDuration { unit: Unit::Second, duration: 1.0 }))]
     pub startup_end_threshold: Positive<ConfigurableDuration>,
@@ -127,8 +127,8 @@ pub struct SystemClockConfig {
     pub jump_threshold: Positive<ConfigurableDuration>,
     /// How large does a jump need to be to happen, relative to the uncertainty
     /// of currently observed offset. (experimental)
-    #[config(rename = "jump-certainty-threshold", default = Positive::unchecked_new(5.0))]
-    pub jump_certainty_threshold: Positive<f64>,
+    #[config(rename = "jump-certainty-threshold", default = NonNegative::unchecked_new(5.0))]
+    pub jump_certainty_threshold: NonNegative<f64>,
     /// Amount of time to spread slewing over. This gives a typical time scale
     /// to reduce the offset error by about two thirds using slews. (experimental)
     #[config(rename = "slew-time-constant", default = Positive::unchecked_new(ConfigurableDuration { unit: Unit::Second, duration: 8.0 }))]
@@ -179,22 +179,22 @@ pub(crate) struct FilterConfig {
     /// Minimum number of sources that need to agree on the current time before
     /// we enable synchronization.
     #[config(rename = "minimum-agreeing-sources", default)]
-    pub(crate) minimum_agreeing_sources: Option<usize>,
+    pub(crate) minimum_agreeing_sources: Option<Positive<usize>>,
     /// Size of the window of uncertainty to assume around source offset for
     /// judging whether it is a truechimer, based on the observed noise in the
     /// offset. (experimental)
-    #[config(rename = "select-offset-uncertainty-window", default = Positive::unchecked_new(1.0))]
-    pub(crate) select_offset_uncertainty_window: Positive<f64>,
+    #[config(rename = "select-offset-uncertainty-window", default = NonNegative::unchecked_new(1.0))]
+    pub(crate) select_offset_uncertainty_window: NonNegative<f64>,
     /// Size of the window of uncertainty to assume around source offset for
     /// judging whether it is a truechimer, based on the observed link delay
     /// noise. (experimental)
-    #[config(rename = "select-link-uncertainty-window", default = Positive::unchecked_new(2.0))]
-    pub(crate) select_link_uncertainty_window: Positive<f64>,
+    #[config(rename = "select-link-uncertainty-window", default = NonNegative::unchecked_new(2.0))]
+    pub(crate) select_link_uncertainty_window: NonNegative<f64>,
     /// Size of the window of uncertainty to assume around source offset for
     /// judging whether it is a truechimer, from potential asymmetry due to
     /// delay and root delay. (experimental)
-    #[config(rename = "select-delay-uncertainty-window", default = Positive::unchecked_new(0.5))]
-    pub(crate) select_delay_uncertainty_window: Positive<f64>,
+    #[config(rename = "select-delay-uncertainty-window", default = NonNegative::unchecked_new(0.5))]
+    pub(crate) select_delay_uncertainty_window: NonNegative<f64>,
     /// Maximum size of the window of uncertainty before we judge a source to
     /// be unsuitable for synchronization. (experimental)
     #[config(rename = "select-max-window-size", default = Positive::unchecked_new(ConfigurableDuration { unit: Unit::Second, duration: 1.0 }))]
@@ -379,7 +379,7 @@ impl Config {
             minimum_agreeing_sources: self
                 .filter
                 .minimum_agreeing_sources
-                .unwrap_or(3.min(self.count_sources())),
+                .map_or(3.min(self.count_sources()), Positive::into_inner),
         }
     }
 }
