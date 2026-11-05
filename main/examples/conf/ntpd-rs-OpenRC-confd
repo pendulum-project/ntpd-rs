@@ -1,0 +1,8 @@
+# The configuration file path for the ntpd-daemon where settings for the
+# configuration of ntpd-rs are stored
+CONFIG="/etc/ntpd-rs/ntp.toml"
+
+# The unprivileged user and group to run as
+# do not change unless you know what you're doing
+USER=ntpd-rs
+GROUP=ntpd-rs
