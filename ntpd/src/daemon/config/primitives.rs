@@ -7,7 +7,9 @@ use serde::{
 };
 use statime_algo::JumpThreshold;
 use statime_base::Duration;
-use statime_config::{ConfigurableAtomic, InfiniteOr, IsPositive, Positive};
+use statime_config::{
+    ConfigurableAtomic, InfiniteOr, IsNonNegative, IsPositive, NonNegative, Positive,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(super) enum Unit {
@@ -30,6 +32,12 @@ pub(crate) struct ConfigurableDuration {
 impl IsPositive for ConfigurableDuration {
     fn is_positive(&self) -> bool {
         self.duration > 0.0
+    }
+}
+
+impl IsNonNegative for ConfigurableDuration {
+    fn is_non_negative(&self) -> bool {
+        self.duration >= 0.0
     }
 }
 

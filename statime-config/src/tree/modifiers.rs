@@ -81,6 +81,63 @@ impl<T: ConfigurableAtomic + IsPositive> ConfigurableAtomic for Positive<T> {}
 impl ConfigurableAtomic for Positive<f32> {}
 impl ConfigurableAtomic for Positive<f64> {}
 
+pub trait IsNonNegative {
+    fn is_non_negative(&self) -> bool;
+}
+
+macro_rules! is_nonnegative_float {
+    ($float_type:ident) => {
+        impl IsNonNegative for $float_type {
+            fn is_non_negative(&self) -> bool {
+                *self >= 0.0
+            }
+        }
+    };
+}
+
+is_nonnegative_float!(f32);
+is_nonnegative_float!(f64);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct NonNegative<T>(T);
+
+impl<T> NonNegative<T> {
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+
+    pub fn unchecked_new(value: T) -> Self {
+        NonNegative(value)
+    }
+}
+
+impl<'de, T: Deserialize<'de> + IsNonNegative> Deserialize<'de> for NonNegative<T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = T::deserialize(deserializer)?;
+        if T::is_non_negative(&value) {
+            Ok(NonNegative(value))
+        } else {
+            Err(de::Error::custom("value should be positive."))
+        }
+    }
+}
+
+impl<T: Serialize> Serialize for NonNegative<T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+
+impl<T: ConfigurableAtomic + IsNonNegative> ConfigurableAtomic for NonNegative<T> {}
+impl ConfigurableAtomic for NonNegative<f32> {}
+impl ConfigurableAtomic for NonNegative<f64> {}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum InfiniteOr<T> {
     Infinite,

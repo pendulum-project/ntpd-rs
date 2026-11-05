@@ -15,7 +15,7 @@ pub use configurable::Configurable;
 pub use empty::{EffectivelyUnset, is_effectively_unset};
 pub use enum_section::EnumSection;
 pub use merge::{Merge, MergeContext, MergePolicy, Origin, OriginId};
-pub use modifiers::{InfiniteOr, IsPositive, Positive};
+pub use modifiers::{InfiniteOr, IsNonNegative, IsPositive, NonNegative, Positive};
 pub use partial_value::PartialValue;
 pub use path::ConfigPath;
 pub use section::Section;
