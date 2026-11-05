@@ -466,7 +466,7 @@ impl<C> ClockInfo<C> {
                 return Err(AlgoError::JumpAbortLimitExceeded(self.id));
             } else if warn {
                 log::warn!(
-                    "Large jump on clock {clock:?} during startup: {step}.",
+                    "Large jump on clock {clock:?} during startup: {step}. This may confuse applications or be an indication of trouble. To disable this warning, change the startup-jump-warning-threshold for this clock to \"inf\".",
                     clock = self.id
                 );
             }
@@ -502,7 +502,10 @@ impl<C> ClockInfo<C> {
                 );
                 return Err(AlgoError::JumpAbortLimitExceeded(self.id));
             } else if warn_instant {
-                log::warn!("Large jump on clock {clock:?}: {step}.", clock = self.id);
+                log::warn!(
+                    "Large jump on clock {clock:?}: {step}. This may confuse applications or be an indication of trouble. To disable this warning, change the single-jump-warning-threshold to \"inf\".",
+                    clock = self.id
+                );
             } else if warn_accumulated {
                 if self.config.accumulated_jump_abort_threshold.is_some() {
                     log::warn!(
