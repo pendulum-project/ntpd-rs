@@ -132,32 +132,24 @@ impl<'de> Deserialize<'de> for PartialSourceConfig {
             (SourceConfigLabel::Ntp, Some(true)) => Ok(PartialSourceConfig {
                 explicit_nts: true,
                 kind: PartialSourceConfigEnum::NtpNtsServer(
-                    <NtpNtsSourceConfig as Configurable>::Node::deserialize(ContentDeserializer {
-                        content,
-                        phantom: PhantomData,
-                        is_human_readable,
-                    })?,
+                    <NtpNtsSourceConfig as Configurable>::Node::deserialize(
+                        content.into_deserializer(is_human_readable),
+                    )?,
                 ),
             }),
             (SourceConfigLabel::Ntp, _) => Ok(PartialSourceConfig {
                 explicit_nts: nts.is_some(),
                 kind: PartialSourceConfigEnum::NtpServer(
-                    <NtpSourceConfig as Configurable>::Node::deserialize(ContentDeserializer {
-                        content,
-                        phantom: PhantomData,
-                        is_human_readable,
-                    })?,
+                    <NtpSourceConfig as Configurable>::Node::deserialize(
+                        content.into_deserializer(is_human_readable),
+                    )?,
                 ),
             }),
             (SourceConfigLabel::NtpPool, Some(true)) => Ok(PartialSourceConfig {
                 explicit_nts: true,
                 kind: PartialSourceConfigEnum::NtpNtsPool(
                     <NtpNtsPoolSourceConfig as Configurable>::Node::deserialize(
-                        ContentDeserializer {
-                            content,
-                            phantom: PhantomData,
-                            is_human_readable,
-                        },
+                        content.into_deserializer(is_human_readable),
                     )?,
                 ),
             }),
@@ -165,11 +157,7 @@ impl<'de> Deserialize<'de> for PartialSourceConfig {
                 explicit_nts: nts.is_some(),
                 kind: PartialSourceConfigEnum::NtpPool(
                     <NtpPoolSourceConfig as Configurable>::Node::deserialize(
-                        ContentDeserializer {
-                            content,
-                            phantom: PhantomData,
-                            is_human_readable,
-                        },
+                        content.into_deserializer(is_human_readable),
                     )?,
                 ),
             }),
@@ -177,32 +165,26 @@ impl<'de> Deserialize<'de> for PartialSourceConfig {
             (SourceConfigLabel::Csptp, None) => Ok(PartialSourceConfig {
                 explicit_nts: false,
                 kind: PartialSourceConfigEnum::Csptp(
-                    <CsptpSourceConfig as Configurable>::Node::deserialize(ContentDeserializer {
-                        content,
-                        phantom: PhantomData,
-                        is_human_readable,
-                    })?,
+                    <CsptpSourceConfig as Configurable>::Node::deserialize(
+                        content.into_deserializer(is_human_readable),
+                    )?,
                 ),
             }),
             (SourceConfigLabel::Sock, None) => Ok(PartialSourceConfig {
                 explicit_nts: false,
                 kind: PartialSourceConfigEnum::Sock(
-                    <SockSourceConfig as Configurable>::Node::deserialize(ContentDeserializer {
-                        content,
-                        phantom: PhantomData,
-                        is_human_readable,
-                    })?,
+                    <SockSourceConfig as Configurable>::Node::deserialize(
+                        content.into_deserializer(is_human_readable),
+                    )?,
                 ),
             }),
             #[cfg(feature = "pps")]
             (SourceConfigLabel::Pps, None) => Ok(PartialSourceConfig {
                 explicit_nts: false,
                 kind: PartialSourceConfigEnum::Pps(
-                    <PpsSourceConfig as Configurable>::Node::deserialize(ContentDeserializer {
-                        content,
-                        phantom: PhantomData,
-                        is_human_readable,
-                    })?,
+                    <PpsSourceConfig as Configurable>::Node::deserialize(
+                        content.into_deserializer(is_human_readable),
+                    )?,
                 ),
             }),
             _ => Err(de::Error::custom("Unknown field `nts`")),
@@ -591,47 +573,35 @@ impl<'de> Visitor<'de> for ConfigTagFinderVisitor<'de> {
             Vec::new()
         };
 
-        while let Some((key, value)) = map.next_entry()? {
+        while let Some((key, value)) = map.next_entry::<_, Content<'_>>()? {
             match &key {
                 Content::BorrowedString("type") => {
                     if kind.is_some() {
                         return Err(de::Error::duplicate_field("type"));
                     }
-                    kind = Some(SourceConfigLabel::deserialize(ContentDeserializer {
-                        content: value,
-                        phantom: PhantomData::<A::Error>,
-                        is_human_readable: self.0,
-                    })?);
+                    kind = Some(SourceConfigLabel::deserialize(
+                        value.into_deserializer(self.0),
+                    )?);
                 }
                 Content::String(s) if s == "type" => {
                     if kind.is_some() {
                         return Err(de::Error::duplicate_field("type"));
                     }
-                    kind = Some(SourceConfigLabel::deserialize(ContentDeserializer {
-                        content: value,
-                        phantom: PhantomData::<A::Error>,
-                        is_human_readable: self.0,
-                    })?);
+                    kind = Some(SourceConfigLabel::deserialize(
+                        value.into_deserializer(self.0),
+                    )?);
                 }
                 Content::BorrowedString("nts") => {
                     if nts.is_some() {
                         return Err(de::Error::duplicate_field("nts"));
                     }
-                    nts = Some(bool::deserialize(ContentDeserializer {
-                        content: value,
-                        phantom: PhantomData::<A::Error>,
-                        is_human_readable: self.0,
-                    })?);
+                    nts = Some(bool::deserialize(value.into_deserializer(self.0))?);
                 }
                 Content::String(s) if s == "nts" => {
                     if nts.is_some() {
                         return Err(de::Error::duplicate_field("nts"));
                     }
-                    nts = Some(bool::deserialize(ContentDeserializer {
-                        content: value,
-                        phantom: PhantomData::<A::Error>,
-                        is_human_readable: self.0,
-                    })?);
+                    nts = Some(bool::deserialize(value.into_deserializer(self.0))?);
                 }
                 _ => entries.push((key, value)),
             }
@@ -673,6 +643,19 @@ enum Content<'de> {
     NewtypeStruct(Box<Content<'de>>),
     Sequence(Vec<Content<'de>>),
     Map(Vec<(Content<'de>, Content<'de>)>),
+}
+
+impl<'de> Content<'de> {
+    fn into_deserializer<E: de::Error>(
+        self,
+        is_human_readable: bool,
+    ) -> impl Deserializer<'de, Error = E> {
+        ContentDeserializer {
+            content: self,
+            phantom: PhantomData,
+            is_human_readable,
+        }
+    }
 }
 
 impl Content<'_> {
@@ -970,17 +953,13 @@ impl<'de, E: de::Error> Deserializer<'de> for ContentDeserializer<'de, E> {
             Content::Bytes(v) => visitor.visit_byte_buf(v),
             Content::BorrowedBytes(v) => visitor.visit_borrowed_bytes(v),
             Content::None => visitor.visit_none(),
-            Content::Some(content) => visitor.visit_some(ContentDeserializer {
-                content: *content,
-                phantom: PhantomData,
-                is_human_readable: self.is_human_readable,
-            }),
+            Content::Some(content) => {
+                visitor.visit_some(content.into_deserializer(self.is_human_readable))
+            }
             Content::Unit => visitor.visit_unit(),
-            Content::NewtypeStruct(content) => visitor.visit_newtype_struct(ContentDeserializer {
-                content: *content,
-                phantom: PhantomData,
-                is_human_readable: self.is_human_readable,
-            }),
+            Content::NewtypeStruct(content) => {
+                visitor.visit_newtype_struct(content.into_deserializer(self.is_human_readable))
+            }
             Content::Sequence(contents) => visitor.visit_seq(ContentSequenceAccess {
                 elements: contents.into_iter(),
                 phantom: PhantomData,
@@ -1001,11 +980,7 @@ impl<'de, E: de::Error> Deserializer<'de> for ContentDeserializer<'de, E> {
     {
         match self.content {
             Content::None => visitor.visit_none(),
-            Content::Some(v) => visitor.visit_some(ContentDeserializer {
-                content: *v,
-                phantom: PhantomData,
-                is_human_readable: self.is_human_readable,
-            }),
+            Content::Some(v) => visitor.visit_some(v.into_deserializer(self.is_human_readable)),
             _ => visitor.visit_some(self),
         }
     }
@@ -1097,21 +1072,17 @@ impl<'de, E: de::Error> EnumAccess<'de> for ContentEnumAccess<'de, E> {
     where
         V: DeserializeSeed<'de>,
     {
-        seed.deserialize(ContentDeserializer {
-            content: self.variant,
-            phantom: PhantomData,
-            is_human_readable: self.is_human_readable,
-        })
-        .map(|v| {
-            (
-                v,
-                ContentVariantAccess {
-                    value: self.value,
-                    phantom: PhantomData,
-                    is_human_readable: self.is_human_readable,
-                },
-            )
-        })
+        seed.deserialize(self.variant.into_deserializer(self.is_human_readable))
+            .map(|v| {
+                (
+                    v,
+                    ContentVariantAccess {
+                        value: self.value,
+                        phantom: PhantomData,
+                        is_human_readable: self.is_human_readable,
+                    },
+                )
+            })
     }
 }
 
@@ -1126,11 +1097,9 @@ impl<'de, E: de::Error> VariantAccess<'de> for ContentVariantAccess<'de, E> {
 
     fn unit_variant(self) -> Result<(), Self::Error> {
         match self.value {
-            Some(value) => Deserialize::deserialize(ContentDeserializer {
-                content: value,
-                phantom: PhantomData,
-                is_human_readable: self.is_human_readable,
-            }),
+            Some(value) => {
+                Deserialize::deserialize(value.into_deserializer(self.is_human_readable))
+            }
             None => Ok(()),
         }
     }
@@ -1140,11 +1109,7 @@ impl<'de, E: de::Error> VariantAccess<'de> for ContentVariantAccess<'de, E> {
         T: DeserializeSeed<'de>,
     {
         match self.value {
-            Some(value) => seed.deserialize(ContentDeserializer {
-                content: value,
-                phantom: PhantomData,
-                is_human_readable: self.is_human_readable,
-            }),
+            Some(value) => seed.deserialize(value.into_deserializer(self.is_human_readable)),
             None => Err(de::Error::invalid_type(
                 de::Unexpected::UnitVariant,
                 &"newtype variant",
@@ -1221,12 +1186,8 @@ impl<'de, E: de::Error> SeqAccess<'de> for ContentSequenceAccess<'de, E> {
         let Some(next) = self.elements.next() else {
             return Ok(None);
         };
-        seed.deserialize(ContentDeserializer {
-            content: next,
-            phantom: PhantomData,
-            is_human_readable: self.is_human_readable,
-        })
-        .map(Some)
+        seed.deserialize(next.into_deserializer(self.is_human_readable))
+            .map(Some)
     }
 }
 
@@ -1248,22 +1209,19 @@ impl<'de, E: de::Error> MapAccess<'de> for ContentMapAccess<'de, E> {
             return Ok(None);
         };
         self.value = Some(value);
-        seed.deserialize(ContentDeserializer {
-            content: key,
-            phantom: PhantomData,
-            is_human_readable: self.is_human_readable,
-        })
-        .map(Some)
+        seed.deserialize(key.into_deserializer(self.is_human_readable))
+            .map(Some)
     }
 
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
     where
         V: DeserializeSeed<'de>,
     {
-        seed.deserialize(ContentDeserializer {
-            content: self.value.take().unwrap(),
-            phantom: PhantomData,
-            is_human_readable: self.is_human_readable,
-        })
+        seed.deserialize(
+            self.value
+                .take()
+                .unwrap()
+                .into_deserializer(self.is_human_readable),
+        )
     }
 }
