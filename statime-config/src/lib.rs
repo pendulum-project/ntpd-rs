@@ -101,6 +101,7 @@ mod error;
 #[cfg(test)]
 mod fixture;
 mod load;
+pub mod serde_util;
 mod tree;
 
 pub use error::ConfigError;
