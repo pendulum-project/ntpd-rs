@@ -31,6 +31,7 @@ pub use config::Config;
 use ntp_proto::{NtpConfig, SourceConfig};
 pub use observer::ObservableState;
 use statime_algo::{ClockConfig, ControllerConfig, StdKalmanStorage};
+use statime_base::Duration;
 use tokio::runtime::Builder;
 use tracing_subscriber::util::SubscriberInitExt;
 
@@ -181,7 +182,7 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
                     select_offset_uncertainty_window: 1.0,
                     select_link_uncertainty_window: 2.0,
                     select_delay_uncertainty_window: 0.5,
-                    select_max_window_size: 0.5,
+                    select_max_window_size: Duration::from_seconds_nanos(1, 0),
                 },
             )
             .map_err(|error| std::io::Error::other(format!("{error:?}")))?;

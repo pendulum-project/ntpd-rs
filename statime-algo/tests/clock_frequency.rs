@@ -50,7 +50,7 @@ fn clock_frequency_reports_frequency_estimate() {
             select_offset_uncertainty_window: 3.0,
             select_link_uncertainty_window: 3.0,
             select_delay_uncertainty_window: 1.0,
-            select_max_window_size: 1.0,
+            select_max_window_size: Duration::from_seconds_nanos(1, 0),
             minimum_agreeing_sources: 1,
         },
     )
