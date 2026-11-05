@@ -199,12 +199,12 @@ impl ConfigurableDuration {
     }
 
     pub(crate) fn into_larger_poll_interval(this: Positive<ConfigurableDuration>) -> PollInterval {
-        let v = (this.into_inner().seconds().log2() - 0.01f64.log2()).ceil() as i8;
+        let v = (this.into_inner().seconds().log2() - 1.01f64.log2()).ceil() as i8;
         PollInterval::from_byte(v.cast_unsigned())
     }
 
     pub(crate) fn into_smaller_poll_interval(this: Positive<ConfigurableDuration>) -> PollInterval {
-        let v = (this.into_inner().seconds().log2() + 0.01f64.log2()).floor() as i8;
+        let v = (this.into_inner().seconds().log2() + 1.01f64.log2()).floor() as i8;
         PollInterval::from_byte(v.cast_unsigned())
     }
 }
