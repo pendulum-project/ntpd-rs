@@ -184,7 +184,7 @@ impl LinkInfo {
             + external_link_state.last_offset_uncertainty * config.select_offset_uncertainty_window
             + (delay + external_link_state.root_delay) * config.select_delay_uncertainty_window;
 
-        if half_window_size < config.select_max_window_size {
+        if half_window_size < config.select_max_window_size.as_seconds() / 2.0 {
             Some(OffsetWindow {
                 low: avg_offset - internal_offset - half_window_size,
                 high: avg_offset - internal_offset + half_window_size,
@@ -303,7 +303,7 @@ pub struct ControllerConfig {
     pub select_delay_uncertainty_window: f64,
     /// Maximum size of the window of uncertainty before we judge a source to
     /// be unsuitable for synchronization.
-    pub select_max_window_size: f64,
+    pub select_max_window_size: Duration,
     /// Minimum number of sources that need to agree on the current time before
     /// we enable synchronization.
     pub minimum_agreeing_sources: usize,
@@ -1001,7 +1001,7 @@ mod tests {
             select_offset_uncertainty_window: 2.0,
             select_link_uncertainty_window: 2.0,
             select_delay_uncertainty_window: 0.7,
-            select_max_window_size: 1.0,
+            select_max_window_size: Duration::from_seconds_nanos(1, 0),
             minimum_agreeing_sources: 3,
         };
 
@@ -1035,7 +1035,7 @@ mod tests {
             select_offset_uncertainty_window: 2.0,
             select_link_uncertainty_window: 2.0,
             select_delay_uncertainty_window: 0.7,
-            select_max_window_size: 1.0,
+            select_max_window_size: Duration::from_seconds_nanos(1, 0),
             minimum_agreeing_sources: 3,
         };
 
@@ -1092,7 +1092,7 @@ mod tests {
             select_offset_uncertainty_window: 2.0,
             select_link_uncertainty_window: 2.0,
             select_delay_uncertainty_window: 0.7,
-            select_max_window_size: 1.0,
+            select_max_window_size: Duration::from_seconds_nanos(1, 0),
             minimum_agreeing_sources: 1,
         };
 
@@ -1392,7 +1392,7 @@ mod tests {
             select_offset_uncertainty_window: 2.0,
             select_link_uncertainty_window: 2.0,
             select_delay_uncertainty_window: 0.7,
-            select_max_window_size: 1.0,
+            select_max_window_size: Duration::from_seconds_nanos(1, 0),
             minimum_agreeing_sources: 1,
         };
 
@@ -1433,7 +1433,7 @@ mod tests {
             select_offset_uncertainty_window: 2.0,
             select_link_uncertainty_window: 2.0,
             select_delay_uncertainty_window: 0.7,
-            select_max_window_size: 1.0,
+            select_max_window_size: Duration::from_seconds_nanos(1, 0),
             minimum_agreeing_sources: 3,
         };
 
@@ -1496,7 +1496,7 @@ mod tests {
             select_offset_uncertainty_window: 2.0,
             select_link_uncertainty_window: 2.0,
             select_delay_uncertainty_window: 0.7,
-            select_max_window_size: 1.0,
+            select_max_window_size: Duration::from_seconds_nanos(1, 0),
             minimum_agreeing_sources: 1,
         };
 
@@ -1600,7 +1600,7 @@ mod tests {
             select_offset_uncertainty_window: 2.0,
             select_link_uncertainty_window: 2.0,
             select_delay_uncertainty_window: 0.7,
-            select_max_window_size: 1.0,
+            select_max_window_size: Duration::from_seconds_nanos(1, 0),
             minimum_agreeing_sources: 1,
         };
 
@@ -1682,7 +1682,7 @@ mod tests {
             select_offset_uncertainty_window: 2.0,
             select_link_uncertainty_window: 2.0,
             select_delay_uncertainty_window: 0.7,
-            select_max_window_size: 1.0,
+            select_max_window_size: Duration::from_seconds_nanos(1, 0),
             minimum_agreeing_sources: 1,
         };
 
@@ -1736,7 +1736,7 @@ mod tests {
             select_offset_uncertainty_window: 2.0,
             select_link_uncertainty_window: 2.0,
             select_delay_uncertainty_window: 0.7,
-            select_max_window_size: 1.0,
+            select_max_window_size: Duration::from_seconds_nanos(1, 0),
             minimum_agreeing_sources: 1,
         };
 
@@ -1791,7 +1791,7 @@ mod tests {
             select_offset_uncertainty_window: 2.0,
             select_link_uncertainty_window: 2.0,
             select_delay_uncertainty_window: 0.7,
-            select_max_window_size: 1.0,
+            select_max_window_size: Duration::from_seconds_nanos(1, 0),
             minimum_agreeing_sources: 1,
         };
 
@@ -1845,7 +1845,7 @@ mod tests {
             select_offset_uncertainty_window: 2.0,
             select_link_uncertainty_window: 2.0,
             select_delay_uncertainty_window: 0.7,
-            select_max_window_size: 1.0,
+            select_max_window_size: Duration::from_seconds_nanos(1, 0),
             minimum_agreeing_sources: 1,
         };
 
@@ -2004,7 +2004,7 @@ mod tests {
             select_offset_uncertainty_window: 2.0,
             select_link_uncertainty_window: 2.0,
             select_delay_uncertainty_window: 0.7,
-            select_max_window_size: 1.0,
+            select_max_window_size: Duration::from_seconds_nanos(1, 0),
             minimum_agreeing_sources: 1,
         };
 
@@ -2231,7 +2231,7 @@ mod tests {
             select_offset_uncertainty_window: 2.0,
             select_link_uncertainty_window: 2.0,
             select_delay_uncertainty_window: 0.7,
-            select_max_window_size: 1.0,
+            select_max_window_size: Duration::from_seconds_nanos(1, 0),
             minimum_agreeing_sources: 1,
         };
 
