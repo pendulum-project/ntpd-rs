@@ -177,13 +177,7 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
             statime_algo::KalmanController::<StdKalmanStorage<_>, _>::new(
                 clock.clone(),
                 config.system_clock.generate_clock_config(),
-                ControllerConfig {
-                    minimum_agreeing_sources: 3.min(config.sources.len()),
-                    select_offset_uncertainty_window: 1.0,
-                    select_link_uncertainty_window: 2.0,
-                    select_delay_uncertainty_window: 0.5,
-                    select_max_window_size: Duration::from_seconds_nanos(1, 0),
-                },
+                config.generate_controller_config(),
             )
             .map_err(|error| std::io::Error::other(format!("{error:?}")))?;
         let system = Arc::new(System::new(

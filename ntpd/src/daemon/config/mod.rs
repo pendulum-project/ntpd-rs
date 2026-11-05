@@ -25,6 +25,7 @@ use std::{
     str::FromStr,
 };
 use tracing::{info, warn};
+use tracing_subscriber::layer::Filter;
 
 use super::{clock::NtpClockWrapper, tracing::LogLevel};
 
@@ -173,6 +174,41 @@ impl SystemClockConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Configurable)]
+pub(crate) struct FilterConfig {
+    /// Minimum number of sources that need to agree on the current time before
+    /// we enable synchronization.
+    #[config(rename = "minimum-agreeing-sources", default)]
+    pub(crate) minimum_agreeing_sources: Option<usize>,
+    /// Size of the window of uncertainty to assume around source offset for
+    /// judging whether it is a truechimer, based on the observed noise in the
+    /// offset. (experimental)
+    #[config(rename = "select-offset-uncertainty-window", default = Positive::unchecked_new(1.0))]
+    pub(crate) select_offset_uncertainty_window: Positive<f64>,
+    /// Size of the window of uncertainty to assume around source offset for
+    /// judging whether it is a truechimer, based on the observed link delay
+    /// noise. (experimental)
+    #[config(rename = "select-link-uncertainty-window", default = Positive::unchecked_new(2.0))]
+    pub(crate) select_link_uncertainty_window: Positive<f64>,
+    /// Size of the window of uncertainty to assume around source offset for
+    /// judging whether it is a truechimer, from potential asymmetry due to
+    /// delay and root delay. (experimental)
+    #[config(rename = "select-delay-uncertainty-window", default = Positive::unchecked_new(0.5))]
+    pub(crate) select_delay_uncertainty_window: Positive<f64>,
+    /// Maximum size of the window of uncertainty before we judge a source to
+    /// be unsuitable for synchronization. (experimental)
+    #[config(rename = "select-max-window-size", default = Positive::unchecked_new(ConfigurableDuration { unit: Unit::Second, duration: 1.0 }))]
+    pub(crate) select_max_window_size: Positive<ConfigurableDuration>,
+}
+
+impl Default for FilterConfig {
+    fn default() -> Self {
+        let mut partial = <Self as Configurable>::Node::default();
+        partial.apply_defaults();
+        partial.resolve(&mut ConfigPath::root()).unwrap()
+    }
+}
+
 /// Which system configuration to layer underneath the main configuration, if
 /// any.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ConfigurableAtomic)]
@@ -210,6 +246,7 @@ pub struct Config {
     pub csptp_source_defaults: CsptpSourceDefaults,
     #[config(rename = "system-clock")]
     pub system_clock: SystemClockConfig,
+    pub filter: FilterConfig,
     pub observability: ObservabilityConfig,
 }
 
@@ -325,5 +362,24 @@ impl Config {
         // FIXME: Reintroduce check on NTS configuration once fields are available.
 
         ok
+    }
+
+    pub(crate) fn generate_controller_config(&self) -> statime_algo::ControllerConfig {
+        statime_algo::ControllerConfig {
+            select_offset_uncertainty_window: self
+                .filter
+                .select_offset_uncertainty_window
+                .into_inner(),
+            select_link_uncertainty_window: self.filter.select_link_uncertainty_window.into_inner(),
+            select_delay_uncertainty_window: self
+                .filter
+                .select_delay_uncertainty_window
+                .into_inner(),
+            select_max_window_size: self.filter.select_max_window_size.into_inner().into(),
+            minimum_agreeing_sources: self
+                .filter
+                .minimum_agreeing_sources
+                .unwrap_or(3.min(self.count_sources())),
+        }
     }
 }
