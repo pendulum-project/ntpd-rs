@@ -450,6 +450,7 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
 
     pub fn spawners(&self) -> Vec<ObservableSpawnerState> {
         let state = self.state.lock().unwrap();
+        let spawn_state =
         state
             .spawners
             .iter()
