@@ -283,10 +283,10 @@ impl<'de> Deserialize<'de> for NetworkAddress {
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize, Serialize, ConfigurableAtomic)]
 #[serde(untagged)]
 pub(crate) enum PotentiallyAsymetricThreshold {
-    Symmetric(InfiniteOr<Positive<ConfigurableDuration>>),
+    Symmetric(InfiniteOr<NonNegative<ConfigurableDuration>>),
     Asymmetric {
-        forward: InfiniteOr<Positive<ConfigurableDuration>>,
-        backward: InfiniteOr<Positive<ConfigurableDuration>>,
+        forward: InfiniteOr<NonNegative<ConfigurableDuration>>,
+        backward: InfiniteOr<NonNegative<ConfigurableDuration>>,
     },
 }
 
