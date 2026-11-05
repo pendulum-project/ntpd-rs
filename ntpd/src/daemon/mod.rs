@@ -175,7 +175,7 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
         let (controller, system_clock_id) =
             statime_algo::KalmanController::<StdKalmanStorage<_>, _>::new(
                 clock.clone(),
-                ClockConfig::default(),
+                config.system_clock.generate_clock_config(),
                 ControllerConfig {
                     minimum_agreeing_sources: 3.min(config.sources.len()),
                     select_offset_uncertainty_window: 1.0,

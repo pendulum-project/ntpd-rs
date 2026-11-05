@@ -5,8 +5,9 @@ use serde::{
     Deserialize, Serialize,
     de::{self, Visitor},
 };
+use statime_algo::JumpThreshold;
 use statime_base::Duration;
-use statime_config::{ConfigurableAtomic, IsPositive, Positive};
+use statime_config::{ConfigurableAtomic, InfiniteOr, IsPositive, Positive};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(super) enum Unit {
@@ -267,6 +268,50 @@ impl<'de> Deserialize<'de> for NetworkAddress {
                 server: raw_address,
                 port: None,
             })
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize, Serialize, ConfigurableAtomic)]
+#[serde(untagged)]
+pub(crate) enum PotentiallyAsymetricThreshold {
+    Symmetric(InfiniteOr<Positive<ConfigurableDuration>>),
+    Asymmetric {
+        forward: InfiniteOr<Positive<ConfigurableDuration>>,
+        backward: InfiniteOr<Positive<ConfigurableDuration>>,
+    },
+}
+
+impl From<PotentiallyAsymetricThreshold> for JumpThreshold {
+    fn from(value: PotentiallyAsymetricThreshold) -> Self {
+        match value {
+            PotentiallyAsymetricThreshold::Symmetric(bound) => {
+                let bound = match bound {
+                    InfiniteOr::Infinite => None,
+                    InfiniteOr::Finite(duration) => {
+                        Some(statime_base::Duration::from(duration.into_inner()))
+                    }
+                };
+
+                JumpThreshold {
+                    backwards: bound,
+                    forwards: bound,
+                }
+            }
+            PotentiallyAsymetricThreshold::Asymmetric { forward, backward } => JumpThreshold {
+                backwards: match backward {
+                    InfiniteOr::Infinite => None,
+                    InfiniteOr::Finite(duration) => {
+                        Some(statime_base::Duration::from(duration.into_inner()))
+                    }
+                },
+                forwards: match forward {
+                    InfiniteOr::Infinite => None,
+                    InfiniteOr::Finite(duration) => {
+                        Some(statime_base::Duration::from(duration.into_inner()))
+                    }
+                },
+            },
         }
     }
 }

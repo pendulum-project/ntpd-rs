@@ -12,8 +12,8 @@ pub use server::*;
 pub use source::*;
 use statime_algo::LinkConfig;
 use statime_config::{
-    ConfigError, ConfigPath, Configurable, ConfigurableAtomic, PartialValue, Positive, RootConfig,
-    SystemConfigSetting,
+    ConfigError, ConfigPath, Configurable, ConfigurableAtomic, InfiniteOr, PartialValue, Positive,
+    RootConfig, SystemConfigSetting,
 };
 use std::io;
 use std::{
@@ -100,6 +100,44 @@ impl Default for CsptpSourceDefaults {
 pub struct SystemClockConfig {
     #[config(default = true)]
     pub(crate) steered: bool,
+    /// Threshold for a step at startup to trigger a warning.
+    #[config(rename = "startup-jump-warning-threshold", default = PotentiallyAsymetricThreshold::Symmetric(InfiniteOr::Finite(Positive::unchecked_new(ConfigurableDuration { unit: Unit::Second, duration: 10.0 }))))]
+    pub startup_jump_warning_threshold: PotentiallyAsymetricThreshold,
+    /// Threshold for a step at startup to trigger an abort.
+    #[config(rename = "startump-jump-abort-threshold", default = PotentiallyAsymetricThreshold::Asymmetric { forward: InfiniteOr::Infinite, backward: InfiniteOr::Finite(Positive::unchecked_new(ConfigurableDuration { unit: Unit::Day, duration: 1.0 }))})]
+    pub startup_jump_abort_threshold: PotentiallyAsymetricThreshold,
+    /// Threshold for a single step during normal operation to trigger a warning.
+    #[config(rename = "single-jump-warning-threshold", default = PotentiallyAsymetricThreshold::Symmetric(InfiniteOr::Finite(Positive::unchecked_new(ConfigurableDuration { unit: Unit::Second, duration: 10.0 }))))]
+    pub single_jump_warning_threshold: PotentiallyAsymetricThreshold,
+    /// Threshold for a single step during normal operation to trigger an abort.
+    #[config(rename = "single-jump-abort-threshold", default = PotentiallyAsymetricThreshold::Symmetric(InfiniteOr::Finite(Positive::unchecked_new(ConfigurableDuration { unit: Unit::Second, duration: 1000.0 }))))]
+    pub single_jump_abort_threshold: PotentiallyAsymetricThreshold,
+    /// Threshold for accumulated steps to trigger a warning.
+    #[config(rename = "accumulated-jump-warning-threshold", default = InfiniteOr::Infinite)]
+    pub accumulated_jump_warning_threshold: InfiniteOr<Positive<ConfigurableDuration>>,
+    /// Threshold for accumulated steps to trigger an abort.
+    #[config(rename = "accumulated-jump-abort-threshold", default = InfiniteOr::Infinite)]
+    pub accumulated_jump_abort_threshold: InfiniteOr<Positive<ConfigurableDuration>>,
+    /// Threshold on offset uncertainty after which a clock is considered out of startup (experimental)
+    #[config(rename = "startup-end-threshold", default = Positive::unchecked_new(ConfigurableDuration { unit: Unit::Second, duration: 1.0 }))]
+    pub startup_end_threshold: Positive<ConfigurableDuration>,
+    /// How large does the offset need to be before we do a jump? (experimental)
+    #[config(rename = "jump-threshold", default = Positive::unchecked_new(ConfigurableDuration { unit: Unit::Second, duration: 10.0 }))]
+    pub jump_threshold: Positive<ConfigurableDuration>,
+    /// How large does a jump need to be to happen, relative to the uncertainty
+    /// of currently observed offset. (experimental)
+    #[config(rename = "jump-certainty-threshold", default = Positive::unchecked_new(5.0))]
+    pub jump_certainty_threshold: Positive<f64>,
+    /// Amount of time to spread slewing over. This gives a typical time scale
+    /// to reduce the offset error by about two thirds using slews. (experimental)
+    #[config(rename = "slew-time-constant", default = Positive::unchecked_new(ConfigurableDuration { unit: Unit::Second, duration: 8.0 }))]
+    pub slew_time_constant: Positive<ConfigurableDuration>,
+    /// Offset and offset uncertainty below which we consider the clock synchronized. (experimental)
+    #[config(rename = "synchronized-threshold", default = Positive::unchecked_new(ConfigurableDuration { unit: Unit::Second, duration: 1.0 }))]
+    pub synchronized_threshold: Positive<ConfigurableDuration>,
+    /// Initial estimate of the wander of the clock, as fractions of a second per second. (experimental)
+    #[config(rename = "initial-wander", default = Positive::unchecked_new(1e-8))]
+    pub initial_wander: Positive<f64>,
 }
 
 impl Default for SystemClockConfig {
@@ -107,6 +145,31 @@ impl Default for SystemClockConfig {
         let mut partial = <Self as Configurable>::Node::default();
         partial.apply_defaults();
         partial.resolve(&mut ConfigPath::root()).unwrap()
+    }
+}
+
+impl SystemClockConfig {
+    pub(crate) fn generate_clock_config(&self) -> statime_algo::ClockConfig {
+        statime_algo::ClockConfig {
+            startup_jump_warning_threshold: self.startup_jump_warning_threshold.into(),
+            startup_jump_abort_threshold: self.startup_jump_abort_threshold.into(),
+            single_jump_warning_threshold: self.single_jump_warning_threshold.into(),
+            single_jump_abort_threshold: self.single_jump_abort_threshold.into(),
+            accumulated_jump_warning_threshold: match self.accumulated_jump_warning_threshold {
+                InfiniteOr::Infinite => None,
+                InfiniteOr::Finite(value) => Some(value.into_inner().into()),
+            },
+            accumulated_jump_abort_threshold: match self.accumulated_jump_abort_threshold {
+                InfiniteOr::Infinite => None,
+                InfiniteOr::Finite(value) => Some(value.into_inner().into()),
+            },
+            startup_end_threshold: self.startup_end_threshold.into_inner().into(),
+            jump_threshold: self.jump_threshold.into_inner().into(),
+            jump_certainty_threshold: self.jump_certainty_threshold.into_inner(),
+            slew_time_constant: self.slew_time_constant.into_inner().into(),
+            synchronized_threshold: self.synchronized_threshold.into_inner().into(),
+            initial_wander: self.initial_wander.into_inner(),
+        }
     }
 }
 
