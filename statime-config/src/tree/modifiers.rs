@@ -30,10 +30,14 @@ is_positive_int!(u8);
 is_positive_int!(u16);
 is_positive_int!(u32);
 is_positive_int!(u64);
+is_positive_int!(u128);
+is_positive_int!(usize);
 is_positive_int!(i8);
 is_positive_int!(i16);
 is_positive_int!(i32);
 is_positive_int!(i64);
+is_positive_int!(i128);
+is_positive_int!(isize);
 is_positive_float!(f32);
 is_positive_float!(f64);
 
