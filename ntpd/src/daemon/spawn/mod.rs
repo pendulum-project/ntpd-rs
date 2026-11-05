@@ -9,6 +9,7 @@ use std::{
 };
 
 use ntp_proto::{ClockId, ProtocolVersion, SourceConfig, SourceNtsData};
+use serde::{Deserialize, Serialize};
 use statime_base::{LinkId, SourceType, StdController};
 use tokio::{
     sync::mpsc,
@@ -37,7 +38,7 @@ const NTS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Unique identifier for a spawner.
 /// This is used to identify which spawner was used to create a source
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 pub struct SpawnerId(u64);
 
 impl SpawnerId {

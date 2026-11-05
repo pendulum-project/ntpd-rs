@@ -1,10 +1,9 @@
 #[cfg(target_os = "linux")]
 use std::{
     cell::OnceCell,
-    net::{Ipv4Addr, Ipv6Addr},
-};
-use std::{
     collections::HashMap,
+    fmt,
+    net::{Ipv4Addr, Ipv6Addr},
     pin::Pin,
     sync::{Arc, Mutex, RwLock},
     task::{Context, Poll, Waker},
@@ -21,6 +20,7 @@ use tokio::{
 
 use crate::daemon::{
     clock::NtpClockWrapper,
+    observer::{ObservableDrivenLink, ObservableSpawnerState},
     spawn::{
         CreationParameters, LinkTerminationReason, SpawnFailureReason, Spawner, SpawnerId,
         TrySpawnFuture,
@@ -49,7 +49,7 @@ pub struct System<TimeController: StdController> {
     config: SystemConfig,
 }
 
-struct SystemState<TimeController: StdController> {
+pub struct SystemState<TimeController: StdController> {
     waker: Option<Waker>,
     driven_links: HashMap<LinkId, LinkData>,
     spawners: HashMap<SpawnerId, SpawnerData<TimeController>>,
@@ -395,5 +395,37 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
         if let Some(waker) = state.waker.take() {
             waker.wake();
         }
+    }
+
+    pub fn spawners(&self) -> Vec<ObservableSpawnerState> {
+        let state = self.state.lock().unwrap();
+        state
+            .spawners
+            .iter()
+            .map(|(id, data)| ObservableSpawnerState {
+                id: *id,
+                spawn_state: match data.spawn_state {
+                    SpawnState::TryingSpawn(_) => "Trying spawn".to_string(),
+                    SpawnState::Inactive => "Inactive".to_string(),
+                    SpawnState::Timeout(_) => "Timeout".to_string(),
+                },
+                current_timeout: data.current_timeout,
+                last_spawn: data.last_spawn.elapsed(),
+                driven_links: state
+                    .driven_links
+                    .iter()
+                    .filter_map(|(link_id, driven_link)| {
+                        if driven_link.spawner == *id {
+                            Some(ObservableDrivenLink {
+                                link_id: *link_id,
+                                source_type: driven_link.stype.to_string(),
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect(),
+            })
+            .collect()
     }
 }

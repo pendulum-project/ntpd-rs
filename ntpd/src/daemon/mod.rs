@@ -231,14 +231,7 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
             let _join_handle = keyexchange::spawn(nts_ke_config, keyset.clone());
         }*/
 
-        // FIXME: Replace with proper new observer code once available.
-        /*observer::spawn(
-            &config.observability,
-            channels.source_snapshots,
-            channels.server_data_receiver,
-            channels.system_snapshot_receiver,
-            clock,
-        );*/
+        observer::spawn(config.observability, system, clock);
 
         let _ = notify_ready().await;
 
