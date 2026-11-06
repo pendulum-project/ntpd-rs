@@ -39,12 +39,6 @@ pub enum MsgForSystem {
     Unreachable(LinkId),
 }
 
-#[derive(Debug)]
-pub struct SourceChannels {
-    pub msg_for_system_sender: tokio::sync::mpsc::Sender<MsgForSystem>,
-    pub source_snapshots: Arc<std::sync::RwLock<HashMap<ClockId, ObservableSourceState>>>,
-}
-
 pub(crate) struct SourceTask<C: 'static + Clock<TAI> + Send, Controller: Link, T: Wait> {
     _wait: PhantomData<T>,
     link_id: LinkId,

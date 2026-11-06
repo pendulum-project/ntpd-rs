@@ -10,8 +10,6 @@ use tokio::net::UnixDatagram;
 
 use crate::daemon::exitcode;
 
-use super::ntp_source::SourceChannels;
-
 #[derive(Debug, PartialEq, Clone)]
 pub struct SockSourceConfig {
     pub path: PathBuf,
@@ -85,10 +83,8 @@ fn deserialize_sample(
 }
 
 pub(crate) struct SockSourceTask<C: 'static + Clock<TAI> + Send, Controller: Link> {
-    index: ClockId,
     socket: UnixDatagram,
     clock: C,
-    channels: SourceChannels,
     source: Controller,
     config: SockSourceConfig,
 }
@@ -157,22 +153,6 @@ where
                         self.source
                             .measurement(measurement, Direction::Reverse)
                             .expect("Unable to handle measurement.");
-
-                        self.channels
-                            .source_snapshots
-                            .write()
-                            .expect("Unexpected poisoned mutex")
-                            .insert(
-                                self.index,
-                                ObservableSourceState {
-                                    unanswered_polls: 0,
-                                    poll_interval: PollInterval::from_byte(0),
-                                    nts_cookies: None,
-                                    name: "GPSd socket".to_string(),
-                                    address: self.config.path.display().to_string(),
-                                    id: self.index,
-                                },
-                            );
                     }
                     Err(e) => {
                         error!("Error deserializing sample: {}", e);
@@ -182,11 +162,9 @@ where
         }
     }
 
-    #[instrument(level = tracing::Level::ERROR, name = "Sock Source", skip(clock, channels, source))]
+    #[instrument(level = tracing::Level::ERROR, name = "Sock Source", skip(clock, source))]
     pub fn spawn(
-        index: ClockId,
         clock: C,
-        channels: SourceChannels,
         source: Controller,
         config: SockSourceConfig,
     ) -> tokio::task::JoinHandle<()> {
@@ -194,10 +172,8 @@ where
         tokio::spawn(
             (async move {
                 let mut process = SockSourceTask {
-                    index,
                     socket,
                     clock,
-                    channels,
                     source,
                     config,
                 };
@@ -223,11 +199,8 @@ mod tests {
     use tokio::sync::mpsc;
 
     use crate::{
-        daemon::{
-            ntp_source::SourceChannels,
-            sock_source::{
-                SOCK_MAGIC, SampleError, SockSourceConfig, SockSourceTask, create_socket,
-            },
+        daemon::sock_source::{
+            SOCK_MAGIC, SampleError, SockSourceConfig, SockSourceTask, create_socket,
         },
         test::alloc_port,
     };
@@ -332,21 +305,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_sock() {
-        let (msg_for_system_sender, _) = mpsc::channel(1);
-
-        let index = ClockId::new();
         let clock = TestClock {};
 
         let socket_path = std::env::temp_dir().join(format!("ntp-test-stream-{}", alloc_port()));
         let _socket = create_socket(&socket_path).unwrap(); // should be overwritten by SockSource's own socket
 
         let handle = SockSourceTask::spawn(
-            index,
             clock,
-            SourceChannels {
-                msg_for_system_sender,
-                source_snapshots: Arc::new(RwLock::new(HashMap::new())),
-            },
             TestController(
                 LinkId::new(statime_base::ClockId::new(), statime_base::ClockId::new()).unwrap(),
             ),
