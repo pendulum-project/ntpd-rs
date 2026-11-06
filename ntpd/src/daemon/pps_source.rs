@@ -6,7 +6,7 @@ use statime_base::{Direction, Duration, Link, Measurement, Timestamp};
 use tokio::sync::mpsc;
 use tracing::{Instrument, Span, debug, error, instrument, warn};
 
-use crate::daemon::clock::utc_to_tai;
+use crate::daemon::{clock::utc_to_tai, spawn::LinkTerminationReason};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct PpsSourceConfig {
@@ -88,7 +88,10 @@ impl<Controller: Link + Send + 'static> PpsSourceTask<Controller> {
     }
 
     #[instrument(level = tracing::Level::ERROR, name = "Pps Source", skip(source))]
-    pub fn spawn(source: Controller, config: PpsSourceConfig) -> tokio::task::JoinHandle<()> {
+    pub fn spawn(
+        source: Controller,
+        config: PpsSourceConfig,
+    ) -> tokio::task::JoinHandle<LinkTerminationReason> {
         let pps = PpsDevice::new(config.path.clone()).expect("Could not open PPS device");
         let cap = pps.get_cap().expect("Could not get PPS capabilities");
         assert!(
@@ -113,6 +116,8 @@ impl<Controller: Link + Send + 'static> PpsSourceTask<Controller> {
                 };
 
                 process.run().await;
+
+                LinkTerminationReason::Failed
             })
             .instrument(Span::current()),
         )

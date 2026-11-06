@@ -12,10 +12,12 @@ use serde::{
     Deserialize, Serialize,
     de::{self, Visitor},
 };
-use statime_config::{Configurable, ConfigurableAtomic, Positive};
+use statime_config::{Configurable, ConfigurableAtomic, NonNegative, Positive};
 
 #[cfg(target_os = "linux")]
 use crate::daemon::spawn::csptp::CsptpSpawnerConfig;
+#[cfg(feature = "pps")]
+use crate::daemon::spawn::pps::PpsSpawnerConfig;
 use crate::daemon::{
     Config,
     config::{ConfigurableDuration, Unit},
@@ -305,7 +307,25 @@ pub(crate) struct SockSourceConfig {}
 
 #[cfg(feature = "pps")]
 #[derive(Debug, PartialEq, Clone, Configurable)]
-pub(crate) struct PpsSourceConfig {}
+pub(crate) struct PpsSourceConfig {
+    pub(crate) path: PathBuf,
+    pub(crate) period: Positive<ConfigurableDuration>,
+    pub(crate) accuracy: Positive<ConfigurableDuration>,
+    #[config(default = NonNegative::unchecked_new(ConfigurableDuration { unit: Unit::Second, duration: 0.0 }))]
+    pub(crate) precision: NonNegative<ConfigurableDuration>,
+}
+
+#[cfg(feature = "pps")]
+impl PpsSourceConfig {
+    pub(crate) fn generate_spawner_config(&self) -> PpsSpawnerConfig {
+        PpsSpawnerConfig {
+            path: self.path.clone(),
+            precision: self.precision.into_inner().into(),
+            accuracy: self.accuracy.into_inner().into(),
+            period: self.period.into_inner().into(),
+        }
+    }
+}
 
 #[cfg(target_os = "linux")]
 #[derive(Debug, PartialEq, Clone, Configurable)]
