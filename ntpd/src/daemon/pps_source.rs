@@ -8,8 +8,6 @@ use tracing::{Instrument, Span, debug, error, instrument, warn};
 
 use crate::daemon::clock::utc_to_tai;
 
-use super::ntp_source::SourceChannels;
-
 #[derive(Debug, PartialEq, Clone)]
 pub struct PpsSourceConfig {
     pub path: PathBuf,
@@ -35,8 +33,6 @@ impl PpsDeviceFetchTask {
 }
 
 pub(crate) struct PpsSourceTask<Controller: Link> {
-    index: ClockId,
-    channels: SourceChannels,
     source: Controller,
     fetch_receiver: mpsc::Receiver<pps_time::pps::pps_fdata>,
     config: PpsSourceConfig,
@@ -87,22 +83,6 @@ impl<Controller: Link + Send + 'static> PpsSourceTask<Controller> {
                         self.source
                             .measurement(measurement, Direction::Reverse)
                             .expect("Unable to handle measurement.");
-
-                        self.channels
-                            .source_snapshots
-                            .write()
-                            .expect("Unexpected poisoned mutex")
-                            .insert(
-                                self.index,
-                                ObservableSourceState {
-                                    unanswered_polls: 0,
-                                    poll_interval: PollInterval::from_byte(0),
-                                    nts_cookies: None,
-                                    name: "PPS device".to_string(),
-                                    address: self.config.path.display().to_string(),
-                                    id: self.index,
-                                },
-                            );
                     }
                     None => {
                         warn!("Did not receive any new PPS data");
@@ -112,10 +92,9 @@ impl<Controller: Link + Send + 'static> PpsSourceTask<Controller> {
         }
     }
 
-    #[instrument(level = tracing::Level::ERROR, name = "Pps Source", skip(channels, source))]
+    #[instrument(level = tracing::Level::ERROR, name = "Pps Source", skip(source))]
     pub fn spawn(
         index: ClockId,
-        channels: SourceChannels,
         source: Controller,
         config: PpsSourceConfig,
     ) -> tokio::task::JoinHandle<()> {
@@ -137,8 +116,6 @@ impl<Controller: Link + Send + 'static> PpsSourceTask<Controller> {
         tokio::spawn(
             (async move {
                 let mut process = PpsSourceTask {
-                    index,
-                    channels,
                     source,
                     fetch_receiver,
                     config,
