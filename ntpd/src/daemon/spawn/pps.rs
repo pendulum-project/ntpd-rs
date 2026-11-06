@@ -1,125 +1,97 @@
-use ntp_proto::SourceConfig;
-use tokio::sync::mpsc;
-
-use crate::daemon::config::PpsSourceConfig;
-
-use super::{
-    ClockId, PpsSourceCreateParameters, SourceCreateParameters, SourceRemovalReason,
-    SourceRemovedEvent, SpawnAction, SpawnEvent, Spawner, SpawnerId, standard::StandardSpawnError,
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
 };
 
+use ntp_proto::SourceConfig;
+use statime_algo::LinkConfig;
+use statime_base::{Duration, SourceType, StdController};
+use tokio::sync::mpsc;
+
+use crate::daemon::{
+    config::PpsSourceConfig,
+    pps_source::{self, PpsSourceTask},
+    spawn::{CreationParameters, LinkTerminationReason},
+};
+
+use super::{ClockId, Spawner, SpawnerId};
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PpsSpawnerConfig {
+    pub path: PathBuf,
+    pub precision: Duration,
+    pub accuracy: Duration,
+    pub period: Duration,
+}
+
 pub struct PpsSpawner {
-    config: PpsSourceConfig,
-    source_config: SourceConfig,
-    id: SpawnerId,
+    config: PpsSpawnerConfig,
+    state: Arc<Mutex<PpsSpawnerState>>,
+}
+
+#[derive(Default)]
+struct PpsSpawnerState {
     has_spawned: bool,
 }
 
 impl PpsSpawner {
-    pub fn new(config: PpsSourceConfig, source_config: SourceConfig) -> PpsSpawner {
+    pub fn new(config: PpsSpawnerConfig) -> PpsSpawner {
         PpsSpawner {
             config,
-            source_config,
-            id: SpawnerId::new(),
-            has_spawned: false,
+            state: Arc::default(),
         }
     }
 }
 
-impl Spawner for PpsSpawner {
-    type Error = StandardSpawnError;
+impl<TimeController: StdController> Spawner<TimeController> for PpsSpawner
+where
+    TimeController::LinkConfig: From<statime_algo::LinkConfig>,
+    TimeController::Link<Arc<TimeController>>: Send + 'static,
+{
+    fn try_spawn(&mut self) -> super::TrySpawnFuture<TimeController> {
+        let config = self.config.clone();
+        let state = self.state.clone();
 
-    async fn try_spawn(
-        &mut self,
-        action_tx: &mpsc::Sender<SpawnEvent>,
-    ) -> Result<(), StandardSpawnError> {
-        action_tx
-            .send(SpawnEvent::new(
-                self.id,
-                SpawnAction::Create(SourceCreateParameters::Pps(PpsSourceCreateParameters {
-                    id: ClockId::new(),
-                    config: self.source_config,
-                    pps_config: self.config.clone(),
-                })),
-            ))
-            .await?;
-        self.has_spawned = true;
-        Ok(())
+        Box::new(async move {
+            Ok(CreationParameters {
+                stype: SourceType::Ntp,
+                link_config: LinkConfig {
+                    /// Not relevant as pps sources have fixed measurement periods.
+                    desired_error_bound: Duration::from_seconds_nanos(0, 1_000),
+                    period: Some(config.period),
+                }
+                .into(),
+                tracked_link_config: None,
+                creator: Box::new(
+                    move |controller: TimeController::Link<Arc<TimeController>>,
+                          clock,
+                          managers| {
+                        PpsSourceTask::spawn(
+                            controller,
+                            pps_source::PpsSourceConfig {
+                                path: config.path,
+                                precision: config.precision,
+                                accuracy: config.accuracy,
+                            },
+                        )
+                    },
+                ),
+            })
+        })
     }
 
-    fn is_complete(&self) -> bool {
-        self.has_spawned
+    fn needs_spawn(&self) -> bool {
+        !self.state.lock().unwrap().has_spawned
     }
 
-    async fn handle_source_removed(
+    fn source_terminated(
         &mut self,
-        removed_source: SourceRemovedEvent,
-    ) -> Result<(), StandardSpawnError> {
-        if removed_source.reason != SourceRemovalReason::Demobilized {
-            self.has_spawned = false;
+        id: statime_base::LinkId,
+        reason: super::LinkTerminationReason,
+    ) {
+        if reason != LinkTerminationReason::MustDemobilize {
+            let mut state = self.state.lock().unwrap();
+            state.has_spawned = false;
         }
-        Ok(())
-    }
-
-    fn get_id(&self) -> SpawnerId {
-        self.id
-    }
-
-    fn get_addr_description(&self) -> String {
-        self.config.path.display().to_string()
-    }
-
-    fn get_description(&self) -> &'static str {
-        "PPS"
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use ntp_proto::SourceConfig;
-    use tokio::sync::mpsc;
-
-    use crate::{
-        daemon::{
-            config::PpsSourceConfig,
-            spawn::{SourceCreateParameters, SpawnAction, Spawner, pps::PpsSpawner},
-        },
-        test::alloc_port,
-    };
-
-    const MESSAGE_BUFFER_SIZE: usize = 2;
-
-    #[tokio::test]
-    async fn creates_a_source() {
-        let socket_path = std::env::temp_dir().join(format!("ntp-test-stream-{}", alloc_port()));
-        let precision = 1e-3;
-        let accuracy = 1e-3;
-        let mut spawner = PpsSpawner::new(
-            PpsSourceConfig {
-                path: socket_path.clone(),
-                precision,
-                accuracy,
-                period: 1.,
-            },
-            SourceConfig::default(),
-        );
-        let spawner_id = spawner.get_id();
-        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
-
-        assert!(!spawner.is_complete());
-        spawner.try_spawn(&action_tx).await.unwrap();
-        let res = action_rx.try_recv().unwrap();
-        assert_eq!(res.id, spawner_id);
-
-        let SpawnAction::Create(create_params) = res.action;
-        assert_eq!(create_params.get_addr(), socket_path.display().to_string());
-
-        let SourceCreateParameters::Pps(params) = create_params else {
-            panic!("did not receive PPS source create parameters!");
-        };
-        assert_eq!(params.pps_config.path, socket_path);
-
-        // Should be complete after spawning
-        assert!(spawner.is_complete());
     }
 }

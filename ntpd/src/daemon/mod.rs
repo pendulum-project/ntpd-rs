@@ -223,7 +223,13 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
                 }
                 config::SourceConfig::Sock(config) => todo!(),
                 #[cfg(feature = "pps")]
-                config::SourceConfig::Pps(config) => todo!(),
+                config::SourceConfig::Pps(source_config) => {
+                    use crate::daemon::spawn::pps::PpsSpawner;
+
+                    system.add_spawner(Box::new(PpsSpawner::new(
+                        source_config.generate_spawner_config(),
+                    )));
+                }
                 #[cfg(target_os = "linux")]
                 config::SourceConfig::Csptp(source_config) => {
                     use crate::daemon::spawn::csptp::CsptpSpawner;

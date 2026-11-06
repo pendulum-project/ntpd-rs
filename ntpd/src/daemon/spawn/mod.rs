@@ -28,8 +28,8 @@ pub mod csptp;
 pub mod ntp_nts;
 pub mod ntp_nts_pool;
 pub mod ntp_pool;
-//#[cfg(feature = "pps")]
-//pub mod pps;
+#[cfg(feature = "pps")]
+pub mod pps;
 //pub mod sock;
 pub mod ntp;
 
