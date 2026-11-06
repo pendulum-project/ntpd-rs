@@ -11,9 +11,8 @@ use crate::daemon::clock::utc_to_tai;
 #[derive(Debug, PartialEq, Clone)]
 pub struct PpsSourceConfig {
     pub path: PathBuf,
-    pub precision: f64,
-    pub accuracy: f64,
-    pub period: f64,
+    pub precision: Duration,
+    pub accuracy: Duration,
 }
 
 struct PpsDeviceFetchTask {
@@ -70,15 +69,11 @@ impl<Controller: Link + Send + 'static> PpsSourceTask<Controller> {
                                 ),
                             ),
                             recv_timestamp,
-                            uncertainty: Duration::from_f64_seconds(self.config.accuracy),
+                            uncertainty: self.config.accuracy,
                         };
 
                         self.source
-                            .external_data_update(
-                                Duration::from_f64_seconds(self.config.precision),
-                                None,
-                                true,
-                            )
+                            .external_data_update(self.config.precision, None, true)
                             .expect("Unable to update external source data.");
                         self.source
                             .measurement(measurement, Direction::Reverse)
@@ -93,11 +88,7 @@ impl<Controller: Link + Send + 'static> PpsSourceTask<Controller> {
     }
 
     #[instrument(level = tracing::Level::ERROR, name = "Pps Source", skip(source))]
-    pub fn spawn(
-        index: ClockId,
-        source: Controller,
-        config: PpsSourceConfig,
-    ) -> tokio::task::JoinHandle<()> {
+    pub fn spawn(source: Controller, config: PpsSourceConfig) -> tokio::task::JoinHandle<()> {
         let pps = PpsDevice::new(config.path.clone()).expect("Could not open PPS device");
         let cap = pps.get_cap().expect("Could not get PPS capabilities");
         assert!(
