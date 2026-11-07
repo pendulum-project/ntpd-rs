@@ -13,7 +13,8 @@ allow = [
     "Unicode-3.0",
     "BSD-3-Clause",
     "OpenSSL",
-    "NCSA"
+    "NCSA",
+    "MPL-2.0"
 ]
 
 [[licenses.clarify]]
