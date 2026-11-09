@@ -12,7 +12,7 @@ output_log=/var/log/${RC_SVCNAME}.log
 error_log=/var/log/${RC_SVCNAME}.log
 
 if [ $RC_UNAME = "Linux" ]; then
-    # on linux ntpd-rs can run unprivileged due to the capbilities below
+    # on linux ntpd-rs can run unprivileged due to the capabilities below
     command_user="${USER}:${GROUP}"
     capabilities="^cap_net_bind_service,^cap_sys_time"
     no_new_privs=1
