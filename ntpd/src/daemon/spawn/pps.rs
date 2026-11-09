@@ -66,6 +66,7 @@ where
                     move |controller: TimeController::Link<Arc<TimeController>>,
                           clock,
                           managers| {
+                        state.lock().unwrap().has_spawned = true;
                         PpsSourceTask::spawn(
                             controller,
                             pps_source::PpsSourceConfig {

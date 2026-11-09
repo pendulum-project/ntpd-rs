@@ -43,6 +43,7 @@ use crate::daemon::spawn::ntp::{NtpSpawner, NtpSpawnerConfig};
 use crate::daemon::spawn::ntp_nts::NtpNtsSpawner;
 use crate::daemon::spawn::ntp_nts_pool::NtpNtsPoolSpawner;
 use crate::daemon::spawn::ntp_pool::{NtpPoolSpawner, NtpPoolSpawnerConfig};
+use crate::daemon::spawn::sock::SockSpawner;
 use crate::daemon::system::{System, SystemConfig};
 use crate::daemon::tracing::LogReloadTaskStarter;
 use crate::notify::notify_ready;
@@ -221,7 +222,9 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
                         source_config.generate_spawner_config(&config)?,
                     )?));
                 }
-                config::SourceConfig::Sock(config) => todo!(),
+                config::SourceConfig::Sock(source_config) => system.add_spawner(Box::new(
+                    SockSpawner::new(source_config.generate_spawner_config()),
+                )),
                 #[cfg(feature = "pps")]
                 config::SourceConfig::Pps(source_config) => {
                     use crate::daemon::spawn::pps::PpsSpawner;
