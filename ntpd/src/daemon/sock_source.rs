@@ -9,12 +9,13 @@ use tracing::{Instrument, Span, error, instrument};
 use tokio::net::UnixDatagram;
 
 use crate::daemon::exitcode;
+use crate::daemon::spawn::LinkTerminationReason;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct SockSourceConfig {
     pub path: PathBuf,
-    pub precision: f64,
-    pub accuracy: f64,
+    pub precision: Duration,
+    pub accuracy: Duration,
 }
 
 // Based on https://gitlab.com/gpsd/gpsd/-/blob/master/gpsd/timehint.c#L268
@@ -140,15 +141,11 @@ where
                         let measurement = Measurement {
                             send_timestamp: time - Duration::from_f64_seconds(sample.offset),
                             recv_timestamp: time,
-                            uncertainty: Duration::from_f64_seconds(self.config.precision),
+                            uncertainty: self.config.precision,
                         };
 
                         self.source
-                            .external_data_update(
-                                Duration::from_f64_seconds(self.config.precision),
-                                leap,
-                                true,
-                            )
+                            .external_data_update(self.config.precision, leap, true)
                             .expect("Unable to update external source data.");
                         self.source
                             .measurement(measurement, Direction::Reverse)
@@ -167,7 +164,7 @@ where
         clock: C,
         source: Controller,
         config: SockSourceConfig,
-    ) -> tokio::task::JoinHandle<()> {
+    ) -> tokio::task::JoinHandle<LinkTerminationReason> {
         let socket = create_socket(&config.path).expect("Could not create socket");
         tokio::spawn(
             (async move {
@@ -179,6 +176,8 @@ where
                 };
 
                 process.run().await;
+
+                LinkTerminationReason::Failed
             })
             .instrument(Span::current()),
         )
@@ -317,8 +316,8 @@ mod tests {
             ),
             SockSourceConfig {
                 path: socket_path.clone(),
-                precision: 0.1,
-                accuracy: 0.1,
+                precision: Duration::from_f64_seconds(0.1),
+                accuracy: Duration::from_f64_seconds(0.1),
             },
         );
 

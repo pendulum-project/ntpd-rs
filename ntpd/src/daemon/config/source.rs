@@ -24,7 +24,7 @@ use crate::daemon::{
     keyexchange::certificates_from_file,
     spawn::{
         ntp::NtpSpawnerConfig, ntp_nts::NtpNtsSpawnerConfig, ntp_nts_pool::NtpNtsPoolSpawnerConfig,
-        ntp_pool::NtpPoolSpawnerConfig,
+        ntp_pool::NtpPoolSpawnerConfig, sock::SockSpawnerConfig,
     },
 };
 
@@ -303,7 +303,22 @@ impl NtpNtsPoolSourceConfig {
 }
 
 #[derive(Debug, PartialEq, Clone, Configurable)]
-pub(crate) struct SockSourceConfig {}
+pub(crate) struct SockSourceConfig {
+    pub(crate) path: PathBuf,
+    pub(crate) accuracy: Positive<ConfigurableDuration>,
+    #[config(default = NonNegative::unchecked_new(ConfigurableDuration { unit: Unit::Second, duration: 0.0 }))]
+    pub(crate) precision: NonNegative<ConfigurableDuration>,
+}
+
+impl SockSourceConfig {
+    pub(crate) fn generate_spawner_config(&self) -> SockSpawnerConfig {
+        SockSpawnerConfig {
+            path: self.path.clone(),
+            precision: self.precision.into_inner().into(),
+            accuracy: self.accuracy.into_inner().into(),
+        }
+    }
+}
 
 #[cfg(feature = "pps")]
 #[derive(Debug, PartialEq, Clone, Configurable)]
