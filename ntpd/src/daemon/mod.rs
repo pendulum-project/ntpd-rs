@@ -187,8 +187,7 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
             },
             // FIXME: Add ntp configuration back in.
             NtpConfig::default(),
-            // FIXME: set up configuration of keyset.
-            KeysetConfig::default(),
+            config.generate_keyset_config(),
             #[cfg(target_os = "linux")]
             // FIXME: Add csptp configuration back in.
             statime_csptp::CsptpConfig::default(),

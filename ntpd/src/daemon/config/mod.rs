@@ -27,6 +27,8 @@ use std::{
 use tracing::{info, warn};
 use tracing_subscriber::layer::Filter;
 
+use crate::daemon::nts_key_provider::KeysetConfig;
+
 use super::{clock::NtpClockWrapper, tracing::LogLevel};
 
 #[derive(Debug, Clone, Configurable)]
@@ -209,6 +211,26 @@ impl Default for FilterConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Configurable)]
+pub struct NtsCookieKeys {
+    /// Number of old keys to keep around
+    #[config(rename = "old-key-count", default = Positive::unchecked_new(7))]
+    pub old_key_count: Positive<usize>,
+    /// How often to rotate keys
+    #[config(rename = "key-rotation-interval", default = Positive::unchecked_new(ConfigurableDuration { unit: Unit::Day, duration: 1.0 }))]
+    pub key_rotation_interval: Positive<ConfigurableDuration>,
+    #[config(rename = "storage-path", default)]
+    pub storage_path: Option<PathBuf>,
+}
+
+impl Default for NtsCookieKeys {
+    fn default() -> Self {
+        let mut partial = <Self as Configurable>::Node::default();
+        partial.apply_defaults();
+        partial.resolve(&mut ConfigPath::root()).unwrap()
+    }
+}
+
 /// Which system configuration to layer underneath the main configuration, if
 /// any.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ConfigurableAtomic)]
@@ -246,6 +268,8 @@ pub struct Config {
     pub csptp_source_defaults: CsptpSourceDefaults,
     #[config(rename = "system-clock")]
     pub system_clock: SystemClockConfig,
+    #[config(rename = "nts-cookie-keys")]
+    pub nts_cookie_keys: NtsCookieKeys,
     pub filter: FilterConfig,
     pub observability: ObservabilityConfig,
 }
@@ -380,6 +404,16 @@ impl Config {
                 .filter
                 .minimum_agreeing_sources
                 .map_or(3.min(self.count_sources()), Positive::into_inner),
+        }
+    }
+
+    pub(crate) fn generate_keyset_config(&self) -> KeysetConfig {
+        KeysetConfig {
+            stale_key_count: self.nts_cookie_keys.old_key_count.into_inner(),
+            key_rotation_interval: ConfigurableDuration::into_std_duration(
+                self.nts_cookie_keys.key_rotation_interval,
+            ),
+            key_storage_path: self.nts_cookie_keys.storage_path.clone(),
         }
     }
 }

@@ -1,7 +1,9 @@
 use std::{
     fs::{File, OpenOptions},
     os::unix::prelude::{OpenOptionsExt, PermissionsExt},
+    path::PathBuf,
     sync::Arc,
+    time::Duration,
 };
 
 use ntp_proto::{KeySet, KeySetProvider};
@@ -13,15 +15,15 @@ pub struct KeysetConfig {
     /// Number of old keys to keep around
     pub stale_key_count: usize,
     /// How often to rotate keys (seconds between rotations)
-    pub key_rotation_interval: usize,
-    pub key_storage_path: Option<String>,
+    pub key_rotation_interval: Duration,
+    pub key_storage_path: Option<PathBuf>,
 }
 
 impl Default for KeysetConfig {
     fn default() -> Self {
         Self {
             stale_key_count: 7,
-            key_rotation_interval: 86400,
+            key_rotation_interval: std::time::Duration::from_secs(86400),
             key_storage_path: None,
         }
     }
@@ -62,7 +64,7 @@ pub async fn spawn(config: KeysetConfig) -> watch::Receiver<Arc<KeySet>> {
             });
             (
                 provider,
-                std::time::Duration::from_secs(config.key_rotation_interval as _).saturating_sub(
+                config.key_rotation_interval.saturating_sub(
                     std::time::SystemTime::now()
                         .duration_since(time)
                         .unwrap_or(std::time::Duration::from_secs(0)),
@@ -71,7 +73,7 @@ pub async fn spawn(config: KeysetConfig) -> watch::Receiver<Arc<KeySet>> {
         }
         None => (
             KeySetProvider::new(config.stale_key_count),
-            std::time::Duration::from_secs(config.key_rotation_interval as _),
+            config.key_rotation_interval,
         ),
     };
     let (tx, rx) = watch::channel(provider.get());
@@ -103,7 +105,7 @@ pub async fn spawn(config: KeysetConfig) -> watch::Receiver<Arc<KeySet>> {
                 break;
             }
             std::thread::sleep(next_interval);
-            next_interval = std::time::Duration::from_secs(config.key_rotation_interval as _);
+            next_interval = config.key_rotation_interval;
             provider.rotate();
         }
     });
