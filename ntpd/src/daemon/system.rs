@@ -10,7 +10,7 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
-use ntp_proto::{NtpConfig, NtpManager};
+use ntp_proto::{KeySet, NtpConfig, NtpManager};
 use statime_base::{ActiveLinkData, ClockId, Link, LinkId, SourceType, StdController};
 #[cfg(target_os = "linux")]
 use statime_csptp::CsptpConfig;
@@ -21,6 +21,7 @@ use tokio::{
 
 use crate::daemon::{
     clock::NtpClockWrapper,
+    nts_key_provider::{self, KeysetConfig},
     spawn::{
         CreationParameters, LinkTerminationReason, SpawnFailureReason, Spawner, SpawnerId,
         TrySpawnFuture,
@@ -165,8 +166,16 @@ impl<TimeController: StdController> SpawnerData<TimeController> {
     }
 }
 
+enum LazyKeysetProvider {
+    Config(KeysetConfig),
+    Provider(tokio::sync::watch::Receiver<Arc<KeySet>>),
+}
+
 pub struct SystemManagers {
     ntp_manager: Arc<NtpManager>,
+    // This is held accross an await point because of loading of the keys. Therefore it
+    // is necessary for this mutex to be a tokio mutex in stead of a std one.
+    keyset_provider: tokio::sync::Mutex<LazyKeysetProvider>,
     // FIXME: switch to oncecells once https://github.com/rust-lang/rust/issues/109737 is resolved.
     #[cfg(target_os = "linux")]
     ptp_networking_ipv4: Mutex<Option<statime_netptp::NetworkManager<Ipv4Addr>>>,
@@ -182,6 +191,9 @@ impl SystemManagers {
     pub fn test_managers() -> Self {
         SystemManagers {
             ntp_manager: Arc::new(NtpManager::new(NtpConfig::default(), Arc::default())),
+            keyset_provider: tokio::sync::Mutex::new(LazyKeysetProvider::Config(
+                KeysetConfig::default(),
+            )),
             #[cfg(target_os = "linux")]
             ptp_networking_ipv4: Mutex::new(None),
             #[cfg(target_os = "linux")]
@@ -195,6 +207,18 @@ impl SystemManagers {
 
     pub fn ntp_manager(&self) -> Arc<NtpManager> {
         self.ntp_manager.clone()
+    }
+
+    pub async fn keyset_provider(&self) -> tokio::sync::watch::Receiver<Arc<KeySet>> {
+        let mut keyset_provider = self.keyset_provider.lock().await;
+        match &*keyset_provider {
+            LazyKeysetProvider::Config(keyset_config) => {
+                let provider = nts_key_provider::spawn(keyset_config.clone()).await;
+                *keyset_provider = LazyKeysetProvider::Provider(provider.clone());
+                provider
+            }
+            LazyKeysetProvider::Provider(receiver) => receiver.clone(),
+        }
     }
 
     #[cfg(target_os = "linux")]
@@ -238,6 +262,7 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
         system_clock_id: ClockId,
         system_config: SystemConfig,
         ntp_config: NtpConfig,
+        keyset_config: KeysetConfig,
         #[cfg(target_os = "linux")] csptp_config: CsptpConfig,
     ) -> Self {
         let ntp_manager = Arc::new(NtpManager::new(ntp_config, Arc::default()));
@@ -249,6 +274,7 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
             state: Mutex::default(),
             managers: SystemManagers {
                 ntp_manager,
+                keyset_provider: tokio::sync::Mutex::new(LazyKeysetProvider::Config(keyset_config)),
                 #[cfg(target_os = "linux")]
                 ptp_networking_ipv4: Mutex::new(None),
                 #[cfg(target_os = "linux")]

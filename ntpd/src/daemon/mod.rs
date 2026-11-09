@@ -163,10 +163,6 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
         // tracing setup to ensure logging is fully configured.
         config.check();
 
-        // we always generate the keyset (even if NTS is not used)
-        // FIXME: set up configuration of keyset.
-        let keyset = nts_key_provider::spawn(KeysetConfig::default()).await;
-
         ::tracing::debug!("Configuration loaded, spawning daemon jobs");
         let clock: NtpClockWrapper = if config.system_clock.steered {
             NtpClockWrapper::new_utc(UnixClock::CLOCK_REALTIME)
@@ -191,6 +187,8 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
             },
             // FIXME: Add ntp configuration back in.
             NtpConfig::default(),
+            // FIXME: set up configuration of keyset.
+            KeysetConfig::default(),
             #[cfg(target_os = "linux")]
             // FIXME: Add csptp configuration back in.
             statime_csptp::CsptpConfig::default(),
