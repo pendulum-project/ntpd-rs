@@ -6,7 +6,7 @@ use std::{
 use std::{
     collections::HashMap,
     pin::Pin,
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, Mutex, RwLock, atomic::AtomicU64},
     task::{Context, Poll, Waker},
 };
 
@@ -49,10 +49,28 @@ pub struct System<TimeController: StdController> {
     config: SystemConfig,
 }
 
+/// Unique identifier for a server.
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
+struct ServerId(u64);
+
+impl ServerId {
+    pub fn new() -> ServerId {
+        static COUNTER: AtomicU64 = AtomicU64::new(1);
+        ServerId(COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+    }
+}
+
+impl Default for ServerId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 struct SystemState<TimeController: StdController> {
     waker: Option<Waker>,
     driven_links: HashMap<LinkId, LinkData>,
     spawners: HashMap<SpawnerId, SpawnerData<TimeController>>,
+    servers: HashMap<ServerId, JoinHandle<()>>,
 }
 
 impl<TimeController: StdController> Default for SystemState<TimeController> {
@@ -61,6 +79,7 @@ impl<TimeController: StdController> Default for SystemState<TimeController> {
             waker: None,
             driven_links: HashMap::new(),
             spawners: HashMap::new(),
+            servers: HashMap::new(),
         }
     }
 }
@@ -253,6 +272,11 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
             let state = &mut *state;
             state.waker = Some(cx.waker().clone());
             'restart_polling: loop {
+                // Check for servers that have gone.
+                state
+                    .servers
+                    .retain(|_, joinhandle| Pin::new(joinhandle).poll(cx).is_pending());
+
                 // Check for sources that have gone.
                 state.driven_links.retain(|&link_id, driven_link| {
                     match Pin::new(&mut driven_link.task).poll(cx) {
@@ -392,6 +416,18 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
                 last_spawn: tokio::time::Instant::now(),
             },
         );
+        if let Some(waker) = state.waker.take() {
+            waker.wake();
+        }
+    }
+
+    pub async fn add_server<F: AsyncFnOnce(NtpClockWrapper, &SystemManagers) -> JoinHandle<()>>(
+        &self,
+        create: F,
+    ) {
+        let server_handle = create(self.system_clock.clone(), &self.managers).await;
+        let mut state = self.state.lock().unwrap();
+        state.servers.insert(ServerId::new(), server_handle);
         if let Some(waker) = state.waker.take() {
             waker.wake();
         }
