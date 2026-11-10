@@ -17,6 +17,22 @@ use crate::daemon::{
 pub(crate) enum ServerConfig {
     Ntp(NtpServerConfig),
     Ntske(NtskeServerConfig),
+    #[cfg(target_os = "linux")]
+    Csptp(CsptpServerConfig),
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone, PartialEq, Configurable)]
+pub(crate) struct CsptpServerConfig {
+    pub(crate) protocol: CsptpCarierProtocol,
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, ConfigurableAtomic)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum CsptpCarierProtocol {
+    UdpV4,
+    UdpV6,
 }
 
 #[derive(Debug, Clone, PartialEq, Configurable)]
