@@ -266,6 +266,12 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
                         })
                         .await;
                 }
+                config::ServerConfig::Ntske(server_config) => {
+                    system.add_server(async |clock, managers| {
+                        let keyset_provider = managers.keyset_provider().await;
+                        keyexchange::spawn(server_config.generate_server_config(), keyset_provider)
+                    }).await;
+                }
             }
         }
 
