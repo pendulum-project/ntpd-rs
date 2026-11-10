@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, path::PathBuf};
 
 use serde::{
     Deserialize, Deserializer, Serialize,
@@ -7,7 +7,8 @@ use serde::{
 use statime_config::{Configurable, ConfigurableAtomic, Positive, serde_util::Content};
 
 use crate::daemon::{
-    config::{ConfigurableDuration, IpSubnet, Unit, primitives::NtpVersion},
+    config::{ConfigurableDuration, IpSubnet, NtsNtpVersion, Unit, primitives::NtpVersion},
+    keyexchange::NtsKeConfig,
     server,
 };
 
@@ -15,6 +16,59 @@ use crate::daemon::{
 #[config(tag = "type")]
 pub(crate) enum ServerConfig {
     Ntp(NtpServerConfig),
+    Ntske(NtskeServerConfig),
+}
+
+#[derive(Debug, Clone, PartialEq, Configurable)]
+pub(crate) struct NtskeServerConfig {
+    pub(crate) listen: SocketAddr,
+    #[config(rename = "certificate-chain")]
+    pub(crate) certificate_chain_path: PathBuf,
+    #[config(rename = "private-key")]
+    pub(crate) private_key_path: PathBuf,
+    // Experimental
+    #[config(rename = "accepted-pool-authentication-tokens", default)]
+    pub(crate) accepted_pool_authentication_tokens: Vec<String>,
+    #[config(rename = "key-exchange-timeout", default = Positive::unchecked_new(ConfigurableDuration { unit: Unit::Second, duration: 1.0 }))]
+    pub(crate) key_exchange_timeout: Positive<ConfigurableDuration>,
+    #[config(rename = "concurrent-connections", default = Positive::unchecked_new(512))]
+    pub(crate) concurrent_connections: Positive<usize>,
+    // Experimental
+    #[config(rename = "longlived-connections", default)]
+    pub(crate) longlived_connections: Option<Positive<usize>>,
+    #[config(rename = "ntp-port", default)]
+    pub(crate) ntp_port: Option<u16>,
+    #[config(rename = "ntp-server", default)]
+    pub(crate) ntp_server: Option<String>,
+    #[config(rename = "accept-ntp-versions", default = vec![NtsNtpVersion::V4])]
+    pub(crate) accept_ntp_versions: Vec<NtsNtpVersion>,
+}
+
+impl NtskeServerConfig {
+    pub(crate) fn generate_server_config(&self) -> NtsKeConfig {
+        NtsKeConfig {
+            certificate_chain_path: self.certificate_chain_path.clone(),
+            private_key_path: self.private_key_path.clone(),
+            accepted_pool_authentication_tokens: self.accepted_pool_authentication_tokens.clone(),
+            key_exchange_timeout: ConfigurableDuration::into_std_duration(
+                self.key_exchange_timeout,
+            ),
+            concurrent_connections: self.concurrent_connections.into_inner(),
+            longlived_connections: self.longlived_connections.map_or_else(
+                || self.concurrent_connections.into_inner() / 10,
+                Positive::into_inner,
+            ),
+            listen: self.listen,
+            ntp_port: self.ntp_port,
+            ntp_server: self.ntp_server.clone(),
+            accept_ntp_versions: self
+                .accept_ntp_versions
+                .clone()
+                .into_iter()
+                .map(ntp_proto::NtpVersion::from)
+                .collect(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Configurable)]

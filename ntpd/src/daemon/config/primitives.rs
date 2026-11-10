@@ -489,3 +489,47 @@ impl From<NtpVersion> for ntp_proto::NtpVersion {
         }
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ConfigurableAtomic)]
+pub(crate) enum NtsNtpVersion {
+    V4,
+    V5,
+}
+
+impl<'de> Deserialize<'de> for NtsNtpVersion {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let version = u8::deserialize(deserializer)?;
+        match version {
+            4 => Ok(Self::V4),
+            5 => Ok(Self::V5),
+            _ => Err(de::Error::custom(format!(
+                "Invalid ntp version for nts {}",
+                version
+            ))),
+        }
+    }
+}
+
+impl Serialize for NtsNtpVersion {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_u8(match self {
+            Self::V4 => 4,
+            Self::V5 => 5,
+        })
+    }
+}
+
+impl From<NtsNtpVersion> for ntp_proto::NtpVersion {
+    fn from(value: NtsNtpVersion) -> Self {
+        match value {
+            NtsNtpVersion::V4 => Self::V4,
+            NtsNtpVersion::V5 => Self::V5,
+        }
+    }
+}

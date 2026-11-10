@@ -18,7 +18,7 @@ pub struct NtsKeConfig {
     pub certificate_chain_path: PathBuf,
     pub private_key_path: PathBuf,
     pub accepted_pool_authentication_tokens: Vec<String>,
-    pub key_exchange_timeout_ms: u64,
+    pub key_exchange_timeout: std::time::Duration,
     pub concurrent_connections: usize,
     pub longlived_connections: usize,
     pub listen: SocketAddr,
@@ -31,17 +31,13 @@ pub struct NtsKeConfig {
 pub fn spawn(
     nts_ke_config: NtsKeConfig,
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
-) -> JoinHandle<std::io::Result<()>> {
+) -> JoinHandle<()> {
     tokio::spawn(
         (async move {
             let result = run_nts_ke(nts_ke_config, keyset).await;
 
-            match result {
-                Ok(v) => Ok(v),
-                Err(e) => {
-                    tracing::error!("Abnormal termination of NTS KE server: {e}");
-                    std::process::exit(exitcode::SOFTWARE)
-                }
+            if let Err(e) = result {
+                tracing::error!("Abnormal termination of NTS KE server: {e}");
             }
         })
         .instrument(Span::current()),
@@ -98,7 +94,6 @@ async fn run_key_exchange_server(
     key_exchange_server: KeyExchangeServer,
     ke_config: NtsKeConfig,
 ) -> std::io::Result<()> {
-    let timeout = std::time::Duration::from_millis(ke_config.key_exchange_timeout_ms);
     let key_exchange_server = Arc::new(key_exchange_server);
 
     // Long lived permits cannot be reinitialized. This means we do risk running out should error
@@ -111,7 +106,7 @@ async fn run_key_exchange_server(
             Ok(listener) => listener,
             Err(e) => {
                 error!("Could not open network port for KE server: {}", e);
-                tokio::time::sleep(timeout).await;
+                tokio::time::sleep(ke_config.key_exchange_timeout).await;
                 continue;
             }
         };
@@ -128,7 +123,7 @@ async fn run_key_exchange_server(
                 Ok(permit) => permit,
                 Err(e) => {
                     error!("Could not get ticket for new connection: {}", e);
-                    tokio::time::sleep(timeout).await;
+                    tokio::time::sleep(ke_config.key_exchange_timeout).await;
                     break;
                 }
             };
@@ -143,12 +138,12 @@ async fn run_key_exchange_server(
                         "Out of resources in NTS-KE, consider raising limits or lowering max parallel connections: {}",
                         e
                     );
-                    tokio::time::sleep(timeout).await;
+                    tokio::time::sleep(ke_config.key_exchange_timeout).await;
                     continue;
                 }
                 Err(e) => {
                     error!("Could not accept NTS-KE connection: {}", e);
-                    tokio::time::sleep(timeout).await;
+                    tokio::time::sleep(ke_config.key_exchange_timeout).await;
                     break;
                 }
             };
@@ -167,7 +162,7 @@ async fn run_key_exchange_server(
             };
 
             tokio::spawn(async move {
-                match tokio::time::timeout(timeout, fut).await {
+                match tokio::time::timeout(ke_config.key_exchange_timeout, fut).await {
                     Err(_) => tracing::debug!(?source_addr, "NTS KE timed out"),
                     Ok(Err(err)) => tracing::debug!(?err, ?source_addr, "NTS KE failed"),
                     Ok(Ok(None)) => tracing::debug!(?source_addr, "NTS KE completed"),
@@ -202,6 +197,7 @@ fn certificates_from_bufread(mut reader: impl BufRead) -> std::io::Result<Vec<Ce
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
     use std::{io::Cursor, net::SocketAddr, path::PathBuf};
 
     use ntp_proto::KeySetProvider;
@@ -266,7 +262,7 @@ mod tests {
             certificate_chain_path: PathBuf::from("test-keys/end.fullchain.pem"),
             private_key_path: PathBuf::from("test-keys/end.key"),
             accepted_pool_authentication_tokens: vec![],
-            key_exchange_timeout_ms: 10000,
+            key_exchange_timeout: Duration::from_secs(10),
             concurrent_connections: 1,
             longlived_connections: 0,
             listen: SocketAddr::new("0.0.0.0".parse().unwrap(), port),
@@ -352,7 +348,7 @@ mod tests {
             certificate_chain_path: PathBuf::from("test-keys/end.fullchain.pem"),
             private_key_path: PathBuf::from("test-keys/end.key"),
             accepted_pool_authentication_tokens: vec![],
-            key_exchange_timeout_ms: 1000,
+            key_exchange_timeout: Duration::from_secs(1),
             concurrent_connections: 512,
             longlived_connections: 5,
             listen: SocketAddr::new("0.0.0.0".parse().unwrap(), port),
