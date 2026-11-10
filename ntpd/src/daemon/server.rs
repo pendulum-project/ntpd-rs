@@ -26,6 +26,7 @@ pub struct ServerConfig {
     pub rate_limiting_cutoff: Duration,
     pub require_nts: Option<FilterAction>,
     pub accept_ntp_versions: Vec<NtpVersion>,
+    pub network_wait_period: Duration,
 }
 
 #[cfg(test)]
@@ -45,6 +46,7 @@ impl From<SocketAddr> for ServerConfig {
             rate_limiting_cutoff: Duration::default(),
             require_nts: None,
             accept_ntp_versions: vec![NtpVersion::V3, NtpVersion::V4],
+            network_wait_period: Duration::from_secs(1),
         }
     }
 }
@@ -148,7 +150,6 @@ impl<'de> Deserialize<'de> for Counter {
 
 pub struct ServerTask<C: 'static + Clock<TAI> + Send> {
     config: ServerConfig,
-    network_wait_period: std::time::Duration,
     keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
     server: Server<C>,
     stats: ServerStats,
@@ -159,18 +160,15 @@ impl<C: 'static + Clock<TAI> + Send> ServerTask<C> {
     pub fn spawn(
         server: Server<C>,
         config: ServerConfig,
-        stats: ServerStats,
         keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
-        network_wait_period: Duration,
     ) -> JoinHandle<()> {
         tokio::spawn(
             (async move {
                 let mut process = ServerTask {
                     config,
-                    network_wait_period,
                     keyset,
                     server,
-                    stats,
+                    stats: ServerStats::default(),
                 };
 
                 process.serve().await;
@@ -197,7 +195,7 @@ impl<C: 'static + Clock<TAI> + Send> ServerTask<C> {
                         Ok(socket) => break socket,
                         Err(error) => {
                             warn!(?error, ?self.config.listen, "Could not open server socket");
-                            tokio::time::sleep(self.network_wait_period).await;
+                            tokio::time::sleep(self.config.network_wait_period).await;
                         }
                     }
                 };
@@ -374,13 +372,7 @@ mod tests {
             keyset.borrow().clone(),
         );
 
-        let join = ServerTask::spawn(
-            server,
-            config,
-            ServerStats::default(),
-            keyset,
-            Duration::from_secs(0),
-        );
+        let join = ServerTask::spawn(server, config, keyset);
 
         let socket = open_ip(
             SocketAddr::new("127.0.0.1".parse().unwrap(), alloc_port()),
