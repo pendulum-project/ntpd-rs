@@ -132,6 +132,10 @@ pub(crate) fn initialize_logging_parse_config(
     (config, task_starter)
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "FIXME: Split out configuration handling once we start looking at reloading the configuration."
+)]
 fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
     #[cfg(feature = "seccomp")]
     statime_seccomp::Log.enable()?;
@@ -237,10 +241,33 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
             }
         }
 
-        // FIXME: Replace with nts ke server code once present.
-        /*for nts_ke_config in config.nts_ke {
-            let _join_handle = keyexchange::spawn(nts_ke_config, keyset.clone());
-        }*/
+        for server in &config.servers {
+            #[expect(clippy::async_yields_async, reason = "Server spawning needs to be async to deal with loading the keyset on demand, but also must yield a joinhandle which is awaitable.")]
+            match server {
+                config::ServerConfig::Ntp(server_config) => {
+                    system
+                        .add_server(async |clock, managers| {
+                            let server_config = server_config.generate_server_config();
+                            let mut keyset_provider = managers.keyset_provider().await;
+                            let server = managers.ntp_manager().new_server(
+                                ntp_proto::ServerConfig {
+                                    denylist: server_config.denylist.clone(),
+                                    allowlist: server_config.allowlist.clone(),
+                                    rate_limiting_cache_size: server_config
+                                        .rate_limiting_cache_size,
+                                    rate_limiting_cutoff: server_config.rate_limiting_cutoff,
+                                    require_nts: server_config.require_nts,
+                                    accepted_versions: server_config.accept_ntp_versions.clone(),
+                                },
+                                clock,
+                                keyset_provider.borrow_and_update().clone(),
+                            );
+                            server::ServerTask::spawn(server, server_config, keyset_provider)
+                        })
+                        .await;
+                }
+            }
+        }
 
         // FIXME: Replace with proper new observer code once available.
         /*observer::spawn(

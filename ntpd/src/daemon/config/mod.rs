@@ -262,7 +262,7 @@ pub struct Config {
     #[config(rename = "source", default)]
     pub sources: Vec<SourceConfig>,
     #[config(rename = "server", default)]
-    pub servers: Vec<NtpServerConfig>,
+    pub servers: Vec<ServerConfig>,
     pub ntp_source_defaults: NtpSourceDefaults,
     #[config(rename = "csptp-source-defaults")]
     pub csptp_source_defaults: CsptpSourceDefaults,
@@ -321,7 +321,7 @@ impl Config {
         file: Option<&impl AsRef<Path>>,
         no_clock_steering: bool,
         sources: Vec<SourceConfig>,
-        servers: Vec<NtpServerConfig>,
+        servers: Vec<ServerConfig>,
     ) -> Result<Config, ConfigError> {
         let mut config = Config::from_first_file(file.as_ref())?;
 
