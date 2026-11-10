@@ -25,7 +25,7 @@ pub mod tracing;
 use std::sync::Arc;
 use std::{error::Error, io::IsTerminal, path::Path};
 
-use ::tracing::info;
+use ::tracing::{info, warn};
 use clock_steering::unix::UnixClock;
 pub use config::Config;
 use ntp_proto::{NtpConfig, SourceConfig};
@@ -38,6 +38,8 @@ use tracing_subscriber::util::SubscriberInitExt;
 use config::NtpDaemonOptions;
 
 use crate::daemon::clock::NtpClockWrapper;
+#[cfg(target_os = "linux")]
+use crate::daemon::csptp_server::CsptpServerTask;
 use crate::daemon::nts_key_provider::KeysetConfig;
 use crate::daemon::spawn::ntp::{NtpSpawner, NtpSpawnerConfig};
 use crate::daemon::spawn::ntp_nts::NtpNtsSpawner;
@@ -267,9 +269,34 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
                         .await;
                 }
                 config::ServerConfig::Ntske(server_config) => {
-                    system.add_server(async |clock, managers| {
+                    system.add_server(async |_clock, managers| {
                         let keyset_provider = managers.keyset_provider().await;
                         keyexchange::spawn(server_config.generate_server_config(), keyset_provider)
+                    }).await;
+                }
+                #[cfg(target_os = "linux")]
+                config::ServerConfig::Csptp(server_config) => {
+                    system.add_server(async |clock, managers| {
+                        match server_config.protocol {
+                            config::CsptpCarierProtocol::UdpV4 => {
+                                match managers.netptp_ipv4() {
+                                    Ok(network) => CsptpServerTask::spawn(managers.csptp_manager(), network, csptp_server::CsptpServerConfig {  }),
+                                    Err(e) => {
+                                        warn!("Could not start CSPTP server because network is not openable: {e}");
+                                        tokio::spawn(async {})
+                                    }
+                                }
+                            }
+                            config::CsptpCarierProtocol::UdpV6 => {
+                                match managers.netptp_ipv6() {
+                                    Ok(network) => CsptpServerTask::spawn(managers.csptp_manager(), network, csptp_server::CsptpServerConfig {  }),
+                                    Err(e) => {
+                                        warn!("Could not start CSPTP server because network is not openable: {e}");
+                                        tokio::spawn(async {})
+                                    }
+                                }
+                            }
+                        }
                     }).await;
                 }
             }
