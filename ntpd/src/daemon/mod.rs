@@ -195,8 +195,7 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
             NtpConfig::default(),
             config.generate_keyset_config(),
             #[cfg(target_os = "linux")]
-            // FIXME: Add csptp configuration back in.
-            statime_csptp::CsptpConfig::default(),
+            config.generate_csptp_config(),
         ));
 
         let system_clone = system.clone();

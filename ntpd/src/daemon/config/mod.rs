@@ -15,6 +15,8 @@ use statime_config::{
     ConfigError, ConfigPath, Configurable, ConfigurableAtomic, InfiniteOr, NonNegative,
     PartialValue, Positive, RootConfig, SystemConfigSetting,
 };
+#[cfg(target_os = "linux")]
+use statime_wire::{ClockAccuracy, ClockIdentity, ClockQuality};
 use std::io;
 use std::{
     fmt::Display,
@@ -231,6 +233,73 @@ impl Default for NtsCookieKeys {
     }
 }
 
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone, PartialEq, Configurable)]
+pub struct CsptpConfig {
+    /// Identity of the local instance.
+    #[config(default)]
+    pub identity: ConfigurableClockIdentity,
+    /// Priority 1 value to use for the local clock.
+    #[config(rename = "priority-1", default = 255)]
+    pub priority_1: u8,
+    /// Priority 2 value to use for the local clock.
+    #[config(rename = "priority-1", default = 255)]
+    pub priority_2: u8,
+    #[config(rename = "clock-class", default = 248)]
+    pub clock_class: u8,
+    #[config(rename = "advertised-clock-accuracy", default = None)]
+    pub advertised_clock_accuracy: Option<Positive<ConfigurableDuration>>,
+    #[config(rename = "advertised-clock-deviation", default = Positive::unchecked_new(ConfigurableDuration { unit: Unit::Microsecond, duration: 300.0 }))]
+    pub advertised_clock_deviation: Positive<ConfigurableDuration>,
+    /// Whether the local time uses the ptp timescale.
+    #[config(rename = "ptp-timescale", default = true)]
+    pub ptp_timescale: bool,
+    /// Whether the local time is traceable.
+    #[config(rename = "time-traceable", default = false)]
+    pub time_traceable: bool,
+    /// Whether the local frequency is traceable.
+    #[config(rename = "frequency-traceable", default = false)]
+    pub frequency_traceable: bool,
+}
+
+#[cfg(target_os = "linux")]
+impl Default for CsptpConfig {
+    fn default() -> Self {
+        let mut partial = <Self as Configurable>::Node::default();
+        partial.apply_defaults();
+        partial.resolve(&mut ConfigPath::root()).unwrap()
+    }
+}
+
+// This struct allows us to derive ConfigurableAtomic.
+#[cfg(target_os = "linux")]
+#[derive(Default, Debug, Clone, PartialEq, Eq, ConfigurableAtomic)]
+pub struct ConfigurableClockIdentity(ClockIdentity);
+
+#[cfg(target_os = "linux")]
+impl<'de> Deserialize<'de> for ConfigurableClockIdentity {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(ConfigurableClockIdentity(<ClockIdentity as Deserialize<
+            'de,
+        >>::deserialize(
+            deserializer
+        )?))
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Serialize for ConfigurableClockIdentity {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        <ClockIdentity as Serialize>::serialize(&self.0, serializer)
+    }
+}
+
 /// Which system configuration to layer underneath the main configuration, if
 /// any.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ConfigurableAtomic)]
@@ -270,6 +339,9 @@ pub struct Config {
     pub system_clock: SystemClockConfig,
     #[config(rename = "nts-cookie-keys")]
     pub nts_cookie_keys: NtsCookieKeys,
+    #[cfg(target_os = "linux")]
+    #[config(rename = "csptp")]
+    pub csptp: CsptpConfig,
     pub filter: FilterConfig,
     pub observability: ObservabilityConfig,
 }
@@ -414,6 +486,93 @@ impl Config {
                 self.nts_cookie_keys.key_rotation_interval,
             ),
             key_storage_path: self.nts_cookie_keys.storage_path.clone(),
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(crate) fn generate_csptp_config(&self) -> statime_csptp::CsptpConfig {
+        let clock_accuracy = if let Some(duration) = self.csptp.advertised_clock_accuracy {
+            let duration = duration.into_inner().seconds();
+            if duration <= 1e-12 {
+                ClockAccuracy::PS1
+            } else if duration <= 2.5e-12 {
+                ClockAccuracy::PS2_5
+            } else if duration <= 10e-12 {
+                ClockAccuracy::PS10
+            } else if duration <= 25e-12 {
+                ClockAccuracy::PS25
+            } else if duration <= 100e-12 {
+                ClockAccuracy::PS100
+            } else if duration <= 250e-12 {
+                ClockAccuracy::PS250
+            } else if duration <= 1e-9 {
+                ClockAccuracy::NS1
+            } else if duration <= 2.5e-9 {
+                ClockAccuracy::NS2_5
+            } else if duration <= 10e-9 {
+                ClockAccuracy::NS10
+            } else if duration <= 25e-9 {
+                ClockAccuracy::NS25
+            } else if duration <= 100e-9 {
+                ClockAccuracy::NS100
+            } else if duration <= 250e-9 {
+                ClockAccuracy::NS250
+            } else if duration <= 1e-6 {
+                ClockAccuracy::US1
+            } else if duration <= 2.5e-6 {
+                ClockAccuracy::US2_5
+            } else if duration <= 10e-6 {
+                ClockAccuracy::US10
+            } else if duration <= 25e-6 {
+                ClockAccuracy::US25
+            } else if duration <= 100e-6 {
+                ClockAccuracy::US100
+            } else if duration <= 250e-6 {
+                ClockAccuracy::US250
+            } else if duration <= 1e-3 {
+                ClockAccuracy::MS1
+            } else if duration <= 2.5e-3 {
+                ClockAccuracy::MS2_5
+            } else if duration <= 10e-3 {
+                ClockAccuracy::MS10
+            } else if duration <= 25e-3 {
+                ClockAccuracy::MS25
+            } else if duration <= 100e-3 {
+                ClockAccuracy::MS100
+            } else if duration <= 250e-3 {
+                ClockAccuracy::MS250
+            } else if duration <= 1.0 {
+                ClockAccuracy::S1
+            } else if duration <= 10.0 {
+                ClockAccuracy::S10
+            } else {
+                ClockAccuracy::SGT10
+            }
+        } else {
+            ClockAccuracy::Unknown
+        };
+
+        let log_variance = self
+            .csptp
+            .advertised_clock_deviation
+            .into_inner()
+            .seconds()
+            .log2()
+            * 2.0;
+        let scaled_log_variance = (log_variance * 256.0).ceil() as i16;
+
+        statime_csptp::CsptpConfig {
+            identity: self.csptp.identity.0,
+            priority_1: self.csptp.priority_1,
+            priority_2: self.csptp.priority_2,
+            clock_quality: ClockQuality {
+                clock_class: self.csptp.clock_class,
+                clock_accuracy,
+                offset_scaled_log_variance: scaled_log_variance.cast_unsigned(),
+            },
+            ptp_timescale: self.csptp.ptp_timescale,
+            time_traceable: self.csptp.time_traceable,
+            frequency_traceable: self.csptp.frequency_traceable,
         }
     }
 }
