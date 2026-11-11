@@ -186,7 +186,7 @@ impl<'de> Deserialize<'de> for ConfigurableDuration {
 impl ConfigurableAtomic for ConfigurableDuration {}
 
 impl ConfigurableDuration {
-    fn seconds(self) -> f64 {
+    pub(crate) fn seconds(self) -> f64 {
         match self.unit {
             Unit::Nanosecond => self.duration * 1e-9,
             Unit::Microsecond => self.duration * 1e-6,
