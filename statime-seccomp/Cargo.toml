@@ -6,6 +6,9 @@ edition = "2024"
 readme = "./NOTICE.md"
 publish = true
 rust-version = "1.95" # MSRV
+description = "Seccomp system call restricting for statime."
+repository = "https://github.com/pendulum-project/ntpd-rs"
+homepage = "https://github.com/pendulum-project/ntpd-rs"
 
 [lints.rust]
 missing_docs = "deny"
