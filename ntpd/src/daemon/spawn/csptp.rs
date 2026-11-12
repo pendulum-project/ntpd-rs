@@ -128,6 +128,9 @@ where
                                         });
                                     }
                                 };
+
+                                state.lock().unwrap().has_spawned = true;
+
                                 CsptpSourceTask::spawn(
                                     addr,
                                     config,
@@ -148,6 +151,9 @@ where
                                         });
                                     }
                                 };
+
+                                state.lock().unwrap().has_spawned = true;
+
                                 CsptpSourceTask::spawn(
                                     addr,
                                     config,
