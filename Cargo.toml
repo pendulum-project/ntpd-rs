@@ -215,13 +215,13 @@ serde_test = { version = "1.0.176" }
 
 # Internal crates with their own version numbers. Version MUST be the first element in the
 # dependency, and path must be the second.
-clock-steering = { version = "0.3.0", path = "./clock-steering" }
+clock-steering = { version = "0.3.1", path = "./clock-steering" }
 timestamped-socket = { version = "0.4.0", path = "./timestamped-socket" }
 statime-base = { version = "0.1.1", path = "./statime-base", default-features = false }
-statime-algo = { version = "0.1.0", path = "./statime-algo", default-features = false }
-statime-csptp = { version = "0.1.0", path = "./statime-csptp" }
+statime-algo = { version = "0.1.1", path = "./statime-algo", default-features = false }
+statime-csptp = { version = "0.1.1", path = "./statime-csptp" }
 statime-netptp = { version = "0.1.0", path = "./statime-netptp" }
-statime-wire = { version = "0.1.0", path = "./statime-wire", default-features = false }
+statime-wire = { version = "0.1.1", path = "./statime-wire", default-features = false }
 statime-seccomp = { version = "0.1.0", path = "./statime-seccomp" }
 statime-config = { version = "0.1.0", path = "./statime-config" }
 statime-config-derive = { version = "0.1.0", path = "./statime-config-derive" }
