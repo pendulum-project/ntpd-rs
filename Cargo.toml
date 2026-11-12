@@ -217,7 +217,7 @@ serde_test = { version = "1.0.176" }
 # dependency, and path must be the second.
 clock-steering = { version = "0.3.0", path = "./clock-steering" }
 timestamped-socket = { version = "0.4.0", path = "./timestamped-socket" }
-statime-base = { version = "0.1.0", path = "./statime-base", default-features = false }
+statime-base = { version = "0.1.1", path = "./statime-base", default-features = false }
 statime-algo = { version = "0.1.0", path = "./statime-algo", default-features = false }
 statime-csptp = { version = "0.1.0", path = "./statime-csptp" }
 statime-netptp = { version = "0.1.0", path = "./statime-netptp" }
