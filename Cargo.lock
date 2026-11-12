@@ -160,7 +160,7 @@ dependencies = [
 
 [[package]]
 name = "clock-steering"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "libc",
  "statime-base",
@@ -1510,7 +1510,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "statime-algo"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "arrayvec",
  "libm",
@@ -1548,7 +1548,7 @@ dependencies = [
 
 [[package]]
 name = "statime-csptp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rand 0.8.8",
  "statime-base",
@@ -1574,7 +1574,7 @@ dependencies = [
 
 [[package]]
 name = "statime-wire"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_test",
