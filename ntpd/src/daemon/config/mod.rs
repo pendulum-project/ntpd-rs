@@ -300,6 +300,18 @@ impl Serialize for ConfigurableClockIdentity {
     }
 }
 
+#[cfg(feature = "seccomp")]
+#[derive(
+    Default, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ConfigurableAtomic,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum SeccompMode {
+    Kill,
+    Log,
+    #[default]
+    Off,
+}
+
 /// Which system configuration to layer underneath the main configuration, if
 /// any.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, ConfigurableAtomic)]
@@ -328,6 +340,9 @@ pub struct Config {
     #[config(rename = "use-system-config", default)]
     #[allow(clippy::struct_field_names)]
     pub use_system_config: UseSystemConfig,
+    #[cfg(feature = "seccomp")]
+    #[config(default)]
+    pub seccomp: SeccompMode,
     #[config(rename = "source", default)]
     pub sources: Vec<SourceConfig>,
     #[config(rename = "server", default)]
