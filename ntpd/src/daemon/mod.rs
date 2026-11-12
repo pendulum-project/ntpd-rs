@@ -139,15 +139,23 @@ pub(crate) fn initialize_logging_parse_config(
     reason = "FIXME: Split out configuration handling once we start looking at reloading the configuration."
 )]
 fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
-    #[cfg(feature = "seccomp")]
-    statime_seccomp::Log.enable()?;
-
     let (config, task_starter) = initialize_logging_parse_config(
         options.log_level,
         options.config.as_deref(),
         options.no_clock_steering,
         Application::Deamon,
     );
+
+    #[cfg(feature = "seccomp")]
+    match config.seccomp {
+        config::SeccompMode::Kill => {
+            statime_seccomp::KillProcess.enable()?;
+        }
+        config::SeccompMode::Log => {
+            statime_seccomp::Log.enable()?;
+        }
+        config::SeccompMode::Off => {}
+    };
 
     let runtime = if config.servers.is_empty() {
         Builder::new_current_thread().enable_all().build()?
