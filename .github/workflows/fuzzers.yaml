@@ -64,7 +64,7 @@ jobs:
       - name: Install nightly toolchain
         run: rustup toolchain install "$NIGHTLY_RUST_VERSION" --component llvm-tools-preview && rustup override set "$NIGHTLY_RUST_VERSION"
       - name: Install cargo fuzz & rustfilt
-        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
           tool: cargo-fuzz,rustfilt
       - name: Run `cargo fuzz`
