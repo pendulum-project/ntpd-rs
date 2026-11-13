@@ -21,7 +21,7 @@ resolver = "3"
 
 # Global settings for our crates
 [workspace.package]
-version = "2.0.0-alpha.20260715"
+version = "2.0.0-alpha.20261113"
 edition = "2024"
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/pendulum-project/ntpd-rs"
@@ -228,4 +228,4 @@ statime-config-derive = { version = "0.1.0", path = "./statime-config-derive" }
 
 # our own crates used as dependencies, same version as the workspace version
 # NOTE: keep this part at the bottom of the file, do not change this line
-ntp-proto = { version = "2.0.0-alpha.20260715", path = "./ntp-proto", default-features = false, features = ["__internal-api"] }
+ntp-proto = { version = "2.0.0-alpha.20261113", path = "./ntp-proto", default-features = false, features = ["__internal-api"] }

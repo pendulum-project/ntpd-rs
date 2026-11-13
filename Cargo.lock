@@ -894,7 +894,7 @@ checksum = "27b02d87554356db9e9a873add8782d4ea6e3e58ea071a9adb9a2e8ddb884a8b"
 
 [[package]]
 name = "ntp-proto"
-version = "2.0.0-alpha.20260715"
+version = "2.0.0-alpha.20261113"
 dependencies = [
  "aead",
  "aes-siv",
@@ -916,7 +916,7 @@ dependencies = [
 
 [[package]]
 name = "ntpd"
-version = "2.0.0-alpha.20260715"
+version = "2.0.0-alpha.20261113"
 dependencies = [
  "clock-steering",
  "hickory-resolver",
