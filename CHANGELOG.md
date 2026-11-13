@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.0.0-alpha.20261113]
+
+### Breaking
+- Completely reworked the configuration file format.
+
+### Added
+- Implemented a seccomp filter for system calls.
+
+### Changed
+- Reworked the algorithm used for time synchronization.
+- Fixed several bugs in CSPTP support
+- NTPv5 draft support now targets draft 9.
+- Updated dependencies.
+
+### Removed
+- Because of the refactorings, validating the configuration is temporarily disabled.
+- Because of the refactorings, observability is currently inoperable.
+
 ## [2.0.0-alpha.20260715]
 
 ### Added
@@ -380,6 +398,7 @@ process.
 - Fixed a bug in peer dispersion calculation which resulted in overly
   pessimistic dispersion estimates.
 
+[2.0.0-alpha.20261113]: https://github.com/pendulum-project/ntpd-rs/compare/v2.0.0-alpha.20260715...v2.0.0-alpha.20261113
 [2.0.0-alpha.20260715]: https://github.com/pendulum-project/ntpd-rs/compare/v1.9.0...v2.0.0-alpha.20260715
 [1.9.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/pendulum-project/ntpd-rs/compare/v1.7.2...v1.8.0
