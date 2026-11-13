@@ -36,7 +36,7 @@ jobs:
           rustup toolchain install "${STABLE_RUST_VERSION}" -c llvm-tools
 
       - name: Install cross, cargo-deb and cargo-generate-rpm
-        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037
+        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b
         with:
           tool: cross, cargo-deb, cargo-generate-rpm
 
