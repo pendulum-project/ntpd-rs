@@ -3,13 +3,15 @@ use std::sync::Mutex;
 use std::{
     fmt,
     future::Future,
-    net::SocketAddr,
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
     ops::Deref,
     sync::{Arc, atomic::AtomicU64},
 };
 
 use ntp_proto::{ClockId, ProtocolVersion, SourceConfig, SourceNtsData};
 use statime_base::{LinkId, SourceType, StdController};
+#[cfg(target_os = "linux")]
+use tokio::sync::OnceCell;
 use tokio::{
     sync::mpsc,
     task::JoinHandle,
@@ -21,6 +23,8 @@ use tracing::warn;
 use crate::daemon::config::CsptpSourceConfig;
 #[cfg(feature = "pps")]
 use crate::daemon::config::PpsSourceConfig;
+#[cfg(target_os = "linux")]
+use crate::daemon::resolved::ResolvedClient;
 use crate::daemon::{clock::NtpClockWrapper, config::NetworkAddress, system::SystemManagers};
 
 #[cfg(target_os = "linux")]
@@ -322,18 +326,22 @@ impl NormalizedAddress {
     }
 
     pub async fn lookup_host(&self) -> std::io::Result<impl Iterator<Item = SocketAddr> + '_> {
-        enum Either<T> {
-            Lookup(T),
+        enum Either<T, U> {
+            GaiLookup(T),
+            #[cfg(target_os = "linux")]
+            ResolvedLookup(U),
             #[cfg(test)]
             Hardcoded(std::vec::IntoIter<SocketAddr>),
         }
 
-        impl<T: Iterator<Item = SocketAddr>> Iterator for Either<T> {
+        impl<T: Iterator<Item = SocketAddr>, U: Iterator<Item = SocketAddr>> Iterator for Either<T, U> {
             type Item = SocketAddr;
 
             fn next(&mut self) -> Option<Self::Item> {
                 match self {
-                    Either::Lookup(lookup) => lookup.next(),
+                    Either::GaiLookup(lookup) => lookup.next(),
+                    #[cfg(target_os = "linux")]
+                    Either::ResolvedLookup(lookup) => lookup.next(),
                     #[cfg(test)]
                     Either::Hardcoded(hardcoded) => hardcoded.next(),
                 }
@@ -345,9 +353,26 @@ impl NormalizedAddress {
             return Ok(Either::Hardcoded(hardcoded_dns_resolve.lookup_host()));
         }
 
+        #[cfg(target_os = "linux")]
+        {
+            // We want to try to find systemd-resolved exactly once and never again if it fails
+            static RESOLVED_CLIENT: OnceCell<Option<ResolvedClient>> = OnceCell::const_new();
+
+            if let Some(resolved_client) = RESOLVED_CLIENT
+                .get_or_init(|| async { ResolvedClient::try_connect().await.ok() })
+                .await
+            {
+                // FIXME: Only set allow_dnssec to true before the clock is synchronized, but how?
+                return resolved_client
+                    .resolve_hostname(self.server_name.clone(), self.port, true)
+                    .await
+                    .map(Either::ResolvedLookup);
+            }
+        }
+
         tokio::net::lookup_host((self.server_name.as_str(), self.port))
             .await
-            .map(Either::Lookup)
+            .map(Either::GaiLookup)
     }
 }
 
