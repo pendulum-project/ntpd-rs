@@ -6,11 +6,11 @@ use std::{
 use std::{
     collections::HashMap,
     pin::Pin,
-    sync::{Arc, Mutex, RwLock, atomic::AtomicU64},
+    sync::{Arc, Mutex, RwLock},
     task::{Context, Poll, Waker},
 };
 
-use ntp_proto::{KeySet, NtpConfig, NtpManager};
+use ntp_proto::{NtpConfig, NtpManager};
 use statime_base::{ActiveLinkData, ClockId, Link, LinkId, SourceType, StdController};
 #[cfg(target_os = "linux")]
 use statime_csptp::CsptpConfig;
@@ -21,6 +21,7 @@ use tokio::{
 
 use crate::daemon::{
     clock::NtpClockWrapper,
+    observer::{ObservableDrivenLink, ObservableSpawnerState},
     nts_key_provider::{self, KeysetConfig},
     spawn::{
         CreationParameters, LinkTerminationReason, SpawnFailureReason, Spawner, SpawnerId,
@@ -97,7 +98,7 @@ enum SpawnState<TimeController: StdController> {
     Inactive,
 }
 
-struct SpawnerData<TimeController: StdController> {
+pub(crate) struct SpawnerData<TimeController: StdController> {
     spawner: Box<dyn Spawner<TimeController> + Sync + Send>,
     spawn_state: SpawnState<TimeController>,
     current_timeout: std::time::Duration,
@@ -445,6 +446,39 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
         if let Some(waker) = state.waker.take() {
             waker.wake();
         }
+    }
+
+    pub fn spawners(&self) -> Vec<ObservableSpawnerState> {
+        let state = self.state.lock().unwrap();
+        let spawn_state =
+        state
+            .spawners
+            .iter()
+            .map(|(id, data)| ObservableSpawnerState {
+                id: *id,
+                spawn_state: match data.spawn_state {
+                    SpawnState::TryingSpawn(_) => "Trying spawn".to_string(),
+                    SpawnState::Inactive => "Inactive".to_string(),
+                    SpawnState::Timeout(_) => "Timeout".to_string(),
+                },
+                current_timeout: data.current_timeout,
+                last_spawn: data.last_spawn.elapsed(),
+                driven_links: state
+                    .driven_links
+                    .iter()
+                    .filter_map(|(link_id, driven_link)| {
+                        if driven_link.spawner == *id {
+                            Some(ObservableDrivenLink {
+                                link_id: *link_id,
+                                source_type: driven_link.stype.to_string(),
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect(),
+            })
+            .collect()
     }
 
     pub async fn add_server<F: AsyncFnOnce(NtpClockWrapper, &SystemManagers) -> JoinHandle<()>>(

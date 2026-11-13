@@ -12,6 +12,7 @@ use tokio::runtime::Builder;
 const USAGE_MSG: &str = "\
 usage: ntp-ctl validate [-c PATH]
        ntp-ctl status [-f FORMAT] [-c PATH]
+       ntp-ctl list [-c PATH]
        ntp-ctl force-sync [-c PATH]
        ntp-ctl -h | ntp-ctl -v";
 
@@ -41,6 +42,7 @@ pub enum NtpCtlAction {
     Version,
     Validate,
     Status,
+    List,
     ForceSync,
 }
 
@@ -52,6 +54,7 @@ pub(crate) struct NtpCtlOptions {
     version: bool,
     validate: bool,
     status: bool,
+    list: bool,
     force_sync: bool,
     action: NtpCtlAction,
 }
@@ -113,6 +116,9 @@ impl NtpCtlOptions {
                             "status" => {
                                 options.status = true;
                             }
+                            "list" => {
+                                options.list = true;
+                            }
                             "force-sync" => {
                                 options.force_sync = true;
                             }
@@ -141,6 +147,8 @@ impl NtpCtlOptions {
             self.action = NtpCtlAction::Validate;
         } else if self.status {
             self.action = NtpCtlAction::Status;
+        } else if self.list {
+            self.action = NtpCtlAction::List;
         } else if self.force_sync {
             self.action = NtpCtlAction::ForceSync;
         } else {
@@ -217,6 +225,24 @@ pub fn main() -> std::io::Result<ExitCode> {
                         Format::Prometheus => print_state(Format::Prometheus, observation).await,
                     }
                 })
+        }
+        NtpCtlAction::List => {
+            let config = Config::from_args(options.config.as_ref(), false, vec![], vec![]);
+
+            if let Err(ref e) = config {
+                println!("Warning: Unable to load configuration file: {e}");
+            }
+
+            let config = config.unwrap_or_default();
+
+            let observation = config
+                .observability
+                .observation_path
+                .unwrap_or_else(|| PathBuf::from("/var/run/ntpd-rs/observe"));
+            Builder::new_current_thread()
+                .enable_all()
+                .build()?
+                .block_on(async { print_spawners(observation).await })
         }
     }
 }
@@ -357,6 +383,46 @@ fn print_state_plain(output: &ObservableState) {
     }
 }
 
+async fn print_spawners(observe_socket: PathBuf) -> Result<ExitCode, std::io::Error> {
+    let mut stream = match tokio::net::UnixStream::connect(&observe_socket).await {
+        Ok(stream) => stream,
+        Err(e) => {
+            eprintln!("Could not open socket at {}: {e}", observe_socket.display(),);
+            return Ok(ExitCode::FAILURE);
+        }
+    };
+
+    let mut msg = Vec::with_capacity(16 * 1024);
+    let output =
+        match crate::daemon::sockets::read_json::<ObservableState>(&mut stream, &mut msg).await {
+            Ok(output) => output,
+            Err(e) => {
+                eprintln!("Failed to read state from observation socket: {e}");
+
+                return Ok(ExitCode::FAILURE);
+            }
+        };
+
+    for spawner in output.spawners {
+        println!("{:?}", spawner.id);
+        println!("\tSpawn state: {:?}", spawner.spawn_state);
+
+        println!("\tCurrent timeout: {:?}", spawner.current_timeout);
+
+        println!("\tLast spawn: {:?}", spawner.last_spawn);
+
+        if !spawner.driven_links.is_empty() {
+            println!("\tLinks:");
+            for link in spawner.driven_links {
+                println!("\t\t{}: {:?}", link.source_type, link.link_id);
+            }
+        }
+        println!();
+    }
+
+    Ok(ExitCode::SUCCESS)
+}
+
 #[cfg(test)]
 mod tests {
     use std::os::unix::prelude::PermissionsExt;
@@ -410,6 +476,7 @@ mod tests {
             system: SystemSnapshot::default(),
             sources: vec![],
             servers: vec![],
+            spawners: vec![],
         };
         let result = write_socket_helper(Format::Plain, value).await?;
 
@@ -428,6 +495,7 @@ mod tests {
             system: SystemSnapshot::default(),
             sources: vec![],
             servers: vec![],
+            spawners: vec![],
         };
         let result = write_socket_helper(Format::Prometheus, value).await?;
 

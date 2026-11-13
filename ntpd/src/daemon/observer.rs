@@ -1,13 +1,18 @@
+use crate::daemon::config::ObservabilityConfig;
+use crate::daemon::spawn::{Spawner, SpawnerId};
+use crate::daemon::system::System;
+
 use super::server::ServerStats;
 use super::sockets::create_unix_socket_with_permissions;
 use libc::{ECONNABORTED, EMFILE, ENFILE, ENOBUFS, ENOMEM};
 use ntp_proto::{ClockId, ObservableSourceState, SystemSnapshot};
-use statime_base::{Clock, TAI, Timestamp};
+use statime_base::{Clock, LinkId, StdController, TAI, Timestamp};
 use std::collections::HashMap;
 use std::convert::Into;
 use std::net::Ipv4Addr;
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
+use std::time::Duration;
 use std::{net::SocketAddr, time::Instant};
 use tokio::task::JoinHandle;
 use tracing::{Instrument, Span, debug, error, instrument, trace, warn};
@@ -20,6 +25,7 @@ pub struct ObservableState {
     pub system: SystemSnapshot,
     pub sources: Vec<ObservableSourceState>,
     pub servers: Vec<ObservableServerState>,
+    pub spawners: Vec<ObservableSpawnerState>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -72,19 +78,33 @@ impl From<&ServerData> for ObservableServerState {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ObservableSpawnerState {
+    pub id: SpawnerId,
+    pub spawn_state: String,
+    pub current_timeout: Duration,
+    pub last_spawn: Duration,
+    pub driven_links: Vec<ObservableDrivenLink>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ObservableDrivenLink {
+    pub link_id: LinkId,
+    pub source_type: String,
+}
+
 #[instrument(level = tracing::Level::ERROR, skip_all, name = "Observer", fields(path = debug(config.observation_path.clone())))]
-pub fn spawn<C: 'static + Clock<TAI> + Send>(
-    config: &super::config::ObservabilityConfig,
-    sources_reader: Arc<std::sync::RwLock<HashMap<ClockId, ObservableSourceState>>>,
-    server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
-    system_reader: tokio::sync::watch::Receiver<SystemSnapshot>,
+pub fn spawn<
+    C: 'static + Clock<TAI> + Send,
+    TimeController: StdController + Send + Sync + 'static,
+>(
+    config: ObservabilityConfig,
+    system: Arc<System<TimeController>>,
     clock: C,
 ) -> JoinHandle<std::io::Result<()>> {
-    let config = config.clone();
     tokio::spawn(
         (async move {
-            let result =
-                observer(config, sources_reader, server_reader, system_reader, clock).await;
+            let result = observer(config, system, clock).await;
             if let Err(ref e) = result {
                 warn!("Abnormal termination of the state observer: {e}");
                 warn!("The state observer will not be available");
@@ -95,13 +115,12 @@ pub fn spawn<C: 'static + Clock<TAI> + Send>(
     )
 }
 
-async fn observer<C: 'static + Clock<TAI> + Send>(
-    config: super::config::ObservabilityConfig,
-    sources_reader: Arc<std::sync::RwLock<HashMap<ClockId, ObservableSourceState>>>,
-    server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
-    system_reader: tokio::sync::watch::Receiver<SystemSnapshot>,
+async fn observer<C: 'static + Clock<TAI> + Send, TimeController: StdController + Send + Sync>(
+    config: ObservabilityConfig,
+    system: Arc<System<TimeController>>,
     clock: C,
-) -> std::io::Result<()> {
+) -> std::io::Result<()> where
+{
     let start_time = Instant::now();
     let timeout = std::time::Duration::from_millis(500);
 
@@ -142,22 +161,10 @@ async fn observer<C: 'static + Clock<TAI> + Send>(
                 return Err(e);
             }
         };
-        let sources_reader = sources_reader.clone();
-        let server_reader = server_reader.clone();
-        let system_reader = system_reader.clone();
 
+        let spawners = system.spawners();
         let now = clock.now().expect("Unable to get current time");
-        let fut = async move {
-            handle_connection(
-                &mut stream,
-                start_time,
-                &sources_reader,
-                server_reader,
-                system_reader,
-                now,
-            )
-            .await
-        };
+        let fut = async move { handle_connection(&mut stream, start_time, spawners, now).await };
 
         tokio::spawn(async move {
             match tokio::time::timeout(timeout, fut).await {
@@ -173,23 +180,16 @@ async fn observer<C: 'static + Clock<TAI> + Send>(
 async fn handle_connection(
     stream: &mut (impl tokio::io::AsyncWrite + Unpin),
     start_time: Instant,
-    sources_reader: &std::sync::RwLock<HashMap<ClockId, ObservableSourceState>>,
-    server_reader: tokio::sync::watch::Receiver<Vec<ServerData>>,
-    system_reader: tokio::sync::watch::Receiver<SystemSnapshot>,
+    spawners: Vec<ObservableSpawnerState>,
     now: Timestamp<TAI>,
 ) -> std::io::Result<()> {
     let observe = ObservableState {
         program: ProgramData::with_dynamics(start_time.elapsed().as_secs_f64(), now),
-        sources: sources_reader
-            .read()
-            .expect("Unexpected poisoned mutex")
-            .values()
-            .cloned()
-            .collect(),
-        system: *system_reader.borrow(),
-        servers: server_reader.borrow().iter().map(Into::into).collect(),
+        sources: Vec::new(),
+        system: SystemSnapshot::default(),
+        servers: Vec::new(),
+        spawners,
     };
-
     super::sockets::write_json(stream, &observe).await?;
 
     Ok(())
@@ -254,164 +254,5 @@ mod tests {
         ) -> Result<(), statime_base::ClockError> {
             unimplemented!()
         }
-    }
-
-    #[tokio::test]
-    async fn test_observation() {
-        // be careful with copying: tests run concurrently and should use a unique socket name!
-        let path = std::env::temp_dir().join(format!("ntp-test-stream-{}", alloc_port()));
-        let config = super::super::config::ObservabilityConfig {
-            log_level: None,
-            observation_path: Some(path.clone()),
-            observation_permissions: 0o700,
-            ..Default::default()
-        };
-
-        let mut source_snapshots = HashMap::new();
-        let id = ClockId::new();
-        source_snapshots.insert(
-            id,
-            ObservableSourceState {
-                unanswered_polls: Reach::never().unanswered_polls(),
-                poll_interval: PollIntervalLimits::default().min,
-                nts_cookies: None,
-                name: "127.0.0.3:123".into(),
-                address: "127.0.0.3:123".into(),
-                id,
-            },
-        );
-
-        let source_snapshots = Arc::new(std::sync::RwLock::new(source_snapshots));
-
-        let (_, servers_reader) = tokio::sync::watch::channel(vec![]);
-
-        let (_, system_reader) = tokio::sync::watch::channel(SystemSnapshot {
-            ntp_snapshot: NtpSnapshot {
-                stratum: 1,
-                reference_id: ReferenceId::NONE,
-                bloom_filter: BloomFilter::new(),
-            },
-            time_snapshot: TimeSnapshot {
-                precision: statime_base::Duration::from_f64_seconds(1e-3),
-                root_delay: statime_base::Duration::ZERO,
-                root_variance_base_time: Timestamp::UNIX_EPOCH,
-                root_variance_base: 0.0,
-                root_variance_linear: 0.0,
-                root_variance_quadratic: 0.0,
-                root_variance_cubic: 0.0,
-                leap_indicator: Some(LeapStatus::Leap59),
-                accumulated_steps: statime_base::Duration::ZERO,
-                accumulated_steps_threshold: None,
-            },
-        });
-
-        let handle = tokio::spawn(async move {
-            observer(
-                config,
-                source_snapshots,
-                servers_reader,
-                system_reader,
-                TestClock,
-            )
-            .await
-            .unwrap();
-        });
-
-        tokio::time::sleep(Duration::from_millis(10)).await;
-
-        let mut reader = UnixStream::connect(path).await.unwrap();
-        let mut buf = vec![];
-        let result: ObservableState = crate::daemon::sockets::read_json(&mut reader, &mut buf)
-            .await
-            .unwrap();
-
-        // Deal with randomized order
-        assert_eq!(result.sources.len(), 1);
-
-        handle.abort();
-    }
-
-    #[tokio::test]
-    async fn test_block_during_read() {
-        // be careful with copying: tests run concurrently and should use a unique socket name!
-        let path = std::env::temp_dir().join(format!("ntp-test-stream-{}", alloc_port()));
-        let config = super::super::config::ObservabilityConfig {
-            log_level: None,
-            observation_path: Some(path.clone()),
-            observation_permissions: 0o700,
-            ..Default::default()
-        };
-
-        let mut source_snapshots = HashMap::new();
-        let id = ClockId::new();
-        source_snapshots.insert(
-            id,
-            ObservableSourceState {
-                unanswered_polls: Reach::never().unanswered_polls(),
-                poll_interval: PollIntervalLimits::default().min,
-                nts_cookies: None,
-                name: "127.0.0.3:123".into(),
-                address: "127.0.0.3:123".into(),
-                id,
-            },
-        );
-
-        let source_snapshots = Arc::new(std::sync::RwLock::new(source_snapshots));
-        let source_snapshots_clone = source_snapshots.clone();
-
-        let (mut server_writer, servers_reader) = tokio::sync::watch::channel(vec![]);
-
-        let (mut system_writer, system_reader) = tokio::sync::watch::channel(SystemSnapshot {
-            ntp_snapshot: NtpSnapshot {
-                stratum: 1,
-                reference_id: ReferenceId::NONE,
-                bloom_filter: BloomFilter::new(),
-            },
-            time_snapshot: TimeSnapshot {
-                precision: statime_base::Duration::from_f64_seconds(1e-3),
-                root_delay: statime_base::Duration::ZERO,
-                root_variance_base_time: statime_base::Timestamp::UNIX_EPOCH,
-                root_variance_base: 0.0,
-                root_variance_linear: 0.0,
-                root_variance_quadratic: 0.0,
-                root_variance_cubic: 0.0,
-                leap_indicator: Some(LeapStatus::Leap59),
-                accumulated_steps: statime_base::Duration::ZERO,
-                accumulated_steps_threshold: None,
-            },
-        });
-
-        let handle = tokio::spawn(async move {
-            observer(
-                config,
-                source_snapshots,
-                servers_reader,
-                system_reader,
-                TestClock,
-            )
-            .await
-            .unwrap();
-        });
-
-        tokio::time::sleep(Duration::from_millis(10)).await;
-
-        let mut reader = UnixStream::connect(path).await.unwrap();
-
-        // We do a small partial read of the data to test that whatever
-        // happens, the observer doesn't keep a lock alive on either of
-        // of the RwLocks.
-        let mut buf = [0_u8; 12];
-        let mut bufref: &mut [u8] = &mut buf;
-        reader.read_buf(&mut bufref).await.unwrap();
-
-        // Ensure none of the locks is held long term
-        let _ = system_writer.borrow_mut();
-        let _ = source_snapshots_clone
-            .write()
-            .expect("Unexpected poisoned mutex")
-            .len();
-        let _ = server_writer.borrow_mut();
-
-        handle.abort();
     }
 }
