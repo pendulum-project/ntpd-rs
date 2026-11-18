@@ -380,12 +380,11 @@ impl<Timescale> UnixClock<Timescale> {
         let maxerror =
             libc::c_long::try_from((maxerror.as_nanos() + 500) / 1000).unwrap_or(libc::c_long::MAX);
 
-        libc::timex {
-            modes,
-            esterror,
-            maxerror,
-            ..EMPTY_TIMEX
-        }
+        let mut result = EMPTY_TIMEX;
+        result.modes = modes;
+        result.esterror = esterror;
+        result.maxerror = maxerror;
+        result
     }
 
     #[cfg(target_os = "linux")]
@@ -409,11 +408,10 @@ impl<Timescale> UnixClock<Timescale> {
             tv_usec: nanos,
         };
 
-        Ok(libc::timex {
-            modes,
-            time,
-            ..EMPTY_TIMEX
-        })
+        let mut result = EMPTY_TIMEX;
+        result.modes = modes;
+        result.time = time;
+        Ok(result)
     }
 
     #[cfg(target_os = "linux")]
@@ -487,6 +485,10 @@ impl<Timescale> UnixClock<Timescale> {
         clippy::cast_possible_truncation,
         reason = "Truncating the frequency is acceptable here."
     )]
+    #[allow(
+        clippy::useless_conversion,
+        reason = "timex.freq can have different types depending on platform."
+    )]
     fn set_frequency_timex(ppm: f64) -> libc::timex {
         // We do an offset with precision
         let mut timex = EMPTY_TIMEX;
@@ -501,7 +503,7 @@ impl<Timescale> UnixClock<Timescale> {
         // Since Linux 2.6.26, the supplied value is clamped to the range (-32768000,
         // +32768000). In older kernels, an EINVAL error occurs if the supplied value is
         // out of range. (32768000 is 500 << 16)
-        timex.freq = frequency.clamp(-32_768_000 + 1, 32_768_000 - 1);
+        timex.freq = frequency.clamp(-32_768_000 + 1, 32_768_000 - 1).into();
 
         timex
     }
@@ -511,16 +513,18 @@ impl<Timescale> UnixClock<Timescale> {
     /// # Errors
     /// May error if the clock does not support setting the TAI offset.
     #[cfg(target_os = "linux")]
+    #[allow(
+        clippy::useless_conversion,
+        reason = "The timex.constant conversion is not useless on all platforms."
+    )]
     pub fn set_tai(&self, tai_offset: i32) -> Result<(), ClockError> {
         #[allow(
             clippy::useless_conversion,
             reason = "This conversion is not useless on all platforms."
         )]
-        let mut timex = libc::timex {
-            modes: libc::ADJ_TAI,
-            constant: tai_offset.into(),
-            ..EMPTY_TIMEX
-        };
+        let mut timex = EMPTY_TIMEX;
+        timex.modes = libc::ADJ_TAI;
+        timex.constant = tai_offset.into();
 
         self.clock_adjtime(&mut timex)
     }
@@ -817,94 +821,9 @@ fn current_time_timeval<Timescale>(
 /// Convenient way of getting an empty [`libc::timex`] struct.
 // Libc has no good other way of obtaining this, so let's at least make our
 // functions more readable.
-#[cfg(all(target_os = "linux", target_env = "gnu"))]
-pub const EMPTY_TIMEX: libc::timex = libc::timex {
-    modes: 0,
-    offset: 0,
-    freq: 0,
-    maxerror: 0,
-    esterror: 0,
-    status: 0,
-    constant: 0,
-    precision: 0,
-    tolerance: 0,
-    time: libc::timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    },
-    tick: 0,
-    ppsfreq: 0,
-    jitter: 0,
-    shift: 0,
-    stabil: 0,
-    jitcnt: 0,
-    calcnt: 0,
-    errcnt: 0,
-    stbcnt: 0,
-    tai: 0,
-    __unused1: 0,
-    __unused2: 0,
-    __unused3: 0,
-    __unused4: 0,
-    __unused5: 0,
-    __unused6: 0,
-    __unused7: 0,
-    __unused8: 0,
-    __unused9: 0,
-    __unused10: 0,
-    __unused11: 0,
-};
-
-/// Convenient way of getting an empty [`libc::timex`] struct.
-#[cfg(all(target_os = "linux", target_env = "musl"))]
-pub const EMPTY_TIMEX: libc::timex = libc::timex {
-    modes: 0,
-    offset: 0,
-    freq: 0,
-    maxerror: 0,
-    esterror: 0,
-    status: 0,
-    constant: 0,
-    precision: 0,
-    tolerance: 0,
-    time: libc::timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    },
-    tick: 0,
-    ppsfreq: 0,
-    jitter: 0,
-    shift: 0,
-    stabil: 0,
-    jitcnt: 0,
-    calcnt: 0,
-    errcnt: 0,
-    stbcnt: 0,
-    tai: 0,
-    __padding: [0; 11],
-};
-
-/// Convenient way of getting an empty [`libc::timex`] struct.
-#[cfg(any(target_os = "freebsd", target_os = "macos"))]
-pub const EMPTY_TIMEX: libc::timex = libc::timex {
-    modes: 0,
-    offset: 0,
-    freq: 0,
-    maxerror: 0,
-    esterror: 0,
-    status: 0,
-    constant: 0,
-    precision: 0,
-    tolerance: 0,
-    ppsfreq: 0,
-    jitter: 0,
-    shift: 0,
-    stabil: 0,
-    jitcnt: 0,
-    calcnt: 0,
-    errcnt: 0,
-    stbcnt: 0,
-};
+//
+// Safety: A timex struct is valid when zero initialized.
+pub const EMPTY_TIMEX: libc::timex = unsafe { core::mem::zeroed() };
 
 #[cfg(test)]
 mod tests {
