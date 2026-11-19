@@ -103,7 +103,7 @@ impl KeySetProvider {
         let id_offset = u32::from_be_bytes(buf[8..12].try_into().unwrap());
         let primary = u32::from_be_bytes(buf[12..16].try_into().unwrap());
         let len = u32::from_be_bytes(buf[16..20].try_into().unwrap());
-        if primary > len {
+        if primary >= len {
             return Err(std::io::ErrorKind::Other.into());
         }
         let mut keys = vec![];
