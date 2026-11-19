@@ -192,8 +192,11 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
                 config.generate_controller_config(),
             )
             .map_err(|error| std::io::Error::other(format!("{error:?}")))?;
+
+        // We clone System clock, so we can pass it to the observer later
+        let system_clock = clock.clone();
         let system = Arc::new(System::new(
-            clock,
+            system_clock,
             controller,
             system_clock_id,
             SystemConfig {
