@@ -6,11 +6,11 @@ use std::{
 use std::{
     collections::HashMap,
     pin::Pin,
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, Mutex, RwLock, atomic::AtomicU64},
     task::{Context, Poll, Waker},
 };
 
-use ntp_proto::{NtpConfig, NtpManager};
+use ntp_proto::{KeySet, NtpConfig, NtpManager};
 use statime_base::{ActiveLinkData, ClockId, Link, LinkId, SourceType, StdController};
 #[cfg(target_os = "linux")]
 use statime_csptp::CsptpConfig;
@@ -21,8 +21,8 @@ use tokio::{
 
 use crate::daemon::{
     clock::NtpClockWrapper,
-    observer::{ObservableDrivenLink, ObservableSpawnerState},
     nts_key_provider::{self, KeysetConfig},
+    observer::{ObservableDrivenLink, ObservableSpawnerState},
     spawn::{
         CreationParameters, LinkTerminationReason, SpawnFailureReason, Spawner, SpawnerId,
         TrySpawnFuture,
@@ -450,7 +450,6 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
 
     pub fn spawners(&self) -> Vec<ObservableSpawnerState> {
         let state = self.state.lock().unwrap();
-        let spawn_state =
         state
             .spawners
             .iter()
