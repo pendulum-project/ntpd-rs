@@ -158,9 +158,9 @@ mod exports {
     };
     pub use super::system::{NtpManager, NtpServerInfo, NtpSnapshot, SystemSnapshot};
 
+    pub use super::time_types::NtpDuration;
     #[cfg(feature = "__internal-fuzz")]
     pub use super::time_types::fuzz_duration_from_seconds;
-    pub use super::time_types::{NtpDuration, PollInterval, PollIntervalLimits};
 
     #[cfg(feature = "__internal-fuzz")]
     pub use super::nts::Request as KeyExchangeRequest;

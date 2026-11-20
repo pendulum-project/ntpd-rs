@@ -223,7 +223,9 @@ impl NtpManager {
 mod tests {
     use std::net::{Ipv4Addr, SocketAddr};
 
-    use crate::{NtpSourceSnapshot, Reach, time_types::PollIntervalLimits};
+    use statime_base::PollIntervalLimits;
+
+    use crate::{NtpSourceSnapshot, Reach};
 
     use super::*;
 
