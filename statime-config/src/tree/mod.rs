@@ -1,6 +1,7 @@
 mod atomic;
 mod config_merger;
 mod configurable;
+mod configurable_duration;
 mod empty;
 mod enum_section;
 mod merge;
@@ -12,6 +13,7 @@ mod setting;
 
 pub use atomic::ConfigurableAtomic;
 pub use configurable::Configurable;
+pub use configurable_duration::{ConfigurableDuration, Unit};
 pub use empty::{EffectivelyUnset, is_effectively_unset};
 pub use enum_section::EnumSection;
 pub use merge::{Merge, MergeContext, MergePolicy, Origin, OriginId};

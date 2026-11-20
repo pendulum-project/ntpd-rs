@@ -69,9 +69,7 @@ impl NtskeServerConfig {
             certificate_chain_path: self.certificate_chain_path.clone(),
             private_key_path: self.private_key_path.clone(),
             accepted_pool_authentication_tokens: self.accepted_pool_authentication_tokens.clone(),
-            key_exchange_timeout: ConfigurableDuration::into_std_duration(
-                self.key_exchange_timeout,
-            ),
+            key_exchange_timeout: self.key_exchange_timeout.into(),
             concurrent_connections: self.concurrent_connections.into_inner(),
             longlived_connections: self.longlived_connections.map_or_else(
                 || self.concurrent_connections.into_inner() / 10,
@@ -86,7 +84,7 @@ impl NtskeServerConfig {
                 .into_iter()
                 .map(ntp_proto::NtpVersion::from)
                 .collect(),
-            network_wait_period: ConfigurableDuration::into_std_duration(self.network_wait_period),
+            network_wait_period: self.network_wait_period.into(),
         }
     }
 }
@@ -118,9 +116,7 @@ impl NtpServerConfig {
             denylist: self.denylist.clone().into(),
             allowlist: self.allowlist.clone().into(),
             rate_limiting_cache_size: self.rate_limiting_cache_size,
-            rate_limiting_cutoff: ConfigurableDuration::into_std_duration(
-                self.rate_limiting_cutoff,
-            ),
+            rate_limiting_cutoff: self.rate_limiting_cutoff.into(),
             require_nts: self.require_nts.into(),
             accept_ntp_versions: self
                 .accept_ntp_versions
@@ -128,7 +124,7 @@ impl NtpServerConfig {
                 .into_iter()
                 .map(ntp_proto::NtpVersion::from)
                 .collect(),
-            network_wait_period: ConfigurableDuration::into_std_duration(self.network_wait_period),
+            network_wait_period: self.network_wait_period.into(),
         }
     }
 }
