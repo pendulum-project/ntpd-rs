@@ -15,6 +15,8 @@ pub mod nts_key_provider;
 pub mod observer;
 #[cfg(feature = "pps")]
 mod pps_source;
+#[cfg(target_os = "linux")]
+mod resolved;
 mod server;
 mod sock_source;
 pub mod sockets;
