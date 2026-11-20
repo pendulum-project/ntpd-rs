@@ -5,12 +5,13 @@ observation-path = "/var/run/ntpd-rs/observe"
 
 # See https://docs.ntpd-rs.pendulum-project.org/man/ntp.toml.5/ on how to set up certificates
 [[source]]
-mode = "nts"
-address =  "localhost:4460"
-certificate-authority = "path/to/certificate/authority.pem"
+type = "ntp"
+nts = true
+address = "localhost:4460"
+additional-certificates = "path/to/certificate/authority.pem"
 
 # System parameters used in filtering and steering the clock:
 [synchronization]
 minimum-agreeing-sources = 1
-single-step-panic-threshold = 10
-startup-step-panic-threshold = { forward = "inf", backward = 86400 }
+single-jump-abort-threshold = "10s"
+startup-jump-abort-threshold = { forward = "inf", backward = "1d" }

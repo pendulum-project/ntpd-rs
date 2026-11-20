@@ -5,12 +5,14 @@ observation-path = "/var/run/ntpd-rs/observe"
 
 # uses an unsecure certificate!
 [[source]]
-mode = "nts"
+type = "ntp"
+nts = true
 address = "localhost:4460"
-certificate-authority = "ntp-proto/test-keys/testca.pem"
+additional-certificates = "ntp-proto/test-keys/testca.pem"
 
 # System parameters used in filtering and steering the clock:
-[synchronization]
+[filter]
 minimum-agreeing-sources = 1
-single-step-panic-threshold = 10
-startup-step-panic-threshold = { forward = "inf", backward = 86400 }
+[system-clock]
+single-jump-abort-threshold = "10s"
+startup-jump-abort-threshold = { forward = "inf", backward = "1d" }

@@ -13,37 +13,40 @@ observation-path = "/var/run/ntpd-rs/observe"
 ## Our default configuration spawns a pool of sources (by default this attempts
 ## to discover 4 distinct sources).
 [[source]]
-mode = "pool"
+type = "ntp-pool"
 address = "ntpd-rs.pool.ntp.org"
 count = 4
 
 ## If you have an NTS server, you can configure a source that connects using NTS
 ## by adding a configuration such as the one below
 #[[source]]
-#mode = "nts"
+#type = "ntp"
+#nts = true
 # NTS service from NETNOD: https://www.netnod.se/nts/network-time-security
 #address = "nts.netnod.se"
 
-## A source in server mode will only create a single source in contrast to the
-## multiple sources of a pool. This is the recommended source mode if you only
+## A source of type ntp will only create a single source in contrast to the
+## multiple sources of an ntp-pool. This is the recommended source type if you only
 ## have an IP address for your source.
 #[[source]]
-#mode = "server"
+#type = "ntp"
 #address = "ntpd-rs.pool.ntp.org"
 
 ## If you want to provide time to other machines, the configuration below
 ## enables serving time on port 123 of all network interfaces.
 #[[server]]
+#type = "ntp"
 #listen = "[::]:123"
 
 ## Below are configured various thresholds beyond which ntpd-rs will not
 ## change the system clock. CHANGE THESE TO MATCH YOUR SECURITY NEEDS!
-[synchronization]
+[system-clock]
 # The maximum step size (in seconds) of a single step during normal operation
-single-step-panic-threshold = 1800
+single-jump-abort-threshold = "30m"
 # On startup a larger jump may occur, this sets limits for that initial jump
-startup-step-panic-threshold = { forward="inf", backward = 86400 }
+startup-jump-abort-threshold = { forward="inf", backward = "1d" }
 # If, during the lifetime of the ntp-daemon the combined time of time jumps
 # exceeds this value, then the NTP daemon will stop, this is disabled by default
-#accumulated-threshold = 1800
+#accumulated-jump-threshold = "30m"
+#[filter]
 #minimum-agreeing-sources = 3

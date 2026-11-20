@@ -6,28 +6,24 @@ observation-path = "/var/run/ntpd-rs/observe"
 # Pool servers from ntppool.org. See http://www.pool.ntp.org/join.html
 # for more information
 [[source]]
-mode = "pool"
+type = "ntp-pool"
 address = "ntpd-rs.pool.ntp.org"
 count = 4
 
 # Alternative configuration for IPv6 only machines
 #[[source]]
-#mode = "pool"
+#type = "ntp-pool"
 #address = "2.pool.ntp.org"
 #count = 4
 
 # Serve NTP on any interface (requires permissions to use udp port 123)
 [[server]]
+type = "ntp"
 listen = "[::]:123"
 
 # Below are configured various thresholds beyond which ntpd-rs will not
 # change the system clock. CHANGE THESE TO MATCH YOUR SECURITY NEEDS!
 # For guidance, see OPERATIONAL_CONSIDERATIONS.md
-[synchronization]
-single-step-panic-threshold = 1800
-startup-step-panic-threshold = { forward="inf", backward = 1800 }
-#accumulated-threshold = 1800
-#minimum-agreeing-sources = 3
-
-[keyset]
-key-storage-path="/path/to/store/key/material"
+[system-clock]
+single-jump-abort-threshold = "1800s"
+startup-jump-abort-threshold = { forward="inf", backward = "1800s" }
