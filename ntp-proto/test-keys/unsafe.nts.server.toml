@@ -5,23 +5,26 @@ observation-path = "/var/run/ntpd-rs/observe"
 
 # the server will get its time from the NTP pool
 [[source]]
-mode = "pool"
+type = "ntp-pool"
 address = "pool.ntp.org"
 count = 4
 
 [[server]]
+type = "ntp"
 listen = "0.0.0.0:123"
 
 # System parameters used in filtering and steering the clock:
-[synchronization]
+[filter]
 minimum-agreeing-sources = 1
-single-step-panic-threshold = 10
-startup-step-panic-threshold = { forward = 0, backward = 86400 }
+[system-clock]
+single-jump-abort-threshold = "10s"
+startup-jump-abort-threshold = { forward = "inf", backward = "1d" }
 
 # to function as an NTS server, we must also provide key exchange
 # uses an unsecure certificate chain!
-[[nts-ke-server]]
+[[server]]
+type = "ntske"
 listen = "0.0.0.0:4460"
-certificate-chain-path = "ntp-proto/test-keys/end.fullchain.pem"
-private-key-path = "ntp-proto/test-keys/end.key"
-key-exchange-timeout-ms = 1000
+certificate-chain = "ntp-proto/test-keys/end.fullchain.pem"
+private-key = "ntp-proto/test-keys/end.key"
+key-exchange-timeout = "1s"

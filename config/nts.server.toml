@@ -4,16 +4,18 @@ log-level = "info"
 
 # the server will get its time from the NTP pool
 [[source]]
-mode = "pool"
+type = "ntp-pool"
 address = "pool.ntp.org"
 count = 4
 
 [[server]]
+type = "ntp"
 listen = "0.0.0.0:123"
 
 # to function as an NTS server, we must also provide key exchange
-[[nts-ke-server]]
+[[server]]
+type = "ntske"
 listen = "0.0.0.0:4460"
-certificate-chain-path = "path/to/certificate/chain.pem"
-private-key-path = "path/to/private.key"
-key-exchange-timeout-ms = 1000
+certificate-chain= "path/to/certificate/chain.pem"
+private-key = "path/to/private.key"
+key-exchange-timeout = "1s"
