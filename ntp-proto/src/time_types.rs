@@ -601,6 +601,10 @@ impl PollInterval {
         self.0
     }
 
+    pub const fn from_log(value: i8) -> Self {
+        Self(value)
+    }
+
     pub const fn as_duration(self) -> NtpDuration {
         let base_shift = self.0.saturating_add(32);
         let shift = if base_shift < 0 {
@@ -624,12 +628,6 @@ impl PollInterval {
             self.0
         };
         Duration::from_secs(1 << shift)
-    }
-}
-
-impl Default for PollInterval {
-    fn default() -> Self {
-        Self(4)
     }
 }
 
@@ -849,7 +847,7 @@ mod tests {
 
     #[test]
     fn poll_interval_clamps() {
-        let mut interval = PollInterval::default();
+        let mut interval = PollInterval::from_log(4);
         let limits = PollIntervalLimits::default();
         for _ in 0..100 {
             interval = interval.inc(limits);
@@ -876,7 +874,7 @@ mod tests {
             NtpDuration::from_fixed_int(32 << 32)
         );
 
-        let mut interval = PollInterval::default();
+        let mut interval = PollInterval::from_log(4);
         for _ in 0..100 {
             assert_eq!(
                 interval.as_duration().as_seconds_nanos().0,
