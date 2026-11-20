@@ -1782,7 +1782,7 @@ mod tests {
 
     #[test]
     fn v5_upgrade_packet() {
-        let (packet, _) = NtpPacket::poll_message_upgrade_request(PollInterval::default());
+        let (packet, _) = NtpPacket::poll_message_upgrade_request(PollInterval::from_log(4));
 
         let response = NtpPacket::timestamp_response(
             NtpServerInfo::default(),
@@ -2402,7 +2402,7 @@ mod tests {
 
     #[test]
     fn round_trip_with_ef() {
-        let (mut p, _) = NtpPacket::poll_message(PollInterval::default());
+        let (mut p, _) = NtpPacket::poll_message(PollInterval::from_log(4));
         p.efdata.untrusted.push(ExtensionField::Unknown {
             type_id: 0x42,
             data: vec![].into(),
@@ -2424,7 +2424,7 @@ mod tests {
 
     #[test]
     fn ef_with_missing_padding_v5() {
-        let (packet, _) = NtpPacket::poll_message_v5(PollInterval::default());
+        let (packet, _) = NtpPacket::poll_message_v5(PollInterval::from_log(4));
         let mut data = packet.serialize_without_encryption_vec(None).unwrap();
         data.extend([
             0, 0, // Type = Unknown
@@ -2442,7 +2442,7 @@ mod tests {
     #[test]
     fn padding_v5() {
         for i in 10..40 {
-            let packet = NtpPacket::poll_message_v5(PollInterval::default()).0;
+            let packet = NtpPacket::poll_message_v5(PollInterval::from_log(4)).0;
 
             let data = packet
                 .serialize_without_encryption_vec(Some(4 * i))
