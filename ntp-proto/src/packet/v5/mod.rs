@@ -1,13 +1,12 @@
 #![warn(clippy::missing_const_for_fn)]
 use crate::{
-    PollInterval,
     io::NonBlockingWrite,
     packet::NtpLeapIndicator,
     system::NtpServerInfo,
     time_types::{NtpDuration, NtpTimestamp},
 };
 use rand::random;
-use statime_base::{Clock, TAI};
+use statime_base::{Clock, PollInterval, TAI};
 
 mod error;
 pub mod extension_fields;

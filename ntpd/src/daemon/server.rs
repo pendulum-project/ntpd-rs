@@ -275,10 +275,8 @@ impl<C: 'static + Clock<TAI> + Send> ServerTask<C> {
 mod tests {
     use std::{io::Cursor, net::SocketAddr};
 
-    use ntp_proto::{
-        KeySetProvider, NoCipher, NtpPacket, NtpServerInfo, NtpSnapshot, PollIntervalLimits,
-    };
-    use statime_base::Timestamp;
+    use ntp_proto::{KeySetProvider, NoCipher, NtpPacket, NtpServerInfo, NtpSnapshot};
+    use statime_base::{PollIntervalLimits, Timestamp};
     use timestamped_socket::socket::GeneralTimestampMode;
 
     use crate::test::alloc_port;

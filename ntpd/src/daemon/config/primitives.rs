@@ -4,13 +4,12 @@ use std::{
     net::{AddrParseError, IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
 };
 
-use ntp_proto::PollInterval;
 use serde::{
     Deserialize, Deserializer, Serialize,
     de::{self, Visitor},
 };
 use statime_algo::JumpThreshold;
-use statime_base::Duration;
+use statime_base::{Duration, PollInterval};
 use statime_config::{
     ConfigurableAtomic, InfiniteOr, IsNonNegative, IsPositive, NonNegative, Positive,
 };
