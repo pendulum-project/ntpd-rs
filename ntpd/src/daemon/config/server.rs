@@ -58,6 +58,9 @@ pub(crate) struct NtskeServerConfig {
     pub(crate) ntp_server: Option<String>,
     #[config(rename = "accept-ntp-versions", default = vec![NtsNtpVersion::V4])]
     pub(crate) accept_ntp_versions: Vec<NtsNtpVersion>,
+    // Experimental
+    #[config(rename = "network-wait-period", default = Positive::unchecked_new(ConfigurableDuration { unit: Unit::Second, duration: 1.0 }))]
+    pub(crate) network_wait_period: Positive<ConfigurableDuration>,
 }
 
 impl NtskeServerConfig {
@@ -83,6 +86,7 @@ impl NtskeServerConfig {
                 .into_iter()
                 .map(ntp_proto::NtpVersion::from)
                 .collect(),
+            network_wait_period: ConfigurableDuration::into_std_duration(self.network_wait_period),
         }
     }
 }

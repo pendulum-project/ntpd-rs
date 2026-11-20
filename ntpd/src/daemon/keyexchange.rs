@@ -25,6 +25,7 @@ pub struct NtsKeConfig {
     pub ntp_port: Option<u16>,
     pub ntp_server: Option<String>,
     pub accept_ntp_versions: Vec<NtpVersion>,
+    pub network_wait_period: std::time::Duration,
 }
 
 #[instrument(level = tracing::Level::ERROR, name = "Nts Server", skip_all, fields(address = debug(nts_ke_config.listen)))]
@@ -106,7 +107,7 @@ async fn run_key_exchange_server(
             Ok(listener) => listener,
             Err(e) => {
                 error!("Could not open network port for KE server: {}", e);
-                tokio::time::sleep(ke_config.key_exchange_timeout).await;
+                tokio::time::sleep(ke_config.network_wait_period).await;
                 continue;
             }
         };
@@ -123,6 +124,8 @@ async fn run_key_exchange_server(
                 Ok(permit) => permit,
                 Err(e) => {
                     error!("Could not get ticket for new connection: {}", e);
+                    // We need to restart to recover. Ensure all sessions have timed out before
+                    // restarting to ensure this can't cause too many parallel connections.
                     tokio::time::sleep(ke_config.key_exchange_timeout).await;
                     break;
                 }
@@ -138,11 +141,13 @@ async fn run_key_exchange_server(
                         "Out of resources in NTS-KE, consider raising limits or lowering max parallel connections: {}",
                         e
                     );
-                    tokio::time::sleep(ke_config.key_exchange_timeout).await;
+                    tokio::time::sleep(ke_config.network_wait_period).await;
                     continue;
                 }
                 Err(e) => {
                     error!("Could not accept NTS-KE connection: {}", e);
+                    // We need to restart to recover. Ensure all sessions have timed out before
+                    // restarting to ensure this can't cause too many parallel connections.
                     tokio::time::sleep(ke_config.key_exchange_timeout).await;
                     break;
                 }
@@ -269,6 +274,7 @@ mod tests {
             ntp_port: None,
             ntp_server: None,
             accept_ntp_versions: vec![NtpVersion::V4],
+            network_wait_period: Duration::from_secs(1),
         };
 
         let _join_handle = spawn(nts_ke_config, keyset);
@@ -355,6 +361,7 @@ mod tests {
             ntp_port: Some(568),
             ntp_server: Some("jantje".into()),
             accept_ntp_versions: vec![NtpVersion::V4],
+            network_wait_period: Duration::from_secs(1),
         };
 
         let _join_handle = spawn(nts_ke_config, keyset);
