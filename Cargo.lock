@@ -1532,6 +1532,7 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "serde",
+ "statime-base",
  "statime-config-derive",
  "toml",
  "tracing",
