@@ -605,18 +605,16 @@ impl PollInterval {
         Self(value)
     }
 
-    pub const fn as_duration(self) -> NtpDuration {
-        let base_shift = self.0.saturating_add(32);
+    pub const fn as_duration(self) -> statime_base::Duration {
+        let base_shift = self.0.saturating_add(64);
         let shift = if base_shift < 0 {
             0
-        } else if base_shift > 62 {
-            62
+        } else if base_shift > 126 {
+            126
         } else {
             base_shift
         };
-        NtpDuration {
-            duration: 1 << shift,
-        }
+        statime_base::Duration::from_raw_steps(1i128 << shift)
     }
 
     pub const fn as_system_duration(self) -> Duration {
@@ -867,26 +865,26 @@ mod tests {
     fn poll_interval_to_duration() {
         assert_eq!(
             PollInterval(4).as_duration(),
-            NtpDuration::from_fixed_int(16 << 32)
+            statime_base::Duration::from_seconds_nanos(16, 0)
         );
         assert_eq!(
             PollInterval(5).as_duration(),
-            NtpDuration::from_fixed_int(32 << 32)
+            statime_base::Duration::from_seconds_nanos(32, 0)
         );
 
         let mut interval = PollInterval::from_log(4);
         for _ in 0..100 {
             assert_eq!(
-                interval.as_duration().as_seconds_nanos().0,
-                interval.as_system_duration().as_secs() as i32
+                interval.as_duration().as_seconds() as u64,
+                interval.as_system_duration().as_secs()
             );
             interval = interval.inc(PollIntervalLimits::default());
         }
 
         for _ in 0..100 {
             assert_eq!(
-                interval.as_duration().as_seconds_nanos().0,
-                interval.as_system_duration().as_secs() as i32
+                interval.as_duration().as_seconds() as u64,
+                interval.as_system_duration().as_secs()
             );
             interval = interval.dec(PollIntervalLimits::default());
         }

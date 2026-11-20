@@ -1009,18 +1009,18 @@ mod test {
         }
 
         let mut source = NtpSource::test_ntp_source(PollIntervalController(
-            PollIntervalLimits::default().min.as_duration().into(),
+            PollIntervalLimits::default().min.as_duration(),
         ));
 
         assert!(source.current_poll_interval() >= source.remote_min_poll_interval);
         assert!(source.current_poll_interval() >= PollIntervalLimits::default().min);
 
-        source.controller.0 = PollIntervalLimits::default().max.as_duration().into();
+        source.controller.0 = PollIntervalLimits::default().max.as_duration();
 
         assert!(source.current_poll_interval() >= source.remote_min_poll_interval);
         assert!(source.current_poll_interval() >= PollIntervalLimits::default().max);
 
-        source.controller.0 = PollIntervalLimits::default().min.as_duration().into();
+        source.controller.0 = PollIntervalLimits::default().min.as_duration();
         source.remote_min_poll_interval = PollIntervalLimits::default().max;
 
         assert!(source.current_poll_interval() >= source.remote_min_poll_interval);
