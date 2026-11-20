@@ -35,19 +35,19 @@ use super::{clock::NtpClockWrapper, tracing::LogLevel};
 
 #[derive(Debug, Clone, Configurable)]
 pub struct ObservabilityConfig {
-    #[config(default)]
+    #[config(rename = "log-level", default)]
     pub log_level: Option<LogLevel>,
-    #[config(default)]
+    #[config(rename = "log-path", default)]
     pub log_path: Option<PathBuf>,
-    #[config(default)]
+    #[config(rename = "log-path-metrics-exporter", default)]
     pub log_path_metrics_exporter: Option<PathBuf>,
-    #[config(default)]
+    #[config(rename = "ansi-colors", default)]
     pub ansi_colors: Option<bool>,
-    #[config(default)]
+    #[config(rename = "observation-path", default)]
     pub observation_path: Option<PathBuf>,
-    #[config(default = 0o666)]
+    #[config(rename = "observation-permissions", default = 0o666)]
     pub observation_permissions: u32,
-    #[config(default="127.0.0.1:9975".parse().unwrap())]
+    #[config(rename = "metrics-exporter-listen", default="127.0.0.1:9975".parse().unwrap())]
     pub metrics_exporter_listen: SocketAddr,
 }
 
@@ -243,7 +243,7 @@ pub struct CsptpConfig {
     #[config(rename = "priority-1", default = 255)]
     pub priority_1: u8,
     /// Priority 2 value to use for the local clock.
-    #[config(rename = "priority-1", default = 255)]
+    #[config(rename = "priority-2", default = 255)]
     pub priority_2: u8,
     #[config(rename = "clock-class", default = 248)]
     pub clock_class: u8,
@@ -347,6 +347,7 @@ pub struct Config {
     pub sources: Vec<SourceConfig>,
     #[config(rename = "server", default)]
     pub servers: Vec<ServerConfig>,
+    #[config(rename = "ntp-source-defaults")]
     pub ntp_source_defaults: NtpSourceDefaults,
     #[config(rename = "csptp-source-defaults")]
     pub csptp_source_defaults: CsptpSourceDefaults,
