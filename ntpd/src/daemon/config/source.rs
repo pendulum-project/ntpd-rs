@@ -7,11 +7,12 @@ use std::{
     time::Duration,
 };
 
-use ntp_proto::{PollIntervalLimits, ProtocolVersion};
+use ntp_proto::ProtocolVersion;
 use serde::{
     Deserialize, Serialize,
     de::{self, Visitor},
 };
+use statime_base::PollIntervalLimits;
 use statime_config::{Configurable, ConfigurableAtomic, NonNegative, Positive};
 
 #[cfg(target_os = "linux")]

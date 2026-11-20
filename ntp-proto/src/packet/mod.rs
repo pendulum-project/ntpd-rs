@@ -2,7 +2,7 @@ use std::{borrow::Cow, io::Cursor};
 
 use rand::{Rng, thread_rng};
 use serde::{Deserialize, Serialize};
-use statime_base::{Clock, LeapStatus, TAI, Timestamp};
+use statime_base::{Clock, LeapStatus, PollInterval, TAI, Timestamp};
 
 use crate::{
     MAX_COOKIES, NtpVersion,
@@ -10,7 +10,7 @@ use crate::{
     io::NonBlockingWrite,
     keyset::{DecodedServerCookie, KeySet},
     system::NtpServerInfo,
-    time_types::{NtpDuration, NtpTimestamp, PollInterval},
+    time_types::{NtpDuration, NtpTimestamp},
 };
 
 use self::{error::ParsingError, extension_fields::ExtensionFieldData, mac::Mac};
@@ -1392,11 +1392,9 @@ impl Default for NtpPacket<'_> {
     reason = "Long tests are not really a big problem"
 )]
 mod tests {
-    use statime_base::{TimeSnapshot, Timestamp};
+    use statime_base::{PollIntervalLimits, TimeSnapshot, Timestamp};
 
-    use crate::{
-        NtpSnapshot, keyset::KeySetProvider, nts::AeadAlgorithm, time_types::PollIntervalLimits,
-    };
+    use crate::{NtpSnapshot, keyset::KeySetProvider, nts::AeadAlgorithm};
 
     use super::*;
 

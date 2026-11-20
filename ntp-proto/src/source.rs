@@ -9,12 +9,11 @@ use crate::{
         v5::server_reference_id::{BloomFilter, RemoteBloomFilter},
     },
     system::NtpSourceInfo,
-    time_types::PollInterval,
     v5::ServerId,
 };
 use rand::{Rng, thread_rng};
 use serde::{Deserialize, Serialize};
-use statime_base::{Direction, Link, LinkId, Measurement, TAI, Timestamp};
+use statime_base::{Direction, Link, LinkId, Measurement, PollInterval, TAI, Timestamp};
 use std::{
     collections::HashMap,
     fmt::Debug,
@@ -253,7 +252,7 @@ pub fn source_snapshot() -> NtpSourceSnapshot {
         reference_id: ReferenceId::from_int(0),
 
         reach,
-        poll_interval: crate::time_types::PollIntervalLimits::default().min,
+        poll_interval: statime_base::PollIntervalLimits::default().min,
         protocol_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
         bloom_filter: None,
     }
@@ -799,13 +798,13 @@ impl<Controller: Link> NtpSource<Controller> {
     reason = "Long tests are not really a big problem"
 )]
 mod test {
-    use statime_base::{Clock, ClockError};
+    use statime_base::{Clock, ClockError, PollIntervalLimits};
 
     use crate::{
         NtpSnapshot,
         packet::{AesSivCmac256, NoCipher},
         system::NtpServerInfo,
-        time_types::{NtpTimestamp, PollIntervalLimits},
+        time_types::NtpTimestamp,
     };
 
     use super::*;

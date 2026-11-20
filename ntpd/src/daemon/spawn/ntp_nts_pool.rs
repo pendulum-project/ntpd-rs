@@ -6,14 +6,12 @@ use std::sync::{Arc, Mutex};
 
 use ntp_proto::tls_utils::Certificate;
 use statime_algo::LinkConfig;
-use statime_base::{Link, LinkId, SourceType, StdController};
+use statime_base::{Link, LinkId, PollIntervalLimits, SourceType, StdController};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tracing::warn;
 
-use ntp_proto::{
-    KeyExchangeClient, NtsClientConfig, NtsError, PollIntervalLimits, ProtocolVersion, SourceConfig,
-};
+use ntp_proto::{KeyExchangeClient, NtsClientConfig, NtsError, ProtocolVersion, SourceConfig};
 
 use crate::daemon::dns::{KeResolutionResult, resolve_ke};
 use crate::daemon::ntp_source::SourceTask;

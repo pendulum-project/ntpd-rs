@@ -201,7 +201,7 @@ mod tests {
     use std::time::Duration;
 
     use ntp_proto::v5::BloomFilter;
-    use ntp_proto::{NtpSnapshot, PollIntervalLimits, Reach, ReferenceId};
+    use ntp_proto::{NtpSnapshot, Reach, ReferenceId};
     use statime_base::{LeapStatus, TimeSnapshot, Timestamp};
     use tokio::{io::AsyncReadExt, net::UnixStream};
 
