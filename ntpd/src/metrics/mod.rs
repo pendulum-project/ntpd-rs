@@ -174,7 +174,7 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
                 .min()
                 .unwrap_or(PollIntervalLimits::default().min)
                 .as_duration()
-                .to_seconds(),
+                .as_seconds(),
         ),
     )?;
 
@@ -255,7 +255,7 @@ pub fn format_state(w: &mut impl std::fmt::Write, state: &ObservableState) -> st
         "Time between polls of the source",
         &MetricType::Gauge,
         Some(Unit::Seconds),
-        collect_sources!(state, |p| p.poll_interval.as_duration().to_seconds()),
+        collect_sources!(state, |p| p.poll_interval.as_duration().as_seconds()),
     )?;
 
     format_metric(
