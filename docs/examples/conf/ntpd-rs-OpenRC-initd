@@ -21,7 +21,7 @@ fi
 extra_started_commands="reload"
 
 depend() {
-    after net
+    use net
 }
 
 # https://github.com/OpenRC/openrc/blob/master/service-script-guide.md#dont-restartreload-with-a-broken-config
