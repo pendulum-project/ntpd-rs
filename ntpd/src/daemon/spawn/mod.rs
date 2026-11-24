@@ -79,7 +79,7 @@ pub struct CreationParameters<TimeController: StdController> {
     pub stype: SourceType,
     pub link_config: TimeController::LinkConfig,
     pub tracked_link_config: Option<TimeController::TrackedLinkConfig>,
-    pub creator: SourceCreator<TimeController::Link<Arc<TimeController>>>,
+    pub creator: SourceCreator<Arc<TimeController::Link<Arc<TimeController>>>>,
 }
 
 pub type SourceCreator<LinkController> = Box<
