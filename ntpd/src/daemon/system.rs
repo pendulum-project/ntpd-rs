@@ -118,7 +118,6 @@ impl<TimeController: StdController> SpawnerData<TimeController> {
                 SpawnState::TryingSpawn(pin) => match pin.as_mut().poll(cx) {
                     std::task::Poll::Ready(Ok(parameters)) => {
                         self.last_spawn = tokio::time::Instant::now();
-                        self.current_timeout = config.minimum_retry_timeout;
                         // Restart via trivial timeout.
                         self.spawn_state = SpawnState::Timeout(Box::pin(tokio::time::sleep(
                             std::time::Duration::ZERO,
@@ -350,11 +349,23 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
                         };
                         let link = match link {
                             Ok(link) => Arc::new(link),
-                            Err(error) => todo!(),
+                            Err(error) => {
+                                tracing::error!(
+                                    "Could not create link for source requested by spawner: {error:?}"
+                                );
+                                let sleep = tokio::time::sleep(spawner.current_timeout);
+                                spawner.current_timeout = (2 * spawner.current_timeout).clamp(
+                                    self.config.minimum_retry_timeout,
+                                    self.config.maximum_retry_timeout,
+                                );
+                                spawner.spawn_state = SpawnState::Timeout(Box::pin(sleep));
+                                continue 'restart_polling;
+                            }
                         };
                         let link_id = link.id();
                         let driven_link =
                             (parameters.creator)(link, self.system_clock.clone(), &self.managers);
+                        spawner.current_timeout = self.config.minimum_retry_timeout;
                         state.driven_links.insert(
                             link_id,
                             LinkData {
