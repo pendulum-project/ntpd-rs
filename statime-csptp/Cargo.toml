@@ -1,12 +1,10 @@
 [package]
 name = "statime-csptp"
+description = "Experimental implementation of draft D.06 of the CSPTP protocol"
 version = "0.1.1"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-homepage.workspace = true
-readme.workspace = true
-description.workspace = true
 publish.workspace = true
 rust-version.workspace = true
 
