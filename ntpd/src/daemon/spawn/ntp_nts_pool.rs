@@ -157,7 +157,7 @@ impl<TimeController: StdController> Spawner<TimeController> for NtpNtsPoolSpawne
 where
     TimeController::LinkConfig: From<statime_algo::LinkConfig>,
     TimeController::TrackedLinkConfig: From<statime_algo::TrackedLinkConfig>,
-    TimeController::Link<Arc<TimeController>>: Send + 'static,
+    TimeController::Link<Arc<TimeController>>: Send + Sync + 'static,
 {
     fn try_spawn(&mut self) -> super::TrySpawnFuture<TimeController> {
         let state = self.state.clone();
@@ -200,7 +200,9 @@ where
                                 .into(),
                             ),
                             creator: Box::new(
-                                move |controller: TimeController::Link<Arc<TimeController>>,
+                                move |controller: Arc<
+                                    TimeController::Link<Arc<TimeController>>,
+                                >,
                                       clock,
                                       managers| {
                                     let link_id = controller.id();

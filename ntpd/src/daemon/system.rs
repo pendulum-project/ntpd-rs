@@ -349,7 +349,7 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
                             )
                         };
                         let link = match link {
-                            Ok(link) => link,
+                            Ok(link) => Arc::new(link),
                             Err(error) => todo!(),
                         };
                         let link_id = link.id();

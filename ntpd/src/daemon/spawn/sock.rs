@@ -45,7 +45,7 @@ impl SockSpawner {
 impl<TimeController: StdController> Spawner<TimeController> for SockSpawner
 where
     TimeController::LinkConfig: From<statime_algo::LinkConfig>,
-    TimeController::Link<Arc<TimeController>>: Send + 'static,
+    TimeController::Link<Arc<TimeController>>: Send + Sync + 'static,
 {
     fn try_spawn(&mut self) -> super::TrySpawnFuture<TimeController> {
         let config = self.config.clone();
@@ -62,7 +62,7 @@ where
                 .into(),
                 tracked_link_config: None,
                 creator: Box::new(
-                    move |controller: TimeController::Link<Arc<TimeController>>,
+                    move |controller: Arc<TimeController::Link<Arc<TimeController>>>,
                           clock,
                           managers| {
                         state.lock().unwrap().has_spawned = true;

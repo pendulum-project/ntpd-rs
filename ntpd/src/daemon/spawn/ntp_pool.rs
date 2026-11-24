@@ -66,7 +66,7 @@ impl<TimeController: StdController> Spawner<TimeController> for NtpPoolSpawner
 where
     TimeController::LinkConfig: From<statime_algo::LinkConfig>,
     TimeController::TrackedLinkConfig: From<statime_algo::TrackedLinkConfig>,
-    TimeController::Link<Arc<TimeController>>: Send + 'static,
+    TimeController::Link<Arc<TimeController>>: Send + Sync + 'static,
 {
     fn try_spawn(&mut self) -> super::TrySpawnFuture<TimeController> {
         let config = self.config.clone();
@@ -124,7 +124,7 @@ where
                         .into(),
                     ),
                     creator: Box::new(
-                        move |controller: TimeController::Link<Arc<TimeController>>,
+                        move |controller: Arc<TimeController::Link<Arc<TimeController>>>,
                               clock,
                               managers| {
                             let link_id = controller.id();
@@ -175,6 +175,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use clock_steering::unix::UnixClock;
     use ntp_proto::ProtocolVersion;
 
@@ -230,7 +232,7 @@ mod tests {
         .unwrap();
 
         let handle1 = (params.creator)(
-            link,
+            Arc::new(link),
             NtpClockWrapper::new_utc(UnixClock::CLOCK_REALTIME),
             &managers,
         );
@@ -253,7 +255,7 @@ mod tests {
         .unwrap();
 
         let handle2 = (params.creator)(
-            link,
+            Arc::new(link),
             NtpClockWrapper::new_utc(UnixClock::CLOCK_REALTIME),
             &managers,
         );
@@ -304,7 +306,7 @@ mod tests {
         .unwrap();
 
         let handle1 = (params.creator)(
-            link,
+            Arc::new(link),
             NtpClockWrapper::new_utc(UnixClock::CLOCK_REALTIME),
             &managers,
         );
@@ -327,7 +329,7 @@ mod tests {
         .unwrap();
 
         let handle2 = (params.creator)(
-            link,
+            Arc::new(link),
             NtpClockWrapper::new_utc(UnixClock::CLOCK_REALTIME),
             &managers,
         );
@@ -383,7 +385,7 @@ mod tests {
         let id_1 = link.id();
 
         let handle1 = (params.creator)(
-            link,
+            Arc::new(link),
             NtpClockWrapper::new_utc(UnixClock::CLOCK_REALTIME),
             &managers,
         );
@@ -406,7 +408,7 @@ mod tests {
         .unwrap();
 
         let handle2 = (params.creator)(
-            link,
+            Arc::new(link),
             NtpClockWrapper::new_utc(UnixClock::CLOCK_REALTIME),
             &managers,
         );
@@ -440,7 +442,7 @@ mod tests {
         .unwrap();
 
         let handle3 = (params.creator)(
-            link,
+            Arc::new(link),
             NtpClockWrapper::new_utc(UnixClock::CLOCK_REALTIME),
             &managers,
         );
