@@ -43,6 +43,11 @@ There is no support for bursting in ntpd-rs yet. When any bursting directive (`b
 
 For NTS, if a custom certificate set is configured for a source via the `certset` directive, these can be provided via the ntpd-rs `certificate_authority` option. This expects a path to a file containing all the accepted root certificates for the source accepted in addition to the system certificates.
 
+ntpd-rs has no equivalent of chrony's `nocerttimecheck` directive. Certificates presented by NTS key exchange servers are always checked against the current system time, including their activation and expiration times. On systems without a (working) real time clock, the system time at boot may lie outside the validity period of the server certificates, in which case NTS sources cannot be used until the clock has been set by other means. Possible approaches for such systems are:
+
+- Restore an approximate time early during boot, for example with `fake-hwclock` or the clock file mechanism of `systemd-timesyncd`, so that the clock is at least as recent as the last shutdown.
+- Configure additional non-NTS sources that allow the clock to be set initially. Note that this reintroduces the risk of unauthenticated time sources that NTS is meant to protect against, so take this into account when choosing `minimum-agreeing-sources` and the panic thresholds.
+
 ### Pool directives
 
 Pools configured via the pool directive can be added to the ntpd-rs configuration via
@@ -162,5 +167,6 @@ Not all functionality in chrony currently has an equivalent in ntpd-rs. In parti
 - Support for NTP MAC authentication.
 - Marking subsets of sources as more trusted than others.
 - Acting as a source of leap second data.
+- Skipping certificate time checks for NTS (chrony's `nocerttimecheck`), see [Server directives](#server-directives).
 
 If any of these features are critical for your use case, ntpd-rs might not be an option for you yet. Please let us know if you miss these features or want to sponsor any of them, as this helps us prioritise our work.
