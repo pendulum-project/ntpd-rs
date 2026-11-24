@@ -166,6 +166,120 @@ pub trait Link {
     fn id(&self) -> LinkId;
 }
 
+#[cfg(feature = "std")]
+impl<T: Link> Link for std::boxed::Box<T> {
+    type Error = T::Error;
+
+    fn measurement(
+        &self,
+        measurement: Measurement,
+        direction: Direction,
+    ) -> Result<(), Self::Error> {
+        (**self).measurement(measurement, direction)
+    }
+
+    fn external_data_update(
+        &self,
+        root_delay: Duration,
+        leap_status: Option<LeapStatus>,
+        usable: bool,
+    ) -> Result<(), Self::Error> {
+        (**self).external_data_update(root_delay, leap_status, usable)
+    }
+
+    fn active(&self) -> Result<bool, Self::Error> {
+        (**self).active()
+    }
+
+    fn importance(&self) -> Result<Option<f64>, Self::Error> {
+        (**self).importance()
+    }
+
+    fn desired_poll_interval(&self) -> Result<Duration, Self::Error> {
+        (**self).desired_poll_interval()
+    }
+
+    fn id(&self) -> LinkId {
+        (**self).id()
+    }
+}
+
+#[cfg(feature = "std")]
+impl<T: Link> Link for std::rc::Rc<T> {
+    type Error = T::Error;
+
+    fn measurement(
+        &self,
+        measurement: Measurement,
+        direction: Direction,
+    ) -> Result<(), Self::Error> {
+        (**self).measurement(measurement, direction)
+    }
+
+    fn external_data_update(
+        &self,
+        root_delay: Duration,
+        leap_status: Option<LeapStatus>,
+        usable: bool,
+    ) -> Result<(), Self::Error> {
+        (**self).external_data_update(root_delay, leap_status, usable)
+    }
+
+    fn active(&self) -> Result<bool, Self::Error> {
+        (**self).active()
+    }
+
+    fn importance(&self) -> Result<Option<f64>, Self::Error> {
+        (**self).importance()
+    }
+
+    fn desired_poll_interval(&self) -> Result<Duration, Self::Error> {
+        (**self).desired_poll_interval()
+    }
+
+    fn id(&self) -> LinkId {
+        (**self).id()
+    }
+}
+
+#[cfg(feature = "std")]
+impl<T: Link> Link for std::sync::Arc<T> {
+    type Error = T::Error;
+
+    fn measurement(
+        &self,
+        measurement: Measurement,
+        direction: Direction,
+    ) -> Result<(), Self::Error> {
+        (**self).measurement(measurement, direction)
+    }
+
+    fn external_data_update(
+        &self,
+        root_delay: Duration,
+        leap_status: Option<LeapStatus>,
+        usable: bool,
+    ) -> Result<(), Self::Error> {
+        (**self).external_data_update(root_delay, leap_status, usable)
+    }
+
+    fn active(&self) -> Result<bool, Self::Error> {
+        (**self).active()
+    }
+
+    fn importance(&self) -> Result<Option<f64>, Self::Error> {
+        (**self).importance()
+    }
+
+    fn desired_poll_interval(&self) -> Result<Duration, Self::Error> {
+        (**self).desired_poll_interval()
+    }
+
+    fn id(&self) -> LinkId {
+        (**self).id()
+    }
+}
+
 /// A measurement done on a link.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Measurement {
