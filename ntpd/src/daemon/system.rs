@@ -70,7 +70,7 @@ impl Default for ServerId {
 
 struct SystemState<TimeController: StdController> {
     waker: Option<Waker>,
-    driven_links: HashMap<LinkId, LinkData>,
+    driven_links: HashMap<LinkId, LinkData<TimeController::Link<Arc<TimeController>>>>,
     spawners: HashMap<SpawnerId, SpawnerData<TimeController>>,
     servers: HashMap<ServerId, JoinHandle<()>>,
 }
@@ -86,10 +86,11 @@ impl<TimeController: StdController> Default for SystemState<TimeController> {
     }
 }
 
-struct LinkData {
+struct LinkData<Link> {
     spawner: SpawnerId,
     stype: SourceType,
     task: JoinHandle<LinkTerminationReason>,
+    link: Arc<Link>,
 }
 
 enum SpawnState<TimeController: StdController> {
@@ -363,8 +364,11 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
                             }
                         };
                         let link_id = link.id();
-                        let driven_link =
-                            (parameters.creator)(link, self.system_clock.clone(), &self.managers);
+                        let driven_link = (parameters.creator)(
+                            link.clone(),
+                            self.system_clock.clone(),
+                            &self.managers,
+                        );
                         spawner.current_timeout = self.config.minimum_retry_timeout;
                         state.driven_links.insert(
                             link_id,
@@ -372,6 +376,7 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
                                 spawner: spawner_id,
                                 stype: parameters.stype,
                                 task: driven_link,
+                                link,
                             },
                         );
 

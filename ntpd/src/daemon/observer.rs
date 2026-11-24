@@ -101,7 +101,10 @@ pub fn spawn<
     config: ObservabilityConfig,
     system: Arc<System<TimeController>>,
     clock: C,
-) -> JoinHandle<std::io::Result<()>> {
+) -> JoinHandle<std::io::Result<()>>
+where
+    Arc<System<TimeController>>: Send,
+{
     tokio::spawn(
         (async move {
             let result = observer(config, system, clock).await;
