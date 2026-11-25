@@ -297,6 +297,14 @@ mod tests {
             Ok(Duration::ZERO)
         }
 
+        fn estimated_delay(&self) -> Result<Option<Duration>, Self::Error> {
+            Ok(None)
+        }
+
+        fn measured_offset(&self) -> Result<Duration, Self::Error> {
+            Ok(Duration::ZERO)
+        }
+
         fn id(&self) -> statime_base::LinkId {
             self.0
         }

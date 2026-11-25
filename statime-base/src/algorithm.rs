@@ -156,6 +156,19 @@ pub trait Link {
     /// May fail when the link is not external
     fn importance(&self) -> Result<Option<f64>, Self::Error>;
 
+    /// Estimate of the network delay to the remote source, if available.
+    ///
+    /// # Errors
+    /// May fail only when something is bugged in the library.
+    fn estimated_delay(&self) -> Result<Option<Duration>, Self::Error>;
+
+    /// Average offset to this source over the past few measurements. It is up to the
+    /// specific algorithm implementation over how many measurements this averages.
+    ///
+    /// # Errors
+    /// May fail when the link is not external
+    fn measured_offset(&self) -> Result<Duration, Self::Error>;
+
     /// Returns the poll rate needed to get the desired accuracy from this link.
     ///
     /// # Errors
@@ -193,6 +206,14 @@ impl<T: Link> Link for std::boxed::Box<T> {
 
     fn importance(&self) -> Result<Option<f64>, Self::Error> {
         (**self).importance()
+    }
+
+    fn estimated_delay(&self) -> Result<Option<Duration>, Self::Error> {
+        (**self).estimated_delay()
+    }
+
+    fn measured_offset(&self) -> Result<Duration, Self::Error> {
+        (**self).measured_offset()
     }
 
     fn desired_poll_interval(&self) -> Result<Duration, Self::Error> {
@@ -233,6 +254,14 @@ impl<T: Link> Link for std::rc::Rc<T> {
         (**self).importance()
     }
 
+    fn estimated_delay(&self) -> Result<Option<Duration>, Self::Error> {
+        (**self).estimated_delay()
+    }
+
+    fn measured_offset(&self) -> Result<Duration, Self::Error> {
+        (**self).measured_offset()
+    }
+
     fn desired_poll_interval(&self) -> Result<Duration, Self::Error> {
         (**self).desired_poll_interval()
     }
@@ -269,6 +298,14 @@ impl<T: Link> Link for std::sync::Arc<T> {
 
     fn importance(&self) -> Result<Option<f64>, Self::Error> {
         (**self).importance()
+    }
+
+    fn estimated_delay(&self) -> Result<Option<Duration>, Self::Error> {
+        (**self).estimated_delay()
+    }
+
+    fn measured_offset(&self) -> Result<Duration, Self::Error> {
+        (**self).measured_offset()
     }
 
     fn desired_poll_interval(&self) -> Result<Duration, Self::Error> {

@@ -861,6 +861,49 @@ impl<Storage: KalmanStorageBase> LinkFilter<Storage> {
         Ok(link.desired_poll_interval)
     }
 
+    pub fn link_delay(&self, id: LinkId) -> Result<Option<Duration>, AlgoError> {
+        let link = self.links.find_by_id(id)?;
+        if let LinkState::Tracked {
+            link_noise_estimator,
+            ..
+        } = &link.link_state
+        {
+            if link.active {
+                Ok(Some(Duration::from_f64_seconds(
+                    self.estimation_state.link_delay(id)?.value,
+                )))
+            } else {
+                match link_noise_estimator.delay_estimate() {
+                    Ok(duration) => Ok(Some(Duration::from_f64_seconds(duration))),
+                    Err(AlgoError::NotEnoughMeasurements(_)) => Ok(None),
+                    Err(e) => Err(e),
+                }
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "last_offsets.len() is of type usize, but bounded to small enough values that precision loss won't happen."
+    )]
+    pub fn link_offset(&self, id: LinkId) -> Result<Duration, AlgoError> {
+        let link = self.links.find_by_id(id)?;
+        if let Some(external_state) = &link.external_link_state {
+            let last_offsets = external_state.last_offsets.as_ref();
+            if last_offsets.is_empty() {
+                Ok(Duration::ZERO)
+            } else {
+                Ok(Duration::from_f64_seconds(
+                    last_offsets.iter().sum::<f64>() / (last_offsets.len() as f64),
+                ))
+            }
+        } else {
+            Err(AlgoError::LinkNotExternal(id))
+        }
+    }
+
     fn find_external_consensus_window(&self, config: &ControllerConfig) -> Option<OffsetWindow> {
         let mut bounds: Storage::BoundStorage = self
             .links
