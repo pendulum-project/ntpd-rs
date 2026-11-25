@@ -1303,6 +1303,11 @@ where the address is the same as that given in the server directive.</p>
 </span></code></pre></div></p>
 <p>There is no support for bursting in ntpd-rs yet. When any bursting directive (<code>burst</code> or <code>iburst</code>) is present, these usually can be ignored, although if custom poll limits are in place, these may need to be rethought.</p>
 <p>For <abbr title="Network Time Security">NTS</abbr>, if a custom certificate set is configured for a source via the <code>certset</code> directive, these can be provided via the ntpd-rs <code>certificate_authority</code> option. This expects a path to a file containing all the accepted root certificates for the source accepted in addition to the system certificates.</p>
+<p>ntpd-rs has no equivalent of chrony's <code>nocerttimecheck</code> directive. Certificates presented by <abbr title="Network Time Security">NTS</abbr> key exchange servers are always checked against the current system time, including their activation and expiration times. On systems without a (working) real time clock, the system time at boot may lie outside the validity period of the server certificates, in which case <abbr title="Network Time Security">NTS</abbr> sources cannot be used until the clock has been set by other means. Possible approaches for such systems are:</p>
+<ul>
+<li>Restore an approximate time early during boot, for example with <code>fake-hwclock</code> or the clock file mechanism of <code>systemd-timesyncd</code>, so that the clock is at least as recent as the last shutdown.</li>
+<li>Configure additional non-<abbr title="Network Time Security">NTS</abbr> sources that allow the clock to be set initially. Note that this reintroduces the risk of unauthenticated time sources that <abbr title="Network Time Security">NTS</abbr> is meant to protect against, so take this into account when choosing <code>minimum-agreeing-sources</code> and the panic thresholds.</li>
+</ul>
 <h3 id="pool-directives">Pool directives</h3>
 <p>Pools configured via the pool directive can be added to the ntpd-rs configuration via
 <div class="language-toml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">[[pool]]</span>
@@ -1388,6 +1393,7 @@ These settings can be configured with the <code>key-rotation-interval</code> and
 <li>Support for <abbr title="Network Time Protocol">NTP</abbr> MAC authentication.</li>
 <li>Marking subsets of sources as more trusted than others.</li>
 <li>Acting as a source of leap second data.</li>
+<li>Skipping certificate time checks for <abbr title="Network Time Security">NTS</abbr> (chrony's <code>nocerttimecheck</code>), see <a href="#server-directives">Server directives</a>.</li>
 </ul>
 <p>If any of these features are critical for your use case, ntpd-rs might not be an option for you yet. Please let us know if you miss these features or want to sponsor any of them, as this helps us prioritise our work.</p>
 
