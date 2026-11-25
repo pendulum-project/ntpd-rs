@@ -91,6 +91,8 @@ pub struct ObservableSpawnerState {
 pub struct ObservableDrivenLink {
     pub link_id: LinkId,
     pub source_type: String,
+    pub offset: statime_base::Duration,
+    pub delay: Option<statime_base::Duration>,
 }
 
 #[instrument(level = tracing::Level::ERROR, skip_all, name = "Observer", fields(path = debug(config.observation_path.clone())))]

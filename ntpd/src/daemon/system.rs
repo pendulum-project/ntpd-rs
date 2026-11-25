@@ -486,6 +486,11 @@ impl<TimeController: StdController + Sync + Send> System<TimeController> {
                             Some(ObservableDrivenLink {
                                 link_id: *link_id,
                                 source_type: driven_link.stype.to_string(),
+                                offset: driven_link
+                                    .link
+                                    .measured_offset()
+                                    .unwrap_or(statime_base::Duration::ZERO),
+                                delay: driven_link.link.estimated_delay().unwrap_or(None),
                             })
                         } else {
                             None
