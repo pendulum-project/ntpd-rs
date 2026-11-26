@@ -1,3 +1,7 @@
+// FIXME: Remove this or make them target the more specific parts of the crate.
+#![expect(missing_docs)]
+#![expect(clippy::cast_possible_wrap)]
+
 use pps_time::{PpsDevice, pps};
 use std::path::PathBuf;
 

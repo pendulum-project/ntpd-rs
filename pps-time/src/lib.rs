@@ -1,3 +1,8 @@
+// FIXME: Remove this or make them target the more specific parts of the crate.
+#![expect(missing_docs)]
+#![expect(clippy::unreadable_literal)]
+#![expect(clippy::missing_errors_doc)]
+
 use std::{
     fs::File,
     io::{Error, Result},
@@ -57,7 +62,7 @@ impl PpsDevice {
 
     fn fetch(&self, timeout: pps_ktime) -> Result<pps_fdata> {
         let mut data = pps_fdata {
-            info: Default::default(),
+            info: pps::pps_kinfo::default(),
             timeout,
         };
 
@@ -69,7 +74,7 @@ impl PpsDevice {
 
     /// Fetch next PPS event, blocking until it arrives
     ///
-    /// Device must support PPS_CANWAIT, otherwise it will give an EOPNOTSUPP error
+    /// Device must support `PPS_CANWAIT`, otherwise it will give an `EOPNOTSUPP` error
     pub fn fetch_blocking(&self) -> Result<pps_fdata> {
         self.fetch(pps_ktime {
             sec: 0,
@@ -80,7 +85,7 @@ impl PpsDevice {
 
     /// Fetch next PPS event with a timeout, giving an ETIMEDOUT error if event does not come in time
     ///
-    /// Device must support PPS_CANWAIT, otherwise it will give an EOPNOTSUPP error
+    /// Device must support `PPS_CANWAIT`, otherwise it will give an `EOPNOTSUPP` error
     pub fn fetch_timeout(&self, seconds: i64, nanoseconds: i32) -> Result<pps_fdata> {
         self.fetch(pps_ktime {
             sec: seconds,
