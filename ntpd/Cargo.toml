@@ -15,7 +15,7 @@ build = "build.rs"
 workspace = true
 
 [dependencies]
-ntp-proto.workspace = true
+statime-ntp.workspace = true
 statime-base = { workspace = true, features = ["std"] }
 statime-algo = { workspace = true, features = ["std"] }
 statime-config.workspace = true
@@ -44,7 +44,7 @@ statime-netptp.workspace = true
 statime-csptp.workspace = true
 
 [dev-dependencies]
-ntp-proto = { workspace = true, features = ["__internal-test",] }
+statime-ntp = { workspace = true, features = ["__internal-test",] }
 tokio-rustls.workspace = true
 
 [features]
@@ -53,8 +53,8 @@ all-portable = [ "pps", "srv", "aws-lc", "rustcrypto", "openssl-vendored" ]
 pps = [ "dep:pps-time" ]
 srv = [ "dep:hickory-resolver" ]
 aws-lc = ["rustls23/aws-lc-rs", "rustls23/prefer-post-quantum"] # the latter also turns on aws-lc-rs
-rustcrypto = ["ntp-proto/rustcrypto"]
-openssl = ["dep:rustls-openssl", "ntp-proto/openssl"]
+rustcrypto = ["statime-ntp/rustcrypto"]
+openssl = ["dep:rustls-openssl", "statime-ntp/openssl"]
 openssl-vendored = ["openssl", "rustls-openssl/vendored"]
 seccomp = [ "dep:statime-seccomp" ]
 

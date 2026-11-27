@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use ntp_proto::{KeySet, KeySetProvider};
+use statime_ntp::{KeySet, KeySetProvider};
 use tokio::sync::watch;
 use tracing::{Span, instrument, warn};
 

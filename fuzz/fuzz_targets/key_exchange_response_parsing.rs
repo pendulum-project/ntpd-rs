@@ -7,7 +7,7 @@ use std::{
 };
 
 use libfuzzer_sys::fuzz_target;
-use ntp_proto::{KeyExchangeResponse, NtsError};
+use statime_ntp::{KeyExchangeResponse, NtsError};
 
 fn parse(data: &[u8]) -> Result<KeyExchangeResponse<'_>, NtsError> {
     let Poll::Ready(result) =

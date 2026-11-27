@@ -3,9 +3,9 @@ use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use std::{net::SocketAddr, ops::Deref};
 
-use ntp_proto::{PollIntervalLimits, ProtocolVersion, SourceConfig};
 use statime_algo::LinkConfig;
 use statime_base::{Link, LinkId, SourceType, StdController};
+use statime_ntp::{PollIntervalLimits, ProtocolVersion, SourceConfig};
 use tokio::sync::mpsc;
 use tracing::warn;
 
@@ -178,12 +178,12 @@ mod tests {
     use std::sync::Arc;
 
     use clock_steering::unix::UnixClock;
-    use ntp_proto::ProtocolVersion;
+    use statime_ntp::ProtocolVersion;
 
-    use ntp_proto::SourceConfig;
     use statime_base::ClockId;
     use statime_base::Controller;
     use statime_base::Link;
+    use statime_ntp::SourceConfig;
     use tokio::sync::mpsc::{self, error::TryRecvError};
 
     use crate::daemon::clock::NtpClockWrapper;
@@ -209,7 +209,7 @@ mod tests {
             count: 2,
             ignore: vec![],
             ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
-            poll_interval_limits: ntp_proto::PollIntervalLimits::default(),
+            poll_interval_limits: statime_ntp::PollIntervalLimits::default(),
             desired_error_bound: statime_base::Duration::from_seconds_nanos(0, 1_000_000),
             delay_decay_rate: 1.0 / 86400f64.sqrt(),
         });
@@ -283,7 +283,7 @@ mod tests {
             count: 3,
             ignore: ignores.clone(),
             ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
-            poll_interval_limits: ntp_proto::PollIntervalLimits::default(),
+            poll_interval_limits: statime_ntp::PollIntervalLimits::default(),
             desired_error_bound: statime_base::Duration::from_seconds_nanos(0, 1_000_000),
             delay_decay_rate: 1.0 / 86400f64.sqrt(),
         });
@@ -361,7 +361,7 @@ mod tests {
             count: 2,
             ignore: vec![],
             ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
-            poll_interval_limits: ntp_proto::PollIntervalLimits::default(),
+            poll_interval_limits: statime_ntp::PollIntervalLimits::default(),
             desired_error_bound: statime_base::Duration::from_seconds_nanos(0, 1_000_000),
             delay_decay_rate: 1.0 / 86400f64.sqrt(),
         });
@@ -464,7 +464,7 @@ mod tests {
             count: 2,
             ignore: vec![],
             ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
-            poll_interval_limits: ntp_proto::PollIntervalLimits::default(),
+            poll_interval_limits: statime_ntp::PollIntervalLimits::default(),
             desired_error_bound: statime_base::Duration::from_seconds_nanos(0, 1_000_000),
             delay_decay_rate: 1.0 / 86400f64.sqrt(),
         });

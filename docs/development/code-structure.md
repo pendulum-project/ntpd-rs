@@ -13,13 +13,13 @@ ntpd-rs is split into several crates with three goals in mind:
  - Limit the scopes where we use unsafe code, ensuring that it is more
    straightforward to verify.
 
-The main `ntp-proto` and `ntpd` crates are set up such that neither contains any
+The main `statime-ntp` and `ntpd` crates are set up such that neither contains any
 unsafe code. Unsafe code is limited to the (external) `timestamped-socket`, `clock-steering` and `pps-time` crates,
 which are purposefully kept small and only offer a safe API.
 
-### ntp-proto
+### statime-ntp
 
-The `ntp-proto` crate contains the main NTP protocol implementation. It
+The `statime-ntp` crate contains the main NTP protocol implementation. It
 implements:
 
  - Serialization and deserialization of the on-wire protocol.

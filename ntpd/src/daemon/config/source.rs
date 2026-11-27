@@ -7,12 +7,12 @@ use std::{
     time::Duration,
 };
 
-use ntp_proto::{PollIntervalLimits, ProtocolVersion};
 use serde::{
     Deserialize, Serialize,
     de::{self, Visitor},
 };
 use statime_config::{Configurable, ConfigurableAtomic, NonNegative, Positive};
+use statime_ntp::{PollIntervalLimits, ProtocolVersion};
 
 #[cfg(target_os = "linux")]
 use crate::daemon::spawn::csptp::CsptpSpawnerConfig;

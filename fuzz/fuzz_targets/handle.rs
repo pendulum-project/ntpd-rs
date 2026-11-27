@@ -10,13 +10,13 @@ use std::{
 };
 
 use libfuzzer_sys::fuzz_target;
-use ntp_proto::{
+use rand::{rngs::StdRng, set_thread_rng, SeedableRng};
+use statime_base::{Clock, TimeSnapshot, Timestamp, TAI};
+use statime_ntp::{
     test_cookie, v5::BloomFilter, EncryptResult, ExtensionField, ExtensionHeaderVersion,
     FilterAction, FilterList, HandleInnerData, KeySetProvider, NtpServerInfo, NtpSnapshot,
     NtpVersion, ReferenceId, Server, ServerConfig, ServerReason, ServerResponse, ServerStatHandler,
 };
-use rand::{rngs::StdRng, set_thread_rng, SeedableRng};
-use statime_base::{Clock, TimeSnapshot, Timestamp, TAI};
 
 const fn next_multiple_of(lhs: u16, rhs: u16) -> u16 {
     match lhs % rhs {

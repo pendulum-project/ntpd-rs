@@ -81,7 +81,7 @@ impl NtskeServerConfig {
                 .accept_ntp_versions
                 .clone()
                 .into_iter()
-                .map(ntp_proto::NtpVersion::from)
+                .map(statime_ntp::NtpVersion::from)
                 .collect(),
         }
     }
@@ -122,7 +122,7 @@ impl NtpServerConfig {
                 .accept_ntp_versions
                 .clone()
                 .into_iter()
-                .map(ntp_proto::NtpVersion::from)
+                .map(statime_ntp::NtpVersion::from)
                 .collect(),
             network_wait_period: ConfigurableDuration::into_std_duration(self.network_wait_period),
         }
@@ -136,11 +136,11 @@ pub(crate) enum FilterAction {
     Ignore,
 }
 
-impl From<FilterAction> for ntp_proto::FilterAction {
+impl From<FilterAction> for statime_ntp::FilterAction {
     fn from(value: FilterAction) -> Self {
         match value {
-            FilterAction::Deny => ntp_proto::FilterAction::Deny,
-            FilterAction::Ignore => ntp_proto::FilterAction::Ignore,
+            FilterAction::Deny => statime_ntp::FilterAction::Deny,
+            FilterAction::Ignore => statime_ntp::FilterAction::Ignore,
         }
     }
 }
@@ -151,13 +151,13 @@ pub(crate) struct FilterList {
     action: FilterAction,
 }
 
-impl From<FilterList> for ntp_proto::FilterList {
+impl From<FilterList> for statime_ntp::FilterList {
     fn from(value: FilterList) -> Self {
         Self {
             filter: value
                 .ranges
                 .into_iter()
-                .map(ntp_proto::IpSubnet::from)
+                .map(statime_ntp::IpSubnet::from)
                 .collect(),
             action: value.action.into(),
         }
@@ -174,11 +174,11 @@ pub(crate) enum RequireNts {
     Explicit(FilterAction),
 }
 
-impl From<RequireNts> for Option<ntp_proto::FilterAction> {
+impl From<RequireNts> for Option<statime_ntp::FilterAction> {
     fn from(value: RequireNts) -> Self {
         match value {
             RequireNts::Implicit(false) => None,
-            RequireNts::Implicit(true) => Some(ntp_proto::FilterAction::Ignore),
+            RequireNts::Implicit(true) => Some(statime_ntp::FilterAction::Ignore),
             RequireNts::Explicit(filter_action) => Some(filter_action.into()),
         }
     }

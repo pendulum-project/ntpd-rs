@@ -5,7 +5,6 @@ mod source;
 
 pub use cli::*;
 use clock_steering::unix::UnixClock;
-use ntp_proto::{NtpVersion, ProtocolVersion};
 pub use primitives::*;
 use serde::{Deserialize, Deserializer, Serialize};
 pub use server::*;
@@ -15,6 +14,7 @@ use statime_config::{
     ConfigError, ConfigPath, Configurable, ConfigurableAtomic, InfiniteOr, NonNegative,
     PartialValue, Positive, RootConfig, SystemConfigSetting,
 };
+use statime_ntp::{NtpVersion, ProtocolVersion};
 #[cfg(target_os = "linux")]
 use statime_wire::{ClockAccuracy, ClockIdentity, ClockQuality};
 use std::io;

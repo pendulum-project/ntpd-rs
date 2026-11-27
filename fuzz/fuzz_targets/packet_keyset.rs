@@ -1,7 +1,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use ntp_proto::{KeySetProvider, NtpPacket};
+use statime_ntp::{KeySetProvider, NtpPacket};
 
 fuzz_target!(|data: Vec<u8>| {
     // Can't test reencoding because of the keyset

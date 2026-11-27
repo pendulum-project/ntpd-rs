@@ -6,7 +6,7 @@
 };
 
 use algorithm::{SingleShotController, SingleShotControllerConfig};
-use ntp_proto::{NtpClock, NtpDuration};
+use statime_ntp::{NtpClock, NtpDuration};
 use tokio::runtime::Builder;
 
 use crate::daemon::{

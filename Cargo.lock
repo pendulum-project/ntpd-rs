@@ -893,35 +893,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27b02d87554356db9e9a873add8782d4ea6e3e58ea071a9adb9a2e8ddb884a8b"
 
 [[package]]
-name = "ntp-proto"
-version = "2.0.0-alpha.20261113"
-dependencies = [
- "aead",
- "aes-siv",
- "arbitrary",
- "md-5",
- "openssl",
- "rand 0.8.8",
- "rustls",
- "rustls-openssl",
- "rustls-platform-verifier",
- "serde",
- "serde_json",
- "statime-base",
- "tokio",
- "tokio-rustls",
- "tracing",
- "zeroize",
-]
-
-[[package]]
 name = "ntpd"
 version = "2.0.0-alpha.20261113"
 dependencies = [
  "clock-steering",
  "hickory-resolver",
  "libc",
- "ntp-proto",
  "pps-time",
  "rand 0.8.8",
  "rustls",
@@ -933,6 +910,7 @@ dependencies = [
  "statime-config",
  "statime-csptp",
  "statime-netptp",
+ "statime-ntp",
  "statime-seccomp",
  "statime-wire",
  "timestamped-socket",
@@ -1561,6 +1539,28 @@ dependencies = [
  "timestamped-socket",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "statime-ntp"
+version = "0.1.0"
+dependencies = [
+ "aead",
+ "aes-siv",
+ "arbitrary",
+ "md-5",
+ "openssl",
+ "rand 0.8.8",
+ "rustls",
+ "rustls-openssl",
+ "rustls-platform-verifier",
+ "serde",
+ "serde_json",
+ "statime-base",
+ "tokio",
+ "tokio-rustls",
+ "tracing",
+ "zeroize",
 ]
 
 [[package]]

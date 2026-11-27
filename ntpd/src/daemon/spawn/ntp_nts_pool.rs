@@ -4,14 +4,14 @@ use std::fmt::Display;
 use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 
-use ntp_proto::tls_utils::Certificate;
 use statime_algo::LinkConfig;
 use statime_base::{Link, LinkId, SourceType, StdController};
+use statime_ntp::tls_utils::Certificate;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tracing::warn;
 
-use ntp_proto::{
+use statime_ntp::{
     KeyExchangeClient, NtsClientConfig, NtsError, PollIntervalLimits, ProtocolVersion, SourceConfig,
 };
 

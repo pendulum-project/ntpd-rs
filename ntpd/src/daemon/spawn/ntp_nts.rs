@@ -2,12 +2,12 @@ use std::fmt::Display;
 use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 
-use ntp_proto::{
-    KeyExchangeClient, NtsClientConfig, NtsError, SourceConfig, tls_utils::Certificate,
-};
-use ntp_proto::{PollIntervalLimits, ProtocolVersion};
 use statime_algo::LinkConfig;
 use statime_base::{Link, SourceType, StdController};
+use statime_ntp::{
+    KeyExchangeClient, NtsClientConfig, NtsError, SourceConfig, tls_utils::Certificate,
+};
+use statime_ntp::{PollIntervalLimits, ProtocolVersion};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tracing::warn;
@@ -223,8 +223,8 @@ where
 mod tests {
     use std::sync::Arc;
 
-    use ntp_proto::{PollIntervalLimits, SourceConfig};
     use statime_algo::{KalmanController, StdKalmanStorage};
+    use statime_ntp::{PollIntervalLimits, SourceConfig};
     use tokio::{io::AsyncReadExt, net::TcpListener};
 
     use crate::daemon::{
@@ -252,7 +252,7 @@ mod tests {
             address: NtsKeAddress(NormalizedAddress::new_from_parts("localhost", addr.port())),
             enable_srv_resolution: false,
             certificate_authorities: Arc::default(),
-            ntp_version: ntp_proto::ProtocolVersion::V4,
+            ntp_version: statime_ntp::ProtocolVersion::V4,
             poll_interval_limits: PollIntervalLimits::default(),
             desired_error_bound: statime_base::Duration::from_seconds_nanos(0, 1_000_000),
             delay_decay_rate: 1. / 86400f64.sqrt(),
@@ -290,7 +290,7 @@ mod tests {
             address: NtsKeAddress(NormalizedAddress::new_from_parts("localhost", addr.port())),
             enable_srv_resolution: true,
             certificate_authorities: Arc::default(),
-            ntp_version: ntp_proto::ProtocolVersion::V4,
+            ntp_version: statime_ntp::ProtocolVersion::V4,
             poll_interval_limits: PollIntervalLimits::default(),
             desired_error_bound: statime_base::Duration::from_seconds_nanos(0, 1_000_000),
             delay_decay_rate: 1. / 86400f64.sqrt(),

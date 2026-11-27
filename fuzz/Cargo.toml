@@ -15,8 +15,8 @@ tokio = { version = "1.32", features = ["full"] }
 version = "0.4"
 features = ["arbitrary-derive"]
 
-[dependencies.ntp-proto]
-path = "../ntp-proto"
+[dependencies.statime-ntp]
+path = "../statime-ntp"
 features = ["__internal-fuzz"]
 
 [dependencies.statime-wire]

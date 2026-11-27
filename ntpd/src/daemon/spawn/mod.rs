@@ -8,9 +8,9 @@ use std::{
     sync::{Arc, atomic::AtomicU64},
 };
 
-use ntp_proto::{ClockId, ProtocolVersion, SourceConfig, SourceNtsData};
 use serde::{Deserialize, Serialize};
 use statime_base::{LinkId, SourceType, StdController};
+use statime_ntp::{ClockId, ProtocolVersion, SourceConfig, SourceNtsData};
 use tokio::{
     sync::mpsc,
     task::JoinHandle,
@@ -369,8 +369,8 @@ pub use tests::*;
 mod tests {
     use std::future::pending;
 
-    use ntp_proto::SourceConfig;
     use statime_base::{ClockId, Controller, Link, LinkId, StdController};
+    use statime_ntp::SourceConfig;
 
     use crate::daemon::{clock::NtpClockWrapper, system::SystemManagers};
 

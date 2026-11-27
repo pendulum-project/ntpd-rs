@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
-use ntp_proto::{ClockId, ObservableSourceState, PollInterval};
 use pps_time::PpsDevice;
 use statime_base::{Direction, Duration, Link, Measurement, Timestamp};
+use statime_ntp::{ClockId, ObservableSourceState, PollInterval};
 use tokio::sync::mpsc;
 use tracing::{Instrument, Span, debug, error, instrument, warn};
 

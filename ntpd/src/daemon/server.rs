@@ -7,12 +7,12 @@ use std::{
     time::Duration,
 };
 
-use ntp_proto::{
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use statime_base::{Clock, TAI};
+use statime_ntp::{
     FilterAction, FilterList, KeySet, NtpVersion, Server, ServerReason, ServerResponse,
     ServerStatHandler,
 };
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use statime_base::{Clock, TAI};
 use timestamped_socket::socket::{RecvResult, open_ip};
 use tokio::task::JoinHandle;
 use tracing::{Instrument, Span, debug, instrument, warn};
@@ -36,11 +36,11 @@ impl From<SocketAddr> for ServerConfig {
             listen,
             denylist: FilterList {
                 filter: vec![],
-                action: ntp_proto::FilterAction::Deny,
+                action: statime_ntp::FilterAction::Deny,
             },
             allowlist: FilterList {
                 filter: vec!["::/0".parse().unwrap(), "0.0.0.0/0".parse().unwrap()],
-                action: ntp_proto::FilterAction::Ignore,
+                action: statime_ntp::FilterAction::Ignore,
             },
             rate_limiting_cache_size: 0,
             rate_limiting_cutoff: Duration::default(),
@@ -51,9 +51,9 @@ impl From<SocketAddr> for ServerConfig {
     }
 }
 
-impl From<ServerConfig> for ntp_proto::ServerConfig {
+impl From<ServerConfig> for statime_ntp::ServerConfig {
     fn from(value: ServerConfig) -> Self {
-        ntp_proto::ServerConfig {
+        statime_ntp::ServerConfig {
             denylist: value.denylist,
             allowlist: value.allowlist,
             rate_limiting_cache_size: value.rate_limiting_cache_size,
@@ -226,8 +226,8 @@ impl<C: 'static + Clock<TAI> + Send> ServerTask<C> {
                                 &mut send_buf[..length],
                                 &mut self.stats,
                             ) {
-                                ntp_proto::ServerAction::Ignore => { /* explicitly do nothing */ }
-                                ntp_proto::ServerAction::Respond { message } => {
+                                statime_ntp::ServerAction::Ignore => { /* explicitly do nothing */ }
+                                statime_ntp::ServerAction::Respond { message } => {
                                     if let Err(send_err) =
                                         socket.send_from_to(message, local_addr, source_addr).await
                                     {
@@ -275,10 +275,10 @@ impl<C: 'static + Clock<TAI> + Send> ServerTask<C> {
 mod tests {
     use std::{io::Cursor, net::SocketAddr};
 
-    use ntp_proto::{
+    use statime_base::Timestamp;
+    use statime_ntp::{
         KeySetProvider, NoCipher, NtpPacket, NtpServerInfo, NtpSnapshot, PollIntervalLimits,
     };
-    use statime_base::Timestamp;
     use timestamped_socket::socket::GeneralTimestampMode;
 
     use crate::test::alloc_port;

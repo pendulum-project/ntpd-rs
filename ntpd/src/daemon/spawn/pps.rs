@@ -3,9 +3,9 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use ntp_proto::SourceConfig;
 use statime_algo::LinkConfig;
 use statime_base::{Duration, SourceType, StdController};
+use statime_ntp::SourceConfig;
 use tokio::sync::mpsc;
 
 use crate::daemon::{

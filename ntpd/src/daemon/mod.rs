@@ -28,10 +28,10 @@ use std::{error::Error, io::IsTerminal, path::Path};
 use ::tracing::{info, warn};
 use clock_steering::unix::UnixClock;
 pub use config::Config;
-use ntp_proto::{NtpConfig, SourceConfig};
 pub use observer::ObservableState;
 use statime_algo::{ClockConfig, ControllerConfig, StdKalmanStorage};
 use statime_base::Duration;
+use statime_ntp::{NtpConfig, SourceConfig};
 use tokio::runtime::Builder;
 use tracing_subscriber::util::SubscriberInitExt;
 
@@ -265,7 +265,7 @@ fn run(options: &NtpDaemonOptions) -> Result<(), Box<dyn Error>> {
                             let server_config = server_config.generate_server_config();
                             let mut keyset_provider = managers.keyset_provider().await;
                             let server = managers.ntp_manager().new_server(
-                                ntp_proto::ServerConfig {
+                                statime_ntp::ServerConfig {
                                     denylist: server_config.denylist.clone(),
                                     allowlist: server_config.allowlist.clone(),
                                     rate_limiting_cache_size: server_config
