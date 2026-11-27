@@ -322,7 +322,7 @@ fn print_state_plain(output: &ObservableState) {
 
         println!(
             "\tPoll interval:\t\t{:.0}s",
-            source.poll_interval.as_duration().to_seconds(),
+            source.poll_interval.as_duration().as_seconds(),
         );
         println!("\tMissing polls:\t\t{}", source.unanswered_polls,);
         /*println!(

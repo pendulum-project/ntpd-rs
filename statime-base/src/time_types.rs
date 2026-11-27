@@ -254,7 +254,7 @@ impl Duration {
 
     /// Create a duration from a length in steps (2^-64ths of a second)
     #[must_use]
-    pub fn from_raw_steps(steps: i128) -> Self {
+    pub const fn from_raw_steps(steps: i128) -> Self {
         Self(steps)
     }
 
