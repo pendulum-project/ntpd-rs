@@ -4,7 +4,6 @@ use std::{
     net::{AddrParseError, IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
 };
 
-use ntp_proto::PollInterval;
 use serde::{
     Deserialize, Deserializer, Serialize,
     de::{self, Visitor},
@@ -14,6 +13,7 @@ use statime_base::Duration;
 use statime_config::{
     ConfigurableAtomic, InfiniteOr, IsNonNegative, IsPositive, NonNegative, Positive,
 };
+use statime_ntp::PollInterval;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(super) enum Unit {
@@ -389,7 +389,7 @@ impl Serialize for IpSubnet {
     }
 }
 
-impl From<IpSubnet> for ntp_proto::IpSubnet {
+impl From<IpSubnet> for statime_ntp::IpSubnet {
     fn from(value: IpSubnet) -> Self {
         Self {
             addr: value.addr,
@@ -480,7 +480,7 @@ impl Serialize for NtpVersion {
     }
 }
 
-impl From<NtpVersion> for ntp_proto::NtpVersion {
+impl From<NtpVersion> for statime_ntp::NtpVersion {
     fn from(value: NtpVersion) -> Self {
         match value {
             NtpVersion::V3 => Self::V3,
@@ -525,7 +525,7 @@ impl Serialize for NtsNtpVersion {
     }
 }
 
-impl From<NtsNtpVersion> for ntp_proto::NtpVersion {
+impl From<NtsNtpVersion> for statime_ntp::NtpVersion {
     fn from(value: NtsNtpVersion) -> Self {
         match value {
             NtsNtpVersion::V4 => Self::V4,

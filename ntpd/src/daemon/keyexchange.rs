@@ -6,8 +6,8 @@ use std::{
 };
 
 use libc::{ECONNABORTED, EMFILE, ENFILE, ENOBUFS, ENOMEM};
-use ntp_proto::{KeyExchangeServer, KeySet, NtpVersion};
-use ntp_proto::{NtsServerConfig, tls_utils::Certificate};
+use statime_ntp::{KeyExchangeServer, KeySet, NtpVersion};
+use statime_ntp::{NtsServerConfig, tls_utils::Certificate};
 use tokio::{net::TcpListener, task::JoinHandle};
 use tracing::{Instrument, Span, debug, error, instrument};
 
@@ -69,12 +69,14 @@ async fn run_nts_ke(
         ))
     })?;
 
-    let certificate_chain: Vec<Certificate> =
-        ntp_proto::tls_utils::pemfile::certs(&mut std::io::BufReader::new(certificate_chain_file))
-            .collect::<std::io::Result<Vec<Certificate>>>()?;
+    let certificate_chain: Vec<Certificate> = statime_ntp::tls_utils::pemfile::certs(
+        &mut std::io::BufReader::new(certificate_chain_file),
+    )
+    .collect::<std::io::Result<Vec<Certificate>>>()?;
 
-    let private_key =
-        ntp_proto::tls_utils::pemfile::private_key(&mut std::io::BufReader::new(private_key_file))?;
+    let private_key = statime_ntp::tls_utils::pemfile::private_key(&mut std::io::BufReader::new(
+        private_key_file,
+    ))?;
 
     let key_exchange_server = KeyExchangeServer::new(NtsServerConfig {
         certificate_chain,
@@ -192,7 +194,7 @@ pub(crate) fn certificates_from_file(path: &Path) -> std::io::Result<Vec<Certifi
 }
 
 fn certificates_from_bufread(mut reader: impl BufRead) -> std::io::Result<Vec<Certificate>> {
-    ntp_proto::tls_utils::pemfile::certs(&mut reader).collect()
+    statime_ntp::tls_utils::pemfile::certs(&mut reader).collect()
 }
 
 #[cfg(test)]
@@ -200,8 +202,8 @@ mod tests {
     use std::time::Duration;
     use std::{io::Cursor, net::SocketAddr, path::PathBuf};
 
-    use ntp_proto::KeySetProvider;
-    use ntp_proto::{KeyExchangeClient, NtpVersion, NtsClientConfig};
+    use statime_ntp::KeySetProvider;
+    use statime_ntp::{KeyExchangeClient, NtpVersion, NtsClientConfig};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpStream;
 
@@ -228,23 +230,23 @@ mod tests {
     #[test]
     fn parse_private_keys() {
         let input = include_bytes!("../../test-keys/end.key");
-        let _ = ntp_proto::tls_utils::pemfile::private_key(&mut input.as_slice()).unwrap();
+        let _ = statime_ntp::tls_utils::pemfile::private_key(&mut input.as_slice()).unwrap();
 
         let input = include_bytes!("../../test-keys/testca.key");
-        let _ = ntp_proto::tls_utils::pemfile::private_key(&mut input.as_slice()).unwrap();
+        let _ = statime_ntp::tls_utils::pemfile::private_key(&mut input.as_slice()).unwrap();
 
         // openssl does no longer seem to want to generate this format
         // so we use https://github.com/rustls/pemfile/blob/main/tests/data/rsa1024.pkcs1.pem
         let input = include_bytes!("../../test-keys/rsa_key.pem");
-        let _ = ntp_proto::tls_utils::pemfile::private_key(&mut input.as_slice()).unwrap();
+        let _ = statime_ntp::tls_utils::pemfile::private_key(&mut input.as_slice()).unwrap();
 
         // openssl ecparam -name prime256v1 -genkey -noout -out ec_key.pem
         let input = include_bytes!("../../test-keys/ec_key.pem");
-        let _ = ntp_proto::tls_utils::pemfile::private_key(&mut input.as_slice()).unwrap();
+        let _ = statime_ntp::tls_utils::pemfile::private_key(&mut input.as_slice()).unwrap();
 
         // openssl genpkey -algorithm EC -out pkcs8_key.pem -pkeyopt ec_paramgen_curve:prime256v1
         let input = include_bytes!("../../test-keys/pkcs8_key.pem");
-        let _ = ntp_proto::tls_utils::pemfile::private_key(&mut input.as_slice()).unwrap();
+        let _ = statime_ntp::tls_utils::pemfile::private_key(&mut input.as_slice()).unwrap();
     }
 
     #[tokio::test]
@@ -296,7 +298,7 @@ mod tests {
                     certificates: certificates_from_bufread(BufReader::new(Cursor::new(ca)))
                         .unwrap()
                         .into(),
-                    protocol_version: ntp_proto::ProtocolVersion::V4,
+                    protocol_version: statime_ntp::ProtocolVersion::V4,
                 })
                 .unwrap();
                 let io = TcpStream::connect(("localhost", port)).await.unwrap();
@@ -318,7 +320,7 @@ mod tests {
                     certificates: certificates_from_bufread(BufReader::new(Cursor::new(ca)))
                         .unwrap()
                         .into(),
-                    protocol_version: ntp_proto::ProtocolVersion::V4,
+                    protocol_version: statime_ntp::ProtocolVersion::V4,
                 })
                 .unwrap();
                 let io = TcpStream::connect(("localhost", port)).await.unwrap();
@@ -368,7 +370,7 @@ mod tests {
                 certificates: certificates_from_bufread(BufReader::new(Cursor::new(ca)))
                     .unwrap()
                     .into(),
-                protocol_version: ntp_proto::ProtocolVersion::V4,
+                protocol_version: statime_ntp::ProtocolVersion::V4,
             })
             .unwrap();
             let io = TcpStream::connect(("localhost", port)).await.unwrap();

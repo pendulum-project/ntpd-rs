@@ -234,11 +234,11 @@ jobs:
       - name: ./statime.server.toml
         run: cargo run --bin statime -- -c ./statime.server.toml validate
 
-      - name: ./ntp-proto/test-keys/unsafe.nts.client.toml
-        run: cargo run --bin statime -- -c ./ntp-proto/test-keys/unsafe.nts.client.toml validate
+      - name: ./statime-ntp/test-keys/unsafe.nts.client.toml
+        run: cargo run --bin statime -- -c ./statime-ntp/test-keys/unsafe.nts.client.toml validate
 
-      - name: ./ntp-proto/test-keys/unsafe.nts.server.toml
-        run: cargo run --bin statime -- -c ./ntp-proto/test-keys/unsafe.nts.server.toml validate
+      - name: ./statime-ntp/test-keys/unsafe.nts.server.toml
+        run: cargo run --bin statime -- -c ./statime-ntp/test-keys/unsafe.nts.server.toml validate
 
       - name: ./config/ntp.demobilize.toml
         run: cargo run --bin statime -- -c ./config/ntp.demobilize.toml validate

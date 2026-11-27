@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 use std::{fmt::Display, path::Path};
 
-use ntp_proto::{ClockId, ObservableSourceState, PollInterval};
 use statime_base::{Clock, Direction, Duration, LeapStatus, Link, Measurement, TAI};
+use statime_ntp::{ClockId, ObservableSourceState, PollInterval};
 use tracing::debug;
 use tracing::{Instrument, Span, error, instrument};
 
@@ -193,8 +193,8 @@ mod tests {
         sync::{Arc, RwLock},
     };
 
-    use ntp_proto::ClockId;
     use statime_base::{Clock, Duration, Link, LinkId, TAI, Timestamp};
+    use statime_ntp::ClockId;
     use tokio::sync::mpsc;
 
     use crate::{

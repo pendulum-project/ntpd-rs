@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 use std::{collections::HashMap, marker::PhantomData};
 
-use ntp_proto::{
+use statime_ntp::{
     ClockId, Measurement, NtpClock, NtpDuration, PollInterval, SourceConfig, SourceController,
     TimeSyncController,
 };
@@ -130,9 +130,9 @@ impl<C: NtpClock> TimeSyncController for SingleShotController<C> {
 
     fn new(
         clock: Self::Clock,
-        synchronization_config: ntp_proto::SynchronizationConfig,
+        synchronization_config: statime_ntp::SynchronizationConfig,
         algorithm_config: Self::AlgorithmConfig,
-    ) -> Result<Self, <Self::Clock as ntp_proto::NtpClock>::Error> {
+    ) -> Result<Self, <Self::Clock as statime_ntp::NtpClock>::Error> {
         Ok(SingleShotController {
             clock,
             sources: HashMap::new(),
@@ -142,7 +142,7 @@ impl<C: NtpClock> TimeSyncController for SingleShotController<C> {
         })
     }
 
-    fn take_control(&mut self) -> Result<(), <Self::Clock as ntp_proto::NtpClock>::Error> {
+    fn take_control(&mut self) -> Result<(), <Self::Clock as statime_ntp::NtpClock>::Error> {
         //no need for actions
         Ok(())
     }
@@ -186,16 +186,16 @@ impl<C: NtpClock> TimeSyncController for SingleShotController<C> {
         &mut self,
         id: ClockId,
         message: Self::SourceMessage,
-    ) -> ntp_proto::StateUpdate<Self::ControllerMessage> {
+    ) -> statime_ntp::StateUpdate<Self::ControllerMessage> {
         self.sources.insert(id, message);
         // TODO, check and update time once we have sufficient sources
         self.try_steer();
-        ntp_proto::StateUpdate::default()
+        statime_ntp::StateUpdate::default()
     }
 
-    fn time_update(&mut self) -> ntp_proto::StateUpdate<Self::ControllerMessage> {
+    fn time_update(&mut self) -> statime_ntp::StateUpdate<Self::ControllerMessage> {
         // no need for action
-        ntp_proto::StateUpdate::default()
+        statime_ntp::StateUpdate::default()
     }
 }
 
@@ -223,7 +223,7 @@ where
         }
     }
 
-    fn desired_poll_interval(&self) -> ntp_proto::PollInterval {
+    fn desired_poll_interval(&self) -> statime_ntp::PollInterval {
         if self.done {
             PollInterval::NEVER
         } else {
@@ -231,7 +231,7 @@ where
         }
     }
 
-    fn observe(&self) -> ntp_proto::ObservableSourceTimedata {
-        ntp_proto::ObservableSourceTimedata::default()
+    fn observe(&self) -> statime_ntp::ObservableSourceTimedata {
+        statime_ntp::ObservableSourceTimedata::default()
     }
 }

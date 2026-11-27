@@ -341,7 +341,7 @@ fn print_state_plain(output: &ObservableState) {
             println!(
                 "\tNTS cookies:\t\t{}/{} available",
                 nts_cookies,
-                ntp_proto::MAX_COOKIES
+                statime_ntp::MAX_COOKIES
             );
         }
     }
@@ -428,7 +428,7 @@ mod tests {
     use std::os::unix::prelude::PermissionsExt;
     use std::path::Path;
 
-    use ntp_proto::SystemSnapshot;
+    use statime_ntp::SystemSnapshot;
 
     use crate::{
         daemon::{

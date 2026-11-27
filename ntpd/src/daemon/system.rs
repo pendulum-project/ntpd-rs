@@ -10,10 +10,10 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
-use ntp_proto::{KeySet, NtpConfig, NtpManager};
 use statime_base::{ActiveLinkData, ClockId, Link, LinkId, SourceType, StdController};
 #[cfg(target_os = "linux")]
 use statime_csptp::CsptpConfig;
+use statime_ntp::{KeySet, NtpConfig, NtpManager};
 use tokio::{
     task::JoinHandle,
     time::{Instant, Sleep},

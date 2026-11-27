@@ -6,10 +6,10 @@ use std::{
 };
 
 use libfuzzer_sys::fuzz_target;
-use ntp_proto::{
+use rand::{rngs::StdRng, set_thread_rng, SeedableRng};
+use statime_ntp::{
     test_cookie, EncryptResult, ExtensionField, ExtensionHeaderVersion, KeySetProvider, NtpPacket,
 };
-use rand::{rngs::StdRng, set_thread_rng, SeedableRng};
 
 const fn next_multiple_of(lhs: u16, rhs: u16) -> u16 {
     match lhs % rhs {

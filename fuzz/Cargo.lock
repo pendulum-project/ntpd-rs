@@ -419,32 +419,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "ntp-proto"
-version = "2.0.0-alpha.20260715"
-dependencies = [
- "aead",
- "aes-siv",
- "arbitrary",
- "md-5",
- "rand 0.8.8",
- "rustls",
- "rustls-platform-verifier",
- "serde",
- "statime-base",
- "tokio",
- "tokio-rustls",
- "tracing",
- "zeroize",
-]
-
-[[package]]
 name = "ntp-proto-fuzz"
 version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
- "ntp-proto",
  "rand 0.8.8",
  "statime-base",
+ "statime-ntp",
  "statime-wire",
  "tokio",
 ]
@@ -807,6 +788,25 @@ version = "0.1.1"
 dependencies = [
  "libm",
  "serde",
+]
+
+[[package]]
+name = "statime-ntp"
+version = "0.1.0"
+dependencies = [
+ "aead",
+ "aes-siv",
+ "arbitrary",
+ "md-5",
+ "rand 0.8.8",
+ "rustls",
+ "rustls-platform-verifier",
+ "serde",
+ "statime-base",
+ "tokio",
+ "tokio-rustls",
+ "tracing",
+ "zeroize",
 ]
 
 [[package]]

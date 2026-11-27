@@ -5,8 +5,8 @@ use crate::daemon::system::System;
 use super::server::ServerStats;
 use super::sockets::create_unix_socket_with_permissions;
 use libc::{ECONNABORTED, EMFILE, ENFILE, ENOBUFS, ENOMEM};
-use ntp_proto::{ClockId, ObservableSourceState, SystemSnapshot};
 use statime_base::{Clock, LinkId, StdController, TAI, Timestamp};
+use statime_ntp::{ClockId, ObservableSourceState, SystemSnapshot};
 use std::collections::HashMap;
 use std::convert::Into;
 use std::net::Ipv4Addr;
@@ -203,9 +203,9 @@ mod tests {
     use std::borrow::BorrowMut;
     use std::time::Duration;
 
-    use ntp_proto::v5::BloomFilter;
-    use ntp_proto::{NtpSnapshot, PollIntervalLimits, Reach, ReferenceId};
     use statime_base::{LeapStatus, TimeSnapshot, Timestamp};
+    use statime_ntp::v5::BloomFilter;
+    use statime_ntp::{NtpSnapshot, PollIntervalLimits, Reach, ReferenceId};
     use tokio::{io::AsyncReadExt, net::UnixStream};
 
     use crate::test::alloc_port;

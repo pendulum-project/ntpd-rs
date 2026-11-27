@@ -3,7 +3,7 @@
 use std::io::Cursor;
 
 use libfuzzer_sys::fuzz_target;
-use ntp_proto::{NoCipher, NtpPacket};
+use statime_ntp::{NoCipher, NtpPacket};
 
 fuzz_target!(|data: Vec<u8>| {
     // packets expand by a factor of at most 4 on re-encode

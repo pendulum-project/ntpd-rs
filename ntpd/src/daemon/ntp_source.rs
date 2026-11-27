@@ -2,8 +2,8 @@ use std::{
     collections::HashMap, future::Future, marker::PhantomData, net::SocketAddr, pin::Pin, sync::Arc,
 };
 
-use ntp_proto::{ClockId, NtpSource, NtpSourceActionIterator, ObservableSourceState};
 use statime_base::{Clock, Link, LinkId, TAI, Timestamp};
+use statime_ntp::{ClockId, NtpSource, NtpSourceActionIterator, ObservableSourceState};
 #[cfg(target_os = "linux")]
 use timestamped_socket::socket::open_interface_udp;
 use timestamped_socket::{
@@ -133,7 +133,7 @@ where
 
             for action in actions {
                 match action {
-                    ntp_proto::NtpSourceAction::Send(packet) => {
+                    statime_ntp::NtpSourceAction::Send(packet) => {
                         if matches!(self.setup_socket(), SocketResult::Abort) {
                             return LinkTerminationReason::NetworkIssue;
                         }
@@ -174,16 +174,16 @@ where
                             }
                         }
                     }
-                    ntp_proto::NtpSourceAction::SetTimer(timeout) => {
+                    statime_ntp::NtpSourceAction::SetTimer(timeout) => {
                         if let Some(deadline) = Instant::now().checked_add(timeout) {
                             // If it overflows, it is so far in the future we may as well not set the timer.
                             poll_wait.as_mut().reset(deadline);
                         }
                     }
-                    ntp_proto::NtpSourceAction::Reset => {
+                    statime_ntp::NtpSourceAction::Reset => {
                         return LinkTerminationReason::Unreachable;
                     }
-                    ntp_proto::NtpSourceAction::Demobilize => {
+                    statime_ntp::NtpSourceAction::Demobilize => {
                         return LinkTerminationReason::MustDemobilize;
                     }
                 }
@@ -212,16 +212,16 @@ where
 
                 for action in initial_actions {
                     match action {
-                        ntp_proto::NtpSourceAction::Send(_) => {
+                        statime_ntp::NtpSourceAction::Send(_) => {
                             unreachable!("Should not be sending messages from startup")
                         }
-                        ntp_proto::NtpSourceAction::SetTimer(timeout) => {
+                        statime_ntp::NtpSourceAction::SetTimer(timeout) => {
                             poll_wait.as_mut().reset(Instant::now() + timeout);
                         }
-                        ntp_proto::NtpSourceAction::Reset => {
+                        statime_ntp::NtpSourceAction::Reset => {
                             unreachable!("Should not be resetting from startup")
                         }
-                        ntp_proto::NtpSourceAction::Demobilize => {
+                        statime_ntp::NtpSourceAction::Demobilize => {
                             todo!("Should not be demobilizing from startup")
                         }
                     }
@@ -310,10 +310,10 @@ mod tests {
         time::Duration,
     };
 
-    use ntp_proto::{
+    use statime_base::{ClockError, LeapStatus, TimeSnapshot};
+    use statime_ntp::{
         NoCipher, NtpConfig, NtpManager, NtpPacket, NtpServerInfo, ProtocolVersion, SourceConfig,
     };
-    use statime_base::{ClockError, LeapStatus, TimeSnapshot};
     use timestamped_socket::socket::{GeneralTimestampMode, Open, open_ip};
     use tokio::sync::mpsc;
 

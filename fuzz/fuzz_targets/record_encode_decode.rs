@@ -1,6 +1,6 @@
 #![no_main]
 use libfuzzer_sys::fuzz_target;
-use ntp_proto::NtsRecord;
+use statime_ntp::NtsRecord;
 use std::{
     future::Future,
     pin::pin,
