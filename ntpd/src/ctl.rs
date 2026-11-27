@@ -524,7 +524,7 @@ mod tests {
 
     #[test]
     fn cli_config() {
-        let config_str = "/foo/bar/ntp.toml";
+        let config_str = "/foo/bar/statime.toml";
         let config = Path::new(config_str);
         let arguments = &[BINARY, "-c", config_str];
 

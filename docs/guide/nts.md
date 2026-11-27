@@ -53,7 +53,7 @@ certificate-authority = "/path/to/certificate/authority.pem"
 
 With hand-selected NTS sources, there is likely more trust in the time received from them, and lower risk of interference with the communication with those sources. Therefore, the protection in depth offered by requiring a minimum number of time sources to agree before modifying the clock is not as necessary, and can inhibit running with only one or two sources.
 
-To disable this protection, include the following snippet in your `ntp.toml`
+To disable this protection, include the following snippet in your `statime.toml`
 ```toml
 [synchronization]
 minimum-agreeing-sources = 1

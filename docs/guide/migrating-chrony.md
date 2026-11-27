@@ -6,7 +6,7 @@ Before we start with the specifics on how to convert individual directives, firs
 
 Please note that for some of the settings below, ntpd-rs and chrony use different defaults. When converting a configuration, please pay particular attention to `minsources`/`minimum-agreeing-sources`, `maxstep` and the corresponding `-panic-thresholds`, and any settings for NTS server functionality. Validation of the resulting ntpd-rs configuration can be done with `statime validate -c <path>`, which should at least catch the most egregious errors.
 
-This guide does not go into detail on all of chrony's configuration directives, but rather focusses on those most important for successful migration. If a directive is not mentioned here, there may still be ntpd-rs options in the [configuration reference](../man/ntp.toml.5.md) that achieve the desired effect. Note that not all functionality of chrony is currently supported, a short overview of major differences is given [at the end of this document](#non-supported-features)
+This guide does not go into detail on all of chrony's configuration directives, but rather focusses on those most important for successful migration. If a directive is not mentioned here, there may still be ntpd-rs options in the [configuration reference](../man/statime.toml.5.md) that achieve the desired effect. Note that not all functionality of chrony is currently supported, a short overview of major differences is given [at the end of this document](#non-supported-features)
 
 ## Time sources
 
@@ -93,7 +93,7 @@ startup-step-panic-threshold = { forward="inf", backward = 86400 }
 accumulated-step-panic-threshold = "inf"
 ```
 
-Chrony and ntpd-rs use different algorithms for synchronizing the time. This means that options for tuning filtering of the time differ significantly, and we cannot offer precise guidance on how to translate the chrony parameters to values for ntpd-rs. When migrating a configuration that tunes chrony's algorithm, one should take the intent of the tuning and use that as guidance when choosing which [time synchronization options](../man/ntp.toml.5.md#synchronization) to change.
+Chrony and ntpd-rs use different algorithms for synchronizing the time. This means that options for tuning filtering of the time differ significantly, and we cannot offer precise guidance on how to translate the chrony parameters to values for ntpd-rs. When migrating a configuration that tunes chrony's algorithm, one should take the intent of the tuning and use that as guidance when choosing which [time synchronization options](../man/statime.toml.5.md#synchronization) to change.
 
 When tuning the synchronization algorithm, it is important to note a major philosophical difference between chrony and ntpd-rs. For chrony, the majority of the algorithm tuning parameters are set on an individual time source. Within ntpd-rs, all control of the filtering is done via global parameters. Although we do not expect this to be the case, should there be specific parameters you would wish to configure on a per-source basis, please let us know so we can consider this for future releases.
 

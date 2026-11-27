@@ -392,7 +392,7 @@ impl Config {
         }
 
         // for the global file we also ignore it when there are permission errors, or if it does not exist.
-        let global_path = Path::new("/etc/ntpd-rs/ntp.toml");
+        let global_path = Path::new("/etc/ntpd-rs/statime.toml");
         match Config::load(global_path) {
             Err(ConfigError::CouldNotRead { path, cause })
                 if path == global_path

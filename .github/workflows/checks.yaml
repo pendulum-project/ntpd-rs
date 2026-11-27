@@ -228,11 +228,11 @@ jobs:
       - name: Install rust toolchain
         run: rustup toolchain install "$STABLE_RUST_VERSION" && rustup override set "$STABLE_RUST_VERSION"
 
-      - name: ./ntp.toml
-        run: cargo run --bin statime -- -c ./ntp.toml validate
+      - name: ./statime.toml
+        run: cargo run --bin statime -- -c ./statime.toml validate
 
-      - name: ./ntp.server.toml
-        run: cargo run --bin statime -- -c ./ntp.server.toml validate
+      - name: ./statime.server.toml
+        run: cargo run --bin statime -- -c ./statime.server.toml validate
 
       - name: ./ntp-proto/test-keys/unsafe.nts.client.toml
         run: cargo run --bin statime -- -c ./ntp-proto/test-keys/unsafe.nts.client.toml validate
@@ -243,8 +243,8 @@ jobs:
       - name: ./config/ntp.demobilize.toml
         run: cargo run --bin statime -- -c ./config/ntp.demobilize.toml validate
 
-      - name: ./pkg/common/ntp.toml.default
-        run: cargo run --bin statime -- -c ./docs/examples/conf/ntp.toml.default validate
+      - name: ./pkg/common/statime.toml.default
+        run: cargo run --bin statime -- -c ./docs/examples/conf/statime.toml.default validate
 
   man-sync:
     name: Validate man pages

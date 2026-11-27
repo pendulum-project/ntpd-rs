@@ -46,7 +46,7 @@ The final section is empty, but if we were running a server, it would show stati
 
 ## Configuring a custom time source
 
-The sources ntpd-rs uses to get the current time can be configured in the `/etc/ntpd-rs/ntp.toml` configuration file. Suppose that, in addition to the sources from the NTP pool, we also always want to use two sources from the [time.nl](https://time.nl) pool. To do this, we add the following lines to the configuration file:
+The sources ntpd-rs uses to get the current time can be configured in the `/etc/ntpd-rs/statime.toml` configuration file. Suppose that, in addition to the sources from the NTP pool, we also always want to use two sources from the [time.nl](https://time.nl) pool. To do this, we add the following lines to the configuration file:
 ```toml
 [[source]]
 mode = "pool"

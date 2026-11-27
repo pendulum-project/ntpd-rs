@@ -49,7 +49,7 @@ fn test_validate_good() {
     let result = test_ntp_ctl_output(&[
         "validate",
         "-c",
-        &format!("{CARGO_MANIFEST_DIR}/../ntp.toml"),
+        &format!("{CARGO_MANIFEST_DIR}/../statime.toml"),
     ]);
 
     assert!(contains_bytes(&result.stderr, b"good"));

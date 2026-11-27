@@ -40,7 +40,7 @@ The \f[V]statime-daemon\f[R] can be configured as both an NTP client and
 an NTP server.
 The daemon also works with the Network Time Security (NTS) protocol.
 Details of the configuration of the daemon and implementation details
-can be found in ntp.toml(5), where several concepts of the
+can be found in statime.toml(5), where several concepts of the
 statime-daemon are also explained.
 .SH OPTIONS
 .TP
@@ -48,7 +48,7 @@ statime-daemon are also explained.
 The configuration file path for the statime-daemon where settings for
 the configuration of ntpd-rs are stored.
 If not specified the default configuration file is
-\f[V]/etc/ntpd-rs/ntp.toml\f[R].
+\f[V]/etc/ntpd-rs/statime.toml\f[R].
 .TP
 \f[V]-h\f[R], \f[V]--help\f[R]
 Display usage instructions.
@@ -65,4 +65,4 @@ The default log level is \f[I]info\f[R].
 Display version information.
 .SH SEE ALSO
 .PP
-statime(8), statime-metrics(8), ntp.toml(5)
+statime(8), statime-metrics(8), statime.toml(5)

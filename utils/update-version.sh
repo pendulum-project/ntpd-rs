@@ -37,7 +37,7 @@ echo "Updating version in man pages"
 sed -i 's/^title: STATIME(8) ntpd-rs .*/title: STATIME(8) ntpd-rs '"$NEW_VERSION"' | ntpd-rs/' "$PROJECT_DIR"/docs/man/statime.8.md
 sed -i 's/^title: STATIME-DAEMON(8) ntpd-rs .*/title: STATIME-DAEMON(8) ntpd-rs '"$NEW_VERSION"' | ntpd-rs/' "$PROJECT_DIR"/docs/man/statime-daemon.8.md
 sed -i 's/^title: STATIME-METRICS(8) ntpd-rs .*/title: STATIME-METRICS(8) ntpd-rs '"$NEW_VERSION"' | ntpd-rs/' "$PROJECT_DIR"/docs/man/statime-metrics.8.md
-sed -i 's/^title: NTP.TOML(5) ntpd-rs .*/title: NTP.TOML(5) ntpd-rs '"$NEW_VERSION"' | ntpd-rs/' "$PROJECT_DIR"/docs/man/ntp.toml.5.md
+sed -i 's/^title: STATIME.TOML(5) ntpd-rs .*/title: STATIME.TOML(5) ntpd-rs '"$NEW_VERSION"' | ntpd-rs/' "$PROJECT_DIR"/docs/man/statime.toml.5.md
 
 echo "Rebuilding precompiled man pages"
 utils/generate-man.sh

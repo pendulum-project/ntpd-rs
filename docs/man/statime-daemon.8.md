@@ -18,7 +18,7 @@ title: STATIME-DAEMON(8) ntpd-rs 2.0.0-alpha.20261113 | ntpd-rs
 NTP implementation with a focus on security and stability. The `statime-daemon` can
 be configured as both an NTP client and an NTP server. The daemon also works
 with the Network Time Security (NTS) protocol. Details of the configuration
-of the daemon and implementation details can be found in ntp.toml(5), where
+of the daemon and implementation details can be found in statime.toml(5), where
 several concepts of the statime-daemon are also explained.
 
 # OPTIONS
@@ -26,7 +26,7 @@ several concepts of the statime-daemon are also explained.
 `-c` *path*, `--config`=*path*
 :   The configuration file path for the statime-daemon where settings for the
     configuration of ntpd-rs are stored. If not specified the default
-    configuration file is `/etc/ntpd-rs/ntp.toml`.
+    configuration file is `/etc/ntpd-rs/statime.toml`.
 
 `-h`, `--help`
 :   Display usage instructions.
@@ -44,4 +44,4 @@ several concepts of the statime-daemon are also explained.
 
 [statime(8)](statime.8.md),
 [statime-metrics(8)](statime-metrics.8.md),
-[ntp.toml(5)](ntp.toml.5.md)
+[statime.toml(5)](statime.toml.5.md)
