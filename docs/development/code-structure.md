@@ -13,7 +13,7 @@ ntpd-rs is split into several crates with three goals in mind:
  - Limit the scopes where we use unsafe code, ensuring that it is more
    straightforward to verify.
 
-The main `statime-ntp` and `ntpd` crates are set up such that neither contains any
+The main `statime-ntp` and `statime` crates are set up such that neither contains any
 unsafe code. Unsafe code is limited to the (external) `timestamped-socket`, `clock-steering` and `pps-time` crates,
 which are purposefully kept small and only offer a safe API.
 
@@ -48,14 +48,14 @@ clock. Touching the system clock uses `libc` and is inherently unsafe.
 The [`pps-time` crate](https://github.com/pendulum-project/pps-time) wraps the system calls needed to interact with a PPS device. To
 interact with PPS devices ioctl system calls are used, which uses `libc` and is inherently unsafe.
 
-### ntpd
+### statime
 
-The `ntpd` crate contains the code for all three end-user binaries that our
+The `statime` crate contains the code for all three end-user binaries that our
 project produces. This includes
 
-- `statime-daemon` (in `ntpd/src/daemon`)
-- `statime` (in `ntpd/src/ctl.rs`)
-- `statime-metrics` (in `ntpd/src/metrics`)
+- `statime-daemon` (in `statime/src/daemon`)
+- `statime` (in `statime/src/ctl.rs`)
+- `statime-metrics` (in `statime/src/metrics`)
 
 Each of these should mostly contain the actual execution code that calls each
 of the previously mentioned crates when required.

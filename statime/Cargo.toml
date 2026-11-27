@@ -1,5 +1,5 @@
 [package]
-name = "ntpd"
+name = "statime"
 readme = "README.md"
 description.workspace = true
 version.workspace = true

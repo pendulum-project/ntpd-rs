@@ -1,8 +1,8 @@
 [workspace]
 members = [
     "clock-steering",
-    "ntpd",
     "pps-time",
+    "statime",
     "statime-algo",
     "statime-base",
     "statime-config",

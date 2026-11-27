@@ -1,6 +1,6 @@
 ![checks](https://github.com/pendulum-project/ntpd-rs/actions/workflows/checks.yaml/badge.svg?branch=main)
 [![codecov](https://codecov.io/gh/pendulum-project/ntpd-rs/branch/main/graph/badge.svg?token=WES1JIYUJH)](https://codecov.io/gh/pendulum-project/ntpd-rs)
-[![Crates.io](https://img.shields.io/crates/v/ntpd.svg)](https://crates.io/crates/ntpd)
+[![Crates.io](https://img.shields.io/crates/v/statime.svg)](https://crates.io/crates/statime)
 [![Docs](https://img.shields.io/badge/ntpd--rs-blue?label=docs)](https://docs.ntpd-rs.pendulum-project.org/)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/8054/badge)](https://www.bestpractices.dev/projects/8054)
 

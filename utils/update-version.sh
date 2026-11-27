@@ -31,7 +31,7 @@ done < "$PROJECT_DIR/Cargo.toml"
 mv "$tmp_file" "$PROJECT_DIR/Cargo.toml"
 
 echo "Updating rpm version in Cargo.toml"
-sed -i 's/^version = .* #MARKER: RPM-VERSION/version = "'"$RPM_VERSION"'" #MARKER: RPM-VERSION/' "$PROJECT_DIR"/ntpd/Cargo.toml
+sed -i 's/^version = .* #MARKER: RPM-VERSION/version = "'"$RPM_VERSION"'" #MARKER: RPM-VERSION/' "$PROJECT_DIR"/statime/Cargo.toml
 
 echo "Updating version in man pages"
 sed -i 's/^title: STATIME(8) ntpd-rs .*/title: STATIME(8) ntpd-rs '"$NEW_VERSION"' | ntpd-rs/' "$PROJECT_DIR"/docs/man/statime.8.md

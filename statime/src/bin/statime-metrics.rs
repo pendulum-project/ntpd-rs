@@ -4,5 +4,5 @@
 // PR fixing that one lint and enabling it accross all crates.
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    ntpd::metrics_exporter_main()
+    statime::metrics_exporter_main()
 }

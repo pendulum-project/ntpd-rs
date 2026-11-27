@@ -7,7 +7,7 @@
 use std::process;
 
 fn main() {
-    if let Err(err) = ntpd::daemon_main() {
+    if let Err(err) = statime::daemon_main() {
         eprintln!("{err}");
         process::exit(1);
     }

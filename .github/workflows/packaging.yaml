@@ -116,7 +116,7 @@ jobs:
         run: python -m pip install --upgrade mike mkdocs-material
 
       - name: Read the version from the manifest file
-        run: echo "release_version=$(cargo read-manifest --manifest-path ntpd/Cargo.toml | jq -r .version)" >> "$GITHUB_ENV"
+        run: echo "release_version=$(cargo read-manifest --manifest-path statime/Cargo.toml | jq -r .version)" >> "$GITHUB_ENV"
 
       - name: Generate docs
         run: mike deploy ${release_version} latest
@@ -146,7 +146,7 @@ jobs:
           persist-credentials: true
 
       - name: Read the version from the manifest file
-        run: echo "release_version=$(cargo read-manifest --manifest-path ntpd/Cargo.toml | jq -r .version)" >> "$GITHUB_ENV"
+        run: echo "release_version=$(cargo read-manifest --manifest-path statime/Cargo.toml | jq -r .version)" >> "$GITHUB_ENV"
 
       - name: Download artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -198,7 +198,7 @@ jobs:
           test "$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}" --jq .commit.verification.verified)" == "true"
 
       - name: Read the version from the manifest file
-        run: echo "release_version=$(cargo read-manifest --manifest-path ntpd/Cargo.toml | jq -r .version)" >> "$GITHUB_ENV"
+        run: echo "release_version=$(cargo read-manifest --manifest-path statime/Cargo.toml | jq -r .version)" >> "$GITHUB_ENV"
 
       - name: Version in Cargo.toml must match the branch name
         run: test "release/$release_version" == "${{ github.ref_name }}" # zizmor: ignore[template-injection] attacker can't push to arbitrary branch on our repo
