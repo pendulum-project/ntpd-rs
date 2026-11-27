@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
 
-cargo publish -p ntpd
+cargo publish -p statime

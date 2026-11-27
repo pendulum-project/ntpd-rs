@@ -10,7 +10,7 @@ target_dir="target/pkg"
 rm -rf "$target_dir"
 mkdir -p "$target_dir"
 
-package_version=$(cargo read-manifest --manifest-path ntpd/Cargo.toml | jq -r .version)
+package_version=$(cargo read-manifest --manifest-path statime/Cargo.toml | jq -r .version)
 toolchain=$(rustup show active-toolchain | cut -d' ' -f1)
 host_target=$(echo "$toolchain" | cut -d'-' -f2-)
 sysroot=$(rustc --print sysroot)
@@ -22,8 +22,8 @@ echo "--- Host target is '$host_target'"
 for target in "${targets[@]}"; do
     dbg_sym_tar="ntpd-rs_dbg_$package_version-$target.tar.gz"
 
-    echo "--- Calling cross for building ntpd package for target '$target'"
-    cross build --target "$target" --package ntpd --release --features "${RELEASE_FEATURES:-}"
+    echo "--- Calling cross for building statime package for target '$target'"
+    cross build --target "$target" --package statime --release --features "${RELEASE_FEATURES:-}"
 
     echo "--- Creating separate debug symbol files for target '$target'"
     (
@@ -45,10 +45,10 @@ for target in "${targets[@]}"; do
     );
 
     echo "--- Creating deb package"
-    cargo deb --no-build --no-strip --target "$target" --compress-type xz --package ntpd
+    cargo deb --no-build --no-strip --target "$target" --compress-type xz --package statime
 
     echo "--- Creating rpm package"
-    cargo generate-rpm --payload-compress xz --package ntpd --target "$target" --target-dir target
+    cargo generate-rpm --payload-compress xz --package statime --target "$target" --target-dir target
 
     echo "--- Copying output files to target"
     cp "target/$target/release/$dbg_sym_tar" "$target_dir/"
@@ -63,5 +63,3 @@ echo "--- Generating SHA256SUMS file"
 )
 
 echo "--- Done, output is in $target_dir"
-
-

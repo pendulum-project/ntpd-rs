@@ -61,7 +61,7 @@ request resulted in.
 Tests can be written using the standard rust testing framework (ran using
 `cargo test`) and should mostly be unit-level tests. If you want to write
 integration tests (which would be encouraged) you can do so in the `tests`
-folder in the ntpd crate.
+folder in the statime crate.
 
 Additionally, we have a few fuzz testing targets. If you can think of any new
 targets let us know or add them!
