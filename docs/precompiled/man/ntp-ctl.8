@@ -18,7 +18,8 @@
 .hy
 .SH NAME
 .PP
-\f[V]ntp-ctl\f[R] - management client for the ntpd-rs ntp-daemon process
+\f[V]ntp-ctl\f[R] - management client for the ntpd-rs statime-daemon
+process
 .SH SYNOPSIS
 .PP
 \f[V]ntp-ctl\f[R] validate [\f[V]-c\f[R] \f[I]path\f[R]]
@@ -71,7 +72,7 @@ Checks if the configuration specified (or
 \f[V]/etc/ntpd-rs/ntp.toml\f[R] by default) is valid.
 .TP
 \f[V]status\f[R]
-Returns status information about the current state of the ntp-daemon
+Returns status information about the current state of the statime-daemon
 that the client connects to.
 .TP
 \f[V]force-sync\f[R]
@@ -82,4 +83,4 @@ This command should never be used without any validation by a human
 operator.
 .SH SEE ALSO
 .PP
-ntp-daemon(8), ntp-metrics-exporter(8), ntp.toml(5)
+statime-daemon(8), ntp-metrics-exporter(8), ntp.toml(5)

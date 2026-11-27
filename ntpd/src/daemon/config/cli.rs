@@ -3,11 +3,11 @@ use std::{path::PathBuf, str::FromStr};
 use crate::daemon::tracing::LogLevel;
 
 const USAGE_MSG: &str = "\
-usage: ntp-daemon [-c PATH] [-l LOG_LEVEL]
-       ntp-daemon -h
-       ntp-daemon -v";
+usage: statime-daemon [-c PATH] [-l LOG_LEVEL]
+       statime-daemon -h
+       statime-daemon -v";
 
-const DESCRIPTOR: &str = "ntp-daemon - synchronize system time";
+const DESCRIPTOR: &str = "statime-daemon - synchronize system time";
 
 const HELP_MSG: &str = "Options:
   -c, --config=PATH             change the config .toml file
@@ -48,7 +48,7 @@ impl CliArg {
     where
         I: IntoIterator<Item = String>,
     {
-        // the first argument is the ntp-daemon command - so we can skip it
+        // the first argument is the statime-daemon command - so we can skip it
         let mut arg_iter = iter.into_iter().skip(1);
         let mut processed = vec![];
         let mut rest = vec![];
@@ -210,14 +210,14 @@ mod tests {
 
     #[test]
     fn cli_external_config() {
-        let arguments = &["/usr/bin/ntp-daemon", "--config", "other.toml"];
+        let arguments = &["/usr/bin/statime-daemon", "--config", "other.toml"];
         let parsed_empty = NtpDaemonOptions::try_parse_from(arguments).unwrap();
 
         assert_eq!(parsed_empty.config, Some("other.toml".into()));
         assert!(parsed_empty.log_level.is_none());
         assert_eq!(parsed_empty.action, NtpDaemonAction::Run);
 
-        let arguments = &["/usr/bin/ntp-daemon", "-c", "other.toml"];
+        let arguments = &["/usr/bin/statime-daemon", "-c", "other.toml"];
         let parsed_empty = NtpDaemonOptions::try_parse_from(arguments).unwrap();
 
         assert_eq!(parsed_empty.config, Some("other.toml".into()));
@@ -227,13 +227,13 @@ mod tests {
 
     #[test]
     fn cli_log_level() {
-        let arguments = &["/usr/bin/ntp-daemon", "--log-level", "debug"];
+        let arguments = &["/usr/bin/statime-daemon", "--log-level", "debug"];
         let parsed_empty = NtpDaemonOptions::try_parse_from(arguments).unwrap();
 
         assert!(parsed_empty.config.is_none());
         assert_eq!(parsed_empty.log_level.unwrap(), LogLevel::Debug);
 
-        let arguments = &["/usr/bin/ntp-daemon", "-l", "debug"];
+        let arguments = &["/usr/bin/statime-daemon", "-l", "debug"];
         let parsed_empty = NtpDaemonOptions::try_parse_from(arguments).unwrap();
 
         assert!(parsed_empty.config.is_none());

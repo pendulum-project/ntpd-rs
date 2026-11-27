@@ -4,7 +4,7 @@ title: NTP-CTL(8) ntpd-rs 2.0.0-alpha.20261113 | ntpd-rs
 
 # NAME
 
-`ntp-ctl` - management client for the ntpd-rs ntp-daemon process
+`ntp-ctl` - management client for the ntpd-rs statime-daemon process
 
 # SYNOPSIS
 
@@ -46,7 +46,7 @@ with the daemon.
     default) is valid.
 
 `status`
-:   Returns status information about the current state of the ntp-daemon that
+:   Returns status information about the current state of the statime-daemon that
     the client connects to.
 
 `force-sync`
@@ -57,6 +57,6 @@ with the daemon.
 
 # SEE ALSO
 
-[ntp-daemon(8)](ntp-daemon.8.md),
+[statime-daemon(8)](statime-daemon.8.md),
 [ntp-metrics-exporter(8)](ntp-metrics-exporter.8.md),
 [ntp.toml(5)](ntp.toml.5.md)

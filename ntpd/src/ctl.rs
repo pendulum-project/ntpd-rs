@@ -16,7 +16,7 @@ usage: ntp-ctl validate [-c PATH]
        ntp-ctl force-sync [-c PATH]
        ntp-ctl -h | ntp-ctl -v";
 
-const DESCRIPTOR: &str = "ntp-ctl - ntp-daemon monitoring";
+const DESCRIPTOR: &str = "ntp-ctl - statime-daemon monitoring";
 
 const HELP_MSG: &str = "Options:
   -f, --format=FORMAT                  which format to use for printing statistics [plain, prometheus]
