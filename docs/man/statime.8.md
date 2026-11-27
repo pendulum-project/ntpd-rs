@@ -1,22 +1,22 @@
 <!-- ---
-title: NTP-CTL(8) ntpd-rs 2.0.0-alpha.20261113 | ntpd-rs
+title: STATIME(8) ntpd-rs 2.0.0-alpha.20261113 | ntpd-rs
 --- -->
 
 # NAME
 
-`ntp-ctl` - management client for the ntpd-rs statime-daemon process
+`statime` - management client for the ntpd-rs statime-daemon process
 
 # SYNOPSIS
 
-`ntp-ctl` validate [`-c` *path*] \
-`ntp-ctl` status [`-f` *format*] [`-c` *path*] \
-`ntp-ctl` force-sync [`-c` *path*] \
-`ntp-ctl` `-h` \
-`ntp-ctl` `-v`
+`statime` validate [`-c` *path*] \
+`statime` status [`-f` *format*] [`-c` *path*] \
+`statime` force-sync [`-c` *path*] \
+`statime` `-h` \
+`statime` `-v`
 
 # DESCRIPTION
 
-The `ntp-ctl` management client allows management of some aspects of the
+The `statime` management client allows management of some aspects of the
 ntpd-rs daemon. Currently the management client only allows displaying the
 current status of the daemon and validating a configuration file for usage
 with the daemon.

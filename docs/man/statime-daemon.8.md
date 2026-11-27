@@ -42,6 +42,6 @@ several concepts of the statime-daemon are also explained.
 
 # SEE ALSO
 
-[ntp-ctl(8)](ntp-ctl.8.md),
+[statime(8)](statime.8.md),
 [ntp-metrics-exporter(8)](ntp-metrics-exporter.8.md),
 [ntp.toml(5)](ntp.toml.5.md)

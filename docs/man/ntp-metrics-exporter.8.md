@@ -32,5 +32,5 @@ via an HTTP socket.
 
 # SEE ALSO
 
-[statime-daemon(8)](statime-daemon.8.md), [ntp-ctl(8)](ntp-ctl.8.md),
+[statime-daemon(8)](statime-daemon.8.md), [statime(8)](statime.8.md),
 [ntp.toml(5)](ntp.toml.5.md)

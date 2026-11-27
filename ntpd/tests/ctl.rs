@@ -18,7 +18,7 @@ fn contains_bytes(mut haystack: &[u8], needle: &[u8]) -> bool {
 }
 
 fn test_ntp_ctl_output(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_ntp-ctl"))
+    Command::new(env!("CARGO_BIN_EXE_statime"))
         .args(args)
         .output()
         .unwrap()

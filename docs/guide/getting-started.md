@@ -10,7 +10,7 @@ Installation instructions for your system can be found in the [installation guid
 
 The default configuration for ntpd-rs  sets it up to synchronize with four servers chosen from [the NTP pool](https://www.ntppool.org). We can check its synchronization status using:
 ```sh
-ntp-ctl status
+statime status
 ```
 
 If everything is installed and working correctly this will display information looking like:

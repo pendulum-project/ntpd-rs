@@ -10,13 +10,13 @@ use crate::{
 use tokio::runtime::Builder;
 
 const USAGE_MSG: &str = "\
-usage: ntp-ctl validate [-c PATH]
-       ntp-ctl status [-f FORMAT] [-c PATH]
-       ntp-ctl list [-c PATH]
-       ntp-ctl force-sync [-c PATH]
-       ntp-ctl -h | ntp-ctl -v";
+usage: statime validate [-c PATH]
+       statime status [-f FORMAT] [-c PATH]
+       statime list [-c PATH]
+       statime force-sync [-c PATH]
+       statime -h | statime -v";
 
-const DESCRIPTOR: &str = "ntp-ctl - statime-daemon monitoring";
+const DESCRIPTOR: &str = "statime - statime-daemon monitoring";
 
 const HELP_MSG: &str = "Options:
   -f, --format=FORMAT                  which format to use for printing statistics [plain, prometheus]
@@ -197,7 +197,7 @@ pub fn main() -> std::io::Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         NtpCtlAction::Version => {
-            eprintln!("ntp-ctl {VERSION}");
+            eprintln!("statime {VERSION}");
             Ok(ExitCode::SUCCESS)
         }
         NtpCtlAction::Validate => Ok(validate(options.config.as_deref())),
@@ -520,7 +520,7 @@ mod tests {
         Ok(())
     }
 
-    const BINARY: &str = "/usr/bin/ntp-ctl";
+    const BINARY: &str = "/usr/bin/statime";
 
     #[test]
     fn cli_config() {

@@ -72,7 +72,7 @@ nav:
   - Man Pages:
     - statime-daemon(8): man/statime-daemon.8.md
     - ntp.toml(5): man/ntp.toml.5.md
-    - ntp-ctl(8): man/ntp-ctl.8.md
+    - statime(8): man/statime.8.md
     - ntp-metrics-exporter(8): man/ntp-metrics-exporter.8.md
   - Development:
     - development/code-structure.md

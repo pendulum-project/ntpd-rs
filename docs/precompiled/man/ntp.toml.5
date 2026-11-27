@@ -95,7 +95,7 @@ Please test with logging before applying the filter in a stricter mode.
 Settings in this section configure how you can observe the behavior of
 the daemon.
 Currently, the daemon can be observed either through the logs or by
-retrieving several key metrics either through ntp-ctl(8) or through
+retrieving several key metrics either through statime(8) or through
 ntp-metrics-exporter(8).
 .TP
 \f[V]log-level\f[R] = \f[V]\[dq]trace\[dq]\f[R] | \f[V]\[dq]debug\[dq]\f[R] | \f[V]\[dq]info\[dq]\f[R] | \f[V]\[dq]warn\[dq]\f[R] | \f[V]\[dq]error\[dq]\f[R] (\f[B]info\f[R])
@@ -122,10 +122,10 @@ formatting to the logs when the log target is a terminal.
 .TP
 \f[V]observation-path\f[R] = \f[I]path\f[R] (\f[B]unset\f[R])
 Path where the daemon will create an observation Unix domain socket.
-This socket is used by \f[V]ntp-ctl\f[R] and
+This socket is used by \f[V]statime\f[R] and
 \f[V]ntp-metrics-exporter\f[R] to read the current status of the daemon.
 If not set (the default) no observation socket will be created and it is
-not possible to use \f[V]ntp-ctl\f[R] or \f[V]ntp-metrics-exporter\f[R]
+not possible to use \f[V]statime\f[R] or \f[V]ntp-metrics-exporter\f[R]
 to observe the daemon.
 .TP
 \f[V]observation-permissions\f[R] = \f[I]mode\f[R] (\f[B]0o666\f[R])
@@ -807,4 +807,4 @@ Whether our local clock frequency is traceable to a valid standard
 reference when we are not synchronized to another CSPTP time source.
 .SH SEE ALSO
 .PP
-statime-daemon(8), ntp-ctl(8), ntp-metrics-exporter(8)
+statime-daemon(8), statime(8), ntp-metrics-exporter(8)

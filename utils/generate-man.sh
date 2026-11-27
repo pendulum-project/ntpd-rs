@@ -4,7 +4,7 @@ set -eo pipefail
 
 docs_dir="docs/man"
 output_dir="${1:-"docs/precompiled/man"}"
-files=("ntp-ctl.8" "statime-daemon.8" "ntp-metrics-exporter.8" "ntp.toml.5")
+files=("statime.8" "statime-daemon.8" "ntp-metrics-exporter.8" "ntp.toml.5")
 
 mkdir -p "$output_dir"
 
