@@ -478,6 +478,14 @@ mod tests {
             Ok(statime_base::Duration::from_seconds_nanos(16, 0))
         }
 
+        fn estimated_delay(&self) -> Result<Option<statime_base::Duration>, Self::Error> {
+            Ok(None)
+        }
+
+        fn measured_offset(&self) -> Result<statime_base::Duration, Self::Error> {
+            Ok(statime_base::Duration::ZERO)
+        }
+
         fn id(&self) -> LinkId {
             self.0
         }

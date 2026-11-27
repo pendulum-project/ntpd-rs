@@ -718,6 +718,20 @@ impl<ControllerRef: AsRef<KalmanController<Storage, C>>, Storage: KalmanStorage<
             .with_ref(|state| state.filter.link_importance(self.link_id))
     }
 
+    fn estimated_delay(&self) -> Result<Option<Duration>, Self::Error> {
+        self.controller
+            .as_ref()
+            .state
+            .with_ref(|state| state.filter.link_delay(self.link_id))
+    }
+
+    fn measured_offset(&self) -> Result<Duration, Self::Error> {
+        self.controller
+            .as_ref()
+            .state
+            .with_ref(|state| state.filter.link_offset(self.link_id))
+    }
+
     fn id(&self) -> LinkId {
         self.link_id
     }
