@@ -4,7 +4,7 @@
 Instead of using another NTP server as a time source, it is also possible to use time data from [GPSd](https://gpsd.gitlab.io/gpsd/) as a time source for ntpd-rs.
 GPSd is able to interpret GPS signals from a GPS receiver, from which it can derive the current time.
 
-To provide this information, gpsd tries to open a socket at `/run/chrony.XXXX.sock`, where `XXXX` is replaced with the device name of the GPS device. When running ntpd-rs with reduced permissions, this socket cannot be created by ntpd-rs. We therefore have to configure systemd (or an equivalent startup daemon) to create a symlink to a folder ntpd-rs can create the socket in. We recommend linking to `/run/ntpd-rs/chrony.XXXX.sock`, which can be done with the following systemd unit:
+To provide this information, gpsd tries to open a socket at `/run/chrony.XXXX.sock`, where `XXXX` is replaced with the device name of the GPS device. When running ntpd-rs with reduced permissions, this socket cannot be created by ntpd-rs. We therefore have to configure systemd (or an equivalent startup daemon) to create a symlink to a folder ntpd-rs can create the socket in. We recommend linking to `/run/statime/chrony.XXXX.sock`, which can be done with the following systemd unit:
 ```ini
 [Unit]
 Description=GPSD Socket Shim
@@ -12,14 +12,14 @@ Documentation=https://github.com/pendulum-project/ntpd-rs
 
 [Service]
 Type=oneshot
-ExecStart=/bin/bash -c "ln -s /run/ntpd-rs/chrony.XXXX.sock /run/chrony.XXXX.sock"
+ExecStart=/bin/bash -c "ln -s /run/statime/chrony.XXXX.sock /run/chrony.XXXX.sock"
 ```
 
 GPSd can then be added as a time source for ntpd-rs by adding the following to the configuration:
 ```toml
 [[source]]
 mode = "sock"
-path = "/run/ntpd-rs/chrony.XXXX.sock"
+path = "/run/statime/chrony.XXXX.sock"
 precision = 1e-3
 ```
 

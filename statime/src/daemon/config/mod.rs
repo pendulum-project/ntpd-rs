@@ -326,7 +326,7 @@ pub enum UseSystemConfig {
 }
 
 impl UseSystemConfig {
-    pub const DEFAULT_SYSTEM_CONFIG: &str = "/usr/lib/ntpd-rs/system-config";
+    pub const DEFAULT_SYSTEM_CONFIG: &str = "/usr/lib/statime/system-config";
 }
 
 impl Default for UseSystemConfig {
@@ -392,7 +392,7 @@ impl Config {
         }
 
         // for the global file we also ignore it when there are permission errors, or if it does not exist.
-        let global_path = Path::new("/etc/ntpd-rs/statime.toml");
+        let global_path = Path::new("/etc/statime/statime.toml");
         match Config::load(global_path) {
             Err(ConfigError::CouldNotRead { path, cause })
                 if path == global_path

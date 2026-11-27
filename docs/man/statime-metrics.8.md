@@ -22,7 +22,7 @@ via an HTTP socket.
 `-c` *path*, `--config`=*path*
 :   Path to the configuration file where the observation socket path for
     connecting with the statime-daemon is specified. This defaults to
-    `/etc/ntpd-rs/statime.toml` if not specified.
+    `/etc/statime/statime.toml` if not specified.
 
 `-h`, `--help`
 :   Display usage instructions.

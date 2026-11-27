@@ -26,7 +26,7 @@ with the daemon.
 `-c` *path*, `--config`=*path*
 :   Path to the configuration file from which the observation socket address
     will be retrieved. If not specified this defaults to
-    `/etc/ntpd-rs/statime.toml`.
+    `/etc/statime/statime.toml`.
 
 `-f` *format*, `--format`=*format*
 :   The output format for the status command. If not specified this defaults to
@@ -42,7 +42,7 @@ with the daemon.
 # COMMANDS
 
 `validate`
-:   Checks if the configuration specified (or `/etc/ntpd-rs/statime.toml` by
+:   Checks if the configuration specified (or `/etc/statime/statime.toml` by
     default) is valid.
 
 `status`

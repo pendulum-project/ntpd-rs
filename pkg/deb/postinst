@@ -6,9 +6,9 @@ NTPDRS_CONF_SRC="/usr/share/doc/ntpd-rs/statime.toml.default"
 NTPDRS_CONF_DIR="/etc/ntpd-rs"
 NTPDRS_CONF="${NTPDRS_CONF_DIR}/statime.toml"
 NTPDRS_CONF_PERMS=644
-NTPDRS_HOME="/var/lib/ntpd-rs/"
+NTPDRS_HOME="/var/lib/statime/"
 NTPDRS_USER="ntpd-rs"
-NTPDRS_OBSERVE_HOME="/var/lib/ntpd-rs-observe/"
+NTPDRS_OBSERVE_HOME="/var/lib/statime-observe/"
 NTPDRS_OBSERVE_USER="ntpd-rs-observe"
 
 create_user() {

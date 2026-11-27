@@ -201,7 +201,7 @@ mod tests {
         let documents = Memory::new()
             .document("/etc/main.toml", "use-system-config = true")
             .document(
-                "/usr/lib/ntpd-rs/system-config/10-logging.toml",
+                "/usr/lib/statime/system-config/10-logging.toml",
                 "logging.level = 'warn'",
             );
 
@@ -216,7 +216,7 @@ mod tests {
             .document("/etc/main.toml", "")
             // the same fragment the setting would have reached
             .document(
-                "/usr/lib/ntpd-rs/system-config/10-logging.toml",
+                "/usr/lib/statime/system-config/10-logging.toml",
                 "logging.level = 'warn'",
             );
 

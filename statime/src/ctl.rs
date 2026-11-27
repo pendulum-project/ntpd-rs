@@ -214,7 +214,7 @@ pub fn main() -> std::io::Result<ExitCode> {
             let observation = config
                 .observability
                 .observation_path
-                .unwrap_or_else(|| PathBuf::from("/var/run/ntpd-rs/observe"));
+                .unwrap_or_else(|| PathBuf::from("/var/run/statime/observe"));
 
             Builder::new_current_thread()
                 .enable_all()
@@ -238,7 +238,7 @@ pub fn main() -> std::io::Result<ExitCode> {
             let observation = config
                 .observability
                 .observation_path
-                .unwrap_or_else(|| PathBuf::from("/var/run/ntpd-rs/observe"));
+                .unwrap_or_else(|| PathBuf::from("/var/run/statime/observe"));
             Builder::new_current_thread()
                 .enable_all()
                 .build()?

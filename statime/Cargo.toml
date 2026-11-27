@@ -75,7 +75,7 @@ assets = [
   ["docs/precompiled/man/statime-metrics.8", "/usr/share/man/man8/statime-metrics.8", "644"],
   ["docs/precompiled/man/statime.toml.5", "/usr/share/man/man5/statime.toml.5", "644"],
   ["docs/examples/conf/statime.toml.default", "/usr/share/doc/ntpd-rs/statime.toml.default", "644"],
-  ["docs/examples/conf/statime.toml.default", "/etc/ntpd-rs/statime.toml", "644"],
+  ["docs/examples/conf/statime.toml.default", "/etc/statime/statime.toml", "644"],
   ["docs/examples/conf/statime.preset", "/lib/systemd/system-preset/50-statime.preset", "644"],
   ["docs/examples/conf/statime.service", "/lib/systemd/system/statime.service", "644"],
   ["docs/examples/conf/statime-metrics.service", "/lib/systemd/system/statime-metrics.service", "644"],
@@ -86,7 +86,7 @@ assets = [
   ["../README.md", "/usr/share/doc/ntpd-rs/README.md", "644"],
 ]
 conf-files = [
-  "/etc/ntpd-rs/statime.toml",
+  "/etc/statime/statime.toml",
 ]
 provides = "time-daemon"
 conflicts = "time-daemon"
@@ -106,7 +106,7 @@ assets = [
   { source = "docs/precompiled/man/statime-metrics.8", dest = "/usr/share/man/man8/statime-metrics.8", mode = "644", doc = true },
   { source = "docs/precompiled/man/statime.toml.5", dest = "/usr/share/man/man5/statime-toml.5", mode = "644", doc = true },
   { source = "docs/examples/conf/statime.toml.default", dest = "/usr/share/doc/ntpd-rs/statime.toml.default", mode = "644", doc = true },
-  { source = "docs/examples/conf/statime.toml.default", dest = "/etc/ntpd-rs/statime.toml", mode = "644", config = true },
+  { source = "docs/examples/conf/statime.toml.default", dest = "/etc/statime/statime.toml", mode = "644", config = true },
   { source = "docs/examples/conf/statime.service", dest = "/lib/systemd/system/statime.service", mode = "644" },
   { source = "docs/examples/conf/statime-metrics.service", dest = "/lib/systemd/system/statime-metrics.service", mode = "644" },
   { source = "docs/examples/conf/statime.preset", dest = "/lib/systemd/system-preset/50-statime.preset", mode = "644" },

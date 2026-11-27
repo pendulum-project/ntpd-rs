@@ -125,7 +125,7 @@ When installed through cargo or from source, two things need to be configured ma
 The observability socket can be enabled by adding the following to the configuration:
 ```toml
 [observability]
-observation-path = "/var/run/ntpd-rs/observe"
+observation-path = "/var/run/statime/observe"
 ```
 
 Next, configure your system to run the statime-metrics binary as a service. For systemd based systems, an example is provided below.

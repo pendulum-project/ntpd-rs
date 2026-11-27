@@ -26,7 +26,7 @@ several concepts of the statime-daemon are also explained.
 `-c` *path*, `--config`=*path*
 :   The configuration file path for the statime-daemon where settings for the
     configuration of ntpd-rs are stored. If not specified the default
-    configuration file is `/etc/ntpd-rs/statime.toml`.
+    configuration file is `/etc/statime/statime.toml`.
 
 `-h`, `--help`
 :   Display usage instructions.

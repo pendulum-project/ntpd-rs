@@ -25,7 +25,7 @@ statime-daemon
 The configuration of the ntpd-rs daemon is controlled through a number
 of TOML configuration files.
 The primary configuration file is loaded from
-\f[V]/etc/ntpd-rs/statime.toml\f[R], unless otherwise specified on the
+\f[V]/etc/statime/statime.toml\f[R], unless otherwise specified on the
 command line when starting the daemon.
 It can specify a folder containing further configuration files, which
 are used to provide defaults for settings not present in the primary
@@ -74,7 +74,7 @@ There are two settings in the daemon which change its global behavior:
 \f[V]use-system-config\f[R] = \f[I]bool or path\f[R] (\f[B]false\f[R])
 Whether and where to fetch the system defaults.
 If specified as \f[V]true\f[R], the system defaults are loaded from
-/usr/lib/ntpd-rs/system-config.
+/usr/lib/statime/system-config.
 The configuration files in the system config folder need to be disjunct,
 i.e.\ a setting can be specified in at most one file.
 In particular, this also holds for sources and servers, in that there

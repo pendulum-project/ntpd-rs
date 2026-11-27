@@ -24,7 +24,7 @@ const DESCRIPTOR: &str = "statime-metrics - serve ntpd-rs openmetrics via http";
 
 const HELP_MSG: &str = "Options:
   -c, --config=CONFIG                  ntpd-rs configuration file (default:
-                                       /etc/ntpd-rs/statime.toml)
+                                       /etc/statime/statime.toml)
   -h, --help                           display this help text
   -v, --version                        display version information";
 
