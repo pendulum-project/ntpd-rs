@@ -72,12 +72,23 @@ impl<Controller: Link + Send + 'static> PpsSourceTask<Controller> {
                             uncertainty: self.config.accuracy,
                         };
 
-                        self.source
-                            .external_data_update(self.config.precision, None, true)
-                            .expect("Unable to update external source data.");
-                        self.source
-                            .measurement(measurement, Direction::Reverse)
-                            .expect("Unable to handle measurement.");
+                        if let Err(error) =
+                            self.source
+                                .external_data_update(self.config.precision, None, true)
+                        {
+                            error!(
+                                "Internal error: Could not update external data on link: {error:?}"
+                            );
+                            return;
+                        }
+
+                        if let Err(error) = self.source.measurement(measurement, Direction::Reverse)
+                        {
+                            error!(
+                                "Internal error: Could not handle measurement on link: {error:?}"
+                            );
+                            return;
+                        }
                     }
                     None => {
                         warn!("Did not receive any new PPS data");
@@ -92,8 +103,20 @@ impl<Controller: Link + Send + 'static> PpsSourceTask<Controller> {
         source: Controller,
         config: PpsSourceConfig,
     ) -> tokio::task::JoinHandle<LinkTerminationReason> {
-        let pps = PpsDevice::new(config.path.clone()).expect("Could not open PPS device");
-        let cap = pps.get_cap().expect("Could not get PPS capabilities");
+        let pps = match PpsDevice::new(config.path.clone()) {
+            Ok(pps) => pps,
+            Err(e) => {
+                error!("Could not open pps device at {}, permanently disabling this source: {e}", config.path.display());
+                return tokio::spawn(async { LinkTerminationReason::MustDemobilize });
+            }
+        };
+        let cap = match pps.get_cap() {
+            Ok(pps) => pps,
+            Err(e) => {
+                error!("Could not query pps device at {} for its capabilities, permanently disabling this source: {e}", config.path.display());
+                return tokio::spawn(async { LinkTerminationReason::MustDemobilize });
+            }
+        };
         assert!(
             cap & pps_time::pps::PPS_CANWAIT != 0,
             "PPS device does not support blocking calls"

@@ -144,12 +144,23 @@ where
                             uncertainty: self.config.precision,
                         };
 
-                        self.source
-                            .external_data_update(self.config.precision, leap, true)
-                            .expect("Unable to update external source data.");
-                        self.source
-                            .measurement(measurement, Direction::Reverse)
-                            .expect("Unable to handle measurement.");
+                        if let Err(error) =
+                            self.source
+                                .external_data_update(self.config.precision, leap, true)
+                        {
+                            error!(
+                                "Internal error: Could not update external data on link: {error:?}"
+                            );
+                            return;
+                        }
+
+                        if let Err(error) = self.source.measurement(measurement, Direction::Reverse)
+                        {
+                            error!(
+                                "Internal error: Could not handle measurement on link: {error:?}"
+                            );
+                            return;
+                        }
                     }
                     Err(e) => {
                         error!("Error deserializing sample: {}", e);
@@ -165,7 +176,13 @@ where
         source: Controller,
         config: SockSourceConfig,
     ) -> tokio::task::JoinHandle<LinkTerminationReason> {
-        let socket = create_socket(&config.path).expect("Could not create socket");
+        let socket = match create_socket(&config.path) {
+            Ok(socket) => socket,
+            Err(e) => {
+                error!("Could not open socket source at {}, permanently disabling this source: {e}", config.path.display());
+                return tokio::spawn(async { LinkTerminationReason::MustDemobilize });
+            }
+        };
         tokio::spawn(
             (async move {
                 let mut process = SockSourceTask {
