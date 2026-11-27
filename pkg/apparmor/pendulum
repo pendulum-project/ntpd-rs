@@ -23,9 +23,9 @@ profile pendulum flags=(enforce) {
   @{PROC}/@{pid}/cgroup r,
   /sys/fs/cgroup/**/cpu.max  r,
 
-  /etc/ntpd-rs/** r,
+  /etc/statime/** r,
 
-  /run/ntpd-rs/**     rw,
+  /run/statime/**     rw,
 
   # NOTE: this is for development only, assuming ntpd-rs is checked out in your home folder
   @{HOME}/ntpd-rs/**   r,

@@ -80,7 +80,7 @@
 //! }
 //!
 //! impl UseSystemConfig {
-//!     pub const DEFAULT_SYSTEM_CONFIG: &str = "/usr/lib/ntpd-rs/system-config";
+//!     pub const DEFAULT_SYSTEM_CONFIG: &str = "/usr/lib/statime/system-config";
 //! }
 //!
 //! impl Default for UseSystemConfig {
