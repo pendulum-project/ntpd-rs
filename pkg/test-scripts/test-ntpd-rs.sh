@@ -17,9 +17,9 @@ case $1 in
       /usr/bin/statime validate
 
       # # Ensure that the systemd service is running
-      # systemctl is-active ntpd-rs.service --quiet
+      # systemctl is-active statime.service --quiet
 
       # # Ensure that the metrics systemd service is not running
-      # ! systemctl is-active ntpd-rs-metrics.service --quiet
+      # ! systemctl is-active statime-metrics.service --quiet
     ;;
 esac

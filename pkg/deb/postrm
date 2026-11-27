@@ -20,18 +20,18 @@ fi
 
 if [ "$1" = "remove" ]; then
     if [ -x "/usr/bin/deb-systemd-helper" ]; then
-        deb-systemd-helper mask ntpd-rs.service >/dev/null || true
-        deb-systemd-helper mask ntpd-rs-metrics.service >/dev/null || true
+        deb-systemd-helper mask statime.service >/dev/null || true
+        deb-systemd-helper mask statime-metrics.service >/dev/null || true
     fi
 fi
 
 if [ "$1" = "purge" ]; then
     if [ -x "/usr/bin/deb-systemd-helper" ]; then
-        deb-systemd-helper purge ntpd-rs.service >/dev/null || true
-        deb-systemd-helper unmask ntpd-rs.service >/dev/null || true
+        deb-systemd-helper purge statime.service >/dev/null || true
+        deb-systemd-helper unmask statime.service >/dev/null || true
 
-        deb-systemd-helper purge ntpd-rs-metrics.service >/dev/null || true
-        deb-systemd-helper unmask ntpd-rs-metrics.service >/dev/null || true
+        deb-systemd-helper purge statime-metrics.service >/dev/null || true
+        deb-systemd-helper unmask statime-metrics.service >/dev/null || true
     fi
 fi
 

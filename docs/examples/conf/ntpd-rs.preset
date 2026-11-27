@@ -1,2 +1,0 @@
-enable ntpd-rs.service
-disable ntpd-rs-metrics.service

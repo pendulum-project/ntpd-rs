@@ -36,8 +36,8 @@ create_user() {
 }
 
 init_systemd_service() {
-    systemd_post ntpd-rs.service
-    systemd_post ntpd-rs-metrics.service
+    systemd_post statime.service
+    systemd_post statime-metrics.service
     systemd_triggers
 }
 
@@ -62,8 +62,8 @@ pre_uninstall_script = '''
 if [ $1 -eq 0 ] ; then
     # Package removal, not upgrade
     # Run commands equivalent to what the RPM systemd macros would do
-    systemd_preun ntpd-rs.service
-    systemd_preun ntpd-rs-metrics.service
+    systemd_preun statime.service
+    systemd_preun statime-metrics.service
     systemd_triggers
 fi
 '''
@@ -74,8 +74,8 @@ post_uninstall_script = '''
 
 if [ $1 -ge 1 ] ; then
     # Run commands equivalent to what the RPM systemd macros would do
-    systemd_postun_with_restart ntpd-rs.service
-    systemd_postun_with_restart ntpd-rs-metrics.service
+    systemd_postun_with_restart statime.service
+    systemd_postun_with_restart statime-metrics.service
     systemd_triggers
 fi
 '''
