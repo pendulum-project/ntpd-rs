@@ -102,10 +102,10 @@ cat ntpd-rs.test.crt ca.pem > ntpd-rs.test.chain.pem
 
 ## Using the generated certificate
 We are now ready to configure the key exchange part of NTS with our generated
-certificate. Simply update your `/etc/ntpd-rs/ntp.toml` configuration with the
+certificate. Simply update your `/etc/ntpd-rs/statime.toml` configuration with the
 following `[[nts-ke-server]]` section (or update an existing section):
 
-```toml title="/etc/ntpd-rs/ntp.toml"
+```toml title="/etc/ntpd-rs/statime.toml"
 # ...
 
 [[nts-ke-server]]
@@ -146,7 +146,7 @@ simply add a `/etc/hosts` entry for this, like such:
 Now in your client configuration, you can setup a NTS source with our private
 CA root certificate:
 
-```toml title="/etc/ntpd-rs/ntp.toml"
+```toml title="/etc/ntpd-rs/statime.toml"
 # ...
 
 [[source]]

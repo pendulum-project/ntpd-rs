@@ -137,14 +137,14 @@ mod tests {
         );
 
         // no tracked origin may collide with the reserved id
-        let first = tracker.track(Origin::MainConfig("/etc/ntp.toml".into()));
+        let first = tracker.track(Origin::MainConfig("/etc/statime.toml".into()));
         let second = tracker.track(Origin::SystemConfig("/etc/ntp.d/a.toml".into()));
         assert_ne!(first, OriginId::BUILT_IN_DEFAULT);
         assert_ne!(second, OriginId::BUILT_IN_DEFAULT);
         assert_ne!(first, second);
         assert_eq!(
             tracker.get_origin(first),
-            Some(&Origin::MainConfig("/etc/ntp.toml".into()))
+            Some(&Origin::MainConfig("/etc/statime.toml".into()))
         );
     }
 

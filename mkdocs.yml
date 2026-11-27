@@ -71,7 +71,7 @@ nav:
     - guide/security-guidance.md
   - Man Pages:
     - statime-daemon(8): man/statime-daemon.8.md
-    - ntp.toml(5): man/ntp.toml.5.md
+    - statime.toml(5): man/statime.toml.5.md
     - statime(8): man/statime.8.md
     - statime-metrics(8): man/statime-metrics.8.md
   - Development:

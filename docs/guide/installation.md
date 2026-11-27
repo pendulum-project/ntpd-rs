@@ -6,7 +6,7 @@ The recommended way of installing ntpd-rs is through an installer or package man
 
 ### Linux
 
-We recommend the packages from our [release page](https://github.com/pendulum-project/ntpd-rs/releases). The package takes care of putting the configuration in the right place and setting up the recommended users and permissions. The default configuration file is located at `/etc/ntpd-rs/ntp.toml`
+We recommend the packages from our [release page](https://github.com/pendulum-project/ntpd-rs/releases). The package takes care of putting the configuration in the right place and setting up the recommended users and permissions. The default configuration file is located at `/etc/ntpd-rs/statime.toml`
 
 On a Debian based Linux, the `.deb` package can be installed with
 ```console
@@ -21,7 +21,7 @@ $ sudo systemctl start ntpd-rs
 
 ### FreeBSD
 
-The ntpd-rs binary is available on [ports](https://www.freshports.org/net/ntpd-rs/). The default configuration file is located at `%%ETCDIR%%/ntp.toml`, which typically resolves to `/usr/local/etc/ntpd-rs/ntp.toml`.
+The ntpd-rs binary is available on [ports](https://www.freshports.org/net/ntpd-rs/). The default configuration file is located at `%%ETCDIR%%/statime.toml`, which typically resolves to `/usr/local/etc/ntpd-rs/statime.toml`.
 
 ### macOS
 
@@ -43,7 +43,7 @@ This produces a `statime-daemon` binary at `target/release/statime-daemon`, whic
 main NTP daemon. Running it from the command line to test it should provide output like:
 
 ```
-> sudo target/release/statime-daemon -c pkg/common/ntp.toml.default
+> sudo target/release/statime-daemon -c pkg/common/statime.toml.default
 2023-09-04T12:01:44.055104Z  WARN ntpd::daemon::observer: Abnormal termination of the state observer: Could not create observe socket at "/run/ntpd-rs/observe" because its parent directory does not exist
 2023-09-04T12:01:44.055183Z  WARN ntpd::daemon::observer: The state observer will not be available
 2023-09-04T12:01:44.071353Z  INFO ntpd::daemon::system: new source source_id=SourceId(1) addr=185.172.91.110:123 spawner=SpawnerId(1)
@@ -59,7 +59,7 @@ main NTP daemon. Running it from the command line to test it should provide outp
 To use this binary as your system NTP daemon, you must also:
 
 - move the `statime-daemon` binary to an appropriate location (e.g. `/usr/bin`),
-- set up a configuration in `/etc/ntpd-rs/ntp.toml` (we suggest copying the configuration under `docs/examples/conf/ntp.toml.default`),
+- set up a configuration in `/etc/ntpd-rs/statime.toml` (we suggest copying the configuration under `docs/examples/conf/statime.toml.default`),
 - set permissions for the binary and config file for the binary to be able to run and read the configuration,
 - configure the binary to be run as a system service.
 
@@ -113,8 +113,8 @@ sudo useradd --home-dir /var/lib/ntpd-rs --system --create-home --user-group ntp
 
 This user must have access to the configuration folder:
 ```sh
-sudo chown ntpd-rs:ntpd-rs /etc/ntpd-rs/ntp.toml
-sudo chmod 0644 /etc/ntpd-rs/ntp.toml
+sudo chown ntpd-rs:ntpd-rs /etc/ntpd-rs/statime.toml
+sudo chmod 0644 /etc/ntpd-rs/statime.toml
 ```
 
 #### FreeBSD
@@ -137,7 +137,7 @@ rcvar=ntp_daemon_enable
 load_rc_config $name
 
 ntp_daemon_enable=${ntp_daemon_enable-"NO"}
-ntp_daemon_config=${ntp_daemon_config-"%%ETCDIR%%/ntp.toml"}
+ntp_daemon_config=${ntp_daemon_config-"%%ETCDIR%%/statime.toml"}
 ntp_daemon_socket=${ntp_daemon_socket-"/var/run/ntpd-rs"}
 
 command="/usr/bin/true"

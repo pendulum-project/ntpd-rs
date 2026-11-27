@@ -14,17 +14,18 @@
 . ftr VB CB
 . ftr VBI CBI
 .\}
-.TH "NTP.TOML" "5" "" "ntpd-rs 2.0.0-alpha.20261113" "ntpd-rs"
+.TH "STATIME.TOML" "5" "" "ntpd-rs 2.0.0-alpha.20261113" "ntpd-rs"
 .hy
 .SH NAME
 .PP
-\f[V]ntp.toml\f[R] - configuration file for the ntpd-rs statime-daemon
+\f[V]statime.toml\f[R] - configuration file for the ntpd-rs
+statime-daemon
 .SH DESCRIPTION
 .PP
 The configuration of the ntpd-rs daemon is controlled through a number
 of TOML configuration files.
 The primary configuration file is loaded from
-\f[V]/etc/ntpd-rs/ntp.toml\f[R], unless otherwise specified on the
+\f[V]/etc/ntpd-rs/statime.toml\f[R], unless otherwise specified on the
 command line when starting the daemon.
 It can specify a folder containing further configuration files, which
 are used to provide defaults for settings not present in the primary

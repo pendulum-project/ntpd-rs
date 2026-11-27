@@ -33,7 +33,7 @@ an authentication key the pool will use to authenticate itself to your NTS
 server. This key will need to be added to the ntpd-rs configuration to allow
 the pool to handle NTS key exchange connections for your server.
 
-To add this key, modify the ntpd-rs configuration at `/etc/ntpd-rs/ntp.toml`,
+To add this key, modify the ntpd-rs configuration at `/etc/ntpd-rs/statime.toml`,
 adding to the `[[nts-ke-server]]` section the following:
 ```toml
 accepted-pool-authentication-tokens = ["<YOUR TOKEN HERE>"]

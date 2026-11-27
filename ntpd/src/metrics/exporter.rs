@@ -24,7 +24,7 @@ const DESCRIPTOR: &str = "statime-metrics - serve ntpd-rs openmetrics via http";
 
 const HELP_MSG: &str = "Options:
   -c, --config=CONFIG                  ntpd-rs configuration file (default:
-                                       /etc/ntpd-rs/ntp.toml)
+                                       /etc/ntpd-rs/statime.toml)
   -h, --help                           display this help text
   -v, --version                        display version information";
 
@@ -319,7 +319,7 @@ mod tests {
 
     #[test]
     fn cli_config() {
-        let config_str = "/foo/bar/ntp.toml";
+        let config_str = "/foo/bar/statime.toml";
         let config = Path::new(config_str);
         let arguments = &[BINARY, "-c", config_str];
 

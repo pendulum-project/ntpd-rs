@@ -1,16 +1,16 @@
 <!-- ---
-title: NTP.TOML(5) ntpd-rs 2.0.0-alpha.20261113 | ntpd-rs
+title: STATIME.TOML(5) ntpd-rs 2.0.0-alpha.20261113 | ntpd-rs
 --- -->
 
 # NAME
 
-`ntp.toml` - configuration file for the ntpd-rs statime-daemon
+`statime.toml` - configuration file for the ntpd-rs statime-daemon
 
 # DESCRIPTION
 
 The configuration of the ntpd-rs daemon is controlled through a number of TOML
 configuration files. The primary configuration file is loaded from
-`/etc/ntpd-rs/ntp.toml`, unless otherwise specified on the command line when
+`/etc/ntpd-rs/statime.toml`, unless otherwise specified on the command line when
 starting the daemon. It can specify a folder containing further configuration
 files, which are used to provide defaults for settings not present in the
 primary configuration file.
