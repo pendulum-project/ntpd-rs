@@ -416,11 +416,10 @@ impl<Controller: Link> NtpSource<Controller> {
         self.controller
             .desired_poll_interval()
             .map_or(self.source_config.poll_interval_limits.min, |v| {
-                PollInterval::from_byte((v.as_seconds().log2().floor() as i8).cast_unsigned())
-                    .clamp(
-                        self.source_config.poll_interval_limits.min,
-                        self.source_config.poll_interval_limits.max,
-                    )
+                PollInterval::from_log(v.as_seconds().log2().floor() as i8).clamp(
+                    self.source_config.poll_interval_limits.min,
+                    self.source_config.poll_interval_limits.max,
+                )
             })
             .max(self.remote_min_poll_interval)
     }
@@ -760,8 +759,8 @@ impl<Controller: Link> NtpSource<Controller> {
         NtpSource {
             nts: None,
 
-            last_poll_interval: PollInterval::default(),
-            remote_min_poll_interval: PollInterval::default(),
+            last_poll_interval: PollInterval::from_log(4),
+            remote_min_poll_interval: PollInterval::from_log(4),
 
             current_request_identifier: None,
 
