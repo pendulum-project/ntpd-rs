@@ -64,16 +64,16 @@ pub(crate) struct NtpSourceConfig {
 
 impl NtpSourceConfig {
     pub fn generate_spawner_config(&self, config: &Config) -> NtpSpawnerConfig {
-        let poll_low = ConfigurableDuration::into_larger_poll_interval(
-            self.minimum_poll_interval
-                .unwrap_or(config.ntp_source_defaults.minimum_poll_interval),
-        );
+        let poll_low = self
+            .minimum_poll_interval
+            .unwrap_or(config.ntp_source_defaults.minimum_poll_interval)
+            .into_larger_poll_interval();
 
-        let poll_high = ConfigurableDuration::into_smaller_poll_interval(
-            self.maximum_poll_interval
-                .unwrap_or(config.ntp_source_defaults.maximum_poll_interval),
-        )
-        .max(poll_low);
+        let poll_high = self
+            .maximum_poll_interval
+            .unwrap_or(config.ntp_source_defaults.maximum_poll_interval)
+            .into_smaller_poll_interval()
+            .max(poll_low);
 
         NtpSpawnerConfig {
             address: self.address.clone().into(),
@@ -117,16 +117,16 @@ pub(crate) struct NtpPoolSourceConfig {
 
 impl NtpPoolSourceConfig {
     pub fn generate_spawner_config(&self, config: &Config) -> NtpPoolSpawnerConfig {
-        let poll_low = ConfigurableDuration::into_larger_poll_interval(
-            self.minimum_poll_interval
-                .unwrap_or(config.ntp_source_defaults.minimum_poll_interval),
-        );
+        let poll_low = self
+            .minimum_poll_interval
+            .unwrap_or(config.ntp_source_defaults.minimum_poll_interval)
+            .into_larger_poll_interval();
 
-        let poll_high = ConfigurableDuration::into_smaller_poll_interval(
-            self.maximum_poll_interval
-                .unwrap_or(config.ntp_source_defaults.maximum_poll_interval),
-        )
-        .max(poll_low);
+        let poll_high = self
+            .maximum_poll_interval
+            .unwrap_or(config.ntp_source_defaults.maximum_poll_interval)
+            .into_smaller_poll_interval()
+            .max(poll_low);
 
         NtpPoolSpawnerConfig {
             addr: self.address.clone().into(),
@@ -175,16 +175,16 @@ impl NtpNtsSourceConfig {
         &self,
         config: &Config,
     ) -> Result<NtpNtsSpawnerConfig, std::io::Error> {
-        let poll_low = ConfigurableDuration::into_larger_poll_interval(
-            self.minimum_poll_interval
-                .unwrap_or(config.ntp_source_defaults.minimum_poll_interval),
-        );
+        let poll_low = self
+            .minimum_poll_interval
+            .unwrap_or(config.ntp_source_defaults.minimum_poll_interval)
+            .into_larger_poll_interval();
 
-        let poll_high = ConfigurableDuration::into_smaller_poll_interval(
-            self.maximum_poll_interval
-                .unwrap_or(config.ntp_source_defaults.maximum_poll_interval),
-        )
-        .max(poll_low);
+        let poll_high = self
+            .maximum_poll_interval
+            .unwrap_or(config.ntp_source_defaults.maximum_poll_interval)
+            .into_smaller_poll_interval()
+            .max(poll_low);
 
         let additional_certificates =
             if let Some(certificate_path) = self.additional_certificates.clone() {
@@ -252,16 +252,16 @@ impl NtpNtsPoolSourceConfig {
         &self,
         config: &Config,
     ) -> Result<crate::daemon::spawn::ntp_nts_pool::NtpNtsPoolSpawnerConfig, std::io::Error> {
-        let poll_low = ConfigurableDuration::into_larger_poll_interval(
-            self.minimum_poll_interval
-                .unwrap_or(config.ntp_source_defaults.minimum_poll_interval),
-        );
+        let poll_low = self
+            .minimum_poll_interval
+            .unwrap_or(config.ntp_source_defaults.minimum_poll_interval)
+            .into_larger_poll_interval();
 
-        let poll_high = ConfigurableDuration::into_smaller_poll_interval(
-            self.maximum_poll_interval
-                .unwrap_or(config.ntp_source_defaults.maximum_poll_interval),
-        )
-        .max(poll_low);
+        let poll_high = self
+            .maximum_poll_interval
+            .unwrap_or(config.ntp_source_defaults.maximum_poll_interval)
+            .into_smaller_poll_interval()
+            .max(poll_low);
 
         let additional_certificates =
             if let Some(certificate_path) = self.additional_certificates.clone() {
@@ -364,14 +364,14 @@ impl CsptpSourceConfig {
         CsptpSpawnerConfig {
             address: self.address.clone(),
             domain: self.domain.unwrap_or(config.csptp_source_defaults.domain),
-            poll_interval: ConfigurableDuration::into_std_duration(
-                self.poll_interval
-                    .unwrap_or(config.csptp_source_defaults.poll_interval),
-            ),
-            response_interval: ConfigurableDuration::into_std_duration(
-                self.response_interval
-                    .unwrap_or(config.csptp_source_defaults.response_interval),
-            ),
+            poll_interval: self
+                .poll_interval
+                .unwrap_or(config.csptp_source_defaults.poll_interval)
+                .into(),
+            response_interval: self
+                .response_interval
+                .unwrap_or(config.csptp_source_defaults.response_interval)
+                .into(),
             delay_decay_rate: self
                 .delay_decay_rate
                 .unwrap_or(config.csptp_source_defaults.delay_decay_rate)

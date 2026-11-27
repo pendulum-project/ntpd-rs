@@ -12,8 +12,8 @@ pub use server::*;
 pub use source::*;
 use statime_algo::LinkConfig;
 use statime_config::{
-    ConfigError, ConfigPath, Configurable, ConfigurableAtomic, InfiniteOr, NonNegative,
-    PartialValue, Positive, RootConfig, SystemConfigSetting,
+    ConfigError, ConfigPath, Configurable, ConfigurableAtomic, ConfigurableDuration, InfiniteOr,
+    NonNegative, PartialValue, Positive, RootConfig, SystemConfigSetting, Unit,
 };
 #[cfg(target_os = "linux")]
 use statime_wire::{ClockAccuracy, ClockIdentity, ClockQuality};
@@ -568,9 +568,7 @@ impl Config {
     pub(crate) fn generate_keyset_config(&self) -> KeysetConfig {
         KeysetConfig {
             stale_key_count: self.nts_cookie_keys.old_key_count.into_inner(),
-            key_rotation_interval: ConfigurableDuration::into_std_duration(
-                self.nts_cookie_keys.key_rotation_interval,
-            ),
+            key_rotation_interval: self.nts_cookie_keys.key_rotation_interval.into(),
             key_storage_path: self.nts_cookie_keys.storage_path.clone(),
         }
     }
