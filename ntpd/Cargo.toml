@@ -39,9 +39,13 @@ rustls23.workspace = true
 rustls-openssl = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+async-trait.workspace = true # required by varlink_derive
+serde_derive.workspace = true
 statime-wire = { workspace = true, features = ["serde"] }
 statime-netptp.workspace = true
 statime-csptp.workspace = true
+varlink = { workspace = true, features = ["tokio"] }
+varlink_derive.workspace = true
 
 [dev-dependencies]
 ntp-proto = { workspace = true, features = ["__internal-test",] }
