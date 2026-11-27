@@ -2,12 +2,12 @@ use std::fmt::Display;
 use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 
+use ntp_proto::ProtocolVersion;
 use ntp_proto::{
     KeyExchangeClient, NtsClientConfig, NtsError, SourceConfig, tls_utils::Certificate,
 };
-use ntp_proto::{PollIntervalLimits, ProtocolVersion};
 use statime_algo::LinkConfig;
-use statime_base::{Link, SourceType, StdController};
+use statime_base::{Link, PollIntervalLimits, SourceType, StdController};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tracing::warn;
@@ -223,8 +223,9 @@ where
 mod tests {
     use std::sync::Arc;
 
-    use ntp_proto::{PollIntervalLimits, SourceConfig};
+    use ntp_proto::SourceConfig;
     use statime_algo::{KalmanController, StdKalmanStorage};
+    use statime_base::PollIntervalLimits;
     use tokio::{io::AsyncReadExt, net::TcpListener};
 
     use crate::daemon::{

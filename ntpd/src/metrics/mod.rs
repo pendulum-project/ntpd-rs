@@ -1,7 +1,6 @@
 pub mod exporter;
 
-use ntp_proto::PollIntervalLimits;
-use statime_base::{Duration, LeapStatus};
+use statime_base::{Duration, LeapStatus, PollIntervalLimits};
 
 use crate::daemon::ObservableState;
 

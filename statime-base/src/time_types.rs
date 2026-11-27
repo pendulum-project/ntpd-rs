@@ -13,6 +13,9 @@ use core::{
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+#[cfg(not(feature = "std"))]
+use crate::float_polyfill::FloatPolyfill;
+
 /// A timestamp in the scale `Timescale`.
 ///
 /// Arithmetic on timestamps is implemented as wrapping.
@@ -456,15 +459,143 @@ duration_div!(i32);
 duration_div!(u64);
 duration_div!(i64);
 
+/// Stores when we will next exchange packages with a remote server.
+//
+// The value is in seconds stored in log2 format:
+//
+// - a value of 4 means 2^4 = 16 seconds
+// - a value of 17 is 2^17 = ~36h
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct PollInterval(i8);
+
+impl core::fmt::Debug for PollInterval {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "PollInterval({} s)", 2.0_f64.powi(self.0.into()))
+    }
+}
+
+impl PollInterval {
+    /// Poll interval that implies an event should never occur.
+    ///
+    /// Corresponds to a wait duration of 2^127, which is longer
+    /// than the time to the heat death of the universe.
+    pub const NEVER: PollInterval = PollInterval(i8::MAX);
+
+    /// Construct a poll interval from its byte encoding.
+    #[must_use]
+    pub fn from_byte(value: u8) -> Self {
+        Self(value.cast_signed())
+    }
+
+    /// Return the poll interval encoded as a single byte.
+    #[must_use]
+    pub fn as_byte(self) -> u8 {
+        self.0.cast_unsigned()
+    }
+
+    /// Increment the poll interval, staying within the provided limits
+    #[must_use]
+    pub fn inc(self, limits: PollIntervalLimits) -> Self {
+        Self(self.0 + 1).min(limits.max)
+    }
+
+    /// Increment the poll interval if at all possible, ignoring any limits.
+    #[must_use]
+    pub fn force_inc(self) -> Self {
+        Self(self.0.saturating_add(1))
+    }
+
+    /// Decrement the poll interval, staying within the provided limits
+    #[must_use]
+    pub fn dec(self, limits: PollIntervalLimits) -> Self {
+        Self(self.0 - 1).max(limits.min)
+    }
+
+    /// Get the log2 value of the magnitude of the poll interval.
+    ///
+    /// 0 means 1 second, with negative values meaning fractions of seconds and
+    /// positive values multiple seconds. For example, a value of 2 returned by
+    /// this function implies the poll interval is 4 seconds long.
+    #[must_use]
+    pub const fn as_log(self) -> i8 {
+        self.0
+    }
+
+    /// Construct a poll interval from a raw log2 value of its magnitude
+    ///
+    /// 0 means 1 second, with negative values meaning fractions of seconds and
+    /// positive values multiple seconds. For example, a value of 2 given to
+    /// this function implies the returned poll interval is 4 seconds long.
+    #[must_use]
+    pub const fn from_log(value: i8) -> Self {
+        Self(value)
+    }
+
+    /// Convert the poll interval to a [`Duration`]
+    #[must_use]
+    pub const fn as_duration(self) -> Duration {
+        let base_shift = self.0.saturating_add(64);
+        let shift = if base_shift < 0 {
+            0
+        } else if base_shift > 126 {
+            126
+        } else {
+            base_shift
+        };
+        Duration::from_raw_steps(1i128 << shift)
+    }
+
+    /// Convert the poll interval to a [`core::time::Duration`]
+    #[must_use]
+    pub const fn as_system_duration(self) -> core::time::Duration {
+        let shift = if self.0 < 0 {
+            0
+        } else if self.0 > 31 {
+            31
+        } else {
+            self.0
+        };
+        core::time::Duration::from_secs(1 << shift)
+    }
+}
+
+/// Limits between which a poll interval can be changed.
+///
+/// Primarily used in increment/decrement logic to ensure the poll interval
+/// remains between reasonable bounds.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct PollIntervalLimits {
+    /// Minimum allowed poll interval (inclusive)
+    pub min: PollInterval,
+    /// Maximum allowed poll interval (inclusive)
+    pub max: PollInterval,
+}
+
+// here we follow the spec (the code skeleton and ntpd repository use different values)
+// with the exception that we have lowered the MAX value, which is needed because
+// we don't support bursting, and hence using a larger poll interval gives issues
+// with the responsiveness of the client to environmental changes
+impl Default for PollIntervalLimits {
+    fn default() -> Self {
+        Self {
+            min: PollInterval(4),
+            max: PollInterval(10),
+        }
+    }
+}
+
 #[cfg(all(test, feature = "std"))]
 #[allow(clippy::float_cmp, reason = "Test code")]
+#[allow(clippy::cast_sign_loss, reason = "Test code")]
 mod tests {
     use core::hash::Hasher;
     use std::hash::DefaultHasher;
 
     use crate::{TAI, UniversalTimestamp};
 
-    use super::{Duration, Timestamp, UTC};
+    use super::{Duration, PollInterval, PollIntervalLimits, Timestamp, UTC};
 
     #[test]
     fn test_timestamp_creation() {
@@ -772,5 +903,53 @@ mod tests {
             universal_tai.as_tai(37),
             Timestamp::from_seconds_nanos_since_unix_epoch(100, 0)
         );
+    }
+
+    #[test]
+    fn poll_interval_clamps() {
+        let mut interval = PollInterval::from_log(4);
+        let limits = PollIntervalLimits::default();
+        for _ in 0..100 {
+            interval = interval.inc(limits);
+            assert!(interval <= limits.max);
+        }
+        for _ in 0..100 {
+            interval = interval.dec(limits);
+            assert!(interval >= limits.min);
+        }
+        for _ in 0..100 {
+            interval = interval.inc(limits);
+            assert!(interval <= limits.max);
+        }
+    }
+
+    #[test]
+    #[expect(clippy::cast_possible_truncation, reason = "test code")]
+    fn poll_interval_to_duration() {
+        assert_eq!(
+            PollInterval(4).as_duration(),
+            Duration::from_seconds_nanos(16, 0)
+        );
+        assert_eq!(
+            PollInterval(5).as_duration(),
+            Duration::from_seconds_nanos(32, 0)
+        );
+
+        let mut interval = PollInterval::from_log(4);
+        for _ in 0..100 {
+            assert_eq!(
+                interval.as_duration().as_seconds() as u64,
+                interval.as_system_duration().as_secs()
+            );
+            interval = interval.inc(PollIntervalLimits::default());
+        }
+
+        for _ in 0..100 {
+            assert_eq!(
+                interval.as_duration().as_seconds() as u64,
+                interval.as_system_duration().as_secs()
+            );
+            interval = interval.dec(PollIntervalLimits::default());
+        }
     }
 }

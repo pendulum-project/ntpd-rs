@@ -4,8 +4,9 @@ use serde::{
     Deserialize, Deserializer,
     de::{self, MapAccess, Unexpected, Visitor},
 };
+use statime_base::{PollInterval, PollIntervalLimits};
 
-use crate::time_types::{NtpDuration, PollInterval, PollIntervalLimits};
+use crate::time_types::NtpDuration;
 
 #[derive(Debug, Default, Copy, Clone)]
 pub struct ReferenceIdConfig {

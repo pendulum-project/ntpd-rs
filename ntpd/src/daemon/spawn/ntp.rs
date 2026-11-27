@@ -2,10 +2,10 @@ use std::fmt::Display;
 use std::sync::{Arc, Mutex};
 use std::{net::SocketAddr, ops::Deref};
 
-use ntp_proto::{PollInterval, PollIntervalLimits, ProtocolVersion, SourceConfig};
+use ntp_proto::{ProtocolVersion, SourceConfig};
 use rustls23::pki_types::ServerName::IpAddress;
 use statime_algo::{LinkConfig, TrackedLinkConfig};
-use statime_base::{Link, SourceType, StdController};
+use statime_base::{Link, PollIntervalLimits, SourceType, StdController};
 use tokio::sync::mpsc;
 
 use crate::daemon::ntp_source::SourceTask;
@@ -185,7 +185,7 @@ mod tests {
             )
             .into(),
             ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
-            poll_interval_limits: ntp_proto::PollIntervalLimits::default(),
+            poll_interval_limits: statime_base::PollIntervalLimits::default(),
             desired_error_bound: statime_base::Duration::from_seconds_nanos(0, 1_000_000),
             delay_decay_rate: 1.0 / 86400f64.sqrt(),
         });
@@ -231,7 +231,7 @@ mod tests {
             )
             .into(),
             ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
-            poll_interval_limits: ntp_proto::PollIntervalLimits::default(),
+            poll_interval_limits: statime_base::PollIntervalLimits::default(),
             desired_error_bound: statime_base::Duration::from_seconds_nanos(0, 1_000_000),
             delay_decay_rate: 1.0 / 86400f64.sqrt(),
         });
@@ -315,7 +315,7 @@ mod tests {
             )
             .into(),
             ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
-            poll_interval_limits: ntp_proto::PollIntervalLimits::default(),
+            poll_interval_limits: statime_base::PollIntervalLimits::default(),
             desired_error_bound: statime_base::Duration::from_seconds_nanos(0, 1_000_000),
             delay_decay_rate: 1.0 / 86400f64.sqrt(),
         });
@@ -368,7 +368,7 @@ mod tests {
         let mut spawner = NtpSpawner::new(NtpSpawnerConfig {
             address: NormalizedAddress::with_hardcoded_dns("does.not.resolve", 123, vec![]).into(),
             ntp_version: ProtocolVersion::v4_upgrading_to_v5_with_default_tries(),
-            poll_interval_limits: ntp_proto::PollIntervalLimits::default(),
+            poll_interval_limits: statime_base::PollIntervalLimits::default(),
             desired_error_bound: statime_base::Duration::from_seconds_nanos(0, 1_000_000),
             delay_decay_rate: 1.0 / 86400f64.sqrt(),
         });

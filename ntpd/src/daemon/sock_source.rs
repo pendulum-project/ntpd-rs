@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::{fmt::Display, path::Path};
 
-use ntp_proto::{ClockId, ObservableSourceState, PollInterval};
+use ntp_proto::{ClockId, ObservableSourceState};
 use statime_base::{Clock, Direction, Duration, LeapStatus, Link, Measurement, TAI};
 use tracing::debug;
 use tracing::{Instrument, Span, error, instrument};

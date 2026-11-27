@@ -496,11 +496,11 @@ impl<'de> Deserialize<'de> for IpSubnet {
 mod tests {
     use std::net::{Ipv4Addr, Ipv6Addr};
 
-    use statime_base::Timestamp;
+    use statime_base::{PollIntervalLimits, Timestamp};
 
     use crate::{
-        Cipher, DecodedServerCookie, KeySetProvider, NoCipher, NtpSnapshot, PollIntervalLimits,
-        nts::AeadAlgorithm, packet::AesSivCmac256, time_types::NtpTimestamp,
+        Cipher, DecodedServerCookie, KeySetProvider, NoCipher, NtpSnapshot, nts::AeadAlgorithm,
+        packet::AesSivCmac256, time_types::NtpTimestamp,
     };
 
     use super::*;
