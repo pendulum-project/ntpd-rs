@@ -4,7 +4,7 @@ include <tunables/global>
 
 #NOTE: this should probably be written as an attached profile, in the form of:
 #
-# /usr/sbin/ntp-daemon flags=(enforce) {
+# /usr/sbin/statime-daemon flags=(enforce) {
 #
 # but for development this profile is easier to work with.
 #
@@ -32,6 +32,6 @@ profile pendulum flags=(enforce) {
   @{HOME}/**/ntpd-rs/**   r,
 
   # NOTE: site-specific additions and overrides; this should probably also be something like
-  # local/home.usr.sbin.ntp-daemon if we turn this into an attached profile
+  # local/home.usr.sbin.statime-daemon if we turn this into an attached profile
   # include <local/pendulum>
 }

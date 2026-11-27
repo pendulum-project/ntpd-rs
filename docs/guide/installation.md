@@ -39,11 +39,11 @@ ntpd-rs run
 cargo build --release
 ```
 
-This produces a `ntp-daemon` binary at `target/release/ntp-daemon`, which is the
+This produces a `statime-daemon` binary at `target/release/statime-daemon`, which is the
 main NTP daemon. Running it from the command line to test it should provide output like:
 
 ```
-> sudo target/release/ntp-daemon -c pkg/common/ntp.toml.default
+> sudo target/release/statime-daemon -c pkg/common/ntp.toml.default
 2023-09-04T12:01:44.055104Z  WARN ntpd::daemon::observer: Abnormal termination of the state observer: Could not create observe socket at "/run/ntpd-rs/observe" because its parent directory does not exist
 2023-09-04T12:01:44.055183Z  WARN ntpd::daemon::observer: The state observer will not be available
 2023-09-04T12:01:44.071353Z  INFO ntpd::daemon::system: new source source_id=SourceId(1) addr=185.172.91.110:123 spawner=SpawnerId(1)
@@ -58,7 +58,7 @@ main NTP daemon. Running it from the command line to test it should provide outp
 
 To use this binary as your system NTP daemon, you must also:
 
-- move the `ntp-daemon` binary to an appropriate location (e.g. `/usr/bin`),
+- move the `statime-daemon` binary to an appropriate location (e.g. `/usr/bin`),
 - set up a configuration in `/etc/ntpd-rs/ntp.toml` (we suggest copying the configuration under `docs/examples/conf/ntp.toml.default`),
 - set permissions for the binary and config file for the binary to be able to run and read the configuration,
 - configure the binary to be run as a system service.
@@ -88,7 +88,7 @@ Conflicts=systemd-timesyncd.service ntp.service chrony.service
 [Service]
 Type=notify
 Restart=no
-ExecStart=/usr/local/bin/ntp-daemon
+ExecStart=/usr/local/bin/statime-daemon
 Environment="RUST_LOG=info"
 RuntimeDirectory=ntpd-rs
 User=ntpd-rs
@@ -156,12 +156,12 @@ ntp_daemon_start()
 {
 	[ -d "${ntp_daemon_socket}" ] || /bin/mkdir "${ntp_daemon_socket}"
 	/usr/sbin/chown _ntp:_ntp "${ntp_daemon_socket}"
-	/usr/sbin/daemon -P ${pidfile} -r -f -o /var/log/ntp_daemon.log -H %%PREFIX%%/bin/ntp-daemon --config "${ntp_daemon_config}"
+	/usr/sbin/daemon -P ${pidfile} -r -f -o /var/log/ntp_daemon.log -H %%PREFIX%%/bin/statime-daemon --config "${ntp_daemon_config}"
 
 	if is_process_running; then
-		echo "Started ntp-daemon (pid=$(cat ${pidfile}))"
+		echo "Started statime-daemon (pid=$(cat ${pidfile}))"
 	else
-		echo "Failed to start ntp-daemon"
+		echo "Failed to start statime-daemon"
 	fi
 }
 
@@ -170,10 +170,10 @@ ntp_daemon_stop()
 	if is_process_running; then
 		/bin/rm -rf "${ntp_daemon_socket}"
 		local pid=$(cat ${pidfile})
-		echo "Stopping ntp-daemon (pid=${pid})"
+		echo "Stopping statime-daemon (pid=${pid})"
 		kill -- -${pid}
 	else
-		echo "ntp-daemon isn't running"
+		echo "statime-daemon isn't running"
 	fi
 }
 

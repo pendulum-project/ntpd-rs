@@ -12,7 +12,7 @@ case $1 in
       # Ensure daemon and ctl client are present
       # and configuration validates.
       echo -e "\nNTPD-RS HELP OUTPUT:"
-      /usr/bin/ntp-daemon --help
+      /usr/bin/statime-daemon --help
       /usr/bin/ntp-metrics-exporter --help
       /usr/bin/ntp-ctl validate
 

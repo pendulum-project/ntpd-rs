@@ -21,7 +21,7 @@ via an HTTP socket.
 
 `-c` *path*, `--config`=*path*
 :   Path to the configuration file where the observation socket path for
-    connecting with the ntp-daemon is specified. This defaults to
+    connecting with the statime-daemon is specified. This defaults to
     `/etc/ntpd-rs/ntp.toml` if not specified.
 
 `-h`, `--help`
@@ -32,5 +32,5 @@ via an HTTP socket.
 
 # SEE ALSO
 
-[ntp-daemon(8)](ntp-daemon.8.md), [ntp-ctl(8)](ntp-ctl.8.md),
+[statime-daemon(8)](statime-daemon.8.md), [ntp-ctl(8)](ntp-ctl.8.md),
 [ntp.toml(5)](ntp.toml.5.md)

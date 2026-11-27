@@ -4,7 +4,7 @@ title: NTP.TOML(5) ntpd-rs 2.0.0-alpha.20261113 | ntpd-rs
 
 # NAME
 
-`ntp.toml` - configuration file for the ntpd-rs ntp-daemon
+`ntp.toml` - configuration file for the ntpd-rs statime-daemon
 
 # DESCRIPTION
 
@@ -671,5 +671,5 @@ these settings may change in backwards incompatible ways.
 
 # SEE ALSO
 
-[ntp-daemon(8)](ntp-daemon.8.md), [ntp-ctl(8)](ntp-ctl.8.md),
+[statime-daemon(8)](statime-daemon.8.md), [ntp-ctl(8)](ntp-ctl.8.md),
 [ntp-metrics-exporter(8)](ntp-metrics-exporter.8.md)

@@ -67,7 +67,7 @@ pub fn main() -> Result<(), Box<dyn Error>> {
             println!("{}", config::long_help_message());
         }
         config::NtpDaemonAction::Version => {
-            eprintln!("ntp-daemon {VERSION}");
+            eprintln!("statime-daemon {VERSION}");
         }
         config::NtpDaemonAction::Run => run(&options).map_err(|e| e as Box<dyn Error>)?,
     }

@@ -5,7 +5,7 @@ supervisor=supervise-daemon
 
 name=ntpd-rs
 description="Network Time Protocol (ntpd-rs)"
-command=/usr/bin/ntp-daemon
+command=/usr/bin/statime-daemon
 command_args="-c $CONFIG"
 # log the stderror and stdout to /var/log/ntpd-rs.log
 output_log=/var/log/${RC_SVCNAME}.log

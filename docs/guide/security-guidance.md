@@ -65,7 +65,7 @@ If insufficient servers are available for synchronizing the time, or if they don
 ```
 Note that this can happen at times, especially during bootup. However, prolonged periods (more than 15 minutes) of seeing this message, without any sign of synchronization in the form of a log line similar to
 ```
-Sep 05 13:57:38 magnesium ntp-daemon[1593]: 2024-09-05T11:57:38.128571Z  INFO ntp_proto::algorithm::kalman: Offset: -84.4077443282968+-94.97527051033717ms, frequency: 0+-10000000ppm
+Sep 05 13:57:38 magnesium statime-daemon[1593]: 2024-09-05T11:57:38.128571Z  INFO ntp_proto::algorithm::kalman: Offset: -84.4077443282968+-94.97527051033717ms, frequency: 0+-10000000ppm
 ```
 means that the client is not steering the clock and may indicate a problem with the configured time sources.
 

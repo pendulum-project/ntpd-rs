@@ -26,7 +26,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/git/db \
     --mount=type=cache,target=/build/target/ \
     cargo build --locked --release --features="${NTPDRS_BUILD_FEATURES}" \
     && mkdir -p /build/artifacts \
-    && cp target/release/ntp-daemon /build/artifacts \
+    && cp target/release/statime-daemon /build/artifacts \
     && cp target/release/ntp-ctl /build/artifacts \
     && cp target/release/ntp-metrics-exporter /build/artifacts
 
@@ -40,7 +40,7 @@ RUN apt update \
     && rm -rf /var/lib/apt/lists/* /tmp/*
 
 # Copy compiled binaries from the builder stage
-COPY --from=builder /build/artifacts/ntp-daemon /usr/local/bin/ntp-daemon
+COPY --from=builder /build/artifacts/statime-daemon /usr/local/bin/statime-daemon
 COPY --from=builder /build/artifacts/ntp-ctl /usr/local/bin/ntp-ctl
 COPY --from=builder /build/artifacts/ntp-metrics-exporter /usr/local/bin/ntp-metrics-exporter
 
@@ -61,4 +61,4 @@ RUN addgroup --system --gid "${GID}" "${USER}" \
         "${USER}"
 USER ${USER}
 
-CMD ["/usr/local/bin/ntp-daemon"]
+CMD ["/usr/local/bin/statime-daemon"]

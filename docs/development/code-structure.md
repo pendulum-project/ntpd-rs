@@ -53,7 +53,7 @@ interact with PPS devices ioctl system calls are used, which uses `libc` and is 
 The `ntpd` crate contains the code for all three end-user binaries that our
 project produces. This includes
 
-- `ntp-daemon` (in `ntpd/src/daemon`)
+- `statime-daemon` (in `ntpd/src/daemon`)
 - `ntp-ctl` (in `ntpd/src/ctl.rs`)
 - `ntp-metrics-exporter` (in `ntpd/src/metrics`)
 
@@ -144,4 +144,3 @@ an example of how to interact with this socket.
 
 Because this task reads from its socket, it is advised to restrict the
 permissions on this socket.
-

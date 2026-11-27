@@ -70,7 +70,7 @@ nav:
     - guide/migrating-ntpsec.md
     - guide/security-guidance.md
   - Man Pages:
-    - ntp-daemon(8): man/ntp-daemon.8.md
+    - statime-daemon(8): man/statime-daemon.8.md
     - ntp.toml(5): man/ntp.toml.5.md
     - ntp-ctl(8): man/ntp-ctl.8.md
     - ntp-metrics-exporter(8): man/ntp-metrics-exporter.8.md

@@ -67,11 +67,11 @@ license-file = "../pkg/deb/COPYRIGHT-debian"
 maintainer = "NTPD-rs Maintainers <ntpd-rs-maintainer@tweedegolf.com>"
 maintainer-scripts = "../pkg/deb/"
 assets = [
-  ["target/release/ntp-daemon", "/usr/bin/ntp-daemon", "755"],
+  ["target/release/statime-daemon", "/usr/bin/statime-daemon", "755"],
   ["target/release/ntp-ctl", "/usr/bin/ntp-ctl", "755"],
   ["target/release/ntp-metrics-exporter", "/usr/bin/ntp-metrics-exporter", "755"],
   ["docs/precompiled/man/ntp-ctl.8", "/usr/share/man/man8/ntp-ctl.8", "644"],
-  ["docs/precompiled/man/ntp-daemon.8", "/usr/share/man/man8/ntp-daemon.8", "644"],
+  ["docs/precompiled/man/statime-daemon.8", "/usr/share/man/man8/statime-daemon.8", "644"],
   ["docs/precompiled/man/ntp-metrics-exporter.8", "/usr/share/man/man8/ntp-metrics-exporter.8", "644"],
   ["docs/precompiled/man/ntp.toml.5", "/usr/share/man/man5/ntp.toml.5", "644"],
   ["docs/examples/conf/ntp.toml.default", "/usr/share/doc/ntpd-rs/ntp.toml.default", "644"],
@@ -98,11 +98,11 @@ name = "ntpd-rs"
 license = "MIT or ASL 2.0"
 version = "2.0.0~alpha.20261113" #MARKER: RPM-VERSION
 assets = [
-  { source = "target/release/ntp-daemon", dest = "/usr/bin/ntp-daemon", mode = "755" },
+  { source = "target/release/statime-daemon", dest = "/usr/bin/statime-daemon", mode = "755" },
   { source = "target/release/ntp-ctl", dest = "/usr/bin/ntp-ctl", mode = "755" },
   { source = "target/release/ntp-metrics-exporter", dest = "/usr/bin/ntp-metrics-exporter", mode = "755" },
   { source = "docs/precompiled/man/ntp-ctl.8", dest = "/usr/share/man/man8/ntp-ctl.8", mode = "644", doc = true },
-  { source = "docs/precompiled/man/ntp-daemon.8", dest = "/usr/share/man/man8/ntp-daemon.8", mode = "644", doc = true },
+  { source = "docs/precompiled/man/statime-daemon.8", dest = "/usr/share/man/man8/statime-daemon.8", mode = "644", doc = true },
   { source = "docs/precompiled/man/ntp-metrics-exporter.8", dest = "/usr/share/man/man8/ntp-metrics-exporter.8", mode = "644", doc = true },
   { source = "docs/precompiled/man/ntp.toml.5", dest = "/usr/share/man/man5/ntp-toml.5", mode = "644", doc = true },
   { source = "docs/examples/conf/ntp.toml.default", dest = "/usr/share/doc/ntpd-rs/ntp.toml.default", mode = "644", doc = true },
