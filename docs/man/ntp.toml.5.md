@@ -8,230 +8,62 @@ title: NTP.TOML(5) ntpd-rs 2.0.0-alpha.20261113 | ntpd-rs
 
 # DESCRIPTION
 
-Configuration of ntpd-rs happens in the `ntp.toml` configuration format. The
-TOML format is in lots of ways similar to a simple INI with several extensions
-allowing a JSON-like syntax.
+The configuration of the ntpd-rs daemon is controlled through a number of TOML
+configuration files. The primary configuration file is loaded from
+`/etc/ntpd-rs/ntp.toml`, unless otherwise specified on the command line when
+starting the daemon. It can specify a folder containing further configuration
+files, which are used to provide defaults for settings not present in the
+primary configuration file.
 
-The ntpd-rs configuration file consists of several sections, each of which
-configures a separate part of the ntp-daemon process. Each of the sections is
-described in the rest of this document. Many settings will have defaults, which
-will be indicated by each configuration setting shown.
+The TOML file format is in lots of ways similar to a simple INI with several
+extensions allowing a JSON-like syntax. For the simplest cases, each setting is
+placed on its own line, with the name of the setting on the left hand sign of
+an equals sign, and the value on the right hand side. String values are quoted,
+whilst numbers and boolean values like true/false are placed without any
+quotes. This document will provide example values for all settings. A full
+specification of the syntax of toml files can be found at [toml.io](https://toml.io).
 
-The NTP daemon only supports unicast client-server connections. Most NTP
-traffic, especially across the public internet, almost exclusively uses this
-mode, so it is not considered a practical limitation for most scenarios.
+The ntpd-rs configuration is split up into several sections. Each of these
+sections controls a separate aspect of the daemons operations. Most settings
+have defaults, which are shown in brackets as (**emphasized**). This document
+organizes all settings by section.
 
-# SOURCE MODES
-Different types of sources (see the section below for details) are supported by
-the NTP daemon. To set the type of the source, you can configure the mode field
-with any of these options:
+# EXPERIMENTAL FEATURES
 
-`server`
-:   A server source connects to a single specific NTP server. If a connection is
-    lost, attempts will be made to reconnect to the source.
+The ntpd-rs daemon supports a number of features which are experimental. Such
+features may change between versions in ways which are backwards incompatible.
+Settings related to such features will be marked in this documentation. Note
+that a configuration using such settings may not work with future versions
+of ntpd-rs.
 
-`pool`
-:   A pool source retrieves multiple NTP servers by resolving a hostname via
-    DNS. It then attempts to connect to multiple of these servers at the same
-    time. If a connection is lost, a new server will be retrieved from the pool.
+# SPECIFICATION OF DURATIONS
 
-`nts`
-:   Connect to a single Network Time Security (NTS) source. The NTS protocol
-    uses a TLS handshake to exchange secrets with a server to allow verifying
-    that NTP messages have not been tampered with. Note that the TLS protocol
-    requires that both the client and server have a rough idea of the current
-    time.
-
-`nts-pool`
-:   Connect to a pool of Network Time Security (NTS) sources. This is currently
-    experimental, and may change in backwards incompatible ways.
-
-`sock`
-:   A sock source connects to a GPSd socket to get timing data from GPS
-    receivers. Note that GPSd must be (re-)started after starting ntpd-rs for
-    GPSd to connect to the socket.
-
-`pps`
-:   A PPS source connects to a Pulse Per Second device, which is by default
-    assumed to send a pulse every rounded second. As these devices only
-    provide periodic data, they do not count towards `minimum-agreeing-sources`.
+Various configuration settings of the daemon set some kind of duration or time
+interval. These settings are specified as a human readable duration consisting
+of a string with an amount and then a unit, such as `"1.2s"`. The supported
+units for durations are nanoseconds (`ns`), microseconds (`us`),
+milliseconds (`ms`), seconds (`s`), minutes (`m`), hours (`h`), days (`d`),
+and weeks (`w`).
 
 # CONFIGURATION
 
-## `[source-defaults]`
-Some of the behavior of a source is configurable. You can set defaults for those
-settings in the `[source-defaults]` section.
+There are two settings in the daemon which change its global behavior:
 
-`poll-interval-limits` = { `min` = *min*, `max` = *max* } (**{ min = 4, max = 10}**)
-:   Specifies the limit on how often a source is queried for a new time. For
-    most instances the defaults will be adequate. The min and max are given as
-    the log2 of the number of seconds (i.e. two to the power of the interval).
-    An interval of 4 equates to 16 seconds, 10 results in an interval of 1024
-    seconds. If specified, both min and max must be specified.
+`use-system-config` = *bool or path* (**false**)
+:   Whether and where to fetch the system defaults. If specified as `true`, the
+    system defaults are loaded from /usr/lib/ntpd-rs/system-config. The
+    configuration files in the system config folder need to be disjunct, i.e. a
+    setting can be specified in at most one file. In particular, this also
+    holds for sources and servers, in that there can be only one file
+    specifying sources, and only one file specifying servers.
 
-`initial-poll-interval` = *interval* (**4**)
-:   Initial poll interval used on startup. The value is given as the log2 of
-    the number of seconds (i.e. two to the power of the interval). The default
-    value of 4 results in an interval of 16 seconds.
-
-## `[[source]]`
-Each `[[source]]` is a set of one or more time sources for the daemon to
-retrieve time information from. Any number of sources can be configured by
-repeating a `[[source]]` section (note the double brackets) for as many times as
-required. Each source can be configured to connect to a specific remote
-location. Multiple modes for connecting to sources are supported. If less than
-`minimum-agreeing-sources` time sources have been configured, no time will be
-synchronized to the local clock. Note that a pool counts as multiple time
-sources.
-
-`mode` = *mode*
-:   Specify one of the source modes that ntpd-rs supports: `server`, `pool`,
-    `nts`, `nts-pool`, `sock` or `pps`. For a description of the different source modes, see
-    the *SOURCE MODES* section. Note that sources of type `nts-pool` are experimental
-    and may change their behavior in backwards-incompatible ways between versions.
-
-`address` = *address*
-:   Specify the remote address of the source. For server sources this will be
-    the remote address of the NTP server. For pools, this will be the DNS
-    address of the NTP pool and for NTS this will be the address of the key
-    exchange server. The server address may include a port number by appending a
-    colon (`:`) followed by a port number. If not specified the daemon will
-    connect to `server` and `pool` servers via port *123*, for `nts` sources the
-    default port is *4460*.
-
-`certificate-authority` = *cert*
-:   Can only be set on sources with the `nts` mode. Path to a certificate for an
-    additional certificate authority to use, aside from the certificate
-    authorities specified by the system configuration. Note that this cannot be
-    used to specify a self-signed certificate.
-
-`count` = *number* (**4**)
-:   Can only be set on sources with the `pool` mode. Specifies the maximum
-    number of servers that the daemon will attempt to connect to from a pool.
-    The daemon will keep retrying to get more sources from the pool when
-    connections are lost, up to the maximum specified by this configuration
-    value.
-
-`enable-srv-resolution` = *bool* (**false**)
-:   Can only be set on source with the `nts` or `nts-pool` mode. Enables following
-    SRV records when resolving the address of the NTS-ke server. Such records
-    must be DNSSEC signed. Note that this feature is still experimental and may
-    change in backwards incompatible ways.
-
-`ignore` = *ip addresses*
-:   `pool` mode only. Specifies a list of IP addresses of servers in the pool
-    which should not be used. For example: `["127.0.0.1"]`. Empty by default.
-
-`measurement_noise_estimate` = *Noise variance (seconds squared)*
-:   `pps` and `sock` mode only. Deprecated, use `precision` instead.
-
-`precision` = *Noise standard deviation (seconds)*
-:   `pps` and `sock` mode only. Precision of the source. This should be an estimate
-    of the size of the expected measurement noise. Technically defined as the
-    1-standard deviation bound on the measurement error. This is needed as
-    `sock` and `pps` sources don't have a good way to estimate their own error.
-
-`accuracy` = *Uncertainty standard deviation (seconds)*
-:   `pps` and `sock` mode only. Accuracy of the underlying time source. This should
-    be an estimate of the size of the error in the clock you are synchronizing with,
-    as well as any mostly-unchanging offset in the measurement process. This can be
-    used to deprioritize sources which have large offsets in the measurement process
-    or which are of poorer quality than others.
-
-`poll-interval-limits` = { `min` = *min*, `max` = *max* } (defaults from `[source-defaults]`)
-:   Specifies the limit on how often a source is queried for a new time. For
-    most instances the defaults will be adequate. The min and max are given as
-    the log2 of the number of seconds (i.e. two to the power of the interval).
-    An interval of 4 equates to 16 seconds, 10 results in an interval of 1024
-    seconds. If only one of the two boundaries is specified, the other is
-    inherited from `[source-defaults]`
-
-`initial-poll-interval` = *interval* (defaults from `[source-defaults]`)
-:   Initial poll interval used on startup. The value is given as the log2 of
-    the number of seconds (i.e. two to the power of the interval). The default
-    value of 4 results in an interval of 16 seconds.
-
-`ntp-version` = `4` | `5` | `"auto"` (**4**)
-:   Which NTP version to use for this source. By default this uses NTP version
-    4. You can use `5` to set the protocol version to the draft NTPv5
-    specification, but your source must support the same draft. To use the
-    experimental upgrade protocol set the NTP version to `"auto"`. This uses a
-    specially constructed NTPv4 packet to attempt an upgrade to the supported
-    draft NTPv5 version if the source also supports the same draft version.
-    NTPv5 support is currently in beta and can still change in a backwards
-    incompatible way.
-
-## `[[server]]`
-The NTP daemon can be configured to distribute time via any number of
-`[[server]]` sections. If no such sections have been defined, the daemon runs in
-a client only mode. Any number of servers can be configured by repeating the
-`[[server]]` section (note the double brackets) for as many times as required.
-Each server can serve a specific socket address or listen on all available
-network interfaces on a specific port. Servers always serve the system clock
-time.
-
-`listen` = *socketaddr*
-:   Address of a UDP socket on which the server should listen for incoming NTP
-    requests. Specified as an interface IP address, a colon and a port number.
-    The standard port number for NTP is UDP port 123. Both IPv4 and IPv6 are
-    supported. For example to listen on localhost port 123 in IPv4 you can use
-    `127.0.0.1:123`. You can listen on all available network interfaces at once
-    using `0.0.0.0:123` for IPv4 or `[::]:123` for IPv6.
-
-`rate-limiting-cache-size` = *size* (**0**)
-:   Number of elements in the rate limiting cache. At most *size* elements are
-    kept in the cache. This means that if more than *size* different clients
-    attempt to connect to the server too frequently, the cache size will have
-    reduced functionality, as rate limiting information gets lost when new
-    clients connect to the server. If set to zero, the cache is unused, this
-    is the default.
-
-`rate-limiting-cutoff-ms` = *cutoff* (**0**)
-:   Minimum time between two requests from the same client, if a request was
-    sent sooner than the cutoff time, the client will be asked to slow down
-    their requests by the server responding with a packet with the NTP `RATE`
-    kiss code. No actual time measurement will be returned to the client in
-    that case. If set to zero, no rate limiting is applied, this is the default.
-
-`allowlist` = { filter = [ *subnet*, .. ], action = `"deny"` | `"ignore"` } (**unset**)
-:   Only allow any number of filtered *subnets* to connect to the daemon. Any
-    IP that matches one of the subnets specified is allowed to contact this
-    server. The subnets must be specified in CIDR notation (an IP address
-    followed by a slash and the number of masked bits, for example `127.0.0.1/8`
-    or `192.168.1.1/24`). The action determines what measure is taken for IP
-    addresses not in any of the specified subnets. When `deny`, an explicit
-    packet with the NTP `DENY` kiss code is returned to the sender indicating
-    that they are not allowed to do so. When `ignore` is specified, messages are
-    discarded with no response sent. The default value is equivalent to allowing
-    any IP address, and would be equivalent to setting the filter to
-    `["0.0.0.0/0", "::/0"]`, with either action.
-
-`denylist` = { filter = [ *subnet*, .. ], action = `"deny"` | `"ignore"` } (**unset**)
-:   Do not allow any number of filtered *subnets* to connect to the daemon. Any
-    IP that matches one of the subnets specified is not allowed to contact this
-    server. The subnets must be specified in CIDR notation (an IP address
-    followed by a slash and the number of masked bits, for example `127.0.0.1/8`
-    or `192.168.1.1/24`). The action determines what measure is taken for IP
-    addresses in any of the specified subnets. When `deny`, an explicit packet
-    with the NTP `DENY` kiss code is returned to the sender indicating that they
-    are not allowed to do so. When `ignore` is specified, messages are discarded
-    with no response sent. The default value is equivalent to allowing any IP
-    address, and would be equivalent to setting the filter to `[]`, with either
-    action.
-
-`require-nts` = `true` | `false` | `"deny"` | `"ignore"` (**false**)
-:   Whether incoming requests to the server must have NTS enabled. When set to
-    `true` or `"ignore"` any non-NTS enabled messages will be ignored. When set
-    to `"deny"` non-NTS enabled messages will be explicitly denied with an NTP
-    `DENY` kiss code. When set to `false` (the default), normal NTP messages are
-    also allowed.
-
-`accept-ntp-versions` = [ `3` | `4` | `5`, .. ] (**[3, 4]**)
-:   An array of NTP versions that are accepted by the server. By default only
-    NTPv3 and NTPv4 packets are supported. To also allow draft NTPv5 packets,
-    you can set this value to `[3, 4, 5]`. NTPv5 support is currently in beta
-    and can still change in a backwards incompatible way.
-
+`seccomp` = *mode* (**"off"**)
+:   This setting is linux-specific. Enables or disables the seccomp filter. Can
+    be set to `"off"`, `"log"`, or `"kill"`. In log mode, seccomp violations
+    are only logged, but not acted upon. Note that the filter is experimental
+    and may change in backwards incompatible ways. It also may miss system
+    calls required by your specific libc. Please test with logging before
+    applying the filter in a stricter mode.
 
 ## `[observability]`
 Settings in this section configure how you can observe the behavior of the
@@ -276,247 +108,566 @@ ntp-metrics-exporter(8).
 `metrics-exporter-listen` = *socketaddr* (**127.0.0.1:9975**)
 :   The listen address that is used for the ntp-metrics-exporter(8).
 
-## `[keyset]`
-The keyset configures the internal key infrastructure for NTS packets. Note that
-this is separate from the TLS certificate and private key, for those see the
-relevant configuration in the `[[nts-ke-server]]` section.
+## `[[source]]`
 
-`stale-key-count` = *count* (**7**)
-:   Maximum number of old keys to retain in the cache. Whenever keys are rotated
-    the old keys will become invalid, but clients may still have NTS cookies
-    encrypted with any of the old keys.
+Each `[[source]]` is a group of one or more time sources for the daemon to
+retrieve time information from. Any number of sources can be configured by
+repeating a `[[source]]` section (note the double brackets) for as many times
+as required.
 
-`key-rotation-interval` = *seconds* (**86400**)
-:   Time between key rotation events. Every time *seconds* elapses, a new
-    internal key will be generated for creating NTS cookies. By default this is
-    set to a day.
+The daemon supports multiple ways of getting the time, from local sources such
+as a gps receiver or a pps input, to remote sources such as an NTP or csptp
+server. The following source types are currently supported:
 
-`key-storage-path` = *path* (**unset**)
-:   If set, stores the internal NTS keys in the file indicated by *path*. This
-    allows keys to survive a server reboot. If not set, clients using NTS may
-    need to redo a key exchange operation to get new NTS cookies.
-    The daemon will not create any parent directories if they don't exist.
-    It will create the file if it doesn't exist.
+`ntp`
+:   An NTP source connects to a single remote NTP server. If the connection to
+    the server is lost, attempts are made to reconnect to the source unless the
+    connection was secured and the server indicated it never wanted to see the
+    client again.
+
+`ntp-pool`
+:   An NTP pool source connects to several distinct NTP servers out of a pool
+    of NTP servers. The pool is expected to either provide several servers
+    behind the DNS name of the pool, or to provide multiple sources via NTS.
+    Note that support for NTS with pool sources is still experimental. If the
+    connection to the server is lost, a new server is retrieved from the pool.
+
+`sock`
+:   A sock source connects to a GPSd socket to get timing data from GPS
+    receivers. Note that GPSd must be (re-)started after starting ntpd-rs for
+    GPSd to connect to the socket.
+
+`pps`
+:   A PPS source connects to a Pulse Per Second device, which is by default
+    assumed to send a pulse at the start of every second. As these devices only
+    provide periodic data, they do not count towards `minimum-agreeing-sources`.
+
+`csptp`
+:   A CSPTP source connects to a single csptp server. If the connection to the
+    server is lost, attempts are made to reconnect to the source. Note that
+    CSPTP sources are still experimental, and only available on linux.
 
 
-## `[[nts-ke-server]]`
-The daemon can be configured to operate as an NTS key exchange server by
-repeating any number of `[[nts-ke-server]]` sections. If no such sections have
-been defined, the daemon will offer no NTS key exchange services. All NTS-KE
-servers make use of the shared keyset. It is the purpose of the key exchange
-server to safely distribute cookies to clients. These cookies can then
-be used in NTP packets with the normal server to validate that the traffic was
-not tampered with.
+A source has the following configuration options:
 
-`listen` = *socket*
-:   Address of a TCP socket on which the server should listen for incoming NTS
-    key exchange requests. Specified as an interface IP address, a colon and a
-    port number. The standard port number for an NTS key exchange server is TCP
-    port 4460. Both IPv4 and IPv6 are supported. For example to listen on
-    localhost port 4460 in IPv4 you can use `127.0.0.1:4460`. You can listen on
-    all available network interfaces at once using `0.0.0.0:4460` for IPv4 or
-    `[::]:4460` for IPv6.
+`type` = *type*
+:   Specify one of the source types that ntpd-rs supports: `ntp`, `ntp-pool`,
+    `sock`, `pps`, or `csptp`. Note that `csptp` sources are experimental.
 
-`certificate-chain-path` = *path*
-:   Path to a certificate chain for the public certificate that the server
-    offers to clients.
+`nts` = *bool* (**false**)
+:   Whether to secure communication with the source using NTS. Only supported
+    for `ntp` and `ntp-pool` sources. Note that using NTS with `ntp-pool`
+    sources is experimental.
 
-`private-key-path` = *path*
-:   Path to the private key associated with the server certificate in the
-    certificate chain.
+`address` = *address*
+:   The address of the time source. Only applicable to `ntp`, `ntp-pool`, and
+    `csptp` sources. For non-NTS NTP sources, this should be the address of the
+    NTP server. For csptp servers, this should be the address of the csptp
+    server. For NTS sources, this should be the address of the NTS key exchange
+    server. For pool sources, this should either be the dns name of the pool,
+    or the NTS key exhchange server of the pool when using NTS with the pool.
+    For NTP sources, the address may include a port number by appending a
+    colon (`:`) followed by a port number. If not specified, the daemon will
+    use the default port number (*4460* if the source uses NTS, *123* if it
+    does not).
 
-`key-exchange-timeout-ms` = *timeout* (**1000**)
-:   Timeout in milliseconds for how long a key exchange may take. If the timeout
-    is exceeded the connection will be dropped.
+`path` = *path*
+:   The path to the device or socket of the time source. Only applicable to
+    `pps` and `sock` sources.
 
-`concurrent-connections` = *number* (**512**)
-:   Maximum number of total concurrent connections the key exchange server will handle.
-    Any connections above the threshold will be held in an OS level queue.
+`count` = *number* (**4**)
+:   Can only be set on `ntp-pool` sources. Specifies the maximum number of
+    servers that the daemon will attempt to connect to from a pool. The daemon
+    will keep retrying to get more sources from the pool when connections are
+    lost, up to the maximum specified by this configuration value.
 
-`longlived-connections` = *number* (**`concurrent-connections`/10**)
-:   Maximum number of concurrent longlived connections from nts pools the key
-    exchange server will handle. Note that pool support is currently in beta
-    and can still change in backwards incompatible ways.
+`ignore` = *ip addresses* (**[]**)
+:   Can only be set on `ntp-pool` sources not using NTS. Specifies a list of IP
+    addresses of servers in the pool which should not be used. For example:
+    `["127.0.0.1"]`. Empty by default.
+
+`ntp-version` = `4` | `5` | `"auto"` (**4**)
+:   Which NTP version to use for this source. Can only be set on `ntp` and
+    `ntp-pool` sources. By default this uses NTP version 4. You can use `5` to
+    set the protocol version to the draft NTPv5 specification, but your source
+    must support the same draft. To use the experimental upgrade protocol set
+    the NTP version to `"auto"`. This uses a specially constructed NTPv4 packet
+    to attempt an upgrade to the supported draft NTPv5 version if the source
+    also supports the same draft version. NTPv5 support is currently in beta
+    and can still change in a backwards incompatible way.
+
+`minimum-poll-interval` = *duration* (see text)
+:   Can only be set on `ntp` and `ntp-pool` sources. The minimum amount of time
+    between two requests to the server. The value is given as a duration. The
+    default value is taken from the `minimum-poll-interval` setting in
+    `[ntp-source-defaults]`, which defaults to 16 seconds.  This is rounded up
+    to the nearest power of 2 number of seconds.
+
+`maximum-poll-interval` = *duration* (see text)
+:   Can only be set on `ntp` and `ntp-pool` sources. The maximum amount of time
+    between two requests to the server. The value is given as a duration. The
+    default value is taken from the `minimum-poll-interval` setting in
+    `[ntp-source-defaults]`, which defaults to 1024 seconds.  This is rounded
+    down to the nearest power of 2 number of seconds. If the rounded value of
+    `minimum-poll-interval` is larger than the `maximum-poll-interval`,
+    `maximum-poll-interval` is taken equal to `minimum-poll-interval` instead.
+
+`desired-error` = *duration* (see text)
+:   The accuracy of synchronization desired from this source. The actual poll
+    interval is adapted between the limits specified in `minimum-poll-interval`
+    and `maximum-poll-interval` such that the clock has this much uncertainty
+    if only synchronized from this source. The default is taken from the
+    `desired-error` setting in `[ntp-source-defaults]`, which defaults to 1
+    millisecond.
+
+`additional-certificates` = *path* (optional)
+:   Can only be set on sources using NTS. Optional path to a certificate set
+    for additional certicate authorities to use, in addition to the certificate
+    authorities specified by the system configuration. Note that this cannot be
+    used to specify a self-signed certificate.
+
+`precision` = *duration*
+:   `pps` and `sock` sources only. Precision of the source. This should be an
+    estimate of the size of the expected measurement noise. Technically defined
+    as the 1-standard deviation bound on the measurement error. This is needed
+    as `sock` and `pps` sources don't have a good way to estimate their own
+    error.
+
+`accuracy` = *duration* (**"0s"**)
+:   `pps` and `sock` sources only. Accuracy of the underlying time source. This
+    should be an estimate of the size of the error in the clock you are
+    synchronizing with, as well as any mostly-unchanging offset in the
+    measurement process. This can be used to deprioritize sources which have
+    large offsets in the measurement process or which are of poorer quality
+    than others.
+
+`period` = *duration* (**"1s"**)
+:   Only for `pps` sources. Period of the pulse signal. The time signal is
+    assumed to arive on integer multiples of the period, starting at the
+        (virtual) TAI epoch of midnight on the first of januari 1970. Note that
+        this means that when using multi-second periods, these may not align
+        with the minute or hour mark of the UTC timescale.
+
+`enable-srv-resolution` = *bool* (**false**)
+:   Can only be set on sources using NTS. Enables following SRV records when
+    resolving the address of the NTS key exchange server. Such records must be
+    DNSSEC signed. Note that this feature is experimental and may change in
+    backwards incompatible ways.
+
+`delay-decay-rate` = *rate* (see text)
+:   Can only be set for `ntp`, `ntp-pool` and `csptp` sources. How quickly we
+    lose confidence in the observed time delay between us and this time source.
+    This setting is experimental and primarily intended for use by experts when
+    fine-tuning the synchronization algorithm. The default value is taken from
+    the `delay-decay-rate` setting in `[ntp-source-defaults]` for NTP sources,
+    and from the `delay-decay-rate` setting in `[csptp-source-defaults]` for
+    `csptp` sources, both of which defaults to `0.003402069`.
+
+`domain` = *number* (see text)
+:   Can only be set on `csptp` sources. PTP domain number to be used in
+    communication with the CSPTP server. The default value is taken from the
+    `domain` setting in `[csptp-source-defaults]`, which defaults to 128.
+
+`poll-interval` = *duration* (see text)
+:   Can only be set on `csptp` sources. How often to query the CSPTP server for
+    the current time. The default value is taken from the `poll-interval`
+    setting in `[csptp-source-defaults]`, which defaults to 1 second.
+
+`response-interval` = *duration* (see text)
+:   Can only be set on `csptp` sources. How long to wait for a reply to a
+    request. Replies received after this interval will be ignored. The default
+    value is taken from the `response-interval` setting in
+    `[csptp-source-defaults]`, which defaults to 1 second.
+
+## `[filter]`
+
+Before being used to synchronize the system's time, sources are checked for
+sufficient quality and against each other for consistency. These settings
+control how that checking is done:
+
+`minimum-agreeing-sources` = *number* (see text)
+:   The number of sources that need to agree on the current time before the
+    current system's time is modified. By default, this is the smaller of 3 and
+    the number of sources configured, excluding any pulse-per-second sources.
+
+`select-offset-uncertainty-window` = *size* (**1.0**)
+:   Size of the window of uncertainty to assume around a source's offset, based
+    on the observed noise in the offset. This setting is experimental and may
+    change in backwards incompatible ways. It is primarily intended for experts
+    trying to tune the algorithm.
+
+`select-link-uncertainty-window` = *size* (**2.0**)
+:   Size of the window of uncertainty to assume around a source's offset, based
+    on the observed noise in the link delay. This setting is experimental and
+    may change in backwards incompatible ways. It is primarily intended for
+    experts trying to tune the algorithm.
+
+`select-delay-uncertainty-window` = *size* (**0.5**)
+:   Size of the window of uncertainty to assume around a source's offset, based
+    on the potential asymmetry due to delay and root delay. This setting is
+    experimental and may change in backwards incompatible ways. It is primarily
+    intended for experts trying to tune the algorithm.
+
+`select-max-window-size` = *duration* (**1s**)
+:   Maximum total size of the uncertainty window of a source before we judge a
+    source to be unsuitable for synchronization. This setting is experimental
+    and may change in backwards incompatible ways. It is primarily intended for
+    experts trying to tune the algorithm.
+
+## `[system-clock]`
+
+Controls for how the system clock is steered:
+
+`steered` = *bool* (**true**)
+:   Whether the system clock is actually steered. If false, the daemon keeps
+    track of the deviation of the system clock from the actual time, but the
+    actual system clock is not updated based on that estimate.
+
+`startup-jump-warning-threshold` = *threshold set* (**"0s"**)
+:   How large a step must be at startup to trigger a warning. Can be set to
+    "inf" to disable this warning entirely. The threshold can be either
+    symmetric, in which case it is specified as a duration, or asymmetric, in
+    which case a separate forward and backward jump threshold can be given,
+    each of which can be infinite. An example of an asymmetric threshold is
+    `{ forward = "inf", backward = "0s" }`.
+
+`startup-jump-abort-threshold` = *threshold set* (**{ forward = "inf", backward = "1d" }**)
+:   How large a step must be at startup to cause us to stop trusting our
+    ability to steer the clock and abort the daemon. Can be set to "inf" to
+    disable aborting on jumps at startup entirely. The threshold can be either
+    symmetric, in which case it is specified as a duration, or asymmetric, in
+    which case a separate forward and backward jump threshold can be given,
+    each of which can be infinite.
+
+`single-jump-warning-threshold` = *threshold set* (**"0s"**)
+:   How large a jump during regular operation must be to trigger a warning. Can
+    be set to "inf" to disable this warning entirely. The threshold can be
+    either symmetric, in which case it is specified as a duration, or
+    asymmetric, in which case a separate forward and backward jump threshold
+    can be given, each of which can be infinite. An example of an asymmetric
+    threshold is `{ forward = "inf", backward = "0s" }`.
+
+`single-jump-abort-threshold` = *threshold set* (**"1000s"**)
+:   How large a jump must be during regular operation to cause us to stop
+    trusting our ability to steer the clock and abort the daemon. Can be set to
+    "inf" to disable aborting on jumps during regular operations entirely. The
+    threshold can be either symmetric, in which case it is specified as a
+    duration, or asymmetric, in which case a separate forward and backward jump
+    threshold can be given, each of which can be infinite. An example of an
+    asymmetric threshold is `{ forward = "inf", backward = "0s" }`.
+
+`accumulated-jump-warning-threshold` = *duration* (**"inf"**)
+:   How large all jumps, excluding jumps at startup, combined must be, befores
+    triggering a warning. Can be used to trigger a warning before an abort is
+    triggered from passing `accumulated-jump-abort-threshold`, giving the
+    operator a chance to intervene before that threshold is triggered. Can be
+    set to "inf" to disable this warning entirely.
+
+`accumulated-jump-abort-threshold` = *duration* (**"inf"**)
+:   How large all jumps, excluding a single jump at startup, combined must be,
+    before we stop trusting our ability to steer the clock and abort the
+    daemon. Can be set to "inf" to disable aborting on the total amount jumped
+    entirely.
+
+`startup-end-threshold` = *duration* (**"1s"**)
+:   The uncertainty on the current time below which we consider the clock to
+    have transitioned out of startup. If the clock later goes to a larger
+    uncertainty again, it will still be considered out of startup. This setting
+    is experimental and may change in backwards incompatible ways. It is
+    primarily intended for experts trying to tune the algorithm.
+
+`jump-threshold` = *duration* (**"10s"**)
+:   How large the clock offset needs to be before we make a jump. This setting
+    is experimental and may change in backwards incompatible ways. It is
+    primarily intended for experts trying to tune the algorithm.
+
+`slew-time-constant` = *duration* (**"8s"**)
+:   The amount of time to spread slewing over. This gives a typical time scale
+    to reduce the offset error by about two thirds using slews. This setting is
+    experimental and may change in backwards incompatible ways. It is primarily
+    intended for experts trying to tune the algorithm.
+
+`synchronized-threshold` = *duration* (**"1s"**)
+:   Offset and uncertainty below which we consider the clock synchronized. This
+    setting is experimental and may change in backwards incompatible ways. It
+    is primarily intended for experts trying to tune the algorithm.
+
+`initial-wander` = *amount* (**1e-8**)
+:   Initial estimate of how much the frequency of the clock wanders, as
+    fractions of a second per second. This setting is experimental and may
+    change in backwards incompatible ways. It is primarily intended for experts
+    trying to tune the algorithm.
+
+## `[ntp-source-defaults]`
+
+Some of the behavior of NTP sources is configurable. The defaults for these
+settings can be set here:
+
+`minimum-poll-interval` = *duration* (**"16s"**)
+:   The minimum amount of time between two requests to the NTP server. The
+    value is given as a duration. This is rounded up to the nearest power of 2
+    number of seconds.
+
+`maximum-poll-interval` = *duration* (**"1024s"**)
+:   The maximum amount of time between two requests to the NTP server. The
+    value is given as a duration. This is rounded down to the nearest power of
+    2 number of seconds. If the rounded value of `minimum-poll-interval` is
+    larger than the `maximum-poll-interval`, `maximum-poll-interval` is taken
+    equal to `minimum-poll-interval` instead.
+
+`desired-error` = *duration* (**"1ms"**)
+:   The accuracy of synchronization desired from NTP sources. The actual poll
+    interval is adapted between the limits specified in `minimum-poll-interval`
+    and `maximum-poll-interval` such that the clock has this much uncertainty
+    if only synchronized from this source.
+
+`delay-decay-rate` = *rate* (**0.003402069**)
+:   How quickly we lose confidence in the observed time delay between us and
+    NTP time sources. This setting is experimental and primarily intended for
+    use by experts when fine-tuning the synchronization algorithm.
+
+## `[csptp-source-defaults]`
+
+Some of the behaviour of csptp sources is configurable. The defaults for these
+settings can be set here. Note that csptp sources are still experimental, and
+may change in backwards incompatible ways in future versions.
+
+`domain` = *number* (**128**)
+:   PTP domain number to be used in communication with CSPTP servers.
+
+`poll-interval` = *duration* (**"1s"**)
+:   How often to query the CSPTP server for the current time.
+
+`response-interval` = *duration* (**"1s"**)
+:   How long to wait for a reply to a request. Replies received after this
+    interval will be ignored.
+
+`delay-decay-rate` = *rate* (**0.003402069**)
+:   How quickly we lose confidence in the observed time delay between us and
+    csptp time sources. This setting is experimental and primarily intended for
+    use by experts when fine-tuning the synchronization algorithm.
+
+## `[[server]]`
+
+The daemon can be configured to act as a server for various protocol via one or
+more `[[server]]` sections. If no such sections have been defined, the daemon
+runs in a client only mode. Each server listens on a specific socket address
+and port, for a specific protocol. The following server types are currently
+supported:
+
+`ntp`
+:   A server providing time to clients via the NTP protocol, optionally
+    protected with NTS. Can be configured to support versions 3, 4, and drafts
+    of version 5. Note that support for NTP version 5 drafts is experimental
+    and may change in backwards incompatible ways.
+
+`ntske`
+:   A server handling NTS key exchange requests for clients, providing the
+    initial setup needed for protecting NTP exchanges with NTS.
+
+`csptp`
+:   A server providing time to clients via a draft version of the csptp
+    protocol. Note that support for csptp is experimental and may change in
+    backwards incompatible ways.
+
+A source has the following configuration options:
+
+`type` = *server type*
+:   Specify one of the server types ntpd-rs supports. Must be one of `ntp`,
+    `ntske`, or `csptp`. Note that `csptp` servers are experimental and may
+    change in backwards incompatible ways.
+
+`listen` = *socket address*
+:   Address of the socket on which the server should listen for incoming
+    requests. Is interpreted as a UDP socket address for `ntp` servers, and as
+    a TCP socket address for `ntske` servers. Cannot be specified for `csptp`
+    servers. Specified as an interface IP address, a colon, and a port number.
+    When the port number is not specified, UDP port 123 will be used for `ntp`
+    servers, and TCP port 4460 will be used for `ntske` servers. Both IPv4 and
+    IPv6 are supported. It is possible to listen on all addresses associated
+    with the local machine using `0.0.0.0:123` for IPv4, or `[::]:123` for
+    IPv6.
+
+`accept-ntp-version` = *list of NTP versions* (see text)
+:   A list of NTP versions this server should support. Cannot be specified for
+    `csptp` servers. By default, `ntp` servers will support NTP versions 3 and
+    4 (corresponding to the configuration value`[3, 4]`), whilst `ntske`
+    servers will only support NTP version 4. `ntske` servers cannot support NTP
+    version 3 as NTS requires NTP version 4 or later. Support for a draft of
+    NTP version 5 can be enabled by including 5 in the list of accepted NTP
+    versions. Note that NTP version 5 support is experimental and may change in
+    backwards incompatible ways.
+
+`require-nts` = *bool or response action* (**false**)
+:   For `ntp` servers only. Whether to only respond to NTS secured NTP packets.
+    When set to true, incoming NTP packets that are not authenticated are
+    silently ignored. Can also be set to `deny` to respond with a NTP packet
+    indicating the client is not welcome, or to `ignore` to explicitly ignore
+    non-NTS NTP packets.
+
+`allowlist` = { ranges = [ *subnet*, .. ], action = `"deny"` | `"ignore"` } (**unset**)
+:   For `ntp` servers only. Only allow any number of filtered *subnets* to
+    connect to the server. Any IP that matches one of the subnets specified is
+    allowed to contact this server. The subnets must be specified in CIDR
+    notation (an IP address followed by a slash and the number of masked bits,
+    for example `127.0.0.1/8` or `192.168.1.1/24`). The action determines what
+    measure is taken for IP addresses not in any of the specified subnets. When
+    `deny`, an explicit packet with the NTP `DENY` kiss code is returned to the
+    sender indicating that they are not allowed to do so. When `ignore` is
+    specified, messages are discarded with no response sent. The default value
+    is equivalent to allowing any IP address, and would be equivalent to
+    setting the filter to `["0.0.0.0/0", "::/0"]`, with either action.
+
+`denylist` = { ranges = [ *subnet*, .. ], action = `"deny"` | `"ignore"` } (**unset**)
+:   For `ntp` servers only. Do not allow any number of filtered *subnets* to
+    connect to the daemon. Any IP that matches one of the subnets specified is
+    not allowed to contact this server. The subnets must be specified in CIDR
+    notation (an IP address followed by a slash and the number of masked bits,
+    for example `127.0.0.1/8` or `192.168.1.1/24`). The action determines what
+    measure is taken for IP addresses in any of the specified subnets. When
+    `deny`, an explicit packet with the NTP `DENY` kiss code is returned to the
+    sender indicating that they are not allowed to do so. When `ignore` is
+    specified, messages are discarded with no response sent. The default value
+    is equivalent to allowing any IP address, and would be equivalent to
+    setting the filter to `[]`, with either action.
+
+`rate-limiting-cache-size` = *size* (**0**)
+:   For `ntp` servers only. Number of elements in the rate limiting cache. At
+    most *size* elements are kept in the cache. This means that if more than
+    *size* different clients attempt to connect to the server too frequently,
+    the cache will have reduced functionality, as rate limiting information
+    gets lost when new clients connect to the server. If set to zero, the cache
+    is unused and rate limiting is disabled, this is the default.
+
+`rate-limiting-cutoff-ms` = *cutoff* (**0**)
+:   For `ntp` servers only. Minimum time between two requests from the same
+    client, if a request was sent sooner than the cutoff time, the client will
+    be asked to slow down their requests by the server responding with a packet
+    with the NTP `RATE` kiss code. No actual time measurement will be returned
+    to the client in that case. If set to zero, no rate limiting is applied,
+    this is the default.
+
+`certificate-chain` = *path*
+:   For `ntske` servers only. Path to a certificate chain for the public
+    certificate that the server offers to clients.
+
+`private-key` = *path*
+:   For `ntske` servers only. Path to the private key associated with the
+    server certificate in the certificate chain.
 
 `ntp-port` = *port*
-    Port number the key exchange server should instruct clients to use. Should
-    be used when the port number of the NTP server is not the default.
+    For `ntske` servers only. Port number the key exchange server should
+    instruct clients to use. Should be used when the port number of the NTP
+    server is not the default.
 
 `ntp-server` = *server-name*
-    Server address (either as ip or as domain name) where clients can find the
-    NTP server. Should be used when this name does not match the name of the
-    NTS key exchange server.
+    For `ntske` servers only. Server address (either as ip or as domain name)
+    where clients can find the NTP server. Should be used when this name does
+    not match the name of the NTS key exchange server.
 
-`accept-ntp-versions` = [ `4` | `5`, .. ] (**[4]**)
-:   An array of NTP versions that are accepted by the server. By default only
-    NTS for NTPv4 packets is supported. To also allow negotiating NTS for draft
-    NTPv5 packets, you can set this value to `[4, 5]`. NTPv5 support is
-    currently in beta and can still change in a backwards incompatible way.
+`key-exchange-timeout-ms` = *timeout* (**1000**)
+:   For `ntske` servers only. Timeout in milliseconds for how long a key
+    exchange may take. If the timeout is exceeded the connection will be
+    dropped.
+
+`concurrent-connections` = *number* (**512**)
+:   For `ntske` servers only. Maximum number of total concurrent connections
+    the key exchange server will handle. Any connections above the threshold
+    will be held in an OS level queue.
+
+`network-wait-period` = *duration* (**"1s"**)
+:   For `ntp` and `ntske` servers only. How long to wait before trying to
+    reopen the network socket should the network socket fail in some way. This
+    setting is experimental and its implementation may change in backwards
+    incompatible ways.
 
 `accepted-pool-authentication-tokens` = *list of keys* (**[]**)
 :   Tokens pools can use to authenticate pool-specific requests to this NTS
     server. Note that pool support is currently in beta and can still change in
     a backwards incompatible way.
 
-## `[synchronization]`
-This section of the configuration focusses on how the time information from the
-time sources is gathered and applied to the system clock.
+`longlived-connections` = *number* (**`concurrent-connections`/10**)
+:   For `ntske` servers only. Maximum number of concurrent longlived
+    connections from NTS pools the key exchange server will handle. Note that
+    pool support is currently in beta and can still change in backwards
+    incompatible ways.
 
-`minimum-agreeing-sources` = *count* (**3**)
-:   The minimum number of sources that should agree on the current time before
-    the daemon does any steering operation on the clock. Note that if you have
-    configured fewer than this amount of sources, this may result in the daemon
-    never updating the clock.
+`protocol` = *transport protocol*
+:   For `csptp` servers only. Which transport protocol to use for the csptp
+    messages. Can be either `"udpv4"`, for udp transport over ipv4, or
+    `"udpv6"`, for udp transport of ipv6. Note that `csptp` support is
+    experimental and cna still change in backwards incompatible ways.
 
-`single-step-panic-threshold` = *seconds* | { `forward` = *forward*, `backward` = *backward* } (**1000**)
-:   The threshold in seconds at which the daemon will completely exit (i.e.
-    panic) when a single non-startup step occurs. Generally during normal
-    operation the clock on your system should run somewhat close to the time it
-    is synchronized to. As such, it is highly unlikely that such a large step
-    will take place, and the daemon will exit to prevent any accidental
-    mistakes. If set to the value `"inf"`, any step will be allowed. May either
-    be configured as one number of seconds for both forward and backward steps,
-    or separate values for forward and backward steps.
+## `[nts-cookie-keys]`
 
-`startup-step-panic-threshold` = *seconds* | { `forward` = *forward*, `backward` = *backward* } (**{ forward = "inf", backward = "86400" }**)
-:   The threshold in seconds at which the daemon will completely exit (i.e.
-    panic) when a step occurs at startup. The default allows any forward step,
-    but prevents backward steps larger than a single day. Generally computer
-    clocks that are not synchronized will run behind the true time, instead of
-    running ahead. If a computer is running ahead and steps back a large time
-    this generally indicates a problem. If set to the value `"inf"`, any step
-    will be allowed. May either be configured as one number of seconds for both
-    forward and backward steps, or separate values for forward and backward
-    steps. When using this, ntp-ctl's force-sync command can still be used to
-    manually set the system time beyond these limits, to recover from a bad
-    system clock.
+In NTS secured NTP traffic, the client communicates to the server which keys to
+use through a cookie which it received from the server at an earlier time. In
+ntpd-rs, these cookies contain encrypted versions of the NTS keys. The settings
+here control the generation and storage of these keys when acting as an NTP
+secured NTS server or NTS key exchange server.
 
-`accumulated-step-panic-threshold` = *seconds* (**unset**)
-:   Every time the daemon steps the time instead of slowly adjusting the clock
-    by using frequency changes, this counter is increased by the absolute value
-    of the step (i.e. both forward and backward steps are counted). When this
-    threshold is reached, the daemon will exit immediately (i.e. panic). During
-    normal operation steps are unlikely to occur, and as such, steps may
-    indicate that someone or something is triggering illicit steps. By default
-    however this panic mechanism is disabled. Is disabled if left unset or if
-    set to the value `0`.
+`old-key-count` = *count* (**7**)
+:   Maximum number of old keys to keep around. Whenever keys are rotated the
+    old keys will stop being used to generate new cookies, but clients may
+    still have NTS cookies encrypted with any of the old keys.
 
-`warn-on-jump` = *bool* (**true**)
-:   Should the daemon emit a warning when stepping the clock. Such jumps can be
-    problematic for other software, for example database servers. This setting
-    can be used to disabled on systems where steps are expected and not harmful
-    for other software.
+`key-rotation-interval` = *duration* (**"1d"**)
+:   Time between key rotation events. Every time *duration* elapses, a new
+    internal key will be generated for creating NTS cookies. By default this is
+    set to a day.
 
-`local-stratum` = *stratum* (**16**)
-:   Sets the NTP clock stratum of the system clock when no NTP time sources have
-    been configured, or when the time has not yet been synchronized from an NTP
-    time source. Can be used in servers to indicate that there are external
-    mechanisms synchronizing the clock.
+`storage-path` = *path* (**unset**)
+:   If set, stores the internal NTS keys in the file indicated by *path*. This
+    allows keys to survive a server reboot. If not set, clients using NTS may
+    need to redo a key exchange operation to get new NTS cookies. The daemon
+    will not create any parent directories if they don't exist. The daemon will
+    create the file if it doesn't exist.
 
-`reference-id` = *reference-id* (**XNON**)
-:   Sets the reported NTP clock reference id when local-statum is set to `1`.
-    This is used to indicate the source of the time reference (`GPS` etc.).
+## `[csptp]`
 
-## `[synchronization.algorithm]`
-Warning: the algorithm section contains mostly internal algorithm tweaks that
-generally do not need to be changed. However, they are offered here for specific
-use cases. These settings are considered implementation details however, and as
-such may change in future ntpd-rs versions.
+CSPTP servers provide some information to their clients about where the time
+they provide comes from. The settings in this section provide the values used
+for this when the server isn't synchronizing itself to another CSPTP time
+source. Note that CSPTP support is based on a draft and still experimental, so
+these settings may change in backwards incompatible ways.
 
-`precision-low-probability` = *probability* (**1/3**)
-:   Probability bound below which we start moving towards decreasing our
-    precision estimate. Unit: probability, 0-1
+`identity` = *clock identity* (**[0, 0, 0, 0, 0, 0, 0, 0]**)
+:   The identity advertised to remote clocks when we are not synchronized to
+    another CSPTP time source.
 
-`precision-high-probability` = *probability* (**2/3**)
-:   Probability bound above which we start moving towards increasing our
-    precision estimate. Unit: probability, 0-1
+`priority-1` = *number* (**255**)
+:   The value of priority-1 advertised to remote clocks when we are not
+    synchronized to another CSPTP time source.
 
-`precision-hysteresis` = *hysteresis* (**16**)
-:   Amount of hysteresis in changing the precision estimate. Unit: count, 1+
+`priority-2` = *number* (**255**)
+:   The value of priority-2 advertised to remote clocks when we are not
+    synchronized to another CSPTP time source.
 
-`precision-minimum-weight` = *weight* (**0.1**)
-:   Lower bound on the amount of effect our precision estimate has on the total
-    noise estimate before we allow decreasing of the precision estimate. Unit:
-    weight, 0-1
+`clock-class` = *number* (**248**)
+:   The clock class advertised to remote clocks when we are not synchronized to
+    another CSPTP time source. For the meaning of this value, see table 4 in
+    IEEE Std. 1588-2019.
 
-`poll-interval-low-weight` = *weight* (**0.4**)
-:   Amount which a measurement contributes to the state, below which we start
-    increasing the poll interval. Unit: weight, 0-1
+`advertised-clock-accuracy` = *duration* (**unset**)
+:   The accuracy of our clock advertised to remote clocks when we are not
+    synchronized to another CSPTP time source. When not set, the accuracy is
+    advertised as unknown.
 
-`poll-interval-high-weight` = *weight* (**0.6**)
-:   Amount which a measurement contributes to the state, above which we start
-    decreasing the poll-interval interval. Unit: weight, 0-1
+`advertised-clock-precision` = *duration* (**"300us"**)
+:   The precision of our clock advertised to remote clocks when we are not
+    synchronized to another CSPTP time source.
 
-`poll-interval-hysteresis` = *hysteresis* (**16**)
-:   Amount of hysteresis in changing the poll interval. Unit: count, 1+
+`ptp-timescale` = *bool* (**true**)
+:   Whether we use the ptp timescale for the local clock. If false, this
+    implies an arbitrary timescale.
 
-`poll-interval-step-threshold` = *threshold* (**1e-6**)
-:   Probability threshold for when a measurement is considered a significant
-    enough outlier that we decide something weird is going on and we need to do
-    more measurements. Unit: probability, 0-1
+`time-traceable` = *bool* (**false**)
+:   Whether our local time is traceable to a valid standard reference when we
+    are not synchronized to another CSPTP time source.
 
-`delay-outlier-threshold` = *threshold* (**5.0**)
-:   Threshold (in number of standard deviations) above which measurements with a
-    significantly larger network delay are rejected. Unit: standard deviations,
-    0+
-
-`initial-wander` = *wander* (**1e-8**)
-:   Initial estimate of the clock wander of the combination of our local clock
-    and that of the source. Unit: s/s^2
-
-`initial-frequency-uncertainty` = *uncertainty* (**100e-6**)
-:   Initial uncertainty of the frequency difference between our clock and that
-    of the source. Unit: s/s
-
-`maximum-source-uncertainty` = *uncertainty* (**0.25**)
-:   Maximum source uncertainty before we start disregarding it. Note that this
-    is combined uncertainty due to noise and possible asymmetry error (see also
-    weights below). Unit: seconds
-
-`range-statistical-weight` = *weight* (**2.0**)
-:   Weight of statistical uncertainty when constructing overlap ranges. Unit:
-    standard deviations, 0+
-
-`range-delay-weight` = *weight* (**0.25**)
-:   Weight of delay uncertainty when constructing overlap ranges. Unit: weight,
-    0-1
-
-`steer-offset-threshold` = *threshold* (**2.0**)
-:   How far from 0 (in multiples of the uncertainty) should the offset be before
-    we correct. Unit: standard deviations, 0+
-
-`steer-offset-leftover` = *stddev* (**1.0**)
-:   How many standard deviations do we leave after offset correction? Unit:
-    standard deviations, 0+
-
-`steer-frequency-threshold` = *threshold* (**0.0**)
-:   How far from 0 (in multiples of the uncertainty) should the frequency
-    estimate be before we correct. Unit: standard deviations, 0+
-
-`steer-frequency-leftover` = *stddev* (**0.0**)
-:   How many standard deviations do we leave after frequency correction? Unit:
-    standard deviations, 0+
-
-`step-threshold` = *threshold* (**0.010**)
-:   From what offset should we step the clock instead of trying to adjust
-    gradually? Unit: seconds, 0+
-
-`slew-maximum-frequency-offset` = *offset* (**200e-6**)
-:   What is the maximum frequency offset during a slew. Unit: s/s
-
-`slew-minimum-duration` = *duration* (**8.0**)
-:   What is the minimum duration of a slew. Unit: seconds
-
-`maximum-frequency-steer` = *frequency* (**495e-6**)
-:   Absolute maximum frequency correction. Unit: s/s
-
-`ignore-server-dispersion` = *bool* (**false**)
-:   Ignore a server's advertised dispersion when synchronizing. Can improve
-    synchronization quality with servers reporting overly conservative root
-    dispersion.
-
-`meddling-threshold` = *threshold* (**5.0**)
-:   Threshold for detecting external clock meddling. Unit: seconds
+`frequency-traceable` = *bool* (**false**)
+:   Whether our local clock frequency is traceable to a valid standard
+    reference when we are not synchronized to another CSPTP time source.
 
 # SEE ALSO
 
