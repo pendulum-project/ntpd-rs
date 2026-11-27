@@ -5,7 +5,7 @@ Documentation=https://github.com/pendulum-project/ntpd-rs
 [Service]
 Type=notify
 Restart=always
-ExecStart=/usr/bin/ntp-metrics-exporter
+ExecStart=/usr/bin/statime-metrics
 Environment="RUST_LOG=info"
 User=ntpd-rs-observe
 Group=ntpd-rs-observe

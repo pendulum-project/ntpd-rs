@@ -55,7 +55,7 @@ project produces. This includes
 
 - `statime-daemon` (in `ntpd/src/daemon`)
 - `statime` (in `ntpd/src/ctl.rs`)
-- `ntp-metrics-exporter` (in `ntpd/src/metrics`)
+- `statime-metrics` (in `ntpd/src/metrics`)
 
 Each of these should mostly contain the actual execution code that calls each
 of the previously mentioned crates when required.

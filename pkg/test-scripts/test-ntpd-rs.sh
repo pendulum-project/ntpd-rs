@@ -13,7 +13,7 @@ case $1 in
       # and configuration validates.
       echo -e "\nNTPD-RS HELP OUTPUT:"
       /usr/bin/statime-daemon --help
-      /usr/bin/ntp-metrics-exporter --help
+      /usr/bin/statime-metrics --help
       /usr/bin/statime validate
 
       # # Ensure that the systemd service is running

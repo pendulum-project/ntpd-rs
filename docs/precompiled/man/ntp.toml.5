@@ -96,7 +96,7 @@ Settings in this section configure how you can observe the behavior of
 the daemon.
 Currently, the daemon can be observed either through the logs or by
 retrieving several key metrics either through statime(8) or through
-ntp-metrics-exporter(8).
+statime-metrics(8).
 .TP
 \f[V]log-level\f[R] = \f[V]\[dq]trace\[dq]\f[R] | \f[V]\[dq]debug\[dq]\f[R] | \f[V]\[dq]info\[dq]\f[R] | \f[V]\[dq]warn\[dq]\f[R] | \f[V]\[dq]error\[dq]\f[R] (\f[B]info\f[R])
 Set the logging level for messages printed to stdout.
@@ -122,11 +122,11 @@ formatting to the logs when the log target is a terminal.
 .TP
 \f[V]observation-path\f[R] = \f[I]path\f[R] (\f[B]unset\f[R])
 Path where the daemon will create an observation Unix domain socket.
-This socket is used by \f[V]statime\f[R] and
-\f[V]ntp-metrics-exporter\f[R] to read the current status of the daemon.
+This socket is used by \f[V]statime\f[R] and \f[V]statime-metrics\f[R]
+to read the current status of the daemon.
 If not set (the default) no observation socket will be created and it is
-not possible to use \f[V]statime\f[R] or \f[V]ntp-metrics-exporter\f[R]
-to observe the daemon.
+not possible to use \f[V]statime\f[R] or \f[V]statime-metrics\f[R] to
+observe the daemon.
 .TP
 \f[V]observation-permissions\f[R] = \f[I]mode\f[R] (\f[B]0o666\f[R])
 The file system permissions with which the observation socket should be
@@ -136,7 +136,7 @@ Warning: You should always write this number with the octal prefix
 The default should be OK for most applications however.
 .TP
 \f[V]metrics-exporter-listen\f[R] = \f[I]socketaddr\f[R] (\f[B]127.0.0.1:9975\f[R])
-The listen address that is used for the ntp-metrics-exporter(8).
+The listen address that is used for statime-metrics(8).
 .SS \f[V][[source]]\f[R]
 .PP
 Each \f[V][[source]]\f[R] is a group of one or more time sources for the
@@ -807,4 +807,4 @@ Whether our local clock frequency is traceable to a valid standard
 reference when we are not synchronized to another CSPTP time source.
 .SH SEE ALSO
 .PP
-statime-daemon(8), statime(8), ntp-metrics-exporter(8)
+statime-daemon(8), statime(8), statime-metrics(8)

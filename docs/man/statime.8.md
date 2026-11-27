@@ -58,5 +58,5 @@ with the daemon.
 # SEE ALSO
 
 [statime-daemon(8)](statime-daemon.8.md),
-[ntp-metrics-exporter(8)](ntp-metrics-exporter.8.md),
+[statime-metrics(8)](statime-metrics.8.md),
 [ntp.toml(5)](ntp.toml.5.md)

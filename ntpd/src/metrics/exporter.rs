@@ -17,10 +17,10 @@ use crate::notify::notify_ready;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const USAGE_MSG: &str = "\
-usage: ntp-metrics-exporter [-c PATH]
-       ntp-metrics-exporter -h | ntp-metrics-exporter -v";
+usage: statime-metrics [-c PATH]
+       statime-metrics -h | statime-metrics -v";
 
-const DESCRIPTOR: &str = "ntp-metrics-exporter - serve ntpd-rs openmetrics via http";
+const DESCRIPTOR: &str = "statime-metrics - serve ntpd-rs openmetrics via http";
 
 const HELP_MSG: &str = "Options:
   -c, --config=CONFIG                  ntpd-rs configuration file (default:
@@ -119,7 +119,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(())
         }
         MetricsAction::Version => {
-            eprintln!("ntp-metrics-exporter {VERSION}");
+            eprintln!("statime-metrics {VERSION}");
             Ok(())
         }
         MetricsAction::Run => run(&options),
@@ -147,7 +147,7 @@ fn run(options: &NtpMetricsExporterOptions) -> Result<(), Box<dyn std::error::Er
         };
 
         println!(
-            "starting ntp-metrics-exporter on {}",
+            "starting statime-metrics on {}",
             config.observability.metrics_exporter_listen
         );
 
@@ -315,7 +315,7 @@ mod tests {
 
     use super::*;
 
-    const BINARY: &str = "/usr/bin/ntp-metrics-exporter";
+    const BINARY: &str = "/usr/bin/statime-metrics";
 
     #[test]
     fn cli_config() {

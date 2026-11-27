@@ -120,7 +120,7 @@ ntp_server_nts_nak_packets_total{listen_address="0.0.0.0:123"} 0
 When installed through cargo or from source, two things need to be configured manually: 
 
 - Enable the observability socket in the ntpd-rs configuration.
-- Configure the system to run ntp-metrics-exporter as a service.
+- Configure the system to run statime-metrics as a service.
 
 The observability socket can be enabled by adding the following to the configuration:
 ```toml
@@ -128,7 +128,7 @@ The observability socket can be enabled by adding the following to the configura
 observation-path = "/var/run/ntpd-rs/observe"
 ```
 
-Next, configure your system to run the ntp-metrics-exporter binary as a service. For systemd based systems, an example is provided below.
+Next, configure your system to run the statime-metrics binary as a service. For systemd based systems, an example is provided below.
 ```ini
 [Unit]
 Description=Network Time Service (ntpd-rs) metrics exporter
@@ -137,7 +137,7 @@ Documentation=https://github.com/pendulum-project/ntpd-rs
 [Service]
 Type=notify
 Restart=yes
-ExecStart=/usr/bin/ntp-metrics-exporter
+ExecStart=/usr/bin/statime-metrics
 Environment="RUST_LOG=info"
 RuntimeDirectory=ntpd-rs-observe
 User=ntpd-rs-observe
