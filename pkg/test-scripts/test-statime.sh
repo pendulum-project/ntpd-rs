@@ -6,12 +6,12 @@ set -x
 case $1 in
   post-install|post-upgrade)
       # Ensure users are created
-      id ntpd-rs
-      id ntpd-rs-observe
+      id statime
+      id statime-observe
 
       # Ensure daemon and ctl client are present
       # and configuration validates.
-      echo -e "\nNTPD-RS HELP OUTPUT:"
+      echo -e "\nSTATIME HELP OUTPUT:"
       /usr/bin/statime-daemon --help
       /usr/bin/statime-metrics --help
       /usr/bin/statime validate

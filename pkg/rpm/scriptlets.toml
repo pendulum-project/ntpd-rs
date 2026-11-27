@@ -3,36 +3,36 @@ post_install_script = '''
 #RPM_SYSTEMD_MACROS#
 
 if [ $EUID -ne 0 ]; then
-    echo >&2 "ERROR: ntpd-rs postinst script must be run as root"
+    echo >&2 "ERROR: statime postinst script must be run as root"
     exit 1
 fi
 
-NTPDRS_USER=ntpd-rs
-NTPDRS_OBSERVE_USER=ntpd-rs-observe
-NTPDRS_HOME_DIR="/var/lib/ntpd-rs"
-NTPDRS_OBSERVE_HOME_DIR="/var/lib/ntpd-rs-observe"
-NTPDRS_HOME_DIR_PERMS=700
-NTPDRS_CONF_SRC="/usr/share/doc/ntpd-rs/statime.toml.default"
-NTPDRS_CONF_DIR="/etc/ntpd-rs"
-NTPDRS_CONF="${NTPDRS_CONF_DIR}/statime.toml"
-NTPDRS_CONF_PERMS=644
+STATIME_USER=statime
+STATIME_OBSERVE_USER=statime-observe
+STATIME_HOME_DIR="/var/lib/statime"
+STATIME_OBSERVE_HOME_DIR="/var/lib/statime-observe"
+STATIME_HOME_DIR_PERMS=700
+STATIME_CONF_SRC="/usr/share/doc/statime/statime.toml.default"
+STATIME_CONF_DIR="/etc/statime"
+STATIME_CONF="${STATIME_CONF_DIR}/statime.toml"
+STATIME_CONF_PERMS=644
 
 create_user() {
-    if ! id ${NTPDRS_USER} > /dev/null 2>&1; then
+    if ! id ${STATIME_USER} > /dev/null 2>&1; then
         # According to the CentOS 7 useradd man page:
         # --user-group causes a group by the same name as the user to be created
         # --create-home should force creation of a home dir even for a system account.
-        useradd --home-dir ${NTPDRS_HOME_DIR} --system --create-home --user-group ${NTPDRS_USER}
+        useradd --home-dir ${STATIME_HOME_DIR} --system --create-home --user-group ${STATIME_USER}
     fi
-    if ! id ${NTPDRS_OBSERVE_USER} > /dev/null 2>&1; then
-        useradd --home-dir ${NTPDRS_OBSERVE_HOME_DIR} --system --create-home --user-group ${NTPDRS_OBSERVE_USER}
+    if ! id ${STATIME_OBSERVE_USER} > /dev/null 2>&1; then
+        useradd --home-dir ${STATIME_OBSERVE_HOME_DIR} --system --create-home --user-group ${STATIME_OBSERVE_USER}
     fi
     # Ensure that the home directory has the correct ownership
-    chown -R ${NTPDRS_USER}:${NTPDRS_USER} ${NTPDRS_HOME_DIR}
-    chown -R ${NTPDRS_OBSERVE_USER}:${NTPDRS_OBSERVE_USER} ${NTPDRS_OBSERVE_HOME_DIR}
+    chown -R ${STATIME_USER}:${STATIME_USER} ${STATIME_HOME_DIR}
+    chown -R ${STATIME_OBSERVE_USER}:${STATIME_OBSERVE_USER} ${STATIME_OBSERVE_HOME_DIR}
     # Ensure that the home directory has the correct permissions
-    chmod ${NTPDRS_HOME_DIR_PERMS} ${NTPDRS_HOME_DIR}
-    chmod ${NTPDRS_HOME_DIR_PERMS} ${NTPDRS_OBSERVE_HOME_DIR}
+    chmod ${STATIME_HOME_DIR_PERMS} ${STATIME_HOME_DIR}
+    chmod ${STATIME_HOME_DIR_PERMS} ${STATIME_OBSERVE_HOME_DIR}
 }
 
 init_systemd_service() {

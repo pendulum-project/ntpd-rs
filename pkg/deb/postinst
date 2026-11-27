@@ -2,21 +2,21 @@
 
 set -e
 
-NTPDRS_CONF_SRC="/usr/share/doc/ntpd-rs/statime.toml.default"
-NTPDRS_CONF_DIR="/etc/ntpd-rs"
-NTPDRS_CONF="${NTPDRS_CONF_DIR}/statime.toml"
-NTPDRS_CONF_PERMS=644
-NTPDRS_HOME="/var/lib/statime/"
-NTPDRS_USER="ntpd-rs"
-NTPDRS_OBSERVE_HOME="/var/lib/statime-observe/"
-NTPDRS_OBSERVE_USER="ntpd-rs-observe"
+STATIME_CONF_SRC="/usr/share/doc/statime/statime.toml.default"
+STATIME_CONF_DIR="/etc/statime"
+STATIME_CONF="${STATIME_CONF_DIR}/statime.toml"
+STATIME_CONF_PERMS=644
+STATIME_HOME="/var/lib/statime/"
+STATIME_USER="statime"
+STATIME_OBSERVE_HOME="/var/lib/statime-observe/"
+STATIME_OBSERVE_USER="statime-observe"
 
 create_user() {
-    if ! id ${NTPDRS_USER} > /dev/null 2>&1; then
-        adduser --system --home "${NTPDRS_HOME}" --group ${NTPDRS_USER}
+    if ! id ${STATIME_USER} > /dev/null 2>&1; then
+        adduser --system --home "${STATIME_HOME}" --group ${STATIME_USER}
     fi
-    if ! id ${NTPDRS_OBSERVE_USER} > /dev/null 2>&1; then
-        adduser --system --home "${NTPDRS_OBSERVE_HOME}" --group ${NTPDRS_OBSERVE_USER}
+    if ! id ${STATIME_OBSERVE_USER} > /dev/null 2>&1; then
+        adduser --system --home "${STATIME_OBSERVE_HOME}" --group ${STATIME_OBSERVE_USER}
     fi
 }
 
