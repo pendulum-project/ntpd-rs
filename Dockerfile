@@ -28,7 +28,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/git/db \
     && mkdir -p /build/artifacts \
     && cp target/release/statime-daemon /build/artifacts \
     && cp target/release/statime /build/artifacts \
-    && cp target/release/ntp-metrics-exporter /build/artifacts
+    && cp target/release/statime-exporter /build/artifacts
 
 # Setup the final actual runner image stage
 FROM debian:bookworm-slim AS runner
@@ -42,7 +42,7 @@ RUN apt update \
 # Copy compiled binaries from the builder stage
 COPY --from=builder /build/artifacts/statime-daemon /usr/local/bin/statime-daemon
 COPY --from=builder /build/artifacts/statime /usr/local/bin/statime
-COPY --from=builder /build/artifacts/ntp-metrics-exporter /usr/local/bin/ntp-metrics-exporter
+COPY --from=builder /build/artifacts/statime-exporter /usr/local/bin/statime-exporter
 
 # Setup a user and group for the runner
 ARG USER=ntpd-rs

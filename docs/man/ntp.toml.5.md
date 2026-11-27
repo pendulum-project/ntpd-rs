@@ -69,7 +69,7 @@ There are two settings in the daemon which change its global behavior:
 Settings in this section configure how you can observe the behavior of the
 daemon. Currently, the daemon can be observed either through the logs or by
 retrieving several key metrics either through statime(8) or through
-ntp-metrics-exporter(8).
+statime-metrics(8).
 
 `log-level` = `"trace"` | `"debug"` | `"info"` | `"warn"` | `"error"` (**info**)
 :   Set the logging level for messages printed to stdout. The lowest level
@@ -94,9 +94,9 @@ ntp-metrics-exporter(8).
 
 `observation-path` = *path* (**unset**)
 :   Path where the daemon will create an observation Unix domain socket. This
-    socket is used by `statime` and `ntp-metrics-exporter` to read the current
+    socket is used by `statime` and `statime-metrics` to read the current
     status of the daemon. If not set (the default) no observation socket will be
-    created and it is not possible to use `statime` or `ntp-metrics-exporter` to
+    created and it is not possible to use `statime` or `statime-metrics` to
     observe the daemon.
 
 `observation-permissions` = *mode* (**0o666**)
@@ -106,7 +106,7 @@ ntp-metrics-exporter(8).
     should be OK for most applications however.
 
 `metrics-exporter-listen` = *socketaddr* (**127.0.0.1:9975**)
-:   The listen address that is used for the ntp-metrics-exporter(8).
+:   The listen address that is used for statime-metrics(8).
 
 ## `[[source]]`
 
@@ -672,4 +672,4 @@ these settings may change in backwards incompatible ways.
 # SEE ALSO
 
 [statime-daemon(8)](statime-daemon.8.md), [statime(8)](statime.8.md),
-[ntp-metrics-exporter(8)](ntp-metrics-exporter.8.md)
+[statime-metrics(8)](statime-metrics.8.md)

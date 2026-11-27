@@ -1,16 +1,16 @@
 <!-- ---
-title: NTP-METRICS-EXPORTER(8) ntpd-rs 2.0.0-alpha.20261113 | ntpd-rs
+title: STATIME-METRICS(8) ntpd-rs 2.0.0-alpha.20261113 | ntpd-rs
 --- -->
 
 # NAME
 
-`ntp-metrics-exporter` - Prometheus/OpenMetrics exporter for the ntpd-rs daemon
+`statime-metrics` - Prometheus/OpenMetrics exporter for the ntpd-rs daemon
 
 # SYNOPSIS
 
-`ntp-metrics-exporter` [`-c` *path*] \
-`ntp-metrics-exporter` `-h` \
-`ntp-metrics-exporter` `-v`
+`statime-metrics` [`-c` *path*] \
+`statime-metrics` `-h` \
+`statime-metrics` `-v`
 
 # DESCRIPTION
 
