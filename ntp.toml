@@ -12,6 +12,6 @@ count = 4
 
 # Alternative configuration for IPv6 only machines
 #[[source]]
-#mode = "pool"
+#type = "ntp-pool"
 #address = "2.pool.ntp.org"
 #count = 4

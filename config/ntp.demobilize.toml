@@ -5,18 +5,19 @@ log-level = "info"
 
 # the server will get its time from the NTP pool
 [[source]]
-mode = "pool"
+type = "ntp-pool"
 address = "pool.ntp.org"
 count = 4
 
 [[server]]
+type = "ntp"
 listen = "0.0.0.0:123"
 
 [server.allowlist]
-filter = []
+ranges = []
 action = "deny"
 
 # configure the client with
 # [[source]]
-# mode = "server"
-# address = "0.0.0.0:123"
+# type = "ntp"
+# address = "<your ip here>:123"
