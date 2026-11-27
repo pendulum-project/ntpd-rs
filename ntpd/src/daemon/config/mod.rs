@@ -109,7 +109,7 @@ pub struct SystemClockConfig {
     #[config(rename = "startup-jump-warning-threshold", default = PotentiallyAsymetricThreshold::Symmetric(InfiniteOr::Finite(NonNegative::unchecked_new(ConfigurableDuration { unit: Unit::Second, duration: 0.0 }))))]
     pub startup_jump_warning_threshold: PotentiallyAsymetricThreshold,
     /// Threshold for a step at startup to trigger an abort.
-    #[config(rename = "startump-jump-abort-threshold", default = PotentiallyAsymetricThreshold::Asymmetric { forward: InfiniteOr::Infinite, backward: InfiniteOr::Finite(NonNegative::unchecked_new(ConfigurableDuration { unit: Unit::Day, duration: 1.0 }))})]
+    #[config(rename = "startup-jump-abort-threshold", default = PotentiallyAsymetricThreshold::Asymmetric { forward: InfiniteOr::Infinite, backward: InfiniteOr::Finite(NonNegative::unchecked_new(ConfigurableDuration { unit: Unit::Day, duration: 1.0 }))})]
     pub startup_jump_abort_threshold: PotentiallyAsymetricThreshold,
     /// Threshold for a single step during normal operation to trigger a warning.
     #[config(rename = "single-jump-warning-threshold", default = PotentiallyAsymetricThreshold::Symmetric(InfiniteOr::Finite(NonNegative::unchecked_new(ConfigurableDuration { unit: Unit::Second, duration: 0.0 }))))]

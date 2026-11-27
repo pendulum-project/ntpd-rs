@@ -158,7 +158,7 @@ pub(crate) struct NtpNtsSourceConfig {
     pub(crate) enable_srv_resolution: bool,
     #[config(rename = "ntp-version", default)]
     pub(crate) ntp_version: RequestedNtpVersion,
-    #[config(rename = "minimum-poll-interval")]
+    #[config(rename = "minimum-poll-interval", default)]
     pub(crate) minimum_poll_interval: Option<Positive<ConfigurableDuration>>,
     #[config(rename = "maximum-poll-interval", default)]
     pub(crate) maximum_poll_interval: Option<Positive<ConfigurableDuration>>,
@@ -235,7 +235,7 @@ pub(crate) struct NtpNtsPoolSourceConfig {
     pub(crate) enable_srv_resolution: bool,
     #[config(rename = "ntp-version", default)]
     pub(crate) ntp_version: RequestedNtpVersion,
-    #[config(rename = "minimum-poll-interval")]
+    #[config(rename = "minimum-poll-interval", default)]
     pub(crate) minimum_poll_interval: Option<Positive<ConfigurableDuration>>,
     #[config(rename = "maximum-poll-interval", default)]
     pub(crate) maximum_poll_interval: Option<Positive<ConfigurableDuration>>,
