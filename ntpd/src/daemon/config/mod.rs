@@ -441,9 +441,8 @@ impl Config {
             match source {
                 SourceConfig::NtpServer(_) => count += 1,
                 SourceConfig::NtpNtsServer(_) => count += 1,
-                // FIXME: Do actual count when the configs are in place.
-                SourceConfig::NtpPool(_) => count += 1,
-                SourceConfig::NtpNtsPool(_) => count += 1,
+                SourceConfig::NtpPool(source_config) => count += source_config.count,
+                SourceConfig::NtpNtsPool(source_config) => count += source_config.count,
                 SourceConfig::Sock(_) => count += 1,
                 #[cfg(feature = "pps")]
                 SourceConfig::Pps(_) => {} // PPS sources don't count
@@ -467,11 +466,82 @@ impl Config {
             info!("No sources configured. Daemon will not change system time.");
         }
 
-        // FIXME: Reintroduce check on minimum agreeing sources
+        if !self.sources.is_empty()
+            && self
+                .filter
+                .minimum_agreeing_sources
+                .is_some_and(|min_agreeing| min_agreeing.into_inner() > self.count_sources())
+        {
+            warn!(
+                "Fewer sources configured than are required to agree on the current time. Daemon will not change system time."
+            );
+            ok = false;
+        }
 
-        // FIXME: Reintroduce check on NTPv5 being draft once fields are available.
+        if self.sources.iter().any(|config| match config {
+            SourceConfig::NtpServer(config) => config.ntp_version == RequestedNtpVersion::V5,
+            SourceConfig::NtpPool(config) => config.ntp_version == RequestedNtpVersion::V5,
+            SourceConfig::NtpNtsServer(config) => config.ntp_version == RequestedNtpVersion::V5,
+            SourceConfig::NtpNtsPool(config) => config.ntp_version == RequestedNtpVersion::V5,
+            SourceConfig::Sock(_) => false,
+            #[cfg(feature = "pps")]
+            SourceConfig::Pps(_) => false,
+            #[cfg(target_os = "linux")]
+            SourceConfig::Csptp(_) => false,
+        }) {
+            warn!(
+                "Forcing a source into NTPv5, which is still a draft. There is no guarantee that the server will remain compatible with this or future versions of ntpd-rs."
+            );
+            ok = false;
+        }
 
-        // FIXME: Reintroduce check on NTS configuration once fields are available.
+        for ke_server in self.servers.iter().filter_map(|server| {
+            if let ServerConfig::Ntske(config) = server
+                && config.ntp_server.is_none()
+            {
+                Some(config)
+            } else {
+                None
+            }
+        }) {
+            if ke_server.accept_ntp_versions.contains(&NtsNtpVersion::V4)
+                && !self.servers.iter().any(|server| {
+                    if let ServerConfig::Ntp(config) = server {
+                        config.listen.port() == ke_server.ntp_port.unwrap_or(123)
+                            && config
+                                .accept_ntp_versions
+                                .contains(&primitives::NtpVersion::V4)
+                    } else {
+                        false
+                    }
+                })
+            {
+                warn!(
+                    "Configured NTS for NTPv4 on port {}, but have no server listening on that port for NTPv4 traffic. If this is for an external ntp server, consider configuring a value for `ntp-server`.",
+                    ke_server.ntp_port.unwrap_or(123)
+                );
+                ok = false;
+            }
+
+            if ke_server.accept_ntp_versions.contains(&NtsNtpVersion::V5)
+                && !self.servers.iter().any(|server| {
+                    if let ServerConfig::Ntp(config) = server {
+                        config.listen.port() == ke_server.ntp_port.unwrap_or(123)
+                            && config
+                                .accept_ntp_versions
+                                .contains(&primitives::NtpVersion::V5)
+                    } else {
+                        false
+                    }
+                })
+            {
+                warn!(
+                    "Configured NTS for NTPv5 on port {}, but have no server listening on that port for NTPv5 traffic. If this is for an external ntp server, consider configuring a value for `ntp-server`.",
+                    ke_server.ntp_port.unwrap_or(123)
+                );
+                ok = false;
+            }
+        }
 
         ok
     }
