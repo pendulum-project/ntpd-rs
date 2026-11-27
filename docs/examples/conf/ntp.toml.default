@@ -3,7 +3,7 @@
 # Basic values for this are `trace`, `debug`, `info`, `warn` and `error`.
 log-level = "info"
 ## Using the observe socket you can retrieve statistical information about the
-## daemon while it is running. You can use the `ntp-ctl` or prometheus based
+## daemon while it is running. You can use the `statime` or prometheus based
 ## `ntp-metrics-exporter` binaries for some default options to read from the
 ## observe socket.
 observation-path = "/var/run/ntpd-rs/observe"

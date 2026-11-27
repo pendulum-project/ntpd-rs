@@ -43,7 +43,7 @@ When aborting due to the above thresholds, a log message along the lines of the 
 2024-11-28T12:40:32.821717Z  ERROR ntp_proto::algorithm::kalman: Unusually large clock step suggested, please manually verify system clock and reference clock state and restart if appropriate.
 ```
 
-If the clock is significantly wrong, the force-sync command in [ntp-ctl](../man/ntp-ctl.8.md) can be used to manually correct the systemclock back to a reasonable starting point.
+If the clock is significantly wrong, the force-sync command in [statime](../man/statime.8.md) can be used to manually correct the systemclock back to a reasonable starting point.
 
 ### The risks of rebooting ntpd-rs
 

@@ -68,7 +68,7 @@ There are two settings in the daemon which change its global behavior:
 ## `[observability]`
 Settings in this section configure how you can observe the behavior of the
 daemon. Currently, the daemon can be observed either through the logs or by
-retrieving several key metrics either through ntp-ctl(8) or through
+retrieving several key metrics either through statime(8) or through
 ntp-metrics-exporter(8).
 
 `log-level` = `"trace"` | `"debug"` | `"info"` | `"warn"` | `"error"` (**info**)
@@ -94,9 +94,9 @@ ntp-metrics-exporter(8).
 
 `observation-path` = *path* (**unset**)
 :   Path where the daemon will create an observation Unix domain socket. This
-    socket is used by `ntp-ctl` and `ntp-metrics-exporter` to read the current
+    socket is used by `statime` and `ntp-metrics-exporter` to read the current
     status of the daemon. If not set (the default) no observation socket will be
-    created and it is not possible to use `ntp-ctl` or `ntp-metrics-exporter` to
+    created and it is not possible to use `statime` or `ntp-metrics-exporter` to
     observe the daemon.
 
 `observation-permissions` = *mode* (**0o666**)
@@ -671,5 +671,5 @@ these settings may change in backwards incompatible ways.
 
 # SEE ALSO
 
-[statime-daemon(8)](statime-daemon.8.md), [ntp-ctl(8)](ntp-ctl.8.md),
+[statime-daemon(8)](statime-daemon.8.md), [statime(8)](statime.8.md),
 [ntp-metrics-exporter(8)](ntp-metrics-exporter.8.md)

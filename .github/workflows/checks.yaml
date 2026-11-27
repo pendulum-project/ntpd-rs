@@ -229,22 +229,22 @@ jobs:
         run: rustup toolchain install "$STABLE_RUST_VERSION" && rustup override set "$STABLE_RUST_VERSION"
 
       - name: ./ntp.toml
-        run: cargo run --bin ntp-ctl -- -c ./ntp.toml validate
+        run: cargo run --bin statime -- -c ./ntp.toml validate
 
       - name: ./ntp.server.toml
-        run: cargo run --bin ntp-ctl -- -c ./ntp.server.toml validate
+        run: cargo run --bin statime -- -c ./ntp.server.toml validate
 
       - name: ./ntp-proto/test-keys/unsafe.nts.client.toml
-        run: cargo run --bin ntp-ctl -- -c ./ntp-proto/test-keys/unsafe.nts.client.toml validate
+        run: cargo run --bin statime -- -c ./ntp-proto/test-keys/unsafe.nts.client.toml validate
 
       - name: ./ntp-proto/test-keys/unsafe.nts.server.toml
-        run: cargo run --bin ntp-ctl -- -c ./ntp-proto/test-keys/unsafe.nts.server.toml validate
+        run: cargo run --bin statime -- -c ./ntp-proto/test-keys/unsafe.nts.server.toml validate
 
       - name: ./config/ntp.demobilize.toml
-        run: cargo run --bin ntp-ctl -- -c ./config/ntp.demobilize.toml validate
+        run: cargo run --bin statime -- -c ./config/ntp.demobilize.toml validate
 
       - name: ./pkg/common/ntp.toml.default
-        run: cargo run --bin ntp-ctl -- -c ./docs/examples/conf/ntp.toml.default validate
+        run: cargo run --bin statime -- -c ./docs/examples/conf/ntp.toml.default validate
 
   man-sync:
     name: Validate man pages

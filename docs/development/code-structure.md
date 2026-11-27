@@ -54,7 +54,7 @@ The `ntpd` crate contains the code for all three end-user binaries that our
 project produces. This includes
 
 - `statime-daemon` (in `ntpd/src/daemon`)
-- `ntp-ctl` (in `ntpd/src/ctl.rs`)
+- `statime` (in `ntpd/src/ctl.rs`)
 - `ntp-metrics-exporter` (in `ntpd/src/metrics`)
 
 Each of these should mostly contain the actual execution code that calls each
@@ -139,7 +139,7 @@ purpose, as it limits the amount of attack surface exposed by this task.
 ### Configuration task
 
 The configuration task changes configuration dynamically at runtime. The task
-listens to a socket for new configuration changes. The `ntp-ctl` executable is
+listens to a socket for new configuration changes. The `statime` executable is
 an example of how to interact with this socket.
 
 Because this task reads from its socket, it is advised to restrict the

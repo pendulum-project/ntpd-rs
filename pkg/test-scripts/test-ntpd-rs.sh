@@ -14,7 +14,7 @@ case $1 in
       echo -e "\nNTPD-RS HELP OUTPUT:"
       /usr/bin/statime-daemon --help
       /usr/bin/ntp-metrics-exporter --help
-      /usr/bin/ntp-ctl validate
+      /usr/bin/statime validate
 
       # # Ensure that the systemd service is running
       # systemctl is-active ntpd-rs.service --quiet

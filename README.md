@@ -31,7 +31,7 @@ $ sudo systemctl start ntpd-rs
 You should now be able to check the synchronization status with
 
 ```console
-$ ntp-ctl status
+$ statime status
 Synchronization status:
 Dispersion: 0.000299s, Delay: 0.007637s
 Desired poll interval: 16s
